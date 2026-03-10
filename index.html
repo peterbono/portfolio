@@ -84,26 +84,26 @@
     .objectives { padding: 12px; }
     .objectives li { font-size: 12px; }
 
-    /* Card layout for tables on mobile */
-    table.card-mode thead { display: none; }
-    table.card-mode tbody tr.data-row { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px; margin-bottom: 8px; border: 1px solid #2a2a2a; border-radius: 10px; background: #1a1a1a; }
-    table.card-mode tbody tr.data-row.hidden { display: none; }
-    table.card-mode tbody tr.data-row td { border: none; padding: 2px 0; font-size: 12px; }
-    table.card-mode tbody tr.data-row td:before { content: attr(data-label); display: block; font-size: 9px; color: #666; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 1px; }
-    table.card-mode .col-date { order: 1; flex: 0 0 40%; }
-    table.card-mode .col-status { order: 2; flex: 0 0 55%; text-align: right; }
-    table.card-mode .col-role { order: 3; flex: 0 0 100%; font-weight: 600; color: #fff; font-size: 14px; }
-    table.card-mode .col-company { order: 4; flex: 0 0 50%; }
-    table.card-mode .col-location { order: 5; flex: 0 0 50%; }
-    table.card-mode .col-salary { order: 6; flex: 0 0 50%; }
-    table.card-mode .col-ats { order: 7; flex: 0 0 50%; }
-    table.card-mode .col-cv { order: 8; flex: 0 0 50%; }
-    table.card-mode .col-portfolio { order: 9; flex: 0 0 50%; }
-    table.card-mode .col-link { order: 10; flex: 0 0 50%; }
-    table.card-mode .col-notes { order: 11; flex: 0 0 100%; }
-    table.card-mode .col-match { order: 7; flex: 0 0 100%; }
-    table.card-mode .col-priority { order: 0; flex: 0 0 30%; }
-    table.card-mode .col-reason { order: 11; flex: 0 0 100%; }
+    /* Card layout for tables on mobile — pure CSS, no JS class needed */
+    #main-table thead { display: none; }
+    #main-table tbody tr.data-row { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px; margin-bottom: 8px; border: 1px solid #2a2a2a; border-radius: 10px; background: #1a1a1a; }
+    #main-table tbody tr.data-row.hidden { display: none; }
+    #main-table tbody tr.data-row td { border: none; padding: 2px 0; font-size: 12px; }
+    #main-table tbody tr.data-row td:before { content: attr(data-label); display: block; font-size: 9px; color: #666; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 1px; }
+    #main-table .col-date { order: 1; flex: 0 0 40%; }
+    #main-table .col-status { order: 2; flex: 0 0 55%; text-align: right; }
+    #main-table .col-role { order: 3; flex: 0 0 100%; font-weight: 600; color: #fff; font-size: 14px; }
+    #main-table .col-company { order: 4; flex: 0 0 50%; }
+    #main-table .col-location { order: 5; flex: 0 0 50%; }
+    #main-table .col-salary { order: 6; flex: 0 0 50%; }
+    #main-table .col-ats { order: 7; flex: 0 0 50%; }
+    #main-table .col-cv { order: 8; flex: 0 0 50%; }
+    #main-table .col-portfolio { order: 9; flex: 0 0 50%; }
+    #main-table .col-link { order: 10; flex: 0 0 50%; }
+    #main-table .col-notes { order: 11; flex: 0 0 100%; }
+    #main-table .col-match { order: 7; flex: 0 0 100%; }
+    #main-table .col-priority { order: 0; flex: 0 0 30%; }
+    #main-table .col-reason { order: 11; flex: 0 0 100%; }
   }
 
   @media (max-width: 480px) {
@@ -670,14 +670,6 @@
       sorted.forEach(r => tbody.appendChild(r));
     });
   });
-
-  // Mobile card mode
-  function checkMobile() {
-    const isMobile = window.innerWidth <= 900;
-    table.classList.toggle('card-mode', isMobile);
-  }
-  checkMobile();
-  window.addEventListener('resize', checkMobile);
 
   // Init
   updateCounts();
