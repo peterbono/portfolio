@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Florian Gouloubi - Job Application Tracker</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f0f0f; color: #e0e0e0; padding: 24px; }
+  h1 { font-size: 28px; margin-bottom: 4px; color: #fff; }
+  .subtitle { color: #888; margin-bottom: 24px; font-size: 14px; }
+  .stats { display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+  .stat { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 12px; padding: 16px 20px; min-width: 140px; }
+  .stat-number { font-size: 32px; font-weight: 700; }
+  .stat-label { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
+  .stat.applied .stat-number { color: #4ade80; }
+  .stat.submitted .stat-number { color: #34d399; }
+  .stat.failed .stat-number { color: #f87171; }
+  .stat.wip .stat-number { color: #facc15; }
+  .stat.pending .stat-number { color: #60a5fa; }
+  .stat.skipped .stat-number { color: #6b7280; }
+  .objectives { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 12px; padding: 16px 20px; margin-bottom: 24px; }
+  .objectives h3 { font-size: 14px; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .objectives ul { list-style: none; }
+  .objectives li { padding: 4px 0; font-size: 14px; }
+  .objectives li::before { content: "→ "; color: #facc15; }
+  table { width: 100%; border-collapse: collapse; background: #1a1a1a; border-radius: 12px; overflow: hidden; border: 1px solid #2a2a2a; }
+  thead { background: #111; }
+  th { padding: 12px 16px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #888; border-bottom: 1px solid #2a2a2a; }
+  td { padding: 12px 16px; border-bottom: 1px solid #1f1f1f; font-size: 14px; vertical-align: top; }
+  tr:hover { background: #222; }
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+  .badge.applied { background: #064e3b; color: #4ade80; }
+  .badge.wip { background: #422006; color: #facc15; }
+  .badge.pending { background: #1e3a5f; color: #60a5fa; }
+  .badge.skipped { background: #1f1f1f; color: #6b7280; }
+  .badge.already { background: #312e81; color: #a78bfa; }
+  .badge.saved { background: #1e3a5f; color: #38bdf8; }
+  .badge.submitted { background: #064e3b; color: #34d399; }
+  .badge.failed { background: #450a0a; color: #f87171; }
+  .badge.manual { background: #422006; color: #fb923c; }
+  a { color: #60a5fa; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .match { font-size: 12px; color: #888; margin-top: 4px; }
+  .match strong { color: #facc15; }
+  .salary { font-size: 12px; color: #f87171; }
+  .notes { font-size: 12px; color: #888; font-style: italic; }
+  .section-title { font-size: 18px; margin: 32px 0 12px; color: #fff; }
+  .updated { text-align: right; font-size: 12px; color: #555; margin-top: 16px; }
+</style>
+</head>
+<body>
+
+<h1>Job Application Tracker</h1>
+<p class="subtitle">Florian Gouloubi - Senior Product Designer | APAC Remote Search</p>
+
+<div class="objectives">
+  <h3>Search Objectives</h3>
+  <ul>
+    <li><strong>Priority 1:</strong> Remote freelance APAC - Senior Product Designer - min 80k EUR/an</li>
+    <li><strong>Priority 2:</strong> CDI on-site Philippines ou Thailand - 80k EUR/an</li>
+    <li><strong>Priority 3:</strong> Remote hors APAC - max 4h timezone diff avec Bangkok (GMT+7)</li>
+  </ul>
+</div>
+
+<div class="stats">
+  <div class="stat submitted"><div class="stat-number" id="count-submitted">0</div><div class="stat-label">Submitted (External)</div></div>
+  <div class="stat applied"><div class="stat-number" id="count-applied">0</div><div class="stat-label">Already Applied</div></div>
+  <div class="stat" style="border-color:#38bdf8"><div class="stat-number" style="color:#38bdf8" id="count-saved">0</div><div class="stat-label">Saved - Easy Apply</div></div>
+  <div class="stat" style="border-color:#fb923c"><div class="stat-number" style="color:#fb923c" id="count-manual">0</div><div class="stat-label">À soumettre</div></div>
+  <div class="stat failed"><div class="stat-number" id="count-failed">0</div><div class="stat-label">Failed</div></div>
+  <div class="stat skipped"><div class="stat-number" id="count-skipped">0</div><div class="stat-label">Skipped</div></div>
+</div>
+
+<h2 class="section-title">Non-Easy Apply Applications (Claude Agent)</h2>
+<table>
+<thead>
+  <tr>
+    <th>Date</th>
+    <th>Status</th>
+    <th>Role</th>
+    <th>Company</th>
+    <th>Location</th>
+    <th>Salary</th>
+    <th>ATS</th>
+    <th>CV</th>
+    <th>Portfolio</th>
+    <th>Link</th>
+    <th>Notes</th>
+  </tr>
+</thead>
+<tbody>
+  <tr>
+    <td>2026-03-10</td>
+    <td><span class="badge submitted">Submitted</span></td>
+    <td>Senior Product Designer (Innovations)</td>
+    <td>Palta (Simple / Zing)</td>
+    <td>Indonesia (Remote)</td>
+    <td>80k EUR</td>
+    <td>Teamtailor</td>
+    <td style="color:#4ade80">✅ Full PDF (1.6MB)<br><small>via GitHub fetch</small></td>
+    <td style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
+    <td><a href="https://palta.teamtailor.com/jobs/6862959-senior-product-designer-innovations" target="_blank">Teamtailor</a></td>
+    <td class="notes">B2C app (Simple health). CV uploaded via GitHub fetch + DataTransfer (full portfolio PDF). Portfolio URL included. Cover letter included. 60 applicants.</td>
+  </tr>
+  <tr>
+    <td>2026-03-10</td>
+    <td><span class="badge submitted">Submitted</span></td>
+    <td>Senior Product Designer (Fixed-Term)</td>
+    <td>Sinch</td>
+    <td>Taguig, Philippines (Remote)</td>
+    <td>80k EUR</td>
+    <td>Oracle HCM</td>
+    <td style="color:#4ade80">✅ Full PDF (1.6MB)<br><small>via GitHub fetch</small></td>
+    <td style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
+    <td><a href="https://iaings.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/SinchCareer/job/745" target="_blank">Oracle HCM</a></td>
+    <td class="notes">Fixed-term 3mo renewable up to 1yr. SimpleTexting product. CV uploaded via GitHub fetch + DataTransfer (full portfolio PDF). Portfolio + LinkedIn links added. ⚠️ Email verification code needed to finalize.</td>
+  </tr>
+  <tr>
+    <td>2026-03-10</td>
+    <td><span class="badge submitted">Submitted</span></td>
+    <td>Senior Product Designer (DeFi/Web3)</td>
+    <td>Aave Labs</td>
+    <td>Remote US / London</td>
+    <td>$90-120k USD</td>
+    <td>Lever</td>
+    <td style="color:#4ade80">✅ Full PDF (1.6MB)<br><small>via GitHub fetch</small></td>
+    <td style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
+    <td><a href="https://jobs.eu.lever.co/aavelabs/6ad18ce1-57b4-47ef-ad37-9b6466d8668c" target="_blank">Lever</a></td>
+    <td class="notes">Aave Protocol, GHO stablecoin, Family wallet. CV PDF uploaded via GitHub fetch + DataTransfer (Lever works!). Resume auto-parsed. All questions answered (location, right to work, salary, tech startup exp, relevant experience). Cover letter included. Clean submission — no crash.</td>
+  </tr>
+  <tr>
+    <td>2026-03-10</td>
+    <td><span class="badge manual">À soumettre</span></td>
+    <td>Senior Product Designer, Core Experiences</td>
+    <td>Super.com</td>
+    <td>Remote US/Canada</td>
+    <td>$121-178k USD</td>
+    <td>Ashby HQ</td>
+    <td style="color:#fb923c">❌ Non uploadé<br><small>CSP bloque GitHub</small></td>
+    <td style="color:#fb923c">❌ Non uploadé<br><small>CSP bloque GitHub</small></td>
+    <td><a href="https://jobs.ashbyhq.com/super.com/94c0bd48-9e5a-43aa-b797-d082c8c2e530" target="_blank">Ashby</a></td>
+    <td class="notes">⚠️ Soumis avec text PDF — à refaire manuellement avec le vrai CV. Formulaire rempli (location, eligibility, $125-150k). Portfolio URL incluse.</td>
+  </tr>
+  <tr>
+    <td>2026-03-10</td>
+    <td><span class="badge submitted">Submitted</span></td>
+    <td>Lead UX/UI Designer</td>
+    <td>Zenitech</td>
+    <td>UK Remote</td>
+    <td>€7,000/mo (~84k EUR)</td>
+    <td>Teamtailor</td>
+    <td style="color:#4ade80">✅ Full PDF (1.6MB)<br><small>via GitHub fetch</small></td>
+    <td style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
+    <td><a href="https://careers.zenitech.co.uk/jobs/7265972-lead-ux-ui-designer" target="_blank">Teamtailor</a></td>
+    <td class="notes">Design & Strategy dept. Remote UK permanent. CV PDF uploaded via GitHub fetch (Teamtailor works!). Portfolio link included. Start date, salary expectations, UK work eligibility answered. Quick clean form. Fastest submission yet.</td>
+  </tr>
+  <tr>
+    <td>2026-03-10</td>
+    <td><span class="badge submitted">Submitted</span></td>
+    <td>Senior Product Designer</td>
+    <td>WorkFlex</td>
+    <td>Remote EU</td>
+    <td>80k EUR</td>
+    <td>Teamtailor</td>
+    <td style="color:#4ade80">✅ Full PDF (1.6MB)<br><small>via GitHub fetch</small></td>
+    <td style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
+    <td><a href="https://workflex.teamtailor.com/" target="_blank">Teamtailor</a></td>
+    <td class="notes">HR/compliance tech. CV PDF uploaded via GitHub fetch (Teamtailor). Portfolio link included. All fields answered.</td>
+  </tr>
+  <tr>
+    <td>2026-03-10</td>
+    <td><span class="badge manual">À soumettre</span></td>
+    <td>Product Designer</td>
+    <td>Primer.io</td>
+    <td>Remote EU</td>
+    <td>80k+ EUR</td>
+    <td>Ashby HQ</td>
+    <td style="color:#fb923c">❌ Non uploadé<br><small>CSP bloque GitHub</small></td>
+    <td style="color:#fb923c">❌ Non uploadé<br><small>CSP bloque GitHub</small></td>
+    <td><a href="https://jobs.ashbyhq.com/primer.io/0876a65a-4ae2-4534-8cf2-de4a34a5301f" target="_blank">Ashby</a></td>
+    <td class="notes">⚠️ Soumis avec text PDF — à refaire manuellement avec le vrai CV. Formulaire rempli. Portfolio URL incluse.</td>
+  </tr>
+  <tr>
+    <td>2026-03-10</td>
+    <td><span class="badge manual">À soumettre</span></td>
+    <td>Product Designer</td>
+    <td>Coder</td>
+    <td>Remote US/Ireland/Poland/UK</td>
+    <td>$118-186k USD</td>
+    <td>Ashby HQ</td>
+    <td style="color:#fb923c">❌ Non uploadé<br><small>CSP bloque GitHub</small></td>
+    <td style="color:#fb923c">❌ Non uploadé<br><small>CSP bloque GitHub</small></td>
+    <td><a href="https://jobs.ashbyhq.com/Coder" target="_blank">Ashby</a></td>
+    <td class="notes">⚠️ Soumis avec text PDF — à refaire manuellement avec le vrai CV. Portfolio URL + LinkedIn inclus.</td>
+  </tr>
+  <tr>
+    <td>2026-03-10</td>
+    <td><span class="badge submitted">Submitted</span></td>
+    <td>Visual Designer (UI/UX)</td>
+    <td>Appetiser Apps</td>
+    <td>Remote APAC (Kuala Lumpur +7)</td>
+    <td>80k EUR</td>
+    <td>Recruitee</td>
+    <td style="color:#4ade80">✅ Full PDF (1.6MB)<br><small>via GitHub fetch</small></td>
+    <td style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
+    <td><a href="https://appetiser.recruitee.com/o/visual-designer-uiux" target="_blank">Recruitee</a></td>
+    <td class="notes">App development agency (Australia). CV uploaded via GitHub fetch (Recruitee works!). 7 open questions answered (LinkedIn, referrer, salary, experience, client comm, book, portfolio). Laptop specs + internet speed screenshots generated. Kuala Lumpur location selected.</td>
+  </tr>
+  <tr>
+    <td>2026-03-10</td>
+    <td><span class="badge failed">Failed</span></td>
+    <td>Lead Product Designer (Crypto Exchange)</td>
+    <td>Hyphen Connect</td>
+    <td>APAC Remote</td>
+    <td>-</td>
+    <td>Greenhouse</td>
+    <td style="color:#f87171">❌ Texte collé<br><small>pas de PDF uploadé</small></td>
+    <td style="color:#f87171">❌ Non uploadé<br><small>Greenhouse crash</small></td>
+    <td><a href="https://job-boards.greenhouse.io/hyphenconnect/jobs/4589102007" target="_blank">Greenhouse</a></td>
+    <td class="notes">All fields filled (name, email, phone, resume text, LinkedIn, portfolio, APAC location, Web3 exp: Defi+Exchanges+Trading). Greenhouse crashed on submit again ("Uh oh, something went wrong"). Same Greenhouse bug as TOKEN2049. Application may have gone through.</td>
+  </tr>
+  <tr>
+    <td>2026-03-09</td>
+    <td><span class="badge failed">Failed</span></td>
+    <td>Head of Product Design</td>
+    <td>Hyphen Connect (TOKEN2049)</td>
+    <td>Singapore (Remote)</td>
+    <td>-</td>
+    <td>Greenhouse</td>
+    <td style="color:#f87171">❌ Bloqué<br><small>CORS + crash</small></td>
+    <td style="color:#f87171">❌ Bloqué<br><small>Greenhouse crash</small></td>
+    <td><a href="https://job-boards.anz.greenhouse.io/token2049/jobs/4000978201" target="_blank">Greenhouse</a></td>
+    <td class="notes">Form filled completely but Greenhouse crashes on submit ("Uh oh, something went wrong"). CORS blocks PDF upload. Greenhouse ATS incompatible with automation.</td>
+  </tr>
+</tbody>
+</table>
+
+<h2 class="section-title">Saved on LinkedIn - Easy Apply toi-meme</h2>
+<table>
+<thead>
+  <tr>
+    <th>Priority</th>
+    <th>Status</th>
+    <th>Role</th>
+    <th>Company</th>
+    <th>Location</th>
+    <th>Salary</th>
+    <th>Match</th>
+    <th>Link</th>
+    <th>Notes</th>
+  </tr>
+</thead>
+<tbody id="active-jobs">
+  <tr>
+    <td><strong style="color:#f87171">1</strong></td>
+    <td><span class="badge saved">Saved</span></td>
+    <td>Product Designer</td>
+    <td>Binance</td>
+    <td>Taipei (Remote)</td>
+    <td>-</td>
+    <td><div class="match"><strong>85%</strong> - Big tech, Remote, crypto/fintech</div></td>
+    <td><a href="https://www.linkedin.com/jobs/view/4312632174/" target="_blank">LinkedIn</a></td>
+    <td class="notes">Reposted 4h ago. 100+ applicants. Remote full-time.</td>
+  </tr>
+  <tr>
+    <td><strong style="color:#facc15">2</strong></td>
+    <td><span class="badge saved">Saved</span></td>
+    <td>Principal UI/UX Designer</td>
+    <td>ShaeWellness</td>
+    <td>Philippines (Remote)</td>
+    <td class="salary">$2.5-4k/mo + KPI<br><small>~36-60k USD</small></td>
+    <td><div class="match"><strong>90%</strong> - Figma tokens, Rive, DS, motion</div></td>
+    <td><a href="https://www.linkedin.com/jobs/view/4380955399/" target="_blank">LinkedIn</a></td>
+    <td class="notes">Below 80k target but skill match excellent. 23 applicants. Contract. 5 days ago.</td>
+  </tr>
+  <tr>
+    <td><strong style="color:#facc15">3</strong></td>
+    <td><span class="badge saved">Saved</span></td>
+    <td>Senior UX Designer</td>
+    <td>Voltex Electrical Accessories</td>
+    <td>Philippines (Remote)</td>
+    <td>-</td>
+    <td><div class="match"><strong>75%</strong> - Senior, Remote APAC, full-time</div></td>
+    <td><a href="https://www.linkedin.com/jobs/view/4375100623/" target="_blank">LinkedIn</a></td>
+    <td class="notes">2 weeks ago. 100+ applicants. Profile matches well.</td>
+  </tr>
+  <tr>
+    <td><strong>4</strong></td>
+    <td><span class="badge saved">Saved</span></td>
+    <td>Senior Product Designer</td>
+    <td>Jobgether</td>
+    <td>Indonesia (Remote)</td>
+    <td>-</td>
+    <td><div class="match"><strong>80%</strong> - Senior, Remote APAC</div></td>
+    <td><a href="https://www.linkedin.com/jobs/view/4383089024/" target="_blank">LinkedIn</a></td>
+    <td class="notes">4 days ago. Easy Apply.</td>
+  </tr>
+  <tr>
+    <td><strong>5</strong></td>
+    <td><span class="badge saved">Saved</span></td>
+    <td>Senior Product Designer</td>
+    <td>Jobgether</td>
+    <td>Malaysia (Remote)</td>
+    <td>-</td>
+    <td><div class="match"><strong>80%</strong> - Senior, Remote APAC</div></td>
+    <td><a href="https://www.linkedin.com/jobs/view/4383089025/" target="_blank">LinkedIn</a></td>
+    <td class="notes">4 days ago. Easy Apply.</td>
+  </tr>
+  <tr>
+    <td><strong>6</strong></td>
+    <td><span class="badge saved">Saved</span></td>
+    <td>Senior Product Designer</td>
+    <td>Jobgether</td>
+    <td>Philippines (Remote)</td>
+    <td>-</td>
+    <td><div class="match"><strong>80%</strong> - Senior, Remote APAC</div></td>
+    <td><a href="https://www.linkedin.com/jobs/view/4383089026/" target="_blank">LinkedIn</a></td>
+    <td class="notes">4 days ago. Easy Apply.</td>
+  </tr>
+  <tr>
+    <td><strong>7</strong></td>
+    <td><span class="badge saved">Saved</span></td>
+    <td>Senior Product UIUX Designer</td>
+    <td>ShaeWellness</td>
+    <td>Philippines (Remote)</td>
+    <td class="salary">~$2.5-4k/mo</td>
+    <td><div class="match"><strong>85%</strong> - Same company, different role</div></td>
+    <td><a href="https://www.linkedin.com/jobs/view/4362155881/" target="_blank">LinkedIn</a></td>
+    <td class="notes">1 month ago. Easy Apply.</td>
+  </tr>
+</tbody>
+</table>
+
+<h2 class="section-title">Already Applied</h2>
+<table>
+<thead>
+  <tr>
+    <th>Status</th>
+    <th>Role</th>
+    <th>Company</th>
+    <th>Location</th>
+    <th>Notes</th>
+  </tr>
+</thead>
+<tbody>
+  <tr>
+    <td><span class="badge already">Applied</span></td>
+    <td>Lead, Product Design</td>
+    <td>MoneyHero Group (Nasdaq: MNY)</td>
+    <td>Singapore (Hybrid)</td>
+    <td class="notes">2 weeks ago</td>
+  </tr>
+  <tr>
+    <td><span class="badge already">Applied</span></td>
+    <td>User Experience Designer</td>
+    <td>GoWabi</td>
+    <td>Bangkok (Hybrid)</td>
+    <td class="notes">1 week ago</td>
+  </tr>
+  <tr>
+    <td><span class="badge already">Applied</span></td>
+    <td>UI/UX Designer</td>
+    <td>Jobgether</td>
+    <td>Australia (Remote)</td>
+    <td class="notes">1 day ago</td>
+  </tr>
+  <tr>
+    <td><span class="badge already">Applied</span></td>
+    <td>Senior Product Designer</td>
+    <td>Jobgether</td>
+    <td>Singapore (Remote)</td>
+    <td class="notes">4 days ago</td>
+  </tr>
+  <tr>
+    <td><span class="badge already">Applied</span></td>
+    <td>Senior Product Designer</td>
+    <td>Jobgether</td>
+    <td>Thailand (Remote)</td>
+    <td class="notes">4 days ago</td>
+  </tr>
+</tbody>
+</table>
+
+<h2 class="section-title">Skipped</h2>
+<table>
+<thead>
+  <tr>
+    <th>Status</th>
+    <th>Role</th>
+    <th>Company</th>
+    <th>Location</th>
+    <th>Reason</th>
+  </tr>
+</thead>
+<tbody>
+  <tr>
+    <td><span class="badge skipped">Skipped</span></td>
+    <td>Senior Product Designer, Reconciliation</td>
+    <td>Ripple</td>
+    <td>Sydney, NSW (Hybrid)</td>
+    <td class="notes">Hybrid - not remote APAC</td>
+  </tr>
+  <tr>
+    <td><span class="badge skipped">Skipped</span></td>
+    <td>User Interface Designer (Junior)</td>
+    <td>BitMart</td>
+    <td>APAC (Remote)</td>
+    <td class="notes">Junior level - below seniority</td>
+  </tr>
+  <tr>
+    <td><span class="badge skipped">Skipped</span></td>
+    <td>Product Designer (UI/UX)</td>
+    <td>Galaxy FinX</td>
+    <td>Ho Chi Minh City (On-site)</td>
+    <td class="notes">On-site Vietnam - not Philippines/Thailand</td>
+  </tr>
+  <tr>
+    <td><span class="badge skipped">Skipped</span></td>
+    <td>UI Designer</td>
+    <td>Bitget Wallet</td>
+    <td>APAC (Remote)</td>
+    <td class="notes">UI Designer (not senior/product), 100+ applicants</td>
+  </tr>
+  <tr>
+    <td><span class="badge skipped">Skipped</span></td>
+    <td>Senior Product Designer (SG)</td>
+    <td>Coins.ph</td>
+    <td>Singapore (Hybrid)</td>
+    <td class="notes">Hybrid Singapore - 10 months old</td>
+  </tr>
+  <tr>
+    <td><span class="badge skipped">Skipped</span></td>
+    <td>Product Designer</td>
+    <td>Ajaib</td>
+    <td>Jakarta (Hybrid)</td>
+    <td class="notes">Hybrid Jakarta</td>
+  </tr>
+  <tr>
+    <td><span class="badge skipped">Skipped</span></td>
+    <td>Senior Product Designer</td>
+    <td>Angkas</td>
+    <td>Makati (Hybrid)</td>
+    <td class="notes">Hybrid Makati</td>
+  </tr>
+  <tr>
+    <td><span class="badge skipped">Skipped</span></td>
+    <td>Senior Product Designer</td>
+    <td>Flip</td>
+    <td>Jakarta (Hybrid)</td>
+    <td class="notes">Hybrid Jakarta</td>
+  </tr>
+  <tr>
+    <td><span class="badge skipped">Skipped</span></td>
+    <td>Product Designer</td>
+    <td>giftee Tech Vietnam</td>
+    <td>Ho Chi Minh City (On-site)</td>
+    <td class="notes">On-site Vietnam</td>
+  </tr>
+  <tr>
+    <td><span class="badge skipped">Skipped</span></td>
+    <td>Product Builder-Product Designer</td>
+    <td>Omelet</td>
+    <td>Seoul (Hybrid)</td>
+    <td class="notes">Hybrid Seoul - 4 months old</td>
+  </tr>
+  <tr>
+    <td><span class="badge skipped">Skipped</span></td>
+    <td>Product Designer</td>
+    <td>Foris Limited</td>
+    <td>Singapore (Hybrid)</td>
+    <td class="notes">Hybrid Singapore</td>
+  </tr>
+</tbody>
+</table>
+
+<p class="updated">Last updated: 2026-03-10 by Claude Agent</p>
+
+<script>
+  // Auto-count badges
+  document.getElementById('count-submitted').textContent = document.querySelectorAll('.badge.submitted').length;
+  document.getElementById('count-applied').textContent = document.querySelectorAll('.badge.already').length;
+  document.getElementById('count-saved').textContent = document.querySelectorAll('.badge.saved').length;
+  document.getElementById('count-manual').textContent = document.querySelectorAll('.badge.manual').length;
+  document.getElementById('count-failed').textContent = document.querySelectorAll('.badge.failed').length;
+  document.getElementById('count-skipped').textContent = document.querySelectorAll('.badge.skipped').length;
+</script>
+</body>
+</html>
