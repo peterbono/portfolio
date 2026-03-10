@@ -9,27 +9,51 @@
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f0f0f; color: #e0e0e0; padding: 24px; }
   h1 { font-size: 28px; margin-bottom: 4px; color: #fff; }
   .subtitle { color: #888; margin-bottom: 24px; font-size: 14px; }
-  .stats { display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
-  .stat { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 12px; padding: 16px 20px; min-width: 140px; }
-  .stat-number { font-size: 32px; font-weight: 700; }
-  .stat-label { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
-  .stat.applied .stat-number { color: #4ade80; }
-  .stat.submitted .stat-number { color: #34d399; }
-  .stat.failed .stat-number { color: #f87171; }
-  .stat.wip .stat-number { color: #facc15; }
-  .stat.pending .stat-number { color: #60a5fa; }
-  .stat.skipped .stat-number { color: #6b7280; }
+
+  /* Stats */
+  .stats { display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
+  .stat { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 12px; padding: 14px 18px; min-width: 120px; cursor: pointer; transition: all .2s; user-select: none; }
+  .stat:hover { border-color: #555; transform: translateY(-1px); }
+  .stat.active { border-color: currentColor; box-shadow: 0 0 12px rgba(255,255,255,.08); }
+  .stat-number { font-size: 28px; font-weight: 700; }
+  .stat-label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
+
+  /* Objectives */
   .objectives { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 12px; padding: 16px 20px; margin-bottom: 24px; }
   .objectives h3 { font-size: 14px; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
   .objectives ul { list-style: none; }
   .objectives li { padding: 4px 0; font-size: 14px; }
   .objectives li::before { content: "→ "; color: #facc15; }
+
+  /* Filter bar */
+  .filter-bar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+  .filter-bar label { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-right: 4px; }
+  .filter-chip { padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; border: 1px solid #333; background: #1a1a1a; color: #888; cursor: pointer; transition: all .15s; }
+  .filter-chip:hover { border-color: #666; color: #ccc; }
+  .filter-chip.active { border-color: currentColor; }
+  .filter-chip[data-filter="submitted"].active { background: #064e3b; color: #34d399; border-color: #34d399; }
+  .filter-chip[data-filter="manual"].active { background: #422006; color: #fb923c; border-color: #fb923c; }
+  .filter-chip[data-filter="failed"].active { background: #450a0a; color: #f87171; border-color: #f87171; }
+  .filter-chip[data-filter="saved"].active { background: #1e3a5f; color: #38bdf8; border-color: #38bdf8; }
+  .filter-chip[data-filter="already"].active { background: #312e81; color: #a78bfa; border-color: #a78bfa; }
+  .filter-chip[data-filter="skipped"].active { background: #1f1f1f; color: #6b7280; border-color: #6b7280; }
+  .filter-chip[data-filter="all"].active { background: #333; color: #fff; border-color: #fff; }
+
+  /* Tables - Desktop */
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin-bottom: 32px; }
   table { width: 100%; border-collapse: collapse; background: #1a1a1a; border-radius: 12px; overflow: hidden; border: 1px solid #2a2a2a; }
-  thead { background: #111; }
-  th { padding: 12px 16px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #888; border-bottom: 1px solid #2a2a2a; }
-  td { padding: 12px 16px; border-bottom: 1px solid #1f1f1f; font-size: 14px; vertical-align: top; }
-  tr:hover { background: #222; }
-  .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+  thead { background: #111; position: sticky; top: 0; z-index: 2; }
+  th { padding: 10px 14px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #888; border-bottom: 1px solid #2a2a2a; cursor: pointer; white-space: nowrap; user-select: none; transition: color .15s; }
+  th:hover { color: #fff; }
+  th .sort-icon { font-size: 10px; margin-left: 4px; opacity: .4; }
+  th.sorted .sort-icon { opacity: 1; color: #60a5fa; }
+  td { padding: 10px 14px; border-bottom: 1px solid #1f1f1f; font-size: 13px; vertical-align: top; }
+  tr.data-row { transition: background .1s; }
+  tr.data-row:hover { background: #222; }
+  tr.data-row.hidden { display: none; }
+
+  /* Badges */
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; white-space: nowrap; }
   .badge.applied { background: #064e3b; color: #4ade80; }
   .badge.wip { background: #422006; color: #facc15; }
   .badge.pending { background: #1e3a5f; color: #60a5fa; }
@@ -39,14 +63,52 @@
   .badge.submitted { background: #064e3b; color: #34d399; }
   .badge.failed { background: #450a0a; color: #f87171; }
   .badge.manual { background: #422006; color: #fb923c; }
+
   a { color: #60a5fa; text-decoration: none; }
   a:hover { text-decoration: underline; }
-  .match { font-size: 12px; color: #888; margin-top: 4px; }
+  .notes { font-size: 12px; color: #888; font-style: italic; }
+  .match { font-size: 12px; color: #888; }
   .match strong { color: #facc15; }
   .salary { font-size: 12px; color: #f87171; }
-  .notes { font-size: 12px; color: #888; font-style: italic; }
   .section-title { font-size: 18px; margin: 32px 0 12px; color: #fff; }
   .updated { text-align: right; font-size: 12px; color: #555; margin-top: 16px; }
+
+  /* Mobile responsive */
+  @media (max-width: 900px) {
+    body { padding: 12px; }
+    h1 { font-size: 22px; }
+    .stats { gap: 8px; }
+    .stat { min-width: 0; flex: 1 1 calc(33% - 8px); padding: 10px 12px; }
+    .stat-number { font-size: 22px; }
+    .stat-label { font-size: 9px; }
+    .objectives { padding: 12px; }
+    .objectives li { font-size: 12px; }
+
+    /* Card layout for tables on mobile */
+    table.card-mode thead { display: none; }
+    table.card-mode tbody tr.data-row { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px; margin-bottom: 8px; border: 1px solid #2a2a2a; border-radius: 10px; background: #1a1a1a; }
+    table.card-mode tbody tr.data-row.hidden { display: none; }
+    table.card-mode tbody tr.data-row td { border: none; padding: 2px 0; font-size: 12px; }
+    table.card-mode tbody tr.data-row td:before { content: attr(data-label); display: block; font-size: 9px; color: #666; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 1px; }
+    table.card-mode .col-date { order: 1; flex: 0 0 40%; }
+    table.card-mode .col-status { order: 2; flex: 0 0 55%; text-align: right; }
+    table.card-mode .col-role { order: 3; flex: 0 0 100%; font-weight: 600; color: #fff; font-size: 14px; }
+    table.card-mode .col-company { order: 4; flex: 0 0 50%; }
+    table.card-mode .col-location { order: 5; flex: 0 0 50%; }
+    table.card-mode .col-salary { order: 6; flex: 0 0 50%; }
+    table.card-mode .col-ats { order: 7; flex: 0 0 50%; }
+    table.card-mode .col-cv { order: 8; flex: 0 0 50%; }
+    table.card-mode .col-portfolio { order: 9; flex: 0 0 50%; }
+    table.card-mode .col-link { order: 10; flex: 0 0 50%; }
+    table.card-mode .col-notes { order: 11; flex: 0 0 100%; }
+    table.card-mode .col-match { order: 7; flex: 0 0 100%; }
+    table.card-mode .col-priority { order: 0; flex: 0 0 30%; }
+    table.card-mode .col-reason { order: 11; flex: 0 0 100%; }
+  }
+
+  @media (max-width: 480px) {
+    .stat { flex: 1 1 calc(50% - 8px); }
+  }
 </style>
 </head>
 <body>
@@ -63,427 +125,564 @@
   </ul>
 </div>
 
-<div class="stats">
-  <div class="stat submitted"><div class="stat-number" id="count-submitted">0</div><div class="stat-label">Submitted (External)</div></div>
-  <div class="stat applied"><div class="stat-number" id="count-applied">0</div><div class="stat-label">Already Applied</div></div>
-  <div class="stat" style="border-color:#38bdf8"><div class="stat-number" style="color:#38bdf8" id="count-saved">0</div><div class="stat-label">Saved - Easy Apply</div></div>
-  <div class="stat" style="border-color:#fb923c"><div class="stat-number" style="color:#fb923c" id="count-manual">0</div><div class="stat-label">À soumettre</div></div>
-  <div class="stat failed"><div class="stat-number" id="count-failed">0</div><div class="stat-label">Failed</div></div>
-  <div class="stat skipped"><div class="stat-number" id="count-skipped">0</div><div class="stat-label">Skipped</div></div>
+<div class="stats" id="stats">
+  <div class="stat active" data-filter="all" style="border-color:#666"><div class="stat-number" style="color:#fff" id="count-all">0</div><div class="stat-label">Total</div></div>
+  <div class="stat" data-filter="submitted" style="border-color:#34d399"><div class="stat-number" style="color:#34d399" id="count-submitted">0</div><div class="stat-label">Submitted</div></div>
+  <div class="stat" data-filter="manual" style="border-color:#fb923c"><div class="stat-number" style="color:#fb923c" id="count-manual">0</div><div class="stat-label">À soumettre</div></div>
+  <div class="stat" data-filter="saved" style="border-color:#38bdf8"><div class="stat-number" style="color:#38bdf8" id="count-saved">0</div><div class="stat-label">Easy Apply</div></div>
+  <div class="stat" data-filter="already" style="border-color:#a78bfa"><div class="stat-number" style="color:#a78bfa" id="count-applied">0</div><div class="stat-label">Already Applied</div></div>
+  <div class="stat" data-filter="failed" style="border-color:#f87171"><div class="stat-number" style="color:#f87171" id="count-failed">0</div><div class="stat-label">Failed</div></div>
+  <div class="stat" data-filter="skipped" style="border-color:#6b7280"><div class="stat-number" style="color:#6b7280" id="count-skipped">0</div><div class="stat-label">Skipped</div></div>
 </div>
 
-<h2 class="section-title">Non-Easy Apply Applications (Claude Agent)</h2>
-<table>
+<h2 class="section-title">All Applications</h2>
+
+<div class="table-wrap">
+<table id="main-table">
 <thead>
   <tr>
-    <th>Date</th>
-    <th>Status</th>
-    <th>Role</th>
-    <th>Company</th>
-    <th>Location</th>
-    <th>Salary</th>
-    <th>ATS</th>
-    <th>CV</th>
-    <th>Portfolio</th>
-    <th>Link</th>
-    <th>Notes</th>
+    <th data-col="0" data-type="text">Date <span class="sort-icon">⇅</span></th>
+    <th data-col="1" data-type="badge">Status <span class="sort-icon">⇅</span></th>
+    <th data-col="2" data-type="text">Role <span class="sort-icon">⇅</span></th>
+    <th data-col="3" data-type="text">Company <span class="sort-icon">⇅</span></th>
+    <th data-col="4" data-type="text">Location <span class="sort-icon">⇅</span></th>
+    <th data-col="5" data-type="text">Salary <span class="sort-icon">⇅</span></th>
+    <th data-col="6" data-type="text">ATS <span class="sort-icon">⇅</span></th>
+    <th data-col="7" data-type="text">CV <span class="sort-icon">⇅</span></th>
+    <th data-col="8" data-type="text">Portfolio <span class="sort-icon">⇅</span></th>
+    <th data-col="9">Link</th>
+    <th data-col="10">Notes</th>
   </tr>
 </thead>
 <tbody>
-  <tr>
-    <td>2026-03-10</td>
-    <td><span class="badge submitted">Submitted</span></td>
-    <td>Senior Product Designer (Innovations)</td>
-    <td>Palta (Simple / Zing)</td>
-    <td>Indonesia (Remote)</td>
-    <td>80k EUR</td>
-    <td>Teamtailor</td>
-    <td style="color:#4ade80">✅ Full PDF (1.6MB)<br><small>via GitHub fetch</small></td>
-    <td style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
-    <td><a href="https://palta.teamtailor.com/jobs/6862959-senior-product-designer-innovations" target="_blank">Teamtailor</a></td>
-    <td class="notes">B2C app (Simple health). CV uploaded via GitHub fetch + DataTransfer (full portfolio PDF). Portfolio URL included. Cover letter included. 60 applicants.</td>
+  <!-- Submitted -->
+  <tr class="data-row" data-status="submitted">
+    <td class="col-date" data-label="Date">2026-03-10</td>
+    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
+    <td class="col-role" data-label="Role">Senior Product Designer (Innovations)</td>
+    <td class="col-company" data-label="Company">Palta (Simple / Zing)</td>
+    <td class="col-location" data-label="Location">Indonesia (Remote)</td>
+    <td class="col-salary" data-label="Salary">80k EUR</td>
+    <td class="col-ats" data-label="ATS">Teamtailor</td>
+    <td class="col-cv" data-label="CV" style="color:#4ade80">✅ Full PDF (1.6MB)<br><small>via GitHub fetch</small></td>
+    <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
+    <td class="col-link" data-label="Link"><a href="https://palta.teamtailor.com/jobs/6862959-senior-product-designer-innovations" target="_blank">Teamtailor</a></td>
+    <td class="col-notes notes" data-label="Notes">B2C app (Simple health). CV uploaded via GitHub fetch + DataTransfer (full portfolio PDF). Portfolio URL included. Cover letter included. 60 applicants.</td>
   </tr>
-  <tr>
-    <td>2026-03-10</td>
-    <td><span class="badge submitted">Submitted</span></td>
-    <td>Senior Product Designer (Fixed-Term)</td>
-    <td>Sinch</td>
-    <td>Taguig, Philippines (Remote)</td>
-    <td>80k EUR</td>
-    <td>Oracle HCM</td>
-    <td style="color:#4ade80">✅ Full PDF (1.6MB)<br><small>via GitHub fetch</small></td>
-    <td style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
-    <td><a href="https://iaings.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/SinchCareer/job/745" target="_blank">Oracle HCM</a></td>
-    <td class="notes">Fixed-term 3mo renewable up to 1yr. SimpleTexting product. CV uploaded via GitHub fetch + DataTransfer (full portfolio PDF). Portfolio + LinkedIn links added. ⚠️ Email verification code needed to finalize.</td>
+  <tr class="data-row" data-status="submitted">
+    <td class="col-date" data-label="Date">2026-03-10</td>
+    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
+    <td class="col-role" data-label="Role">Senior Product Designer (Fixed-Term)</td>
+    <td class="col-company" data-label="Company">Sinch</td>
+    <td class="col-location" data-label="Location">Taguig, Philippines (Remote)</td>
+    <td class="col-salary" data-label="Salary">80k EUR</td>
+    <td class="col-ats" data-label="ATS">Oracle HCM</td>
+    <td class="col-cv" data-label="CV" style="color:#4ade80">✅ Full PDF (1.6MB)<br><small>via GitHub fetch</small></td>
+    <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
+    <td class="col-link" data-label="Link"><a href="https://iaings.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/SinchCareer/job/745" target="_blank">Oracle HCM</a></td>
+    <td class="col-notes notes" data-label="Notes">Fixed-term 3mo renewable up to 1yr. SimpleTexting product. CV uploaded via GitHub fetch + DataTransfer (full portfolio PDF). Portfolio + LinkedIn links added. ⚠️ Email verification code needed to finalize.</td>
   </tr>
-  <tr>
-    <td>2026-03-10</td>
-    <td><span class="badge submitted">Submitted</span></td>
-    <td>Senior Product Designer (DeFi/Web3)</td>
-    <td>Aave Labs</td>
-    <td>Remote US / London</td>
-    <td>$90-120k USD</td>
-    <td>Lever</td>
-    <td style="color:#4ade80">✅ Full PDF (1.6MB)<br><small>via GitHub fetch</small></td>
-    <td style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
-    <td><a href="https://jobs.eu.lever.co/aavelabs/6ad18ce1-57b4-47ef-ad37-9b6466d8668c" target="_blank">Lever</a></td>
-    <td class="notes">Aave Protocol, GHO stablecoin, Family wallet. CV PDF uploaded via GitHub fetch + DataTransfer (Lever works!). Resume auto-parsed. All questions answered (location, right to work, salary, tech startup exp, relevant experience). Cover letter included. Clean submission — no crash.</td>
+  <tr class="data-row" data-status="submitted">
+    <td class="col-date" data-label="Date">2026-03-10</td>
+    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
+    <td class="col-role" data-label="Role">Senior Product Designer (DeFi/Web3)</td>
+    <td class="col-company" data-label="Company">Aave Labs</td>
+    <td class="col-location" data-label="Location">Remote US / London</td>
+    <td class="col-salary" data-label="Salary">$90-120k USD</td>
+    <td class="col-ats" data-label="ATS">Lever</td>
+    <td class="col-cv" data-label="CV" style="color:#4ade80">✅ Full PDF (1.6MB)<br><small>via GitHub fetch</small></td>
+    <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
+    <td class="col-link" data-label="Link"><a href="https://jobs.eu.lever.co/aavelabs/6ad18ce1-57b4-47ef-ad37-9b6466d8668c" target="_blank">Lever</a></td>
+    <td class="col-notes notes" data-label="Notes">Aave Protocol, GHO stablecoin, Family wallet. CV PDF uploaded via GitHub fetch + DataTransfer (Lever works!). Resume auto-parsed. All questions answered. Cover letter included.</td>
   </tr>
-  <tr>
-    <td>2026-03-10</td>
-    <td><span class="badge manual">À soumettre</span></td>
-    <td>Senior Product Designer, Core Experiences</td>
-    <td>Super.com</td>
-    <td>Remote US/Canada</td>
-    <td>$121-178k USD</td>
-    <td>Ashby HQ</td>
-    <td style="color:#fb923c">❌ Non uploadé<br><small>CSP bloque GitHub</small></td>
-    <td style="color:#fb923c">❌ Non uploadé<br><small>CSP bloque GitHub</small></td>
-    <td><a href="https://jobs.ashbyhq.com/super.com/94c0bd48-9e5a-43aa-b797-d082c8c2e530" target="_blank">Ashby</a></td>
-    <td class="notes">⚠️ Soumis avec text PDF — à refaire manuellement avec le vrai CV. Formulaire rempli (location, eligibility, $125-150k). Portfolio URL incluse.</td>
+  <tr class="data-row" data-status="submitted">
+    <td class="col-date" data-label="Date">2026-03-10</td>
+    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
+    <td class="col-role" data-label="Role">Lead UX/UI Designer</td>
+    <td class="col-company" data-label="Company">Zenitech</td>
+    <td class="col-location" data-label="Location">UK Remote</td>
+    <td class="col-salary" data-label="Salary">€7,000/mo (~84k EUR)</td>
+    <td class="col-ats" data-label="ATS">Teamtailor</td>
+    <td class="col-cv" data-label="CV" style="color:#4ade80">✅ Full PDF (1.6MB)<br><small>via GitHub fetch</small></td>
+    <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
+    <td class="col-link" data-label="Link"><a href="https://careers.zenitech.co.uk/jobs/7265972-lead-ux-ui-designer" target="_blank">Teamtailor</a></td>
+    <td class="col-notes notes" data-label="Notes">Design & Strategy dept. Remote UK permanent. Fastest submission yet.</td>
   </tr>
-  <tr>
-    <td>2026-03-10</td>
-    <td><span class="badge submitted">Submitted</span></td>
-    <td>Lead UX/UI Designer</td>
-    <td>Zenitech</td>
-    <td>UK Remote</td>
-    <td>€7,000/mo (~84k EUR)</td>
-    <td>Teamtailor</td>
-    <td style="color:#4ade80">✅ Full PDF (1.6MB)<br><small>via GitHub fetch</small></td>
-    <td style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
-    <td><a href="https://careers.zenitech.co.uk/jobs/7265972-lead-ux-ui-designer" target="_blank">Teamtailor</a></td>
-    <td class="notes">Design & Strategy dept. Remote UK permanent. CV PDF uploaded via GitHub fetch (Teamtailor works!). Portfolio link included. Start date, salary expectations, UK work eligibility answered. Quick clean form. Fastest submission yet.</td>
+  <tr class="data-row" data-status="submitted">
+    <td class="col-date" data-label="Date">2026-03-10</td>
+    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
+    <td class="col-role" data-label="Role">Senior Product Designer</td>
+    <td class="col-company" data-label="Company">WorkFlex</td>
+    <td class="col-location" data-label="Location">Remote EU</td>
+    <td class="col-salary" data-label="Salary">80k EUR</td>
+    <td class="col-ats" data-label="ATS">Teamtailor</td>
+    <td class="col-cv" data-label="CV" style="color:#4ade80">✅ Full PDF (1.6MB)<br><small>via GitHub fetch</small></td>
+    <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
+    <td class="col-link" data-label="Link"><a href="https://workflex.teamtailor.com/" target="_blank">Teamtailor</a></td>
+    <td class="col-notes notes" data-label="Notes">HR/compliance tech. All fields answered.</td>
   </tr>
-  <tr>
-    <td>2026-03-10</td>
-    <td><span class="badge submitted">Submitted</span></td>
-    <td>Senior Product Designer</td>
-    <td>WorkFlex</td>
-    <td>Remote EU</td>
-    <td>80k EUR</td>
-    <td>Teamtailor</td>
-    <td style="color:#4ade80">✅ Full PDF (1.6MB)<br><small>via GitHub fetch</small></td>
-    <td style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
-    <td><a href="https://workflex.teamtailor.com/" target="_blank">Teamtailor</a></td>
-    <td class="notes">HR/compliance tech. CV PDF uploaded via GitHub fetch (Teamtailor). Portfolio link included. All fields answered.</td>
+  <tr class="data-row" data-status="submitted">
+    <td class="col-date" data-label="Date">2026-03-10</td>
+    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
+    <td class="col-role" data-label="Role">Visual Designer (UI/UX)</td>
+    <td class="col-company" data-label="Company">Appetiser Apps</td>
+    <td class="col-location" data-label="Location">Remote APAC (Kuala Lumpur +7)</td>
+    <td class="col-salary" data-label="Salary">80k EUR</td>
+    <td class="col-ats" data-label="ATS">Recruitee</td>
+    <td class="col-cv" data-label="CV" style="color:#4ade80">✅ Full PDF (1.6MB)<br><small>via GitHub fetch</small></td>
+    <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
+    <td class="col-link" data-label="Link"><a href="https://appetiser.recruitee.com/o/visual-designer-uiux" target="_blank">Recruitee</a></td>
+    <td class="col-notes notes" data-label="Notes">App development agency (Australia). 7 open questions answered. Laptop specs + internet speed screenshots generated.</td>
   </tr>
-  <tr>
-    <td>2026-03-10</td>
-    <td><span class="badge manual">À soumettre</span></td>
-    <td>Product Designer</td>
-    <td>Primer.io</td>
-    <td>Remote EU</td>
-    <td>80k+ EUR</td>
-    <td>Ashby HQ</td>
-    <td style="color:#fb923c">❌ Non uploadé<br><small>CSP bloque GitHub</small></td>
-    <td style="color:#fb923c">❌ Non uploadé<br><small>CSP bloque GitHub</small></td>
-    <td><a href="https://jobs.ashbyhq.com/primer.io/0876a65a-4ae2-4534-8cf2-de4a34a5301f" target="_blank">Ashby</a></td>
-    <td class="notes">⚠️ Soumis avec text PDF — à refaire manuellement avec le vrai CV. Formulaire rempli. Portfolio URL incluse.</td>
+  <!-- À soumettre -->
+  <tr class="data-row" data-status="manual">
+    <td class="col-date" data-label="Date">2026-03-10</td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-role" data-label="Role">Senior Product Designer, Core Experiences</td>
+    <td class="col-company" data-label="Company">Super.com</td>
+    <td class="col-location" data-label="Location">Remote US/Canada</td>
+    <td class="col-salary" data-label="Salary">$121-178k USD</td>
+    <td class="col-ats" data-label="ATS">Ashby HQ</td>
+    <td class="col-cv" data-label="CV" style="color:#fb923c">❌ Non uploadé<br><small>CSP bloque GitHub</small></td>
+    <td class="col-portfolio" data-label="Portfolio" style="color:#fb923c">❌ Non uploadé<br><small>CSP bloque GitHub</small></td>
+    <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/super.com/94c0bd48-9e5a-43aa-b797-d082c8c2e530" target="_blank">Ashby</a></td>
+    <td class="col-notes notes" data-label="Notes">⚠️ Soumis avec text PDF — à refaire manuellement avec le vrai CV. Formulaire rempli ($125-150k). Portfolio URL incluse.</td>
   </tr>
-  <tr>
-    <td>2026-03-10</td>
-    <td><span class="badge manual">À soumettre</span></td>
-    <td>Product Designer</td>
-    <td>Coder</td>
-    <td>Remote US/Ireland/Poland/UK</td>
-    <td>$118-186k USD</td>
-    <td>Ashby HQ</td>
-    <td style="color:#fb923c">❌ Non uploadé<br><small>CSP bloque GitHub</small></td>
-    <td style="color:#fb923c">❌ Non uploadé<br><small>CSP bloque GitHub</small></td>
-    <td><a href="https://jobs.ashbyhq.com/Coder" target="_blank">Ashby</a></td>
-    <td class="notes">⚠️ Soumis avec text PDF — à refaire manuellement avec le vrai CV. Portfolio URL + LinkedIn inclus.</td>
+  <tr class="data-row" data-status="manual">
+    <td class="col-date" data-label="Date">2026-03-10</td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-role" data-label="Role">Product Designer</td>
+    <td class="col-company" data-label="Company">Primer.io</td>
+    <td class="col-location" data-label="Location">Remote EU</td>
+    <td class="col-salary" data-label="Salary">80k+ EUR</td>
+    <td class="col-ats" data-label="ATS">Ashby HQ</td>
+    <td class="col-cv" data-label="CV" style="color:#fb923c">❌ Non uploadé<br><small>CSP bloque GitHub</small></td>
+    <td class="col-portfolio" data-label="Portfolio" style="color:#fb923c">❌ Non uploadé<br><small>CSP bloque GitHub</small></td>
+    <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/primer.io/0876a65a-4ae2-4534-8cf2-de4a34a5301f" target="_blank">Ashby</a></td>
+    <td class="col-notes notes" data-label="Notes">⚠️ Soumis avec text PDF — à refaire manuellement. Payments infrastructure.</td>
   </tr>
-  <tr>
-    <td>2026-03-10</td>
-    <td><span class="badge submitted">Submitted</span></td>
-    <td>Visual Designer (UI/UX)</td>
-    <td>Appetiser Apps</td>
-    <td>Remote APAC (Kuala Lumpur +7)</td>
-    <td>80k EUR</td>
-    <td>Recruitee</td>
-    <td style="color:#4ade80">✅ Full PDF (1.6MB)<br><small>via GitHub fetch</small></td>
-    <td style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
-    <td><a href="https://appetiser.recruitee.com/o/visual-designer-uiux" target="_blank">Recruitee</a></td>
-    <td class="notes">App development agency (Australia). CV uploaded via GitHub fetch (Recruitee works!). 7 open questions answered (LinkedIn, referrer, salary, experience, client comm, book, portfolio). Laptop specs + internet speed screenshots generated. Kuala Lumpur location selected.</td>
+  <tr class="data-row" data-status="manual">
+    <td class="col-date" data-label="Date">2026-03-10</td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-role" data-label="Role">Product Designer</td>
+    <td class="col-company" data-label="Company">Coder</td>
+    <td class="col-location" data-label="Location">Remote US/Ireland/Poland/UK</td>
+    <td class="col-salary" data-label="Salary">$118-186k USD</td>
+    <td class="col-ats" data-label="ATS">Ashby HQ</td>
+    <td class="col-cv" data-label="CV" style="color:#fb923c">❌ Non uploadé<br><small>CSP bloque GitHub</small></td>
+    <td class="col-portfolio" data-label="Portfolio" style="color:#fb923c">❌ Non uploadé<br><small>CSP bloque GitHub</small></td>
+    <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/Coder" target="_blank">Ashby</a></td>
+    <td class="col-notes notes" data-label="Notes">⚠️ Soumis avec text PDF — à refaire manuellement. Cloud dev environments.</td>
   </tr>
-  <tr>
-    <td>2026-03-10</td>
-    <td><span class="badge failed">Failed</span></td>
-    <td>Lead Product Designer (Crypto Exchange)</td>
-    <td>Hyphen Connect</td>
-    <td>APAC Remote</td>
-    <td>-</td>
-    <td>Greenhouse</td>
-    <td style="color:#f87171">❌ Texte collé<br><small>pas de PDF uploadé</small></td>
-    <td style="color:#f87171">❌ Non uploadé<br><small>Greenhouse crash</small></td>
-    <td><a href="https://job-boards.greenhouse.io/hyphenconnect/jobs/4589102007" target="_blank">Greenhouse</a></td>
-    <td class="notes">All fields filled (name, email, phone, resume text, LinkedIn, portfolio, APAC location, Web3 exp: Defi+Exchanges+Trading). Greenhouse crashed on submit again ("Uh oh, something went wrong"). Same Greenhouse bug as TOKEN2049. Application may have gone through.</td>
+  <!-- Failed -->
+  <tr class="data-row" data-status="failed">
+    <td class="col-date" data-label="Date">2026-03-10</td>
+    <td class="col-status" data-label="Status"><span class="badge failed">Failed</span></td>
+    <td class="col-role" data-label="Role">Lead Product Designer (Crypto Exchange)</td>
+    <td class="col-company" data-label="Company">Hyphen Connect</td>
+    <td class="col-location" data-label="Location">APAC Remote</td>
+    <td class="col-salary" data-label="Salary">-</td>
+    <td class="col-ats" data-label="ATS">Greenhouse</td>
+    <td class="col-cv" data-label="CV" style="color:#f87171">❌ Texte collé<br><small>pas de PDF uploadé</small></td>
+    <td class="col-portfolio" data-label="Portfolio" style="color:#f87171">❌ Non uploadé<br><small>Greenhouse crash</small></td>
+    <td class="col-link" data-label="Link"><a href="https://job-boards.greenhouse.io/hyphenconnect/jobs/4589102007" target="_blank">Greenhouse</a></td>
+    <td class="col-notes notes" data-label="Notes">Greenhouse crashed on submit. Application may have gone through.</td>
   </tr>
-  <tr>
-    <td>2026-03-09</td>
-    <td><span class="badge failed">Failed</span></td>
-    <td>Head of Product Design</td>
-    <td>Hyphen Connect (TOKEN2049)</td>
-    <td>Singapore (Remote)</td>
-    <td>-</td>
-    <td>Greenhouse</td>
-    <td style="color:#f87171">❌ Bloqué<br><small>CORS + crash</small></td>
-    <td style="color:#f87171">❌ Bloqué<br><small>Greenhouse crash</small></td>
-    <td><a href="https://job-boards.anz.greenhouse.io/token2049/jobs/4000978201" target="_blank">Greenhouse</a></td>
-    <td class="notes">Form filled completely but Greenhouse crashes on submit ("Uh oh, something went wrong"). CORS blocks PDF upload. Greenhouse ATS incompatible with automation.</td>
+  <tr class="data-row" data-status="failed">
+    <td class="col-date" data-label="Date">2026-03-09</td>
+    <td class="col-status" data-label="Status"><span class="badge failed">Failed</span></td>
+    <td class="col-role" data-label="Role">Head of Product Design</td>
+    <td class="col-company" data-label="Company">Hyphen Connect (TOKEN2049)</td>
+    <td class="col-location" data-label="Location">Singapore (Remote)</td>
+    <td class="col-salary" data-label="Salary">-</td>
+    <td class="col-ats" data-label="ATS">Greenhouse</td>
+    <td class="col-cv" data-label="CV" style="color:#f87171">❌ Bloqué<br><small>CORS + crash</small></td>
+    <td class="col-portfolio" data-label="Portfolio" style="color:#f87171">❌ Bloqué<br><small>Greenhouse crash</small></td>
+    <td class="col-link" data-label="Link"><a href="https://job-boards.anz.greenhouse.io/token2049/jobs/4000978201" target="_blank">Greenhouse</a></td>
+    <td class="col-notes notes" data-label="Notes">Greenhouse ATS incompatible with automation.</td>
+  </tr>
+  <!-- Saved / Easy Apply -->
+  <tr class="data-row" data-status="saved">
+    <td class="col-date" data-label="Date">2026-03-10</td>
+    <td class="col-status" data-label="Status"><span class="badge saved">Easy Apply</span></td>
+    <td class="col-role" data-label="Role">Product Designer</td>
+    <td class="col-company" data-label="Company">Binance</td>
+    <td class="col-location" data-label="Location">Taipei (Remote)</td>
+    <td class="col-salary" data-label="Salary">-</td>
+    <td class="col-ats" data-label="ATS">LinkedIn</td>
+    <td class="col-cv" data-label="CV">-</td>
+    <td class="col-portfolio" data-label="Portfolio">-</td>
+    <td class="col-link" data-label="Link"><a href="https://www.linkedin.com/jobs/view/4312632174/" target="_blank">LinkedIn</a></td>
+    <td class="col-notes notes" data-label="Notes">85% match. Big tech, Remote, crypto/fintech. 100+ applicants.</td>
+  </tr>
+  <tr class="data-row" data-status="saved">
+    <td class="col-date" data-label="Date">2026-03-10</td>
+    <td class="col-status" data-label="Status"><span class="badge saved">Easy Apply</span></td>
+    <td class="col-role" data-label="Role">Principal UI/UX Designer</td>
+    <td class="col-company" data-label="Company">ShaeWellness</td>
+    <td class="col-location" data-label="Location">Philippines (Remote)</td>
+    <td class="col-salary" data-label="Salary">$2.5-4k/mo</td>
+    <td class="col-ats" data-label="ATS">LinkedIn</td>
+    <td class="col-cv" data-label="CV">-</td>
+    <td class="col-portfolio" data-label="Portfolio">-</td>
+    <td class="col-link" data-label="Link"><a href="https://www.linkedin.com/jobs/view/4380955399/" target="_blank">LinkedIn</a></td>
+    <td class="col-notes notes" data-label="Notes">90% match. Figma tokens, Rive, DS, motion. Below 80k target.</td>
+  </tr>
+  <tr class="data-row" data-status="saved">
+    <td class="col-date" data-label="Date">2026-03-10</td>
+    <td class="col-status" data-label="Status"><span class="badge saved">Easy Apply</span></td>
+    <td class="col-role" data-label="Role">Senior UX Designer</td>
+    <td class="col-company" data-label="Company">Voltex Electrical</td>
+    <td class="col-location" data-label="Location">Philippines (Remote)</td>
+    <td class="col-salary" data-label="Salary">-</td>
+    <td class="col-ats" data-label="ATS">LinkedIn</td>
+    <td class="col-cv" data-label="CV">-</td>
+    <td class="col-portfolio" data-label="Portfolio">-</td>
+    <td class="col-link" data-label="Link"><a href="https://www.linkedin.com/jobs/view/4375100623/" target="_blank">LinkedIn</a></td>
+    <td class="col-notes notes" data-label="Notes">75% match. Senior, Remote APAC. 100+ applicants.</td>
+  </tr>
+  <tr class="data-row" data-status="saved">
+    <td class="col-date" data-label="Date">2026-03-10</td>
+    <td class="col-status" data-label="Status"><span class="badge saved">Easy Apply</span></td>
+    <td class="col-role" data-label="Role">Senior Product Designer</td>
+    <td class="col-company" data-label="Company">Jobgether</td>
+    <td class="col-location" data-label="Location">Indonesia (Remote)</td>
+    <td class="col-salary" data-label="Salary">-</td>
+    <td class="col-ats" data-label="ATS">LinkedIn</td>
+    <td class="col-cv" data-label="CV">-</td>
+    <td class="col-portfolio" data-label="Portfolio">-</td>
+    <td class="col-link" data-label="Link"><a href="https://www.linkedin.com/jobs/view/4383089024/" target="_blank">LinkedIn</a></td>
+    <td class="col-notes notes" data-label="Notes">80% match. Senior, Remote APAC.</td>
+  </tr>
+  <tr class="data-row" data-status="saved">
+    <td class="col-date" data-label="Date">2026-03-10</td>
+    <td class="col-status" data-label="Status"><span class="badge saved">Easy Apply</span></td>
+    <td class="col-role" data-label="Role">Senior Product Designer</td>
+    <td class="col-company" data-label="Company">Jobgether</td>
+    <td class="col-location" data-label="Location">Malaysia (Remote)</td>
+    <td class="col-salary" data-label="Salary">-</td>
+    <td class="col-ats" data-label="ATS">LinkedIn</td>
+    <td class="col-cv" data-label="CV">-</td>
+    <td class="col-portfolio" data-label="Portfolio">-</td>
+    <td class="col-link" data-label="Link"><a href="https://www.linkedin.com/jobs/view/4383089025/" target="_blank">LinkedIn</a></td>
+    <td class="col-notes notes" data-label="Notes">80% match. Senior, Remote APAC.</td>
+  </tr>
+  <tr class="data-row" data-status="saved">
+    <td class="col-date" data-label="Date">2026-03-10</td>
+    <td class="col-status" data-label="Status"><span class="badge saved">Easy Apply</span></td>
+    <td class="col-role" data-label="Role">Senior Product Designer</td>
+    <td class="col-company" data-label="Company">Jobgether</td>
+    <td class="col-location" data-label="Location">Philippines (Remote)</td>
+    <td class="col-salary" data-label="Salary">-</td>
+    <td class="col-ats" data-label="ATS">LinkedIn</td>
+    <td class="col-cv" data-label="CV">-</td>
+    <td class="col-portfolio" data-label="Portfolio">-</td>
+    <td class="col-link" data-label="Link"><a href="https://www.linkedin.com/jobs/view/4383089026/" target="_blank">LinkedIn</a></td>
+    <td class="col-notes notes" data-label="Notes">80% match. Senior, Remote APAC.</td>
+  </tr>
+  <tr class="data-row" data-status="saved">
+    <td class="col-date" data-label="Date">2026-03-10</td>
+    <td class="col-status" data-label="Status"><span class="badge saved">Easy Apply</span></td>
+    <td class="col-role" data-label="Role">Senior Product UIUX Designer</td>
+    <td class="col-company" data-label="Company">ShaeWellness</td>
+    <td class="col-location" data-label="Location">Philippines (Remote)</td>
+    <td class="col-salary" data-label="Salary">~$2.5-4k/mo</td>
+    <td class="col-ats" data-label="ATS">LinkedIn</td>
+    <td class="col-cv" data-label="CV">-</td>
+    <td class="col-portfolio" data-label="Portfolio">-</td>
+    <td class="col-link" data-label="Link"><a href="https://www.linkedin.com/jobs/view/4362155881/" target="_blank">LinkedIn</a></td>
+    <td class="col-notes notes" data-label="Notes">85% match. Same company, different role.</td>
+  </tr>
+  <!-- Already Applied -->
+  <tr class="data-row" data-status="already">
+    <td class="col-date" data-label="Date">2026-02-24</td>
+    <td class="col-status" data-label="Status"><span class="badge already">Applied</span></td>
+    <td class="col-role" data-label="Role">Lead, Product Design</td>
+    <td class="col-company" data-label="Company">MoneyHero Group</td>
+    <td class="col-location" data-label="Location">Singapore (Hybrid)</td>
+    <td class="col-salary" data-label="Salary">-</td>
+    <td class="col-ats" data-label="ATS">-</td>
+    <td class="col-cv" data-label="CV">-</td>
+    <td class="col-portfolio" data-label="Portfolio">-</td>
+    <td class="col-link" data-label="Link">-</td>
+    <td class="col-notes notes" data-label="Notes">Applied 2 weeks ago</td>
+  </tr>
+  <tr class="data-row" data-status="already">
+    <td class="col-date" data-label="Date">2026-03-03</td>
+    <td class="col-status" data-label="Status"><span class="badge already">Applied</span></td>
+    <td class="col-role" data-label="Role">User Experience Designer</td>
+    <td class="col-company" data-label="Company">GoWabi</td>
+    <td class="col-location" data-label="Location">Bangkok (Hybrid)</td>
+    <td class="col-salary" data-label="Salary">-</td>
+    <td class="col-ats" data-label="ATS">-</td>
+    <td class="col-cv" data-label="CV">-</td>
+    <td class="col-portfolio" data-label="Portfolio">-</td>
+    <td class="col-link" data-label="Link">-</td>
+    <td class="col-notes notes" data-label="Notes">Applied 1 week ago</td>
+  </tr>
+  <tr class="data-row" data-status="already">
+    <td class="col-date" data-label="Date">2026-03-09</td>
+    <td class="col-status" data-label="Status"><span class="badge already">Applied</span></td>
+    <td class="col-role" data-label="Role">UI/UX Designer</td>
+    <td class="col-company" data-label="Company">Jobgether</td>
+    <td class="col-location" data-label="Location">Australia (Remote)</td>
+    <td class="col-salary" data-label="Salary">-</td>
+    <td class="col-ats" data-label="ATS">-</td>
+    <td class="col-cv" data-label="CV">-</td>
+    <td class="col-portfolio" data-label="Portfolio">-</td>
+    <td class="col-link" data-label="Link">-</td>
+    <td class="col-notes notes" data-label="Notes">Applied 1 day ago</td>
+  </tr>
+  <tr class="data-row" data-status="already">
+    <td class="col-date" data-label="Date">2026-03-06</td>
+    <td class="col-status" data-label="Status"><span class="badge already">Applied</span></td>
+    <td class="col-role" data-label="Role">Senior Product Designer</td>
+    <td class="col-company" data-label="Company">Jobgether</td>
+    <td class="col-location" data-label="Location">Singapore (Remote)</td>
+    <td class="col-salary" data-label="Salary">-</td>
+    <td class="col-ats" data-label="ATS">-</td>
+    <td class="col-cv" data-label="CV">-</td>
+    <td class="col-portfolio" data-label="Portfolio">-</td>
+    <td class="col-link" data-label="Link">-</td>
+    <td class="col-notes notes" data-label="Notes">Applied 4 days ago</td>
+  </tr>
+  <tr class="data-row" data-status="already">
+    <td class="col-date" data-label="Date">2026-03-06</td>
+    <td class="col-status" data-label="Status"><span class="badge already">Applied</span></td>
+    <td class="col-role" data-label="Role">Senior Product Designer</td>
+    <td class="col-company" data-label="Company">Jobgether</td>
+    <td class="col-location" data-label="Location">Thailand (Remote)</td>
+    <td class="col-salary" data-label="Salary">-</td>
+    <td class="col-ats" data-label="ATS">-</td>
+    <td class="col-cv" data-label="CV">-</td>
+    <td class="col-portfolio" data-label="Portfolio">-</td>
+    <td class="col-link" data-label="Link">-</td>
+    <td class="col-notes notes" data-label="Notes">Applied 4 days ago</td>
+  </tr>
+  <!-- Skipped -->
+  <tr class="data-row" data-status="skipped">
+    <td class="col-date" data-label="Date">2026-03-10</td>
+    <td class="col-status" data-label="Status"><span class="badge skipped">Skipped</span></td>
+    <td class="col-role" data-label="Role">Senior Product Designer, Reconciliation</td>
+    <td class="col-company" data-label="Company">Ripple</td>
+    <td class="col-location" data-label="Location">Sydney, NSW (Hybrid)</td>
+    <td class="col-salary" data-label="Salary">-</td>
+    <td class="col-ats" data-label="ATS">-</td>
+    <td class="col-cv" data-label="CV">-</td>
+    <td class="col-portfolio" data-label="Portfolio">-</td>
+    <td class="col-link" data-label="Link">-</td>
+    <td class="col-notes notes" data-label="Notes">Hybrid - not remote APAC</td>
+  </tr>
+  <tr class="data-row" data-status="skipped">
+    <td class="col-date" data-label="Date">2026-03-10</td>
+    <td class="col-status" data-label="Status"><span class="badge skipped">Skipped</span></td>
+    <td class="col-role" data-label="Role">User Interface Designer (Junior)</td>
+    <td class="col-company" data-label="Company">BitMart</td>
+    <td class="col-location" data-label="Location">APAC (Remote)</td>
+    <td class="col-salary" data-label="Salary">-</td>
+    <td class="col-ats" data-label="ATS">-</td>
+    <td class="col-cv" data-label="CV">-</td>
+    <td class="col-portfolio" data-label="Portfolio">-</td>
+    <td class="col-link" data-label="Link">-</td>
+    <td class="col-notes notes" data-label="Notes">Junior level - below seniority</td>
+  </tr>
+  <tr class="data-row" data-status="skipped">
+    <td class="col-date" data-label="Date">2026-03-10</td>
+    <td class="col-status" data-label="Status"><span class="badge skipped">Skipped</span></td>
+    <td class="col-role" data-label="Role">Product Designer (UI/UX)</td>
+    <td class="col-company" data-label="Company">Galaxy FinX</td>
+    <td class="col-location" data-label="Location">Ho Chi Minh City (On-site)</td>
+    <td class="col-salary" data-label="Salary">-</td>
+    <td class="col-ats" data-label="ATS">-</td>
+    <td class="col-cv" data-label="CV">-</td>
+    <td class="col-portfolio" data-label="Portfolio">-</td>
+    <td class="col-link" data-label="Link">-</td>
+    <td class="col-notes notes" data-label="Notes">On-site Vietnam - not Philippines/Thailand</td>
+  </tr>
+  <tr class="data-row" data-status="skipped">
+    <td class="col-date" data-label="Date">2026-03-10</td>
+    <td class="col-status" data-label="Status"><span class="badge skipped">Skipped</span></td>
+    <td class="col-role" data-label="Role">UI Designer</td>
+    <td class="col-company" data-label="Company">Bitget Wallet</td>
+    <td class="col-location" data-label="Location">APAC (Remote)</td>
+    <td class="col-salary" data-label="Salary">-</td>
+    <td class="col-ats" data-label="ATS">-</td>
+    <td class="col-cv" data-label="CV">-</td>
+    <td class="col-portfolio" data-label="Portfolio">-</td>
+    <td class="col-link" data-label="Link">-</td>
+    <td class="col-notes notes" data-label="Notes">UI Designer (not senior/product)</td>
+  </tr>
+  <tr class="data-row" data-status="skipped">
+    <td class="col-date" data-label="Date">2026-03-10</td>
+    <td class="col-status" data-label="Status"><span class="badge skipped">Skipped</span></td>
+    <td class="col-role" data-label="Role">Senior Product Designer (SG)</td>
+    <td class="col-company" data-label="Company">Coins.ph</td>
+    <td class="col-location" data-label="Location">Singapore (Hybrid)</td>
+    <td class="col-salary" data-label="Salary">-</td>
+    <td class="col-ats" data-label="ATS">-</td>
+    <td class="col-cv" data-label="CV">-</td>
+    <td class="col-portfolio" data-label="Portfolio">-</td>
+    <td class="col-link" data-label="Link">-</td>
+    <td class="col-notes notes" data-label="Notes">Hybrid Singapore - 10 months old</td>
+  </tr>
+  <tr class="data-row" data-status="skipped">
+    <td class="col-date" data-label="Date">2026-03-10</td>
+    <td class="col-status" data-label="Status"><span class="badge skipped">Skipped</span></td>
+    <td class="col-role" data-label="Role">Product Designer</td>
+    <td class="col-company" data-label="Company">Ajaib</td>
+    <td class="col-location" data-label="Location">Jakarta (Hybrid)</td>
+    <td class="col-salary" data-label="Salary">-</td>
+    <td class="col-ats" data-label="ATS">-</td>
+    <td class="col-cv" data-label="CV">-</td>
+    <td class="col-portfolio" data-label="Portfolio">-</td>
+    <td class="col-link" data-label="Link">-</td>
+    <td class="col-notes notes" data-label="Notes">Hybrid Jakarta</td>
+  </tr>
+  <tr class="data-row" data-status="skipped">
+    <td class="col-date" data-label="Date">2026-03-10</td>
+    <td class="col-status" data-label="Status"><span class="badge skipped">Skipped</span></td>
+    <td class="col-role" data-label="Role">Senior Product Designer</td>
+    <td class="col-company" data-label="Company">Angkas</td>
+    <td class="col-location" data-label="Location">Makati (Hybrid)</td>
+    <td class="col-salary" data-label="Salary">-</td>
+    <td class="col-ats" data-label="ATS">-</td>
+    <td class="col-cv" data-label="CV">-</td>
+    <td class="col-portfolio" data-label="Portfolio">-</td>
+    <td class="col-link" data-label="Link">-</td>
+    <td class="col-notes notes" data-label="Notes">Hybrid Makati</td>
+  </tr>
+  <tr class="data-row" data-status="skipped">
+    <td class="col-date" data-label="Date">2026-03-10</td>
+    <td class="col-status" data-label="Status"><span class="badge skipped">Skipped</span></td>
+    <td class="col-role" data-label="Role">Senior Product Designer</td>
+    <td class="col-company" data-label="Company">Flip</td>
+    <td class="col-location" data-label="Location">Jakarta (Hybrid)</td>
+    <td class="col-salary" data-label="Salary">-</td>
+    <td class="col-ats" data-label="ATS">-</td>
+    <td class="col-cv" data-label="CV">-</td>
+    <td class="col-portfolio" data-label="Portfolio">-</td>
+    <td class="col-link" data-label="Link">-</td>
+    <td class="col-notes notes" data-label="Notes">Hybrid Jakarta</td>
+  </tr>
+  <tr class="data-row" data-status="skipped">
+    <td class="col-date" data-label="Date">2026-03-10</td>
+    <td class="col-status" data-label="Status"><span class="badge skipped">Skipped</span></td>
+    <td class="col-role" data-label="Role">Product Designer</td>
+    <td class="col-company" data-label="Company">giftee Tech Vietnam</td>
+    <td class="col-location" data-label="Location">Ho Chi Minh City (On-site)</td>
+    <td class="col-salary" data-label="Salary">-</td>
+    <td class="col-ats" data-label="ATS">-</td>
+    <td class="col-cv" data-label="CV">-</td>
+    <td class="col-portfolio" data-label="Portfolio">-</td>
+    <td class="col-link" data-label="Link">-</td>
+    <td class="col-notes notes" data-label="Notes">On-site Vietnam</td>
+  </tr>
+  <tr class="data-row" data-status="skipped">
+    <td class="col-date" data-label="Date">2026-03-10</td>
+    <td class="col-status" data-label="Status"><span class="badge skipped">Skipped</span></td>
+    <td class="col-role" data-label="Role">Product Builder-Product Designer</td>
+    <td class="col-company" data-label="Company">Omelet</td>
+    <td class="col-location" data-label="Location">Seoul (Hybrid)</td>
+    <td class="col-salary" data-label="Salary">-</td>
+    <td class="col-ats" data-label="ATS">-</td>
+    <td class="col-cv" data-label="CV">-</td>
+    <td class="col-portfolio" data-label="Portfolio">-</td>
+    <td class="col-link" data-label="Link">-</td>
+    <td class="col-notes notes" data-label="Notes">Hybrid Seoul - 4 months old</td>
+  </tr>
+  <tr class="data-row" data-status="skipped">
+    <td class="col-date" data-label="Date">2026-03-10</td>
+    <td class="col-status" data-label="Status"><span class="badge skipped">Skipped</span></td>
+    <td class="col-role" data-label="Role">Product Designer</td>
+    <td class="col-company" data-label="Company">Foris Limited</td>
+    <td class="col-location" data-label="Location">Singapore (Hybrid)</td>
+    <td class="col-salary" data-label="Salary">-</td>
+    <td class="col-ats" data-label="ATS">-</td>
+    <td class="col-cv" data-label="CV">-</td>
+    <td class="col-portfolio" data-label="Portfolio">-</td>
+    <td class="col-link" data-label="Link">-</td>
+    <td class="col-notes notes" data-label="Notes">Hybrid Singapore</td>
   </tr>
 </tbody>
 </table>
-
-<h2 class="section-title">Saved on LinkedIn - Easy Apply toi-meme</h2>
-<table>
-<thead>
-  <tr>
-    <th>Priority</th>
-    <th>Status</th>
-    <th>Role</th>
-    <th>Company</th>
-    <th>Location</th>
-    <th>Salary</th>
-    <th>Match</th>
-    <th>Link</th>
-    <th>Notes</th>
-  </tr>
-</thead>
-<tbody id="active-jobs">
-  <tr>
-    <td><strong style="color:#f87171">1</strong></td>
-    <td><span class="badge saved">Saved</span></td>
-    <td>Product Designer</td>
-    <td>Binance</td>
-    <td>Taipei (Remote)</td>
-    <td>-</td>
-    <td><div class="match"><strong>85%</strong> - Big tech, Remote, crypto/fintech</div></td>
-    <td><a href="https://www.linkedin.com/jobs/view/4312632174/" target="_blank">LinkedIn</a></td>
-    <td class="notes">Reposted 4h ago. 100+ applicants. Remote full-time.</td>
-  </tr>
-  <tr>
-    <td><strong style="color:#facc15">2</strong></td>
-    <td><span class="badge saved">Saved</span></td>
-    <td>Principal UI/UX Designer</td>
-    <td>ShaeWellness</td>
-    <td>Philippines (Remote)</td>
-    <td class="salary">$2.5-4k/mo + KPI<br><small>~36-60k USD</small></td>
-    <td><div class="match"><strong>90%</strong> - Figma tokens, Rive, DS, motion</div></td>
-    <td><a href="https://www.linkedin.com/jobs/view/4380955399/" target="_blank">LinkedIn</a></td>
-    <td class="notes">Below 80k target but skill match excellent. 23 applicants. Contract. 5 days ago.</td>
-  </tr>
-  <tr>
-    <td><strong style="color:#facc15">3</strong></td>
-    <td><span class="badge saved">Saved</span></td>
-    <td>Senior UX Designer</td>
-    <td>Voltex Electrical Accessories</td>
-    <td>Philippines (Remote)</td>
-    <td>-</td>
-    <td><div class="match"><strong>75%</strong> - Senior, Remote APAC, full-time</div></td>
-    <td><a href="https://www.linkedin.com/jobs/view/4375100623/" target="_blank">LinkedIn</a></td>
-    <td class="notes">2 weeks ago. 100+ applicants. Profile matches well.</td>
-  </tr>
-  <tr>
-    <td><strong>4</strong></td>
-    <td><span class="badge saved">Saved</span></td>
-    <td>Senior Product Designer</td>
-    <td>Jobgether</td>
-    <td>Indonesia (Remote)</td>
-    <td>-</td>
-    <td><div class="match"><strong>80%</strong> - Senior, Remote APAC</div></td>
-    <td><a href="https://www.linkedin.com/jobs/view/4383089024/" target="_blank">LinkedIn</a></td>
-    <td class="notes">4 days ago. Easy Apply.</td>
-  </tr>
-  <tr>
-    <td><strong>5</strong></td>
-    <td><span class="badge saved">Saved</span></td>
-    <td>Senior Product Designer</td>
-    <td>Jobgether</td>
-    <td>Malaysia (Remote)</td>
-    <td>-</td>
-    <td><div class="match"><strong>80%</strong> - Senior, Remote APAC</div></td>
-    <td><a href="https://www.linkedin.com/jobs/view/4383089025/" target="_blank">LinkedIn</a></td>
-    <td class="notes">4 days ago. Easy Apply.</td>
-  </tr>
-  <tr>
-    <td><strong>6</strong></td>
-    <td><span class="badge saved">Saved</span></td>
-    <td>Senior Product Designer</td>
-    <td>Jobgether</td>
-    <td>Philippines (Remote)</td>
-    <td>-</td>
-    <td><div class="match"><strong>80%</strong> - Senior, Remote APAC</div></td>
-    <td><a href="https://www.linkedin.com/jobs/view/4383089026/" target="_blank">LinkedIn</a></td>
-    <td class="notes">4 days ago. Easy Apply.</td>
-  </tr>
-  <tr>
-    <td><strong>7</strong></td>
-    <td><span class="badge saved">Saved</span></td>
-    <td>Senior Product UIUX Designer</td>
-    <td>ShaeWellness</td>
-    <td>Philippines (Remote)</td>
-    <td class="salary">~$2.5-4k/mo</td>
-    <td><div class="match"><strong>85%</strong> - Same company, different role</div></td>
-    <td><a href="https://www.linkedin.com/jobs/view/4362155881/" target="_blank">LinkedIn</a></td>
-    <td class="notes">1 month ago. Easy Apply.</td>
-  </tr>
-</tbody>
-</table>
-
-<h2 class="section-title">Already Applied</h2>
-<table>
-<thead>
-  <tr>
-    <th>Status</th>
-    <th>Role</th>
-    <th>Company</th>
-    <th>Location</th>
-    <th>Notes</th>
-  </tr>
-</thead>
-<tbody>
-  <tr>
-    <td><span class="badge already">Applied</span></td>
-    <td>Lead, Product Design</td>
-    <td>MoneyHero Group (Nasdaq: MNY)</td>
-    <td>Singapore (Hybrid)</td>
-    <td class="notes">2 weeks ago</td>
-  </tr>
-  <tr>
-    <td><span class="badge already">Applied</span></td>
-    <td>User Experience Designer</td>
-    <td>GoWabi</td>
-    <td>Bangkok (Hybrid)</td>
-    <td class="notes">1 week ago</td>
-  </tr>
-  <tr>
-    <td><span class="badge already">Applied</span></td>
-    <td>UI/UX Designer</td>
-    <td>Jobgether</td>
-    <td>Australia (Remote)</td>
-    <td class="notes">1 day ago</td>
-  </tr>
-  <tr>
-    <td><span class="badge already">Applied</span></td>
-    <td>Senior Product Designer</td>
-    <td>Jobgether</td>
-    <td>Singapore (Remote)</td>
-    <td class="notes">4 days ago</td>
-  </tr>
-  <tr>
-    <td><span class="badge already">Applied</span></td>
-    <td>Senior Product Designer</td>
-    <td>Jobgether</td>
-    <td>Thailand (Remote)</td>
-    <td class="notes">4 days ago</td>
-  </tr>
-</tbody>
-</table>
-
-<h2 class="section-title">Skipped</h2>
-<table>
-<thead>
-  <tr>
-    <th>Status</th>
-    <th>Role</th>
-    <th>Company</th>
-    <th>Location</th>
-    <th>Reason</th>
-  </tr>
-</thead>
-<tbody>
-  <tr>
-    <td><span class="badge skipped">Skipped</span></td>
-    <td>Senior Product Designer, Reconciliation</td>
-    <td>Ripple</td>
-    <td>Sydney, NSW (Hybrid)</td>
-    <td class="notes">Hybrid - not remote APAC</td>
-  </tr>
-  <tr>
-    <td><span class="badge skipped">Skipped</span></td>
-    <td>User Interface Designer (Junior)</td>
-    <td>BitMart</td>
-    <td>APAC (Remote)</td>
-    <td class="notes">Junior level - below seniority</td>
-  </tr>
-  <tr>
-    <td><span class="badge skipped">Skipped</span></td>
-    <td>Product Designer (UI/UX)</td>
-    <td>Galaxy FinX</td>
-    <td>Ho Chi Minh City (On-site)</td>
-    <td class="notes">On-site Vietnam - not Philippines/Thailand</td>
-  </tr>
-  <tr>
-    <td><span class="badge skipped">Skipped</span></td>
-    <td>UI Designer</td>
-    <td>Bitget Wallet</td>
-    <td>APAC (Remote)</td>
-    <td class="notes">UI Designer (not senior/product), 100+ applicants</td>
-  </tr>
-  <tr>
-    <td><span class="badge skipped">Skipped</span></td>
-    <td>Senior Product Designer (SG)</td>
-    <td>Coins.ph</td>
-    <td>Singapore (Hybrid)</td>
-    <td class="notes">Hybrid Singapore - 10 months old</td>
-  </tr>
-  <tr>
-    <td><span class="badge skipped">Skipped</span></td>
-    <td>Product Designer</td>
-    <td>Ajaib</td>
-    <td>Jakarta (Hybrid)</td>
-    <td class="notes">Hybrid Jakarta</td>
-  </tr>
-  <tr>
-    <td><span class="badge skipped">Skipped</span></td>
-    <td>Senior Product Designer</td>
-    <td>Angkas</td>
-    <td>Makati (Hybrid)</td>
-    <td class="notes">Hybrid Makati</td>
-  </tr>
-  <tr>
-    <td><span class="badge skipped">Skipped</span></td>
-    <td>Senior Product Designer</td>
-    <td>Flip</td>
-    <td>Jakarta (Hybrid)</td>
-    <td class="notes">Hybrid Jakarta</td>
-  </tr>
-  <tr>
-    <td><span class="badge skipped">Skipped</span></td>
-    <td>Product Designer</td>
-    <td>giftee Tech Vietnam</td>
-    <td>Ho Chi Minh City (On-site)</td>
-    <td class="notes">On-site Vietnam</td>
-  </tr>
-  <tr>
-    <td><span class="badge skipped">Skipped</span></td>
-    <td>Product Builder-Product Designer</td>
-    <td>Omelet</td>
-    <td>Seoul (Hybrid)</td>
-    <td class="notes">Hybrid Seoul - 4 months old</td>
-  </tr>
-  <tr>
-    <td><span class="badge skipped">Skipped</span></td>
-    <td>Product Designer</td>
-    <td>Foris Limited</td>
-    <td>Singapore (Hybrid)</td>
-    <td class="notes">Hybrid Singapore</td>
-  </tr>
-</tbody>
-</table>
+</div>
 
 <p class="updated">Last updated: 2026-03-10 by Claude Agent</p>
 
 <script>
-  // Auto-count badges
-  document.getElementById('count-submitted').textContent = document.querySelectorAll('.badge.submitted').length;
-  document.getElementById('count-applied').textContent = document.querySelectorAll('.badge.already').length;
-  document.getElementById('count-saved').textContent = document.querySelectorAll('.badge.saved').length;
-  document.getElementById('count-manual').textContent = document.querySelectorAll('.badge.manual').length;
-  document.getElementById('count-failed').textContent = document.querySelectorAll('.badge.failed').length;
-  document.getElementById('count-skipped').textContent = document.querySelectorAll('.badge.skipped').length;
+(function() {
+  const table = document.getElementById('main-table');
+  const tbody = table.querySelector('tbody');
+  const rows = () => Array.from(tbody.querySelectorAll('tr.data-row'));
+  let currentFilter = 'all';
+  let sortCol = -1;
+  let sortDir = 'asc';
+
+  // Count & display stats
+  function updateCounts() {
+    const all = rows();
+    const counts = { submitted: 0, manual: 0, saved: 0, already: 0, failed: 0, skipped: 0 };
+    all.forEach(r => { const s = r.dataset.status; if (counts[s] !== undefined) counts[s]++; });
+    document.getElementById('count-all').textContent = all.length;
+    document.getElementById('count-submitted').textContent = counts.submitted;
+    document.getElementById('count-manual').textContent = counts.manual;
+    document.getElementById('count-saved').textContent = counts.saved;
+    document.getElementById('count-applied').textContent = counts.already;
+    document.getElementById('count-failed').textContent = counts.failed;
+    document.getElementById('count-skipped').textContent = counts.skipped;
+  }
+
+  // Filter
+  function applyFilter(filter) {
+    currentFilter = filter;
+    document.querySelectorAll('.stat').forEach(s => s.classList.toggle('active', s.dataset.filter === filter));
+    rows().forEach(r => {
+      const match = filter === 'all' || r.dataset.status === filter;
+      r.classList.toggle('hidden', !match);
+    });
+  }
+
+  // Click on stat cards
+  document.querySelectorAll('.stat[data-filter]').forEach(stat => {
+    stat.addEventListener('click', () => applyFilter(stat.dataset.filter));
+  });
+
+  // Sorting
+  table.querySelectorAll('thead th[data-type]').forEach(th => {
+    th.addEventListener('click', () => {
+      const col = parseInt(th.dataset.col);
+      if (sortCol === col) { sortDir = sortDir === 'asc' ? 'desc' : 'asc'; }
+      else { sortCol = col; sortDir = 'asc'; }
+
+      // Update header styles
+      table.querySelectorAll('thead th').forEach(h => h.classList.remove('sorted'));
+      th.classList.add('sorted');
+      th.querySelector('.sort-icon').textContent = sortDir === 'asc' ? '↑' : '↓';
+
+      // Sort rows
+      const sorted = rows().sort((a, b) => {
+        const aVal = a.cells[col]?.textContent?.trim().toLowerCase() || '';
+        const bVal = b.cells[col]?.textContent?.trim().toLowerCase() || '';
+        if (aVal < bVal) return sortDir === 'asc' ? -1 : 1;
+        if (aVal > bVal) return sortDir === 'asc' ? 1 : -1;
+        return 0;
+      });
+      sorted.forEach(r => tbody.appendChild(r));
+    });
+  });
+
+  // Mobile card mode
+  function checkMobile() {
+    const isMobile = window.innerWidth <= 900;
+    table.classList.toggle('card-mode', isMobile);
+  }
+  checkMobile();
+  window.addEventListener('resize', checkMobile);
+
+  // Init
+  updateCounts();
+  applyFilter('all');
+})();
 </script>
 </body>
 </html>
