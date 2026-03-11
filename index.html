@@ -64,6 +64,22 @@
   .badge.failed { background: #450a0a; color: #f87171; }
   .badge.manual { background: #422006; color: #fb923c; }
 
+  /* Button "Applied" on manual rows */
+  .btn-applied {
+    background: #064e3b; color: #4ade80; border: 1px solid #34d399;
+    border-radius: 50%; width: 22px; height: 22px; font-size: 12px;
+    cursor: pointer; margin-left: 6px; transition: all .15s;
+    vertical-align: middle; line-height: 1; padding: 0;
+  }
+  .btn-applied:hover { background: #34d399; color: #000; transform: scale(1.1); }
+
+  /* Sub-filter for Submitted */
+  .sub-filter { display: none; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+  .sub-filter.visible { display: flex; }
+  .sub-chip { padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 600; letter-spacing: .5px; border: 1px solid #333; background: #1a1a1a; color: #888; cursor: pointer; transition: all .15s; }
+  .sub-chip:hover { border-color: #666; color: #ccc; }
+  .sub-chip.active { background: #064e3b; color: #34d399; border-color: #34d399; }
+
   a { color: #60a5fa; text-decoration: none; }
   a:hover { text-decoration: underline; }
   .notes { font-size: 12px; color: #888; font-style: italic; }
@@ -135,6 +151,13 @@
   <div class="stat" data-filter="skipped" style="border-color:#6b7280"><div class="stat-number" style="color:#6b7280" id="count-skipped">0</div><div class="stat-label">Skipped</div></div>
 </div>
 
+<div class="sub-filter" id="sub-filter-submitted">
+  <span style="font-size:11px;color:#555;margin-right:4px;">▸ Filtrer :</span>
+  <span class="sub-chip active" data-subsource="all">Tous</span>
+  <span class="sub-chip" data-subsource="auto">🤖 Auto (Claude)</span>
+  <span class="sub-chip" data-subsource="manual">👤 Manual (Moi)</span>
+</div>
+
 <h2 class="section-title">All Applications</h2>
 
 <div class="table-wrap">
@@ -156,7 +179,7 @@
 </thead>
 <tbody>
 <!-- TRACKER_INSERT -->
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Digital Product Designer</td>
@@ -169,7 +192,7 @@
     <td class="col-link" data-label="Link"><a href="LinkedIn Easy Apply" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Lead Product Designer</td>
@@ -182,7 +205,7 @@
     <td class="col-link" data-label="Link"><a href="LinkedIn Easy Apply" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
@@ -195,7 +218,7 @@
     <td class="col-link" data-label="Link"><a href="LinkedIn Easy Apply" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">UI/UX & Motion Designer</td>
@@ -208,7 +231,7 @@
     <td class="col-link" data-label="Link"><a href="LinkedIn Easy Apply" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Remote Product Designer</td>
@@ -221,7 +244,7 @@
     <td class="col-link" data-label="Link"><a href="LinkedIn Easy Apply" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Staff Product Designer (UI-Led)</td>
@@ -234,7 +257,7 @@
     <td class="col-link" data-label="Link"><a href="LinkedIn Easy Apply" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Design Lead</td>
@@ -247,7 +270,7 @@
     <td class="col-link" data-label="Link"><a href="LinkedIn Easy Apply" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
@@ -260,7 +283,7 @@
     <td class="col-link" data-label="Link"><a href="LinkedIn Easy Apply" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Lead Product Designer</td>
@@ -273,7 +296,7 @@
     <td class="col-link" data-label="Link"><a href="LinkedIn Easy Apply" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior UI/UX Designer</td>
@@ -286,7 +309,7 @@
     <td class="col-link" data-label="Link"><a href="LinkedIn Easy Apply" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Sr. Product Designer - Data Management</td>
@@ -299,7 +322,7 @@
     <td class="col-link" data-label="Link"><a href="LinkedIn Easy Apply" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Principal Product Designer</td>
@@ -312,7 +335,7 @@
     <td class="col-link" data-label="Link"><a href="LinkedIn Easy Apply" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Product Designer</td>
@@ -325,7 +348,7 @@
     <td class="col-link" data-label="Link"><a href="LinkedIn Easy Apply" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Staff Product Designer</td>
@@ -338,7 +361,7 @@
     <td class="col-link" data-label="Link"><a href="LinkedIn Easy Apply" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Lead UI/UX Designer</td>
@@ -351,7 +374,7 @@
     <td class="col-link" data-label="Link"><a href="LinkedIn Easy Apply" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer (Web & App)</td>
@@ -364,7 +387,7 @@
     <td class="col-link" data-label="Link"><a href="LinkedIn Easy Apply" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">UX Designer Website Specialist</td>
@@ -377,7 +400,7 @@
     <td class="col-link" data-label="Link"><a href="LinkedIn Easy Apply" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
@@ -390,7 +413,7 @@
     <td class="col-link" data-label="Link"><a href="LinkedIn Easy Apply" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior UX Designer (UED)</td>
@@ -403,7 +426,7 @@
     <td class="col-link" data-label="Link"><a href="LinkedIn Easy Apply" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Manager, Product Designer UX/UI</td>
@@ -416,7 +439,7 @@
     <td class="col-link" data-label="Link"><a href="LinkedIn Easy Apply" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Product Designer</td>
@@ -429,7 +452,7 @@
     <td class="col-link" data-label="Link"><a href="LinkedIn Easy Apply" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Principal UX Designer</td>
@@ -442,7 +465,7 @@
     <td class="col-link" data-label="Link"><a href="LinkedIn Easy Apply" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
@@ -455,7 +478,7 @@
     <td class="col-link" data-label="Link"><a href="LinkedIn Easy Apply" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Graphic Designer</td>
@@ -468,7 +491,7 @@
     <td class="col-link" data-label="Link"><a href="LinkedIn Easy Apply" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Sr. Product Designer</td>
@@ -481,7 +504,7 @@
     <td class="col-link" data-label="Link"><a href="LinkedIn Easy Apply" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
@@ -494,7 +517,7 @@
     <td class="col-link" data-label="Link"><a href="LinkedIn Easy Apply" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Creative Designer (UI/UX, Web Design)</td>
@@ -507,7 +530,7 @@
     <td class="col-link" data-label="Link"><a href="LinkedIn Easy Apply" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Graphic Designer</td>
@@ -520,7 +543,7 @@
     <td class="col-link" data-label="Link"><a href="LinkedIn Easy Apply" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer: Agentic AI Products</td>
@@ -533,7 +556,7 @@
     <td class="col-link" data-label="Link"><a href="LinkedIn Easy Apply" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Product Designer</td>
@@ -546,7 +569,7 @@
     <td class="col-link" data-label="Link"><a href="Ashby" target="_blank">À soumettre</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Lead Product Designer, Operate</td>
@@ -559,7 +582,7 @@
     <td class="col-link" data-label="Link"><a href="Ashby" target="_blank">À soumettre</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Staff Product Designer, Tax Credits</td>
@@ -572,7 +595,7 @@
     <td class="col-link" data-label="Link"><a href="Greenhouse" target="_blank">À soumettre</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer, Transfers</td>
@@ -585,7 +608,7 @@
     <td class="col-link" data-label="Link"><a href="Pinpoint" target="_blank">À soumettre</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer II, Platform Product</td>
@@ -598,7 +621,7 @@
     <td class="col-link" data-label="Link"><a href="Custom (Greenhouse)" target="_blank">À soumettre</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
@@ -611,7 +634,7 @@
     <td class="col-link" data-label="Link"><a href="Greenhouse" target="_blank">À soumettre</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Product Designer, Growth & Monetization</td>
@@ -624,7 +647,7 @@
     <td class="col-link" data-label="Link"><a href="Greenhouse" target="_blank">À soumettre</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Product Designer</td>
@@ -637,7 +660,7 @@
     <td class="col-link" data-label="Link"><a href="Ashby" target="_blank">À soumettre</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Product Designer, AI Models</td>
@@ -650,7 +673,7 @@
     <td class="col-link" data-label="Link"><a href="Greenhouse" target="_blank">À soumettre</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Product Designer - Design, Dev, & AI Tools</td>
@@ -663,7 +686,7 @@
     <td class="col-link" data-label="Link"><a href="Greenhouse" target="_blank">À soumettre</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer (UI & Visual)</td>
@@ -676,7 +699,7 @@
     <td class="col-link" data-label="Link"><a href="Notion" target="_blank">À soumettre</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Product Designer</td>
@@ -689,7 +712,7 @@
     <td class="col-link" data-label="Link"><a href="Custom" target="_blank">À soumettre</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Staff Product Designer, Closeup</td>
@@ -702,7 +725,7 @@
     <td class="col-link" data-label="Link"><a href="Greenhouse" target="_blank">À soumettre</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Staff Product Designer</td>
@@ -715,7 +738,7 @@
     <td class="col-link" data-label="Link"><a href="Ashby" target="_blank">À soumettre</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Staff Product Designer - Breakout</td>
@@ -728,7 +751,7 @@
     <td class="col-link" data-label="Link"><a href="Ashby" target="_blank">À soumettre</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Product Designer</td>
@@ -741,7 +764,7 @@
     <td class="col-link" data-label="Link"><a href="Greenhouse (non-embedded)" target="_blank">À soumettre</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer II - Design Systems</td>
@@ -754,7 +777,7 @@
     <td class="col-link" data-label="Link"><a href="Greenhouse" target="_blank">À soumettre</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Lead Product Designer (Enterprise Web)</td>
@@ -767,7 +790,7 @@
     <td class="col-link" data-label="Link"><a href="Greenhouse" target="_blank">À soumettre</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Growth Product Designer, Activation</td>
@@ -780,7 +803,7 @@
     <td class="col-link" data-label="Link"><a href="Greenhouse" target="_blank">À soumettre</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Product Designer II, Capital</td>
@@ -793,7 +816,7 @@
     <td class="col-link" data-label="Link"><a href="Greenhouse" target="_blank">À soumettre</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Staff Designer, Web & Brand</td>
@@ -806,7 +829,7 @@
     <td class="col-link" data-label="Link"><a href="Recruitee" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
@@ -819,7 +842,7 @@
     <td class="col-link" data-label="Link"><a href="Ashby" target="_blank">À soumettre</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Brand Designer</td>
@@ -832,7 +855,7 @@
     <td class="col-link" data-label="Link"><a href="Workable" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Founding Product Designer</td>
@@ -845,7 +868,7 @@
     <td class="col-link" data-label="Link"><a href="Greenhouse (non-embedded)" target="_blank">À soumettre</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
@@ -858,7 +881,7 @@
     <td class="col-link" data-label="Link"><a href="Ashby" target="_blank">À soumettre</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-11</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
@@ -871,7 +894,7 @@
     <td class="col-link" data-label="Link"><a href="Custom (Recruitee)" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Product Designer</td>
@@ -884,7 +907,7 @@
     <td class="col-link" data-label="Link"><a href="BambooHR" target="_blank">À soumettre</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Web Designer</td>
@@ -897,7 +920,7 @@
     <td class="col-link" data-label="Link"><a href="Teamtailor" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Lead Product Designer, Applied AI</td>
@@ -910,7 +933,7 @@
     <td class="col-link" data-label="Link"><a href="Greenhouse" target="_blank">À soumettre</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Lead Product Designer</td>
@@ -923,7 +946,7 @@
     <td class="col-link" data-label="Link"><a href="Greenhouse" target="_blank">Skip (US only)</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
@@ -936,7 +959,7 @@
     <td class="col-link" data-label="Link"><a href="Ashby" target="_blank">À soumettre</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Sr. Product Designer, Payments</td>
@@ -949,7 +972,7 @@
     <td class="col-link" data-label="Link"><a href="Ashby" target="_blank">À soumettre</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Lead Designer</td>
@@ -962,7 +985,7 @@
     <td class="col-link" data-label="Link"><a href="Breezy HR" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Design Lead</td>
@@ -975,7 +998,7 @@
     <td class="col-link" data-label="Link"><a href="Ashby" target="_blank">À soumettre</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Product Designer</td>
@@ -988,7 +1011,7 @@
     <td class="col-link" data-label="Link"><a href="Unknown" target="_blank">Trop long</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
@@ -1001,7 +1024,7 @@
     <td class="col-link" data-label="Link"><a href="Greenhouse" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
@@ -1014,7 +1037,7 @@
     <td class="col-link" data-label="Link"><a href="Teamtailor" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Staff Product Designer</td>
@@ -1027,7 +1050,7 @@
     <td class="col-link" data-label="Link"><a href="Greenhouse" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Lead Product Designer</td>
@@ -1040,7 +1063,7 @@
     <td class="col-link" data-label="Link"><a href="Manatal" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer, Creators</td>
@@ -1053,7 +1076,7 @@
     <td class="col-link" data-label="Link"><a href="Lever" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Staff Designer</td>
@@ -1066,7 +1089,7 @@
     <td class="col-link" data-label="Link"><a href="Ashby" target="_blank">À soumettre</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Product Designer (Staff Level)</td>
@@ -1079,7 +1102,7 @@
     <td class="col-link" data-label="Link"><a href="Ashby" target="_blank">À soumettre</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Product Designer, Creators</td>
@@ -1092,7 +1115,7 @@
     <td class="col-link" data-label="Link"><a href="Lever" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
@@ -1105,7 +1128,7 @@
     <td class="col-link" data-label="Link"><a href="BambooHR" target="_blank">À soumettre</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
@@ -1118,7 +1141,7 @@
     <td class="col-link" data-label="Link"><a href="Greenhouse" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Product Designer (Staff/Principal)</td>
@@ -1131,7 +1154,7 @@
     <td class="col-link" data-label="Link"><a href="Ashby" target="_blank">À soumettre</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
@@ -1144,7 +1167,7 @@
     <td class="col-link" data-label="Link"><a href="Ashby" target="_blank">À soumettre</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
@@ -1157,7 +1180,7 @@
     <td class="col-link" data-label="Link"><a href="Ashby" target="_blank">À soumettre</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer (d/f/m)</td>
@@ -1170,7 +1193,7 @@
     <td class="col-link" data-label="Link"><a href="Lever" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Lead Product Designer</td>
@@ -1183,7 +1206,7 @@
     <td class="col-link" data-label="Link"><a href="Ashby" target="_blank">À soumettre</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product (UX) Designer</td>
@@ -1196,7 +1219,7 @@
     <td class="col-link" data-label="Link"><a href="Greenhouse" target="_blank">Soumise</a></td>
     <td class="col-notes notes" data-label="Notes"></td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
@@ -1211,7 +1234,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Product Designer</td>
     <td class="col-company" data-label="Company">edenity (Duna)</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -1222,7 +1245,7 @@
     <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/duna/c8eb5931-2b93-461c-ae0f-0db449e51e6e/application" target="_blank">Ashby</a></td>
     <td class="col-notes notes" data-label="Notes">Ashby CSP blocks PDF upload — manual submission needed</td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer (Design System)</td>
@@ -1235,7 +1258,7 @@
     <td class="col-link" data-label="Link"><a href="https://carreirasomie.gupy.io/jobs/10827662" target="_blank">Gupy</a></td>
     <td class="col-notes notes" data-label="Notes">Requires Gupy account — skip like Workday</td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
@@ -1248,7 +1271,7 @@
     <td class="col-link" data-label="Link"><a href="https://jobs.lever.co/teamsnap/a97eabb2-a2e5-41b7-8d49-724619f7440f/apply" target="_blank">Lever</a></td>
     <td class="col-notes notes" data-label="Notes">Via Jobgether 98% match</td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
@@ -1261,7 +1284,7 @@
     <td class="col-link" data-label="Link"><a href="https://boards.greenhouse.io/embed/job_app?for=axs&token=8438050002" target="_blank">Greenhouse</a></td>
     <td class="col-notes notes" data-label="Notes">Via Jobgether 98% match</td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Product Designer</td>
@@ -1276,7 +1299,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Senior Product Designer - Growth</td>
     <td class="col-company" data-label="Company">MagicSchool AI</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -1287,7 +1310,7 @@
     <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/magicschool/ef030df9-2353-4ae3-9408-94ead6185cd6/application" target="_blank">Ashby</a></td>
     <td class="col-notes notes" data-label="Notes">Via Jobgether, 98% match, Ashby=no PDF upload</td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Lead Product Designer</td>
@@ -1300,7 +1323,7 @@
     <td class="col-link" data-label="Link"><a href="https://boards.greenhouse.io/embed/job_app?for=alt&token=7608960003" target="_blank">Greenhouse</a></td>
     <td class="col-notes notes" data-label="Notes">Via Jobgether, 98% match, fintech/alternative assets</td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Lead Product Designer</td>
@@ -1393,7 +1416,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Digital Product Designer for AI</td>
     <td class="col-company" data-label="Company">Aras Corporation</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -1406,7 +1429,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Product Designer - NoScope</td>
     <td class="col-company" data-label="Company">TryHackMe</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -1419,7 +1442,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Senior Product Designer II</td>
     <td class="col-company" data-label="Company">Fairmarkit</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -1432,7 +1455,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
     <td class="col-company" data-label="Company">Monks</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -1523,7 +1546,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Sr Product Designer (Contract)</td>
     <td class="col-company" data-label="Company">FW.D</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -1536,7 +1559,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Product Designer (UX/UI)</td>
     <td class="col-company" data-label="Company">Influencity</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -1549,7 +1572,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Sr Product Designer, Growth</td>
     <td class="col-company" data-label="Company">Mural</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -1692,7 +1715,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
     <td class="col-company" data-label="Company">Ziff Davis</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -1705,7 +1728,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Staff Product Designer, Growth</td>
     <td class="col-company" data-label="Company">Linktree</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -1718,7 +1741,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Product Designer (UX Focused)</td>
     <td class="col-company" data-label="Company">Commit</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -1731,7 +1754,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Product Designer II, Platform</td>
     <td class="col-company" data-label="Company">Confluent</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -1744,7 +1767,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
     <td class="col-company" data-label="Company">NinjaOne</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -1952,7 +1975,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Product Designer II</td>
     <td class="col-company" data-label="Company">Genea</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -1965,7 +1988,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Senior Product Designer, AI Platform</td>
     <td class="col-company" data-label="Company">Vanta</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -1978,7 +2001,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Product Designer II, Capital</td>
     <td class="col-company" data-label="Company">Lightspeed Commerce</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -2108,7 +2131,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Senior UX Designer</td>
     <td class="col-company" data-label="Company">Brello</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -2121,7 +2144,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Growth Product Designer</td>
     <td class="col-company" data-label="Company">TryHackMe</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -2134,7 +2157,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Staff Product Designer</td>
     <td class="col-company" data-label="Company">Horizon3.ai</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -2147,7 +2170,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
     <td class="col-company" data-label="Company">Forward Financing</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -2160,7 +2183,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Staff Product Designer, Core UI</td>
     <td class="col-company" data-label="Company">Lattice</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -2173,7 +2196,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Product Designer - IntelliScript</td>
     <td class="col-company" data-label="Company">Milliman</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -2186,7 +2209,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Staff Product Designer</td>
     <td class="col-company" data-label="Company">Origin</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -2355,7 +2378,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Lead Product Designer</td>
     <td class="col-company" data-label="Company">TalentNeuron</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -2368,7 +2391,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Lead Product Designer</td>
     <td class="col-company" data-label="Company">Zipline</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -2381,7 +2404,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Senior Staff Product Designer</td>
     <td class="col-company" data-label="Company">Remote</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -2394,7 +2417,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Product Designer</td>
     <td class="col-company" data-label="Company">Salsify</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -2407,7 +2430,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Sr. Product Designer</td>
     <td class="col-company" data-label="Company">FlutterFlow</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -2420,7 +2443,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Product Designer (B2C)</td>
     <td class="col-company" data-label="Company">TryHackMe</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -2589,7 +2612,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Lead Visual Designer</td>
     <td class="col-company" data-label="Company">CoW DAO</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -2602,7 +2625,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
     <td class="col-company" data-label="Company">Dandy</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -2615,7 +2638,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Product Designer</td>
     <td class="col-company" data-label="Company">Whatnot</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -2628,7 +2651,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">UI/UX Designer (Middle/Senior)</td>
     <td class="col-company" data-label="Company">Amaris Consulting</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -2667,7 +2690,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Freelance Sr Product Designer</td>
     <td class="col-company" data-label="Company">Marketers by Adlatina</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -2680,7 +2703,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Senior Designer</td>
     <td class="col-company" data-label="Company">Darkroom</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -2693,7 +2716,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Product Designer (UX)</td>
     <td class="col-company" data-label="Company">BJAK</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -2706,7 +2729,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Product Designer</td>
     <td class="col-company" data-label="Company">Revolut</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -2719,7 +2742,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
     <td class="col-company" data-label="Company">Photoroom</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -2732,7 +2755,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Staff Product Designer</td>
     <td class="col-company" data-label="Company">Ashby</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -2745,7 +2768,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Product Designer Design Systems</td>
     <td class="col-company" data-label="Company">Nextdoor</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -2769,7 +2792,7 @@
     <td class="col-link" data-label="Link"><a href="https://pax8inc.wd12.myworkdayjobs.com/Pax8Careers/job/Remote---US/Sr-Product-Designer_R-101501" target="_blank">Workday</a></td>
     <td class="col-notes notes" data-label="Notes">Workday requires account</td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Product Designer</td>
@@ -2862,7 +2885,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Lead Product Designer</td>
     <td class="col-company" data-label="Company">Ladder</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -2875,7 +2898,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Lead Brand & Creative Designer</td>
     <td class="col-company" data-label="Company">tem</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -2888,7 +2911,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Senior Product Designer Transfers</td>
     <td class="col-company" data-label="Company">Tabby</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -2901,7 +2924,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Senior Product Designer SuperApp</td>
     <td class="col-company" data-label="Company">Bolt</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -2914,7 +2937,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Product Designer Design Systems</td>
     <td class="col-company" data-label="Company">Patrianna</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -2927,7 +2950,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Product Designer</td>
     <td class="col-company" data-label="Company">FYST</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -2940,7 +2963,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
     <td class="col-company" data-label="Company">Fanatics</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -2953,7 +2976,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">UI/UX Designer</td>
     <td class="col-company" data-label="Company">Somewhere</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -2966,7 +2989,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">UI/UX Designer</td>
     <td class="col-company" data-label="Company">Sporty Group</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -2979,7 +3002,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
     <td class="col-company" data-label="Company">Heidi</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -3018,7 +3041,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
     <td class="col-company" data-label="Company">One North (TEKsystems)</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -3031,7 +3054,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Product Designer</td>
     <td class="col-company" data-label="Company">MojoTech</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -3044,7 +3067,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
     <td class="col-company" data-label="Company">Passion.io</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -3057,7 +3080,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Sr. Product Designer</td>
     <td class="col-company" data-label="Company">Smarter Technologies</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -3070,7 +3093,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Product Designer (EMEA)</td>
     <td class="col-company" data-label="Company">XBOW</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -3083,7 +3106,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Product Designer (Senior/Staff/Principal)</td>
     <td class="col-company" data-label="Company">Monarch Money</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -3096,7 +3119,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Product Designer</td>
     <td class="col-company" data-label="Company">DoorDash</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -3109,7 +3132,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Product Designer</td>
     <td class="col-company" data-label="Company">Figma</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -3120,7 +3143,7 @@
     <td class="col-link" data-label="Link"><a href="https://job-boards.greenhouse.io/figma/jobs/5711571004" target="_blank">Greenhouse</a></td>
     <td class="col-notes notes" data-label="Notes">Greenhouse — manual submission needed</td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer (Contract)</td>
@@ -3159,7 +3182,7 @@
     <td class="col-link" data-label="Link"><a href="https://www-timezest-com.breezy.hr/" target="_blank">Breezy HR</a></td>
     <td class="col-notes notes" data-label="Notes">Position closed - only Engineering Lead listed</td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer & UX Researcher</td>
@@ -3173,7 +3196,7 @@
     <td class="col-notes notes" data-label="Notes">Remote 4-day week, $120K-$180K + equity. Found via WeWorkRemotely.</td>
   </tr>
   <!-- Submitted -->
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer (Innovations)</td>
@@ -3186,7 +3209,7 @@
     <td class="col-link" data-label="Link"><a href="https://palta.teamtailor.com/jobs/6862959-senior-product-designer-innovations" target="_blank">Teamtailor</a></td>
     <td class="col-notes notes" data-label="Notes">B2C app (Simple health). CV uploaded via GitHub fetch + DataTransfer (full portfolio PDF). Portfolio URL included. Cover letter included. 60 applicants.</td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer (Fixed-Term)</td>
@@ -3199,7 +3222,7 @@
     <td class="col-link" data-label="Link"><a href="https://iaings.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/SinchCareer/job/745" target="_blank">Oracle HCM</a></td>
     <td class="col-notes notes" data-label="Notes">Fixed-term 3mo renewable up to 1yr. SimpleTexting product. CV uploaded via GitHub fetch + DataTransfer (full portfolio PDF). Portfolio + LinkedIn links added. ⚠️ Email verification code needed to finalize.</td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer (DeFi/Web3)</td>
@@ -3212,7 +3235,7 @@
     <td class="col-link" data-label="Link"><a href="https://jobs.eu.lever.co/aavelabs/6ad18ce1-57b4-47ef-ad37-9b6466d8668c" target="_blank">Lever</a></td>
     <td class="col-notes notes" data-label="Notes">Aave Protocol, GHO stablecoin, Family wallet. CV PDF uploaded via GitHub fetch + DataTransfer (Lever works!). Resume auto-parsed. All questions answered. Cover letter included.</td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Lead UX/UI Designer</td>
@@ -3225,7 +3248,7 @@
     <td class="col-link" data-label="Link"><a href="https://careers.zenitech.co.uk/jobs/7265972-lead-ux-ui-designer" target="_blank">Teamtailor</a></td>
     <td class="col-notes notes" data-label="Notes">Design & Strategy dept. Remote UK permanent. Fastest submission yet.</td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
@@ -3238,7 +3261,7 @@
     <td class="col-link" data-label="Link"><a href="https://workflex.teamtailor.com/" target="_blank">Teamtailor</a></td>
     <td class="col-notes notes" data-label="Notes">HR/compliance tech. All fields answered.</td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Visual Designer (UI/UX)</td>
@@ -3251,7 +3274,7 @@
     <td class="col-link" data-label="Link"><a href="https://appetiser.recruitee.com/o/visual-designer-uiux" target="_blank">Recruitee</a></td>
     <td class="col-notes notes" data-label="Notes">App development agency (Australia). 7 open questions answered. Laptop specs + internet speed screenshots generated.</td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Product Designer</td>
@@ -3264,7 +3287,7 @@
     <td class="col-link" data-label="Link"><a href="https://jobs.lever.co/metabase/b6ab96a1-5d3f-4e5b-a611-5a79d333d62f" target="_blank">Lever</a></td>
     <td class="col-notes notes" data-label="Notes">Global Remote, Lever ATS, PDF CV uploaded via GitHub fetch.</td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
@@ -3277,7 +3300,7 @@
     <td class="col-link" data-label="Link"><a href="https://remote.com/openings/6582908003" target="_blank">Custom (Greenhouse)</a></td>
     <td class="col-notes notes" data-label="Notes">Remote worldwide, B2B SaaS platform for global HR/payroll.</td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer (Contract)</td>
@@ -3290,7 +3313,7 @@
     <td class="col-link" data-label="Link"><a href="https://garden3d.notion.site/1f1131fea2c78095922ec7e09bd96101" target="_blank">Notion form</a></td>
     <td class="col-notes notes" data-label="Notes">Worker-owned creative collective, contract $80k-$120k, applied via Creative Network form.</td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Product Designer (EMEA)</td>
@@ -3303,7 +3326,7 @@
     <td class="col-link" data-label="Link"><a href="#" target="_blank">Ashby</a></td>
     <td class="col-notes notes" data-label="Notes">Founding designer role, cybersecurity AI platform, Sequoia-backed.</td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Product Designer</td>
@@ -3316,7 +3339,7 @@
     <td class="col-link" data-label="Link"><a href="https://artificiallabsltd.teamtailor.com/jobs/7338743-product-designer" target="_blank">Teamtailor</a></td>
     <td class="col-notes notes" data-label="Notes">Full 1.6MB PDF CV uploaded, personalized cover letter + answers (why great fit, React experience), UK remote role.</td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer, Experience (Social Core)</td>
@@ -3329,7 +3352,7 @@
     <td class="col-link" data-label="Link"><a href="https://jobs.lever.co/vrchat/177b95cb-2375-4994-a682-9dcaeb3707c4" target="_blank">Lever</a></td>
     <td class="col-notes notes" data-label="Notes">VRChat Social Core team. Found via WeWorkRemotely / DynamiteJobs. Lever ATS, PDF CV uploaded via GitHub fetch.</td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Product Designer, Creators</td>
@@ -3345,7 +3368,7 @@
   <!-- À soumettre -->
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Senior Product Designer, Core Experiences</td>
     <td class="col-company" data-label="Company">Super.com</td>
     <td class="col-location" data-label="Location">Remote US/Canada</td>
@@ -3358,7 +3381,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Product Designer</td>
     <td class="col-company" data-label="Company">Primer.io</td>
     <td class="col-location" data-label="Location">Remote EU</td>
@@ -3371,7 +3394,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Product Designer</td>
     <td class="col-company" data-label="Company">Coder</td>
     <td class="col-location" data-label="Location">Remote US/Ireland/Poland/UK</td>
@@ -3382,7 +3405,7 @@
     <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/Coder" target="_blank">Ashby</a></td>
     <td class="col-notes notes" data-label="Notes">⚠️ Soumis avec text PDF — à refaire manuellement. Cloud dev environments.</td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Lead Visual Designer</td>
@@ -3410,7 +3433,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Product Designer (EMEA)</td>
     <td class="col-company" data-label="Company">XBOW</td>
     <td class="col-location" data-label="Location">EMEA Remote</td>
@@ -3423,7 +3446,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Lead Product Designer</td>
     <td class="col-company" data-label="Company">Vitally</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -3434,7 +3457,7 @@
     <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/vitally/85ca1f6b-6a2b-4768-8622-50e74d6c429a" target="_blank">Ashby</a></td>
     <td class="col-notes notes" data-label="Notes">Customer success SaaS, work with CEO.</td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Product Designer</td>
@@ -3449,7 +3472,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
     <td class="col-company" data-label="Company">Restream</td>
     <td class="col-location" data-label="Location">Prague / EU Remote</td>
@@ -3462,7 +3485,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
     <td class="col-company" data-label="Company">Drata</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -3475,7 +3498,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
     <td class="col-company" data-label="Company">EverAI</td>
     <td class="col-location" data-label="Location">Worldwide Remote</td>
@@ -3488,7 +3511,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
     <td class="col-company" data-label="Company">n8n</td>
     <td class="col-location" data-label="Location">Worldwide Remote</td>
@@ -3501,7 +3524,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Product Designer (Figma)</td>
     <td class="col-company" data-label="Company">Codekeeper</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -3514,7 +3537,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
     <td class="col-company" data-label="Company">Search Dates</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -3527,7 +3550,7 @@
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">À soumettre</span> <button class="btn-applied" title="Marquer comme soumise">✓</button></td>
     <td class="col-role" data-label="Role">UX Designer Infrastructure</td>
     <td class="col-company" data-label="Company">Canonical</td>
     <td class="col-location" data-label="Location">Remote</td>
@@ -3566,7 +3589,7 @@
     <td class="col-notes notes" data-label="Notes">Greenhouse ATS incompatible with automation.</td>
   </tr>
   <!-- Saved / Easy Apply -->
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Product Designer</td>
@@ -3579,7 +3602,7 @@
     <td class="col-link" data-label="Link"><a href="https://www.linkedin.com/jobs/view/4312632174/" target="_blank">LinkedIn</a></td>
     <td class="col-notes notes" data-label="Notes">85% match. Big tech, Remote, crypto/fintech. 100+ applicants.</td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Principal UI/UX Designer</td>
@@ -3592,7 +3615,7 @@
     <td class="col-link" data-label="Link"><a href="https://www.linkedin.com/jobs/view/4380955399/" target="_blank">LinkedIn</a></td>
     <td class="col-notes notes" data-label="Notes">90% match. Figma tokens, Rive, DS, motion. Below 80k target.</td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior UX Designer</td>
@@ -3605,7 +3628,7 @@
     <td class="col-link" data-label="Link"><a href="https://www.linkedin.com/jobs/view/4375100623/" target="_blank">LinkedIn</a></td>
     <td class="col-notes notes" data-label="Notes">75% match. Senior, Remote APAC. 100+ applicants.</td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
@@ -3618,7 +3641,7 @@
     <td class="col-link" data-label="Link"><a href="https://www.linkedin.com/jobs/view/4383089024/" target="_blank">LinkedIn</a></td>
     <td class="col-notes notes" data-label="Notes">80% match. Senior, Remote APAC.</td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
@@ -3631,7 +3654,7 @@
     <td class="col-link" data-label="Link"><a href="https://www.linkedin.com/jobs/view/4383089025/" target="_blank">LinkedIn</a></td>
     <td class="col-notes notes" data-label="Notes">80% match. Senior, Remote APAC.</td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
@@ -3644,7 +3667,7 @@
     <td class="col-link" data-label="Link"><a href="https://www.linkedin.com/jobs/view/4383089026/" target="_blank">LinkedIn</a></td>
     <td class="col-notes notes" data-label="Notes">80% match. Senior, Remote APAC.</td>
   </tr>
-  <tr class="data-row" data-status="submitted">
+  <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior Product UIUX Designer</td>
@@ -4112,12 +4135,44 @@
 (function() {
   const table = document.getElementById('main-table');
   const tbody = table.querySelector('tbody');
+  const subFilterEl = document.getElementById('sub-filter-submitted');
   const rows = () => Array.from(tbody.querySelectorAll('tr.data-row'));
   let currentFilter = 'all';
+  let currentSubFilter = 'all';
   let sortCol = -1;
   let sortDir = 'asc';
 
-  // Count & display stats
+  // --- Row key for localStorage ---
+  function getRowKey(row) {
+    return (row.querySelector('.col-company')?.textContent?.trim() || '') + '|' +
+           (row.querySelector('.col-role')?.textContent?.trim() || '');
+  }
+
+  // --- localStorage persistence ---
+  function saveManualSubmissions() {
+    const keys = [];
+    rows().forEach(r => {
+      if (r.dataset.status === 'submitted' && r.dataset.source === 'manual') {
+        keys.push(getRowKey(r));
+      }
+    });
+    localStorage.setItem('manual-submissions', JSON.stringify(keys));
+  }
+
+  function loadManualSubmissions() {
+    const saved = JSON.parse(localStorage.getItem('manual-submissions') || '[]');
+    if (!saved.length) return;
+    rows().forEach(r => {
+      if (r.dataset.status === 'manual' && saved.includes(getRowKey(r))) {
+        r.dataset.status = 'submitted';
+        r.dataset.source = 'manual';
+        const statusCell = r.querySelector('.col-status');
+        statusCell.innerHTML = '<span class="badge submitted">Submitted</span>';
+      }
+    });
+  }
+
+  // --- Count & display stats ---
   function updateCounts() {
     const all = rows();
     const counts = { submitted: 0, manual: 0, saved: 0, already: 0, failed: 0, skipped: 0 };
@@ -4131,34 +4186,67 @@
     document.getElementById('count-skipped').textContent = counts.skipped;
   }
 
-  // Filter
+  // --- Filter ---
   function applyFilter(filter) {
     currentFilter = filter;
+    // Show/hide sub-filter
+    subFilterEl.classList.toggle('visible', filter === 'submitted');
+    if (filter !== 'submitted') {
+      currentSubFilter = 'all';
+      subFilterEl.querySelectorAll('.sub-chip').forEach(c => c.classList.toggle('active', c.dataset.subsource === 'all'));
+    }
+
     document.querySelectorAll('.stat').forEach(s => s.classList.toggle('active', s.dataset.filter === filter));
     rows().forEach(r => {
-      const match = filter === 'all' || r.dataset.status === filter;
+      let match = filter === 'all' || r.dataset.status === filter;
+      // Sub-filter for submitted
+      if (match && filter === 'submitted' && currentSubFilter !== 'all') {
+        match = (r.dataset.source || 'auto') === currentSubFilter;
+      }
       r.classList.toggle('hidden', !match);
     });
   }
 
-  // Click on stat cards
+  // --- Click on stat cards ---
   document.querySelectorAll('.stat[data-filter]').forEach(stat => {
     stat.addEventListener('click', () => applyFilter(stat.dataset.filter));
   });
 
-  // Sorting
+  // --- Sub-filter clicks ---
+  subFilterEl.querySelectorAll('.sub-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      currentSubFilter = chip.dataset.subsource;
+      subFilterEl.querySelectorAll('.sub-chip').forEach(c => c.classList.toggle('active', c === chip));
+      applyFilter('submitted');
+    });
+  });
+
+  // --- Button "Applied" click ---
+  tbody.addEventListener('click', e => {
+    const btn = e.target.closest('.btn-applied');
+    if (!btn) return;
+    const row = btn.closest('tr.data-row');
+    if (!row || row.dataset.status !== 'manual') return;
+    row.dataset.status = 'submitted';
+    row.dataset.source = 'manual';
+    const statusCell = row.querySelector('.col-status');
+    statusCell.innerHTML = '<span class="badge submitted">Submitted</span>';
+    saveManualSubmissions();
+    updateCounts();
+    applyFilter(currentFilter);
+  });
+
+  // --- Sorting ---
   table.querySelectorAll('thead th[data-type]').forEach(th => {
     th.addEventListener('click', () => {
       const col = parseInt(th.dataset.col);
       if (sortCol === col) { sortDir = sortDir === 'asc' ? 'desc' : 'asc'; }
       else { sortCol = col; sortDir = 'asc'; }
 
-      // Update header styles
       table.querySelectorAll('thead th').forEach(h => h.classList.remove('sorted'));
       th.classList.add('sorted');
       th.querySelector('.sort-icon').textContent = sortDir === 'asc' ? '↑' : '↓';
 
-      // Sort rows
       const sorted = rows().sort((a, b) => {
         const aVal = a.cells[col]?.textContent?.trim().toLowerCase() || '';
         const bVal = b.cells[col]?.textContent?.trim().toLowerCase() || '';
@@ -4170,7 +4258,8 @@
     });
   });
 
-  // Init
+  // --- Init ---
+  loadManualSubmissions();
   updateCounts();
   applyFilter('all');
 })();
