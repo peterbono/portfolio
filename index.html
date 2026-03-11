@@ -148,6 +148,17 @@
   .btn-applied:hover { background: #34d399; color: #052e1f; border-color: #34d399; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(52,211,153,.2); }
   .btn-applied:active { transform: translateY(0); }
 
+  /* === BUTTON "Skip" === */
+  .btn-skip {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: #1c1917; color: #78716c; border: 1px solid #292524;
+    border-radius: 6px; padding: 4px 10px; font-size: 11px; font-weight: 600;
+    cursor: pointer; margin-left: 4px; transition: all .2s;
+    vertical-align: middle; font-family: inherit; letter-spacing: .3px;
+  }
+  .btn-skip:hover { background: #451a03; color: #f87171; border-color: #7f1d1d; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(248,113,113,.15); }
+  .btn-skip:active { transform: translateY(0); }
+
   /* === ACTION COLUMN === */
   .col-action { text-align: center; white-space: nowrap; }
 
@@ -212,8 +223,7 @@
   }
   .hidden-view { display: none !important; }
   .main.village-mode #stats,
-  .main.village-mode #objectives,
-  .main.village-mode .view-nav {
+  .main.village-mode #objectives {
     position: sticky;
     top: 10px;
     z-index: 5;
@@ -1528,7 +1538,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/duna/c8eb5931-2b93-461c-ae0f-0db449e51e6e/application" target="_blank">Ashby</a></td>
     <td class="col-notes notes" data-label="Notes">Ashby CSP blocks PDF upload — manual submission needed</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -1598,7 +1608,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/magicschool/ef030df9-2353-4ae3-9408-94ead6185cd6/application" target="_blank">Ashby</a></td>
     <td class="col-notes notes" data-label="Notes">Via Jobgether, 98% match, Ashby=no PDF upload</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -1724,7 +1734,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://www.linkedin.com/jobs/view/4370881895" target="_blank">BambooHR</a></td>
     <td class="col-notes notes" data-label="Notes">aras.bamboohr.com — new ATS</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -1738,7 +1748,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://www.linkedin.com/jobs/view/4380042185" target="_blank">Teamtailor</a></td>
     <td class="col-notes notes" data-label="Notes">careers.tryhackme.com — 3rd role</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -1752,7 +1762,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://www.linkedin.com/jobs/view/4370467968" target="_blank">Custom</a></td>
     <td class="col-notes notes" data-label="Notes">fairmarkit.com/careers</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -1766,7 +1776,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://www.linkedin.com/jobs/view/4372775238" target="_blank">Custom</a></td>
     <td class="col-notes notes" data-label="Notes">monks.com/careers</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="skipped">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -1864,7 +1874,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://www.linkedin.com/jobs/view/4381836196" target="_blank">Teamtailor</a></td>
     <td class="col-notes notes" data-label="Notes">foundryworksdesign.teamtailor.com — contract</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -1878,7 +1888,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://www.linkedin.com/jobs/view/4380331879" target="_blank">Custom</a></td>
     <td class="col-notes notes" data-label="Notes">buscojobs.pt — external job board</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -1892,7 +1902,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://www.linkedin.com/jobs/view/4355242063" target="_blank">Ashby</a></td>
     <td class="col-notes notes" data-label="Notes">Ashby — CSP blocks PDF upload</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="skipped">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -2046,7 +2056,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://www.linkedin.com/jobs/view/4382968139" target="_blank">Jobvite</a></td>
     <td class="col-notes notes" data-label="Notes">jobs.jobvite.com — Moz Group</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -2060,7 +2070,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://www.linkedin.com/jobs/view/4377284090" target="_blank">Gem</a></td>
     <td class="col-notes notes" data-label="Notes">jobs.gem.com — new ATS</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -2074,7 +2084,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://www.linkedin.com/jobs/view/4383330504" target="_blank">Custom</a></td>
     <td class="col-notes notes" data-label="Notes">comm-it.com/careers — custom site</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -2088,7 +2098,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://www.linkedin.com/jobs/view/4365120090" target="_blank">Ashby</a></td>
     <td class="col-notes notes" data-label="Notes">Ashby — CSP blocks PDF upload</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -2102,7 +2112,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://www.linkedin.com/jobs/view/4380585018" target="_blank">Jobvite</a></td>
     <td class="col-notes notes" data-label="Notes">jobs.jobvite.com — new ATS</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="skipped">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -2326,7 +2336,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://www.linkedin.com/jobs/view/4381705209" target="_blank">Greenhouse</a></td>
     <td class="col-notes notes" data-label="Notes">Greenhouse — known to crash on submit</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -2340,7 +2350,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://www.linkedin.com/jobs/view/4370733535" target="_blank">Ashby</a></td>
     <td class="col-notes notes" data-label="Notes">Ashby — CSP blocks PDF upload</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -2354,7 +2364,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://www.linkedin.com/jobs/view/4337089927" target="_blank">Greenhouse</a></td>
     <td class="col-notes notes" data-label="Notes">Greenhouse — known to crash on submit</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="skipped">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -2494,7 +2504,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://www.linkedin.com/jobs/view/4378587913" target="_blank">ADP</a></td>
     <td class="col-notes notes" data-label="Notes">workforcenow.adp.com — new ATS</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -2508,7 +2518,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://www.linkedin.com/jobs/view/4380039265" target="_blank">Teamtailor</a></td>
     <td class="col-notes notes" data-label="Notes">Teamtailor custom domain — Stimulus blocks upload (2nd role)</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -2522,7 +2532,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://www.linkedin.com/jobs/view/4379444834" target="_blank">Ashby</a></td>
     <td class="col-notes notes" data-label="Notes">Ashby — CSP blocks PDF upload</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -2536,7 +2546,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://www.linkedin.com/jobs/view/4383371956" target="_blank">Ashby</a></td>
     <td class="col-notes notes" data-label="Notes">Ashby — CSP blocks PDF upload</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -2550,7 +2560,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://www.linkedin.com/jobs/view/4379452406" target="_blank">Greenhouse</a></td>
     <td class="col-notes notes" data-label="Notes">Greenhouse — known to crash on submit</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -2564,7 +2574,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://www.linkedin.com/jobs/view/4363077785" target="_blank">UltiPro</a></td>
     <td class="col-notes notes" data-label="Notes">recruiting2.ultipro.com — new ATS</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -2578,7 +2588,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://www.linkedin.com/jobs/view/4326511584" target="_blank">Rippling</a></td>
     <td class="col-notes notes" data-label="Notes">ats.rippling.com — new ATS</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="skipped">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -2760,7 +2770,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://ats.rippling.com/talentneuroncareers/jobs/25d88612-ff5d-4996-9fa2-c84e323b4b5b" target="_blank">Rippling</a></td>
     <td class="col-notes notes" data-label="Notes">New ATS (Rippling) — manual submit</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -2774,7 +2784,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/HighlightTA/a4b52d52-5e0c-4fbf-b6ef-34465926add0" target="_blank">Ashby</a></td>
     <td class="col-notes notes" data-label="Notes">Ashby — manual submit</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -2788,7 +2798,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://job-boards.greenhouse.io/remotecom/jobs/7652745003" target="_blank">Greenhouse</a></td>
     <td class="col-notes notes" data-label="Notes">Greenhouse — Portugal-based remote</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -2802,7 +2812,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://www.salsify.com/careers/current-listings?gh_jid=8452579002" target="_blank">Greenhouse</a></td>
     <td class="col-notes notes" data-label="Notes">Greenhouse — manual submit</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -2816,7 +2826,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/FlutterFlow/224be149-19f8-469c-9767-f2f263f0ae5c" target="_blank">Ashby</a></td>
     <td class="col-notes notes" data-label="Notes">Ashby — manual submit</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -2830,7 +2840,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://careers.tryhackme.com/jobs/7332974-product-designer-b2c" target="_blank">Teamtailor</a></td>
     <td class="col-notes notes" data-label="Notes">Teamtailor custom domain — Stimulus upload blocked, CV on S3 but form rejected. Manual submit needed.</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="skipped">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3012,7 +3022,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/cow-dao?ashby_jid=3d755b1d-19ba-4ba6-86a8-8f126f0767ef" target="_blank">Ashby</a></td>
     <td class="col-notes notes" data-label="Notes">Ashby — manual submit</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3026,7 +3036,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/dandy/d9b5893e-56bd-4af7-bcb4-03d9f9bd9df8" target="_blank">Ashby</a></td>
     <td class="col-notes notes" data-label="Notes">Ashby — manual submit</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3040,7 +3050,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/whatnot/c26e794a-a098-434c-912e-14a1729d88de" target="_blank">Ashby</a></td>
     <td class="col-notes notes" data-label="Notes">Ashby — manual submit</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3054,7 +3064,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://careers.mantu.com/brands/amaris-consulting/jobs/42468" target="_blank">Mantu Careers</a></td>
     <td class="col-notes notes" data-label="Notes">Custom ATS (mantu.com)</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="skipped">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3096,7 +3106,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://www.buscojobs.com.ar/" target="_blank">BuscoJobs</a></td>
     <td class="col-notes notes" data-label="Notes">Argentina-based, BuscoJobs ATS</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3110,7 +3120,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/darkroom" target="_blank">Ashby</a></td>
     <td class="col-notes notes" data-label="Notes">E-commerce agency, Ashby</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3124,7 +3134,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/bjakcareer/" target="_blank">Ashby</a></td>
     <td class="col-notes notes" data-label="Notes">Malaysia fintech, Ashby</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3138,7 +3148,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://www.linkedin.com/jobs/view/3775459084" target="_blank">LinkedIn</a></td>
     <td class="col-notes notes" data-label="Notes">UK-based fintech, no external ATS</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3152,7 +3162,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://www.linkedin.com/jobs/view/4380917662" target="_blank">LinkedIn</a></td>
     <td class="col-notes notes" data-label="Notes">70-90k EUR, no external ATS detected</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3166,7 +3176,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/Ashby/2373fcd5-144b-4d66-a98b-dd0efb4eb9d1" target="_blank">Ashby</a></td>
     <td class="col-notes notes" data-label="Notes">ATS company itself, Staff level</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3180,7 +3190,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://boards.greenhouse.io/nextdoor/jobs/7608647" target="_blank">Greenhouse</a></td>
     <td class="col-notes notes" data-label="Notes">Design Systems, Greenhouse</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="skipped">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3306,7 +3316,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/ladder/6cbf504f-5987-4721-a487-7a82eaf5fcf9" target="_blank">Ashby</a></td>
     <td class="col-notes notes" data-label="Notes">Insurance/fintech, Ashby</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3320,7 +3330,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/tem/31899310-46bc-4b32-8e02-9c1c5cc88085" target="_blank">Ashby</a></td>
     <td class="col-notes notes" data-label="Notes">Brand/creative role, Ashby</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3334,7 +3344,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://tabby.pinpointhq.com/en/postings/02260927-4fe9-4e6f-89f7-e7dea0a9cd29" target="_blank">Pinpoint HQ</a></td>
     <td class="col-notes notes" data-label="Notes">New ATS (Pinpoint HQ), BNPL fintech</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3348,7 +3358,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://workhq.com/companies/bolt-com/jobs/senior-product-designer-superapp-12607" target="_blank">WorkHQ</a></td>
     <td class="col-notes notes" data-label="Notes">New ATS (WorkHQ), SuperApp team</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3362,7 +3372,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/patrianna/3a7cb6ce-964a-42b5-b3ee-c243e0cd2607" target="_blank">Ashby</a></td>
     <td class="col-notes notes" data-label="Notes">Design Systems focus, Ashby</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3376,7 +3386,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://fyst.applytojob.com/apply/EImsVT6o6t/Product-Designer-for-Our-Partners-Group-Company" target="_blank">JazzHR</a></td>
     <td class="col-notes notes" data-label="Notes">JazzHR with reCAPTCHA</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3390,7 +3400,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://fa-exki-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/26408" target="_blank">Oracle HCM</a></td>
     <td class="col-notes notes" data-label="Notes">Sports merchandise, Oracle HCM</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3404,7 +3414,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://recruitcrm.io/apply/17629696510820072484Wmj" target="_blank">RecruitCRM</a></td>
     <td class="col-notes notes" data-label="Notes">New ATS (RecruitCRM), Figma focus</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3418,7 +3428,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://job-boards.eu.greenhouse.io/sportygroup/jobs/4799521101" target="_blank">Greenhouse</a></td>
     <td class="col-notes notes" data-label="Notes">Sports/betting platform, Greenhouse crashes</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3432,7 +3442,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/heidihealth.com.au/21728c5f-8a8e-464b-b5c9-43bcf18303b4" target="_blank">Ashby</a></td>
     <td class="col-notes notes" data-label="Notes">Healthcare AI, AU-based remote</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="skipped">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3474,7 +3484,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://careers.teksystems.com/us/en/job/JP-005865428/Senior-Product-Designer" target="_blank">TEKsystems</a></td>
     <td class="col-notes notes" data-label="Notes">Custom ATS (TEKsystems careers) — manual submission needed</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3488,7 +3498,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://mojotech.applytojob.com/apply/rEtDfbd43r" target="_blank">JazzHR</a></td>
     <td class="col-notes notes" data-label="Notes">JazzHR — reCAPTCHA blocks automated submission</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3502,7 +3512,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://www.buscojobs.pt/senior-product-designer-global-fully-remote-full-time-saas-ID-23346894" target="_blank">BuscoJobs</a></td>
     <td class="col-notes notes" data-label="Notes">Aggregator (buscojobs.pt) — find direct application link</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3516,7 +3526,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://job-boards.greenhouse.io/smartertechnologies/jobs/4665917005" target="_blank">Greenhouse</a></td>
     <td class="col-notes notes" data-label="Notes">Greenhouse — manual submission needed</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3530,7 +3540,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/xbowcareers/bd41bd5e-6351-4bdf-8d3e-06fb594a29d4" target="_blank">Ashby</a></td>
     <td class="col-notes notes" data-label="Notes">Ashby — CSP blocks PDF upload, manual submission needed</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3544,7 +3554,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/monarchmoney/6d2119b8-055d-492e-8412-ebdd77e4b39b" target="_blank">Ashby</a></td>
     <td class="col-notes notes" data-label="Notes">Ashby — CSP blocks PDF upload, manual submission needed</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3558,7 +3568,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://job-boards.greenhouse.io/doordashusa/jobs/7169428" target="_blank">Greenhouse</a></td>
     <td class="col-notes notes" data-label="Notes">Greenhouse — manual submission needed</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3572,7 +3582,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ PDF uploadé (1.6MB)<br><small>+ URL floriangouloubi.com</small></td>
     <td class="col-link" data-label="Link"><a href="https://job-boards.greenhouse.io/figma/jobs/5711571004" target="_blank">Greenhouse</a></td>
     <td class="col-notes notes" data-label="Notes">Greenhouse — manual submission needed</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3826,7 +3836,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#fb923c">❌ Non uploadé<br><small>CSP bloque GitHub</small></td>
     <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/super.com/94c0bd48-9e5a-43aa-b797-d082c8c2e530" target="_blank">Ashby</a></td>
     <td class="col-notes notes" data-label="Notes">⚠️ Soumis avec text PDF — à refaire manuellement avec le vrai CV. Formulaire rempli ($125-150k). Portfolio URL incluse.</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3840,7 +3850,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#fb923c">❌ Non uploadé<br><small>CSP bloque GitHub</small></td>
     <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/primer.io/0876a65a-4ae2-4534-8cf2-de4a34a5301f" target="_blank">Ashby</a></td>
     <td class="col-notes notes" data-label="Notes">⚠️ Soumis avec text PDF — à refaire manuellement. Payments infrastructure.</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3854,7 +3864,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#fb923c">❌ Non uploadé<br><small>CSP bloque GitHub</small></td>
     <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/Coder" target="_blank">Ashby</a></td>
     <td class="col-notes notes" data-label="Notes">⚠️ Soumis avec text PDF — à refaire manuellement. Cloud dev environments.</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3896,7 +3906,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#fb923c">❌ Non uploadé<br><small>CSP bloque GitHub</small></td>
     <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/xbowcareers/bd41bd5e-6351-4bdf-8d3e-06fb594a29d4" target="_blank">Ashby</a></td>
     <td class="col-notes notes" data-label="Notes">$90-135k, AI pentesting, Sequoia-backed.</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3910,7 +3920,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#fb923c">❌ Non uploadé<br><small>CSP bloque GitHub</small></td>
     <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/vitally/85ca1f6b-6a2b-4768-8622-50e74d6c429a" target="_blank">Ashby</a></td>
     <td class="col-notes notes" data-label="Notes">Customer success SaaS, work with CEO.</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3938,7 +3948,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#fb923c">❌ Non uploadé<br><small>CSP bloque GitHub</small></td>
     <td class="col-link" data-label="Link">Ashby</td>
     <td class="col-notes notes" data-label="Notes">€96-144k, Prague/EU remote, live streaming.</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3952,7 +3962,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#fb923c">❌ Non uploadé<br><small>CSP bloque GitHub</small></td>
     <td class="col-link" data-label="Link">Ashby</td>
     <td class="col-notes notes" data-label="Notes">$130-170k est., compliance automation SaaS.</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3966,7 +3976,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#fb923c">❌ Non uploadé<br><small>CSP bloque GitHub</small></td>
     <td class="col-link" data-label="Link">Ashby</td>
     <td class="col-notes notes" data-label="Notes">Worldwide remote, AI companionship, 35M+ users.</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3980,7 +3990,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#fb923c">❌ Non uploadé<br><small>CSP bloque GitHub</small></td>
     <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/n8n/fe05c209-8069-4a88-aeba-8da23488cd30" target="_blank">Ashby</a></td>
     <td class="col-notes notes" data-label="Notes">Workflow automation, worldwide remote. Moved from Workable to Ashby.</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -3994,7 +4004,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#4ade80">✅ URL floriangouloubi.com</td>
     <td class="col-link" data-label="Link"><a href="https://codekeeper.applytojob.com/apply/UsMa7i7wjH/Product-Designer-Figma" target="_blank">JazzHR</a></td>
     <td class="col-notes notes" data-label="Notes">JazzHR ATS, all fields filled including cover letter, resume uploaded (1.6MB GitHub PDF). Needs manual CAPTCHA completion + click Submit.</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -4008,7 +4018,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#fb923c">❌ Non envoyé<br><small>email draft ready</small></td>
     <td class="col-link" data-label="Link">careers@searchdates.co</td>
     <td class="col-notes notes" data-label="Notes">Email application to careers@searchdates.co with CV + cover letter. Email draft prepared at /tmp/prep-searchdates.json.</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <tr class="data-row" data-status="manual">
     <td class="col-date" data-label="Date">2026-03-10</td>
@@ -4022,7 +4032,7 @@
     <td class="col-portfolio" data-label="Portfolio" style="color:#fb923c">❌ Non uploadé<br><small>Greenhouse manual</small></td>
     <td class="col-link" data-label="Link">-</td>
     <td class="col-notes notes" data-label="Notes">Manual application needed (Greenhouse ATS). Ubuntu/infrastructure focus.</td>
-    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
+    <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button></td>
   </tr>
   <!-- Failed -->
   <tr class="data-row" data-status="failed">
@@ -5002,60 +5012,75 @@
     villageCtx.globalAlpha=1;
   }
 
-  // === BACKGROUND — ISOMETRIC FOREST surrounding the village ===
+  // === BACKGROUND — DENSE FOREST edge-to-edge (screen-space trees) ===
   function drawBackground(sky){
     const isNight=sky.phase==='night';
-    // Fill entire canvas below sky with forest floor
-    const floorCol=isNight?'#162814':'#3a7a2a';
-    const floorColL=isNight?'#1a3018':'#4a8a3a';
-    villageCtx.fillStyle=floorCol;
-    villageCtx.fillRect(0,100,960,320);
-    // Gradient from sky to forest floor
-    const skyFloor=villageCtx.createLinearGradient(0,70,0,140);
-    skyFloor.addColorStop(0,'transparent');
-    skyFloor.addColorStop(1,floorCol);
-    villageCtx.fillStyle=skyFloor;
-    villageCtx.fillRect(0,70,960,70);
+    const HORIZON=100;
+    const ctx=villageCtx;
 
-    // === ISOMETRIC FOREST TILES around the village ===
-    // Draw extended iso tiles beyond the main grid to make a forest
-    const forestLeaf=isNight?'#142a10':'#2a6a1c';
-    const forestLeafL=isNight?'#1a3414':'#3a8428';
-    const forestLeafD=isNight?'#0e1e0a':'#1a5a10';
-    const forestLog=isNight?'#1a1208':'#5a4028';
-    const forestGrass=isNight?'#162814':'#4a9a34';
-    const forestGrassS=isNight?'#122010':'#3a8a24';
-    const forestGrassF=isNight?'#0e1a0c':'#2a7a1a';
+    // 1. Solid dark forest floor from horizon to bottom
+    const floorCol=isNight?'#0e1a0c':'#2a7a1a';
+    ctx.fillStyle=floorCol;
+    ctx.fillRect(0,HORIZON,960,320);
+    // Gradient at horizon
+    const g=ctx.createLinearGradient(0,HORIZON-12,0,HORIZON+8);
+    g.addColorStop(0,'transparent');g.addColorStop(1,floorCol);
+    ctx.fillStyle=g;ctx.fillRect(0,HORIZON-12,960,20);
 
-    // Extended ground tiles (3 tile border around village)
-    for(let r=-3;r<ROWS+4;r++){
-      for(let c=-3;c<COLS+4;c++){
-        // Skip tiles that are inside the village grid
-        if(r>=0&&r<ROWS&&c>=0&&c<COLS) continue;
-        const p=toIso(c,r);
-        // Only draw if visible on canvas
-        if(p.x<-40||p.x>1000||p.y<40||p.y>440) continue;
-        // Forest floor tile
-        drawIsoDiamond(p.x,p.y,forestGrass);
-        // Draw a tree on most forest tiles
-        const tSr=seededRand(c*53+r*97+7);
-        const treeChance=tSr();
-        if(treeChance>0.25){
-          // Tree trunk
-          drawPixelRect(p.x-2,p.y-24,4,20,forestLog);
-          // Tree canopy (varying sizes)
-          const sz=8+Math.floor(tSr()*8);
-          drawPixelRect(p.x-sz/2-2,p.y-28-sz/2,sz+4,sz*0.7,forestLeafD);
-          drawPixelRect(p.x-sz/2,p.y-32-sz/2,sz,sz*0.6,forestLeaf);
-          drawPixelRect(p.x-sz/3,p.y-34-sz/2,sz*0.6,sz*0.4,forestLeafL);
-        } else if(treeChance>0.15){
-          // Just a bush
-          drawPixelRect(p.x-5,p.y-8,10,6,forestLeafD);
-          drawPixelRect(p.x-3,p.y-10,6,4,forestLeaf);
+    // 2. Tree palette
+    const LD=isNight?'#0e1e0a':'#1a5a10';
+    const LM=isNight?'#142a10':'#2a6a1c';
+    const LL=isNight?'#1a3414':'#3a8428';
+    const TK=isNight?'#1a1208':'#5a4028';
+
+    // 3. Village clearing — ellipse around iso diamond
+    const CX=544,CY=252,RX=295,RY=158;
+
+    // 4. Dense bumpy treeline at horizon (canopies silhouetted against sky)
+    const s0=seededRand(777);
+    for(let x=-12;x<972;x+=3+((s0()*3)|0)){
+      const h=10+((s0()*18)|0);
+      const ty=HORIZON-6-((s0()*22)|0);
+      ctx.fillStyle=LD;ctx.fillRect(x|0,ty|0,(5+(s0()*6))|0,(h+14)|0);
+      ctx.fillStyle=LM;ctx.fillRect((x+1)|0,(ty-1)|0,(4+(s0()*4))|0,(h*0.55)|0);
+      if(s0()>0.3){ctx.fillStyle=LL;ctx.fillRect((x+1)|0,(ty-3)|0,(3+(s0()*3))|0,(h*0.3)|0);}
+    }
+
+    // 5. Forest trees — dense rows, back (small) to front (large)
+    const sr=seededRand(42);
+    for(let y=HORIZON+4;y<440;y+=11){
+      const depth=Math.min(1,(y-HORIZON)/(330));
+      const spacing=11+((depth*10)|0);
+      for(let x=-30;x<990;x+=spacing+((sr()*6)|0)){
+        const tx=x+((sr()*12)|0)-6;
+        const ty=y+((sr()*6)|0)-3;
+        // Skip village clearing
+        const dx=(tx-CX)/RX,dy=(ty-CY)/RY;
+        if(dx*dx+dy*dy<1) continue;
+        // Size by depth (perspective)
+        const sz=7+((depth*13)|0)+((sr()*5)|0);
+        const tw=2+((depth*2)|0);
+        const th=8+((depth*15)|0);
+        const fxc=((tw/2)|0);
+        // Trunk
+        ctx.fillStyle=TK;ctx.fillRect(tx|0,(ty-th)|0,tw,th);
+        // Dark foliage
+        const fw=sz+3,fh=(sz*0.5)|0;
+        ctx.fillStyle=LD;ctx.fillRect((tx-((fw/2)|0)+fxc)|0,(ty-th-fh+2)|0,fw,fh);
+        // Mid foliage
+        const fw2=sz,fh2=(sz*0.42)|0;
+        ctx.fillStyle=LM;ctx.fillRect((tx-((fw2/2)|0)+fxc)|0,(ty-th-fh2)|0,fw2,fh2);
+        // Highlight
+        if(sr()>0.3){
+          const fw3=(sz*0.55)|0,fh3=(sz*0.28)|0;
+          ctx.fillStyle=LL;ctx.fillRect((tx-((fw3/2)|0)+fxc)|0,(ty-th-fh2-2)|0,fw3,fh3);
         }
       }
     }
   }
+
+  // No vignette needed
+  function drawCanopyFrame(sky){}
 
   // === ISO GROUND GRID ===
   function drawIsoGround(){
@@ -5952,6 +5977,9 @@
     drawRain();
     drawSnow();
 
+    // L5.5: Canopy frame overlay (drawn ON TOP of scene)
+    drawCanopyFrame(sky);
+
     // L6: Ambient overlay (day/night tinting)
     if(sky.phase==='night'){
       villageCtx.globalAlpha=0.35;
@@ -6031,6 +6059,31 @@
         r.dataset.source = 'manual';
         const statusCell = r.querySelector('.col-status');
         statusCell.innerHTML = '<span class="badge submitted">Submitted</span>';
+      }
+    });
+  }
+
+  function saveSkippedRows() {
+    const keys = [];
+    rows().forEach(r => {
+      if (r.dataset.status === 'skipped' && !r.dataset.source) {
+        keys.push(getRowKey(r));
+      }
+    });
+    // merge with previously skipped rows that came from HTML
+    const existing = JSON.parse(localStorage.getItem('skipped-rows') || '[]');
+    const merged = [...new Set([...existing, ...keys])];
+    localStorage.setItem('skipped-rows', JSON.stringify(merged));
+  }
+
+  function loadSkippedRows() {
+    const saved = JSON.parse(localStorage.getItem('skipped-rows') || '[]');
+    if (!saved.length) return;
+    rows().forEach(r => {
+      if (r.dataset.status === 'manual' && saved.includes(getRowKey(r))) {
+        r.dataset.status = 'skipped';
+        r.querySelector('.col-status').innerHTML = '<span class="badge skipped">Skipped</span>';
+        r.querySelector('.col-action').innerHTML = '';
       }
     });
   }
@@ -6128,6 +6181,28 @@
     }, 300);
   });
 
+  // --- Button "Skip" click ---
+  tbody.addEventListener('click', e => {
+    const btn = e.target.closest('.btn-skip');
+    if (!btn) return;
+    const row = btn.closest('tr.data-row');
+    if (!row || row.dataset.status !== 'manual') return;
+    // Animate
+    btn.textContent = '✗';
+    btn.style.pointerEvents = 'none';
+    row.style.transition = 'opacity .3s';
+    row.style.opacity = '.5';
+    setTimeout(() => {
+      row.dataset.status = 'skipped';
+      row.querySelector('.col-status').innerHTML = '<span class="badge skipped">Skipped</span>';
+      row.querySelector('.col-action').innerHTML = '';
+      row.style.opacity = '1';
+      saveSkippedRows();
+      updateCounts();
+      applyFilter(currentFilter);
+    }, 300);
+  });
+
   // --- Sorting ---
   table.querySelectorAll('thead th[data-type]').forEach(th => {
     th.addEventListener('click', () => {
@@ -6160,6 +6235,7 @@
   resizeVillageCanvas();
   applyView('table');
   loadManualSubmissions();
+  loadSkippedRows();
   updateCounts();
   applyFilter('all');
 })();
