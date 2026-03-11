@@ -4658,11 +4658,7 @@
   const mainEl = document.querySelector('.main');
   const villageCanvas = document.getElementById('village-canvas');
   const villageCtx = villageCanvas.getContext('2d');
-  const decorImage = new Image();
-  let decorReady = false;
-  decorImage.crossOrigin = 'anonymous';
-  decorImage.src = 'https://raw.githubusercontent.com/rottencandy/js-pixel-art-editor/master/example/sprites/town.png';
-  decorImage.onload = () => { decorReady = true; };
+  // External decor overlay removed — using fully custom layered rendering
 
   function resizeVillageCanvas() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -4690,19 +4686,36 @@
     const tag = document.getElementById('village-status-tag');
     tag.textContent = buildPct === 0 ? 'Maison terminée' : 'Chantier actif';
   }
+  // --- Seeded random for deterministic scenery ---
+  function seededRand(seed) { let s = seed; return () => { s = (s * 16807 + 0) % 2147483647; return (s - 1) / 2147483646; }; }
+  const srand = seededRand(42);
+
+  // --- Pre-computed static scenery (alkito-style layered world) ---
+  const stars = Array.from({ length: 60 }, () => ({ x: srand() * 960, y: srand() * 90, size: srand() > 0.8 ? 2 : 1, twinkleSpeed: 0.02 + srand() * 0.04 }));
+  const grassTufts = Array.from({ length: 120 }, () => ({ x: srand() * 960, y: 252 + srand() * 160, h: 3 + Math.floor(srand() * 5), color: srand() > 0.5 ? '#4d7c3a' : '#5a9a42' }));
+  const smokeParticles = [];
+  const fireflies = Array.from({ length: 18 }, () => ({ x: 100 + srand() * 760, y: 200 + srand() * 200, phase: srand() * Math.PI * 2, speed: 0.3 + srand() * 0.5, radius: 60 + srand() * 80, baseX: 0, baseY: 0 }));
+  fireflies.forEach(f => { f.baseX = f.x; f.baseY = f.y; });
+
   const villageState = {
     hero: { x: 56, y: 236, dir: 1, target: 560, speed: 0.45, carrying: true, step: 0 },
-    npcs: Array.from({ length: 5 }, (_, i) => ({
+    npcs: Array.from({ length: 7 }, (_, i) => ({
       x: 80 + i * 104,
       y: 226 + (i % 3) * 10,
       dir: Math.random() > 0.5 ? 1 : -1,
       speed: 0.12 + Math.random() * 0.2,
-      roamMin: 20 + i * 10,
-      roamMax: 620 - i * 12,
+      roamMin: 40 + i * 10,
+      roamMax: 920 - i * 12,
       step: Math.random() * 7,
-      tone: ['#fca5a5', '#93c5fd', '#c4b5fd', '#fdba74', '#86efac'][i]
+      tone: ['#fca5a5', '#93c5fd', '#c4b5fd', '#fdba74', '#86efac', '#fbbf24', '#f472b6'][i]
     })),
-    clouds: [{ x: 20, y: 38, speed: 0.12 }, { x: 260, y: 22, speed: 0.08 }, { x: 480, y: 44, speed: 0.1 }],
+    clouds: [
+      { x: 20, y: 38, speed: 0.12, w: 28 },
+      { x: 260, y: 18, speed: 0.06, w: 40 },
+      { x: 480, y: 44, speed: 0.1, w: 22 },
+      { x: 700, y: 28, speed: 0.08, w: 34 },
+      { x: 140, y: 56, speed: 0.05, w: 20 }
+    ],
     completeHouses: 0,
     buildPct: 0,
     forge: 0
@@ -4713,37 +4726,126 @@
     villageCtx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
   }
 
-  function drawCloud(x, y) {
-    drawPixelRect(x, y, 20, 8, '#cbd5e1');
-    drawPixelRect(x + 4, y - 4, 12, 6, '#e2e8f0');
+  // --- SKY: gradient + stars + moon (alkito layered background) ---
+  function drawSky(t) {
+    const grad = villageCtx.createLinearGradient(0, 0, 0, 120);
+    grad.addColorStop(0, '#0f172a');
+    grad.addColorStop(0.4, '#1e293b');
+    grad.addColorStop(0.7, '#334155');
+    grad.addColorStop(1, '#475569');
+    villageCtx.fillStyle = grad;
+    villageCtx.fillRect(0, 0, 960, 120);
+
+    // Stars with twinkling
+    stars.forEach(s => {
+      const alpha = 0.4 + 0.6 * Math.abs(Math.sin(t * s.twinkleSpeed + s.x));
+      villageCtx.globalAlpha = alpha;
+      drawPixelRect(s.x, s.y, s.size, s.size, '#f1f5f9');
+    });
+    villageCtx.globalAlpha = 1;
+
+    // Moon
+    drawPixelRect(820, 18, 20, 20, '#fef3c7');
+    drawPixelRect(824, 14, 14, 14, '#fde68a');
+    drawPixelRect(828, 18, 6, 6, '#fcd34d');
+    // Moon glow
+    villageCtx.globalAlpha = 0.08;
+    villageCtx.beginPath();
+    villageCtx.arc(830, 28, 36, 0, Math.PI * 2);
+    villageCtx.fillStyle = '#fef3c7';
+    villageCtx.fill();
+    villageCtx.globalAlpha = 1;
   }
 
-  function drawCharacter(x, y, mainColor, step) {
-    drawPixelRect(x + 2, y - 14, 6, 6, '#fde68a');
-    drawPixelRect(x + 1, y - 8, 8, 8, mainColor);
-    drawPixelRect(x + 1, y, 3, 6, '#3f3f46');
-    drawPixelRect(x + 6, y, 3, 6, '#3f3f46');
-    const swing = Math.sin(step) > 0 ? 1 : -1;
-    drawPixelRect(x - 1, y - 6, 2, 5 + swing, '#f5d0a9');
-    drawPixelRect(x + 9, y - 6 - swing, 2, 5, '#f5d0a9');
+  // --- CLOUDS: multi-layered with varying sizes ---
+  function drawCloud(x, y, w) {
+    const cw = w || 20;
+    villageCtx.globalAlpha = 0.35;
+    drawPixelRect(x, y, cw, 8, '#94a3b8');
+    drawPixelRect(x + 4, y - 4, cw - 8, 6, '#cbd5e1');
+    drawPixelRect(x + 2, y + 6, cw - 4, 4, '#64748b');
+    villageCtx.globalAlpha = 1;
   }
 
+  // --- CHARACTERS: improved with shadow + hair + bobbing ---
+  function drawCharacter(x, y, mainColor, step, isHero) {
+    // Shadow
+    villageCtx.globalAlpha = 0.2;
+    drawPixelRect(x, y + 6, 10, 3, '#000');
+    villageCtx.globalAlpha = 1;
+
+    const bob = Math.sin(step * 2) * 0.8;
+    const oy = y + bob;
+
+    // Hair
+    drawPixelRect(x + 1, oy - 16, 8, 3, isHero ? '#166534' : '#78350f');
+    // Head
+    drawPixelRect(x + 2, oy - 14, 6, 6, '#fde68a');
+    // Eyes
+    drawPixelRect(x + 3, oy - 12, 1, 1, '#1e293b');
+    drawPixelRect(x + 6, oy - 12, 1, 1, '#1e293b');
+    // Body
+    drawPixelRect(x + 1, oy - 8, 8, 8, mainColor);
+    // Belt
+    drawPixelRect(x + 1, oy - 2, 8, 2, '#78350f');
+    // Legs with walk animation
+    const swing = Math.sin(step) * 2;
+    drawPixelRect(x + 1, oy, 3, 6 + swing, '#3f3f46');
+    drawPixelRect(x + 6, oy, 3, 6 - swing, '#3f3f46');
+    // Boots
+    drawPixelRect(x, oy + 4 + swing, 4, 2, '#451a03');
+    drawPixelRect(x + 6, oy + 4 - swing, 4, 2, '#451a03');
+    // Arms
+    drawPixelRect(x - 1, oy - 6, 2, 5 + Math.round(swing * 0.5), '#f5d0a9');
+    drawPixelRect(x + 9, oy - 6 - Math.round(swing * 0.5), 2, 5, '#f5d0a9');
+  }
+
+  // --- HOUSE LOTS: improved with shadow + chimney smoke ---
   function drawHouseLot(x, baseY, buildProgress, done) {
+    // Foundation shadow
+    villageCtx.globalAlpha = 0.15;
+    drawPixelRect(x + 4, baseY + 2, 62, 6, '#000');
+    villageCtx.globalAlpha = 1;
+
     drawPixelRect(x - 2, baseY, 66, 4, '#5b4636');
-    if (done || buildProgress > 0.08) drawPixelRect(x + 8, baseY - 26, 46, 24, '#d4a373');
+    if (done || buildProgress > 0.08) {
+      drawPixelRect(x + 8, baseY - 26, 46, 24, '#d4a373');
+      // Wall texture lines
+      drawPixelRect(x + 8, baseY - 18, 46, 1, '#c09666');
+      drawPixelRect(x + 8, baseY - 10, 46, 1, '#c09666');
+    }
     if (done || buildProgress > 0.3) drawPixelRect(x + 26, baseY - 12, 10, 10, '#111827');
-    if (done || buildProgress > 0.5) drawPixelRect(x + 3, baseY - 36, 56, 10, '#7f1d1d');
+    if (done || buildProgress > 0.5) {
+      drawPixelRect(x + 3, baseY - 36, 56, 10, '#7f1d1d');
+      drawPixelRect(x + 3, baseY - 36, 56, 2, '#991b1b');
+    }
     if (done || buildProgress > 0.68) {
+      // Window glow
+      villageCtx.globalAlpha = 0.25;
+      drawPixelRect(x + 11, baseY - 27, 14, 14, '#fef3c7');
+      drawPixelRect(x + 37, baseY - 27, 14, 14, '#fef3c7');
+      villageCtx.globalAlpha = 1;
       drawPixelRect(x + 14, baseY - 24, 8, 8, '#fef3c7');
       drawPixelRect(x + 40, baseY - 24, 8, 8, '#fef3c7');
+      // Window cross
+      drawPixelRect(x + 17, baseY - 24, 2, 8, '#92400e');
+      drawPixelRect(x + 14, baseY - 21, 8, 2, '#92400e');
+      drawPixelRect(x + 43, baseY - 24, 2, 8, '#92400e');
+      drawPixelRect(x + 40, baseY - 21, 8, 2, '#92400e');
     }
-    if (done || buildProgress > 0.82) drawPixelRect(x + 26, baseY - 44, 8, 8, '#9ca3af');
-    if (!done && buildProgress < 0.95) {
+    if (done || buildProgress > 0.82) {
+      drawPixelRect(x + 26, baseY - 44, 8, 8, '#9ca3af');
+      drawPixelRect(x + 28, baseY - 46, 4, 2, '#6b7280');
+    }
+    if (!done && buildProgress > 0 && buildProgress < 0.95) {
       drawPixelRect(x + 15, baseY - 38, 4, 12, '#92400e');
       drawPixelRect(x + 34, baseY - 46, 4, 20, '#92400e');
+      // Scaffold cross-beam
+      drawPixelRect(x + 15, baseY - 32, 23, 2, '#a16207');
     }
   }
 
+  // --- TOWN SQUARE: cobblestone with worn edges ---
   function drawBrickTile(x, y, c1, c2) {
     drawPixelRect(x, y, 16, 8, c1);
     drawPixelRect(x, y + 8, 16, 8, c2);
@@ -4761,138 +4863,364 @@
         drawBrickTile(x, y, odd ? '#c9baa0' : '#d5c7ae', odd ? '#beaf93' : '#c9b99f');
       }
     }
-    for (let i = 0; i < 90; i++) {
-      const gx = (i * 97) % 940;
-      const gy = 258 + ((i * 41) % 150);
-      drawPixelRect(gx, gy, 3, 2, '#6b8f4e');
-    }
+    // Grass tufts scattered on cobblestone
+    grassTufts.forEach(g => {
+      drawPixelRect(g.x, g.y, 2, g.h, g.color);
+    });
   }
 
-  function drawMainBuilding() {
+  // --- MAIN BUILDING: enhanced with shadow, sign, light glow ---
+  function drawMainBuilding(t) {
+    // Building shadow
+    villageCtx.globalAlpha = 0.12;
+    drawPixelRect(186, 246, 600, 10, '#000');
+    villageCtx.globalAlpha = 1;
+
+    // Walls with stone texture
     drawPixelRect(180, 80, 600, 180, '#5f6a6a');
+    for (let sy = 84; sy < 260; sy += 12) {
+      villageCtx.globalAlpha = 0.06;
+      drawPixelRect(180, sy, 600, 1, '#000');
+      villageCtx.globalAlpha = 1;
+    }
+
+    // Roof
     drawPixelRect(200, 60, 560, 36, '#8f5a4a');
     drawPixelRect(270, 70, 420, 26, '#9b6654');
+    // Roof edge highlight
+    drawPixelRect(200, 60, 560, 2, '#a16b5a');
 
+    // Roof tiles detail
     for (let x = 190; x < 770; x += 16) {
       drawPixelRect(x, 98, 10, 6, '#6f7a7a');
     }
 
+    // Main door
     drawPixelRect(430, 112, 120, 148, '#4b3f39');
     drawPixelRect(444, 128, 92, 122, '#1f2937');
+    // Door arch
+    drawPixelRect(430, 108, 120, 6, '#3b2f2a');
     drawPixelRect(472, 88, 34, 26, '#3b2f2a');
     drawPixelRect(478, 94, 22, 14, '#0f172a');
 
+    // Sign above door
+    drawPixelRect(456, 100, 68, 12, '#7c2d12');
+    drawPixelRect(460, 102, 60, 8, '#92400e');
+    // Sign text dots
+    for (let sx = 464; sx < 516; sx += 6) drawPixelRect(sx, 104, 3, 3, '#fef3c7');
+
+    // Windows with warm glow
     const windows = [240, 320, 610, 690];
     windows.forEach(x => {
+      // Window glow aura
+      const flicker = 0.15 + Math.sin(t * 0.03 + x) * 0.05;
+      villageCtx.globalAlpha = flicker;
+      drawPixelRect(x - 6, 126, 56, 44, '#fef3c7');
+      villageCtx.globalAlpha = 1;
+
       drawPixelRect(x, 130, 44, 32, '#243447');
       drawPixelRect(x + 4, 134, 16, 12, '#f59e0b');
       drawPixelRect(x + 24, 134, 16, 12, '#fde68a');
+      // Window frame
+      drawPixelRect(x + 20, 130, 4, 32, '#1e293b');
+      drawPixelRect(x, 144, 44, 3, '#1e293b');
+      // Flower boxes
       drawPixelRect(x - 4, 160, 52, 8, '#7c2d12');
       drawPixelRect(x - 6, 168, 56, 6, '#4b5563');
       drawPixelRect(x + 6, 170, 12, 6, '#22c55e');
       drawPixelRect(x + 28, 170, 12, 6, '#16a34a');
+      // Flowers
+      drawPixelRect(x + 8, 167, 3, 3, '#fb923c');
+      drawPixelRect(x + 32, 167, 3, 3, '#f472b6');
     });
 
+    // Pillars
     for (let i = 0; i < 2; i++) {
       const bx = i === 0 ? 150 : 760;
       drawPixelRect(bx, 78, 18, 142, '#d6c5aa');
       drawPixelRect(bx + 4, 74, 10, 8, '#8f5a4a');
+      // Pillar shading
+      drawPixelRect(bx + 14, 78, 4, 142, '#bfb09a');
     }
 
-    // Shop awnings
-    drawPixelRect(180, 196, 160, 22, '#f4d9b6');
-    drawPixelRect(180, 196, 20, 22, '#d97757');
-    drawPixelRect(220, 196, 20, 22, '#d97757');
-    drawPixelRect(260, 196, 20, 22, '#d97757');
-    drawPixelRect(300, 196, 20, 22, '#d97757');
-
-    drawPixelRect(620, 196, 160, 22, '#f4d9b6');
-    drawPixelRect(620, 196, 20, 22, '#d97757');
-    drawPixelRect(660, 196, 20, 22, '#d97757');
-    drawPixelRect(700, 196, 20, 22, '#d97757');
-    drawPixelRect(740, 196, 20, 22, '#d97757');
+    // Shop awnings with stripes
+    [180, 620].forEach(ax => {
+      drawPixelRect(ax, 196, 160, 22, '#f4d9b6');
+      for (let sx = 0; sx < 160; sx += 20) {
+        drawPixelRect(ax + sx, 196, 10, 22, '#d97757');
+      }
+      // Awning shadow
+      villageCtx.globalAlpha = 0.08;
+      drawPixelRect(ax, 218, 160, 6, '#000');
+      villageCtx.globalAlpha = 1;
+    });
   }
 
-  function drawForge() {
+  // --- FORGE: with smoke particles ---
+  function drawForge(t) {
+    // Shadow
+    villageCtx.globalAlpha = 0.12;
+    drawPixelRect(90, 248, 118, 8, '#000');
+    villageCtx.globalAlpha = 1;
+
     drawPixelRect(86, 182, 118, 68, '#4b5563');
+    // Stone texture
+    for (let sy = 186; sy < 250; sy += 8) {
+      villageCtx.globalAlpha = 0.05;
+      drawPixelRect(86, sy, 118, 1, '#000');
+      villageCtx.globalAlpha = 1;
+    }
     drawPixelRect(72, 170, 136, 14, '#7c2d12');
+    drawPixelRect(72, 170, 136, 2, '#92400e');
+
+    // Furnace
     drawPixelRect(118, 196, 54, 44, '#111827');
+    drawPixelRect(120, 198, 50, 40, '#1e1e24');
+
+    // Flame
     const flame = Math.max(6, Math.round((villageState.forge || 0) * 34));
     drawPixelRect(140, 226 - flame, 10, flame, '#fb923c');
     drawPixelRect(136, 228 - Math.round(flame * 0.65), 18, Math.round(flame * 0.52), '#facc15');
     if (villageState.forge > 0.6) drawPixelRect(132, 214 - Math.round(flame * 0.75), 26, 4, '#fde047');
+
+    // Flame glow
+    if (villageState.forge > 0.2) {
+      villageCtx.globalAlpha = 0.12 * villageState.forge;
+      villageCtx.beginPath();
+      villageCtx.arc(145, 216, 30 + flame, 0, Math.PI * 2);
+      villageCtx.fillStyle = '#fb923c';
+      villageCtx.fill();
+      villageCtx.globalAlpha = 1;
+    }
+
+    // Anvil
     drawPixelRect(98, 206, 10, 22, '#6b7280');
-    drawPixelRect(100, 202, 16, 4, '#9ca3af');
+    drawPixelRect(94, 204, 18, 4, '#9ca3af');
+    drawPixelRect(96, 200, 14, 4, '#a1a1aa');
+
+    // Chimney
+    drawPixelRect(160, 148, 18, 24, '#4b5563');
+    drawPixelRect(158, 146, 22, 4, '#6b7280');
+
+    // Smoke from chimney
+    if (villageState.forge > 0.1) {
+      for (let i = 0; i < 4; i++) {
+        const age = (t * 0.8 + i * 40) % 160;
+        const sx = 168 + Math.sin(age * 0.04) * 8;
+        const sy = 146 - age * 0.5;
+        const size = 4 + age * 0.04;
+        villageCtx.globalAlpha = Math.max(0, 0.25 - age * 0.0016) * villageState.forge;
+        drawPixelRect(sx, sy, size, size, '#94a3b8');
+      }
+      villageCtx.globalAlpha = 1;
+    }
   }
 
+  // --- FOUNTAIN: sparkle + reflection ---
   function drawFountain(tick) {
+    // Shadow
+    villageCtx.globalAlpha = 0.1;
+    drawPixelRect(418, 366, 132, 8, '#000');
+    villageCtx.globalAlpha = 1;
+
     drawPixelRect(414, 292, 132, 76, '#6b7280');
+    drawPixelRect(416, 294, 128, 72, '#5a6472');
     drawPixelRect(430, 308, 100, 46, '#64748b');
     drawPixelRect(468, 286, 24, 36, '#9ca3af');
     drawPixelRect(474, 278, 12, 12, '#cbd5e1');
 
     const wave = Math.sin(tick / 12) * 2;
+    // Water
     drawPixelRect(436, 314 + wave, 88, 34, '#7dd3fc');
+    drawPixelRect(438, 316 + wave, 84, 30, '#67c8f5');
+    // Water jet
     drawPixelRect(474, 244 + wave, 10, 52, '#bae6fd');
+    drawPixelRect(476, 246 + wave, 6, 48, '#93d9f8');
     drawPixelRect(472, 242 + wave, 14, 6, '#e0f2fe');
+
+    // Water sparkles
+    for (let i = 0; i < 5; i++) {
+      const sparkle = Math.sin(tick / 6 + i * 1.2) > 0.6;
+      if (sparkle) {
+        drawPixelRect(440 + i * 16, 320 + wave + Math.sin(i) * 4, 3, 3, '#f0f9ff');
+      }
+    }
   }
 
+  // --- MARKET STALLS: with cloth roofs and more items ---
   function drawStallsAndProps() {
+    // Left stall
     drawPixelRect(274, 246, 88, 44, '#8b5a3c');
-    drawPixelRect(278, 252, 20, 10, '#22c55e');
-    drawPixelRect(302, 252, 20, 10, '#ef4444');
-    drawPixelRect(326, 252, 20, 10, '#eab308');
+    drawPixelRect(274, 240, 88, 8, '#dc2626'); // Red cloth roof
+    drawPixelRect(274, 240, 44, 8, '#b91c1c');
+    // Items
+    drawPixelRect(278, 256, 16, 8, '#22c55e');
+    drawPixelRect(298, 256, 16, 8, '#ef4444');
+    drawPixelRect(318, 256, 16, 8, '#eab308');
+    drawPixelRect(338, 256, 16, 8, '#f97316');
+    // Sign
+    drawPixelRect(306, 230, 24, 10, '#92400e');
 
+    // Right stall
     drawPixelRect(612, 248, 92, 42, '#8b5a3c');
-    drawPixelRect(620, 254, 18, 14, '#f472b6');
-    drawPixelRect(644, 254, 18, 14, '#fbbf24');
-    drawPixelRect(668, 254, 18, 14, '#34d399');
+    drawPixelRect(612, 242, 92, 8, '#2563eb'); // Blue cloth roof
+    drawPixelRect(612, 242, 46, 8, '#1d4ed8');
+    drawPixelRect(620, 258, 14, 10, '#f472b6');
+    drawPixelRect(640, 258, 14, 10, '#fbbf24');
+    drawPixelRect(660, 258, 14, 10, '#34d399');
+    drawPixelRect(680, 258, 14, 10, '#a78bfa');
 
-    drawPixelRect(210, 322, 16, 24, '#8b5a3c');
-    drawPixelRect(232, 330, 16, 20, '#8b5a3c');
-    drawPixelRect(710, 336, 16, 20, '#8b5a3c');
-    drawPixelRect(730, 328, 16, 24, '#8b5a3c');
+    // Barrels
+    drawPixelRect(210, 320, 18, 26, '#92400e');
+    drawPixelRect(212, 326, 14, 2, '#a16207');
+    drawPixelRect(232, 328, 18, 22, '#78350f');
+    drawPixelRect(234, 334, 14, 2, '#92400e');
+    // Crate
+    drawPixelRect(710, 334, 20, 22, '#a16207');
+    drawPixelRect(712, 336, 16, 18, '#b45309');
+    drawPixelRect(719, 336, 2, 18, '#92400e');
+    drawPixelRect(730, 326, 18, 26, '#78350f');
+    drawPixelRect(732, 332, 14, 2, '#92400e');
+  }
+
+  // --- TREES: multi-layer canopy with trunk detail ---
+  function drawTree(x, y, size) {
+    const s = size || 1;
+    // Shadow
+    villageCtx.globalAlpha = 0.1;
+    drawPixelRect(x + 4, y + 58 * s, 26 * s, 6, '#000');
+    villageCtx.globalAlpha = 1;
+
+    // Trunk
+    drawPixelRect(x + 12 * s, y + 36 * s, 10 * s, 24 * s, '#7c2d12');
+    drawPixelRect(x + 14 * s, y + 36 * s, 6 * s, 24 * s, '#92400e');
+    // Root bumps
+    drawPixelRect(x + 8 * s, y + 56 * s, 6 * s, 4 * s, '#7c2d12');
+    drawPixelRect(x + 20 * s, y + 56 * s, 6 * s, 4 * s, '#7c2d12');
+
+    // Canopy layers (back to front for depth)
+    drawPixelRect(x - 2 * s, y + 18 * s, 38 * s, 22 * s, '#14532d');
+    drawPixelRect(x + 2 * s, y + 8 * s, 30 * s, 20 * s, '#166534');
+    drawPixelRect(x + 6 * s, y, 22 * s, 18 * s, '#22c55e');
+    // Canopy highlights
+    drawPixelRect(x + 8 * s, y + 2 * s, 8 * s, 6 * s, '#4ade80');
+    drawPixelRect(x + 4 * s, y + 14 * s, 6 * s, 4 * s, '#4ade80');
   }
 
   function drawTrees() {
-    const trees = [[42, 268], [856, 270], [20, 118], [900, 124]];
-    trees.forEach(([x, y]) => {
-      drawPixelRect(x + 12, y + 40, 10, 22, '#7c2d12');
-      drawPixelRect(x, y + 20, 34, 26, '#166534');
-      drawPixelRect(x + 4, y, 26, 24, '#22c55e');
+    drawTree(34, 260, 1.1);
+    drawTree(850, 262, 1);
+    drawTree(12, 100, 1.3);
+    drawTree(895, 108, 1.2);
+    // Extra small bushes
+    drawPixelRect(60, 310, 16, 12, '#166534');
+    drawPixelRect(64, 304, 10, 8, '#22c55e');
+    drawPixelRect(870, 316, 14, 10, '#166534');
+    drawPixelRect(873, 310, 8, 8, '#22c55e');
+  }
+
+  // --- LANTERNS: hanging from building ---
+  function drawLanterns(t) {
+    const lanternX = [200, 360, 580, 740];
+    lanternX.forEach((lx, i) => {
+      const swing = Math.sin(t * 0.015 + i) * 1.5;
+      drawPixelRect(lx + swing, 218, 2, 12, '#6b7280');
+      drawPixelRect(lx - 3 + swing, 228, 8, 10, '#fef3c7');
+      drawPixelRect(lx - 1 + swing, 230, 4, 6, '#fbbf24');
+      // Lantern glow
+      villageCtx.globalAlpha = 0.08 + Math.sin(t * 0.02 + i) * 0.03;
+      villageCtx.beginPath();
+      villageCtx.arc(lx + 1 + swing, 234, 18, 0, Math.PI * 2);
+      villageCtx.fillStyle = '#fef3c7';
+      villageCtx.fill();
+      villageCtx.globalAlpha = 1;
     });
   }
 
+  // --- FIREFLIES: ambient particles ---
+  function drawFireflies(t) {
+    fireflies.forEach(f => {
+      f.x = f.baseX + Math.sin(t * 0.008 + f.phase) * 30;
+      f.y = f.baseY + Math.cos(t * 0.006 + f.phase * 1.3) * 15;
+      const alpha = 0.15 + 0.35 * Math.abs(Math.sin(t * 0.02 + f.phase));
+      villageCtx.globalAlpha = alpha;
+      drawPixelRect(f.x, f.y, 2, 2, '#fef3c7');
+      // Glow
+      villageCtx.globalAlpha = alpha * 0.3;
+      villageCtx.beginPath();
+      villageCtx.arc(f.x + 1, f.y + 1, 5, 0, Math.PI * 2);
+      villageCtx.fillStyle = '#fde68a';
+      villageCtx.fill();
+    });
+    villageCtx.globalAlpha = 1;
+  }
+
+  // --- WELL ---
+  function drawWell() {
+    drawPixelRect(544, 298, 36, 34, '#6b7280');
+    drawPixelRect(548, 302, 28, 26, '#1e293b');
+    drawPixelRect(550, 304, 24, 22, '#7dd3fc');
+    // Roof
+    drawPixelRect(540, 284, 44, 6, '#7c2d12');
+    drawPixelRect(556, 268, 12, 18, '#92400e');
+    // Supports
+    drawPixelRect(546, 284, 4, 14, '#92400e');
+    drawPixelRect(574, 284, 4, 14, '#92400e');
+  }
+
+  // --- TICK: main render loop (alkito-inspired layered compositing) ---
   function tickVillage() {
     const w = 960;
     const h = 420;
     const t = Date.now() / 55;
 
-    drawPixelRect(0, 0, w, h, '#1f2937');
-    drawPixelRect(0, 0, w, 120, '#6b7280');
-    drawPixelRect(0, 120, w, 80, '#4b5563');
-    drawPixelRect(0, 200, w, 46, '#5b4636');
+    // Layer 0: Sky gradient + stars + moon
+    drawSky(t);
 
-    if (decorReady) {
-      villageCtx.globalAlpha = 0.2;
-      villageCtx.drawImage(decorImage, 0, 0, decorImage.width, decorImage.height, 0, 0, w, 220);
-      villageCtx.globalAlpha = 1;
+    // Layer 1: Distant mountains / hills
+    const hillGrad = villageCtx.createLinearGradient(0, 90, 0, 150);
+    hillGrad.addColorStop(0, '#374151');
+    hillGrad.addColorStop(1, '#4b5563');
+    villageCtx.fillStyle = hillGrad;
+    villageCtx.beginPath();
+    villageCtx.moveTo(0, 150);
+    for (let x = 0; x <= w; x += 20) {
+      villageCtx.lineTo(x, 100 + Math.sin(x * 0.008) * 18 + Math.sin(x * 0.02) * 8);
     }
+    villageCtx.lineTo(w, 150);
+    villageCtx.closePath();
+    villageCtx.fill();
 
+    // Layer 2: Clouds
     villageState.clouds.forEach(cloud => {
       cloud.x += cloud.speed;
-      if (cloud.x > 980) cloud.x = -34;
-      drawCloud(cloud.x, cloud.y);
+      if (cloud.x > 980) cloud.x = -50;
+      drawCloud(cloud.x, cloud.y, cloud.w);
     });
 
-    drawMainBuilding();
+    // Layer 3: Mid-ground (wall/cliff)
+    const wallGrad = villageCtx.createLinearGradient(0, 120, 0, 246);
+    wallGrad.addColorStop(0, '#4b5563');
+    wallGrad.addColorStop(0.5, '#5b4636');
+    wallGrad.addColorStop(1, '#6b5a48');
+    villageCtx.fillStyle = wallGrad;
+    villageCtx.fillRect(0, 120, w, 126);
+
+    // Layer 4: Main building + forge
+    drawMainBuilding(t);
+    drawForge(t);
+
+    // Layer 5: Ground / town square
     drawTownSquare();
+
+    // Layer 6: Decorations (trees, stalls, fountain, well, lanterns)
     drawTrees();
     drawStallsAndProps();
     drawFountain(t);
-    drawForge();
+    drawWell();
+    drawLanterns(t);
 
-    // Construction lots on lower edge
+    // Layer 7: Construction lots on lower edge
     for (let i = 0; i < 5; i++) {
       const x = 44 + i * 176;
       const done = i < villageState.completeHouses;
@@ -4900,6 +5228,7 @@
       drawHouseLot(x, 414, progress, done);
     }
 
+    // Layer 8: NPCs + Hero (depth-sorted by Y)
     villageState.hero.step += 0.14;
     if (Math.abs(villageState.hero.x - villageState.hero.target) < 2) {
       villageState.hero.target = villageState.hero.target < 480 ? 850 : 80;
@@ -4908,16 +5237,30 @@
     }
     villageState.hero.x += villageState.hero.dir * villageState.hero.speed;
     villageState.hero.y = 362;
-    drawCharacter(villageState.hero.x, villageState.hero.y, '#34d399', villageState.hero.step);
+    drawCharacter(villageState.hero.x, villageState.hero.y, '#34d399', villageState.hero.step, true);
     if (villageState.hero.carrying) drawPixelRect(villageState.hero.x + 9, villageState.hero.y - 10, 5, 5, '#a16207');
 
-    villageState.npcs.forEach((npc, idx) => {
+    // Sort NPCs by Y for proper overlap
+    const sortedNpcs = villageState.npcs.map((npc, idx) => {
       npc.step += 0.12;
-      npc.y = 338 + (idx % 2) * 28;
+      npc.y = 338 + (idx % 3) * 24;
       npc.x += npc.dir * npc.speed;
       if (npc.x < 40 || npc.x > 920 || Math.random() < 0.004) npc.dir *= -1;
-      drawCharacter(npc.x, npc.y, npc.tone, npc.step);
-    });
+      return npc;
+    }).sort((a, b) => a.y - b.y);
+    sortedNpcs.forEach(npc => drawCharacter(npc.x, npc.y, npc.tone, npc.step, false));
+
+    // Layer 9: Ambient effects (fireflies overlay)
+    drawFireflies(t);
+
+    // Layer 10: Vignette overlay for depth
+    villageCtx.globalAlpha = 0.15;
+    const vignette = villageCtx.createRadialGradient(480, 210, 200, 480, 210, 520);
+    vignette.addColorStop(0, 'transparent');
+    vignette.addColorStop(1, '#0f172a');
+    villageCtx.fillStyle = vignette;
+    villageCtx.fillRect(0, 0, w, h);
+    villageCtx.globalAlpha = 1;
 
     villageFrame = requestAnimationFrame(tickVillage);
   }
