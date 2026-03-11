@@ -4866,6 +4866,10 @@
       {c:9,r:5.2,tc:9.5,tr:5.5,speed:0.004,pause:0,t:0},
       {c:10,r:5.8,tc:9,tr:6,speed:0.003,pause:0,t:50},
       {c:8.5,r:5.5,tc:9,tr:5,speed:0.005,pause:0,t:100}
+    ],
+    cows:[
+      {c:3,r:5,tc:4,tr:6,speed:0.002,pause:0,t:0},
+      {c:5,r:6,tc:3,tr:5.5,speed:0.0015,pause:0,t:80}
     ]
   };
   // Pre-generate stars for night sky
@@ -5669,6 +5673,52 @@
     drawPixelRect(cx+5,cy-legOff,1,3,'#d4a030');
   }
 
+  function drawIsoCowAt(sx,sy,t,grazing){
+    const bob=grazing?0:Math.sin(t*1.5)*0.4;
+    const cx=sx,cy=sy+bob;
+    // Shadow
+    villageCtx.globalAlpha=0.12;
+    villageCtx.beginPath();villageCtx.ellipse(cx+10,sy+4,12,5,0,0,Math.PI*2);
+    villageCtx.fillStyle='#000';villageCtx.fill();
+    villageCtx.globalAlpha=1;
+    // Body (big blocky rectangle)
+    drawPixelRect(cx,cy-10,20,10,'#f0f0f0');
+    // Black patches
+    drawPixelRect(cx+2,cy-9,6,5,'#2a2a2a');
+    drawPixelRect(cx+12,cy-8,5,4,'#2a2a2a');
+    // Belly lighter
+    drawPixelRect(cx+1,cy-5,18,3,'#e8e0d8');
+    // Head — drops down when grazing
+    const headDip=grazing?6:0;
+    drawPixelRect(cx+18,cy-14+headDip,8,8,'#f0f0f0');
+    drawPixelRect(cx+19,cy-13+headDip,6,5,'#e8ddd0');
+    // Eyes
+    drawPixelRect(cx+21,cy-12+headDip,2,2,grazing?'#444':'#222');
+    // Nose/mouth
+    drawPixelRect(cx+24,cy-10+headDip,3,3,'#daa0a0');
+    // Ears
+    drawPixelRect(cx+18,cy-15+headDip,2,2,'#e8c0c0');
+    drawPixelRect(cx+24,cy-15+headDip,2,2,'#e8c0c0');
+    // Horns
+    drawPixelRect(cx+19,cy-17+headDip,2,3,'#d4c8a0');
+    drawPixelRect(cx+23,cy-17+headDip,2,3,'#d4c8a0');
+    // Tail
+    const tailSway=Math.sin(t*2)*2;
+    drawPixelRect(cx-2,cy-9+tailSway,3,1,'#2a2a2a');
+    drawPixelRect(cx-3,cy-8+tailSway,2,2,'#2a2a2a');
+    // Legs (4)
+    const legAnim=grazing?0:Math.sin(t*2)*1;
+    drawPixelRect(cx+2,cy+legAnim,3,5,'#e8e0d8');
+    drawPixelRect(cx+7,cy-legAnim,3,5,'#e8e0d8');
+    drawPixelRect(cx+12,cy+legAnim,3,5,'#e8e0d8');
+    drawPixelRect(cx+17,cy-legAnim,3,5,'#e8e0d8');
+    // Hooves
+    drawPixelRect(cx+2,cy+4+legAnim,3,2,'#3a3a3a');
+    drawPixelRect(cx+7,cy+4-legAnim,3,2,'#3a3a3a');
+    drawPixelRect(cx+12,cy+4+legAnim,3,2,'#3a3a3a');
+    drawPixelRect(cx+17,cy+4-legAnim,3,2,'#3a3a3a');
+  }
+
   // === WEATHER EFFECTS ===
   function drawRain(){
     if(!isRaining())return;
@@ -5862,6 +5912,36 @@
       }
       const cp=toIso(ch.c,ch.r);
       sceneElements.push({depth:ch.c+ch.r,draw:()=>{drawIsoChickenAt(cp.x-4,cp.y-4,ch.t);}});
+    });
+
+    // Cows wandering naturally on grass
+    villageState.cows.forEach(cow=>{
+      if(!cow.grazing) cow.grazing=false;
+      if(!cow.graceTimer) cow.graceTimer=0;
+      cow.t+=cow.grazing?0.01:0.04; // slow animation when grazing
+      if(cow.pause>0){
+        cow.pause--;
+        cow.grazing=true; // head down during pause
+      } else {
+        cow.grazing=false;
+        const dx=cow.tc-cow.c, dr=cow.tr-cow.r;
+        const dist=Math.sqrt(dx*dx+dr*dr);
+        if(dist<0.15){
+          cow.tc=2+Math.random()*4;
+          cow.tr=4.5+Math.random()*2;
+          cow.pause=Math.floor(80+Math.random()*200); // long grazing pauses
+        } else {
+          // Ease-in-out: slower near start and end
+          const easeFactor=Math.min(1,dist*2)*0.6+0.4;
+          // Slight drift perpendicular to direction for natural wandering
+          const drift=Math.sin(cow.t*0.8)*0.0003;
+          cow.c+=dx*cow.speed*easeFactor-dr*drift;
+          cow.r+=dr*cow.speed*easeFactor+dx*drift;
+        }
+      }
+      const cowP=toIso(cow.c,cow.r);
+      const isGrazing=cow.grazing;
+      sceneElements.push({depth:cow.c+cow.r,draw:()=>{drawIsoCowAt(cowP.x-5,cowP.y-6,cow.t,isGrazing);}});
     });
 
     // Sort by depth and draw (painter's algorithm)
