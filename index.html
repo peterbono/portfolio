@@ -5409,6 +5409,39 @@
     drawPixelRect(ax,ay,10,6,'#4a4a4a');
     drawPixelRect(ax-2,ay-2,14,3,'#5a5a5a');
     drawPixelRect(ax,ay+6,10,6,'#3a3a3a');
+
+    // === CHIMNEY with animated smoke ===
+    const chimX=cx+12, chimBaseY=cy-wallH-4;
+    const chimH=16+Math.round(forgeLevel*6); // taller when forge is hotter
+    // Chimney body (cobblestone stack)
+    drawPixelRect(chimX-4,chimBaseY-chimH,10,chimH,MC.cobble);
+    drawPixelRect(chimX-3,chimBaseY-chimH,8,3,MC.cobbleD);
+    // Chimney cap (wider top)
+    drawPixelRect(chimX-6,chimBaseY-chimH-3,14,4,MC.cobbleD);
+    drawPixelRect(chimX-5,chimBaseY-chimH-2,12,2,MC.cobbleL);
+
+    // Smoke particles — count and size scale with forge level
+    const smokeCount=Math.round(3+6*forgeLevel);
+    const smokeSrcX=chimX, smokeSrcY=chimBaseY-chimH-4;
+    for(let i=0;i<smokeCount;i++){
+      const age=(t*0.08+i*7)%35;
+      const drift=Math.sin(age*0.15+i*2)*6; // wind drift
+      const rise=age*1.2; // rise speed
+      const sx=smokeSrcX+drift;
+      const sy=smokeSrcY-rise;
+      const sz=3+age*0.15+forgeLevel*2; // grows as it rises
+      const alpha=Math.max(0,(0.35+forgeLevel*0.15)-age*0.012);
+      villageCtx.globalAlpha=alpha;
+      // Darker smoke when forge is hot, lighter when cool
+      const smokeCol=forgeLevel>0.5?'#666':'#999';
+      drawPixelRect(sx-sz/2,sy-sz/2,sz,sz,smokeCol);
+      // Secondary wisp
+      if(i%2===0&&age<20){
+        villageCtx.globalAlpha=alpha*0.5;
+        drawPixelRect(sx-sz/2+3,sy-sz/2-2,sz*0.6,sz*0.6,'#aaa');
+      }
+    }
+    villageCtx.globalAlpha=1;
   }
 
   // === ISO CONSTRUCTION HOUSE (in the village, not at bottom!) ===
@@ -5922,17 +5955,33 @@
     // Chest near forge
     sceneElements.push({depth:5,draw:()=>{drawIsoChest(3,2);}});
 
-    // House 1 at (6,0) — only if completeHouses >= 1
+    // Houses — appear at milestones (1 per 100 submitted)
+    // House 1 at (6,0) — 100 submitted
     if(villageState.completeHouses>=1){
       sceneElements.push({depth:6,draw:()=>{drawIsoHouse(6,0,true,sky);}});
     }
-
-    // House 2 at (8,3) — only if completeHouses >= 2
+    // House 2 at (8,3) — 200 submitted
     if(villageState.completeHouses>=2){
       sceneElements.push({depth:11,draw:()=>{drawIsoHouse(8,3,false,sky);}});
     }
+    // House 3 at (4,0) — 300 submitted
+    if(villageState.completeHouses>=3){
+      sceneElements.push({depth:4,draw:()=>{drawIsoHouse(4,0,false,sky);}});
+    }
+    // House 4 at (0,4) — 400 submitted
+    if(villageState.completeHouses>=4){
+      sceneElements.push({depth:4,draw:()=>{drawIsoHouse(0,4,true,sky);}});
+    }
+    // House 5 at (6,6) — 500 submitted
+    if(villageState.completeHouses>=5){
+      sceneElements.push({depth:12,draw:()=>{drawIsoHouse(6,6,false,sky);}});
+    }
+    // House 6 at (11,4) — 600 submitted
+    if(villageState.completeHouses>=6){
+      sceneElements.push({depth:15,draw:()=>{drawIsoHouse(11,4,true,sky);}});
+    }
 
-    // Construction house at (5,4) — IN THE VILLAGE
+    // Construction house at (5,4) — always building the next one
     sceneElements.push({depth:9,draw:()=>{drawIsoConstruction(5,4,t);drawIsoBuilder(5,4,t);}});
 
     // Trees (FIXED positions — no scrolling!)
