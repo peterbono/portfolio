@@ -4690,35 +4690,47 @@
   function seededRand(seed){let s=seed;return()=>{s=(s*16807+0)%2147483647;return(s-1)/2147483646;};}
   const srand=seededRand(42);
 
-  // Stronghold palette
-  const P={
-    stoneL:'#a8a090',stoneM:'#8a8478',stoneD:'#6e6860',
-    timberD:'#3f2d20',timberM:'#5c4033',timberL:'#7a5638',
-    thatchL:'#d4b87a',thatchM:'#b89a66',thatchD:'#96784e',
-    grassL:'#6a9e4e',grassM:'#528a3a',grassD:'#3d6e2e',
-    dirtL:'#a08860',dirtM:'#806840',dirtD:'#604828',
-    fireW:'#fff8e0',fireY:'#fcd34d',fireO:'#f97316',fireR:'#dc2626',
-    glow:'#fef3c7',wallL:'#b8b0a4',wallD:'#888078'
+  // Minecraft palette
+  const MC={
+    sky:'#78b9ff',skyLight:'#a0d4ff',cloud:'#fff',cloudShade:'#d8e8f8',
+    grassTop:'#79c05a',grassDark:'#5a9a3a',grassSide:'#6a5e3a',
+    dirt:'#b9855c',dirtDark:'#8a6540',
+    oak:'#bc9862',oakDark:'#9a7a44',oakLight:'#d4aa6e',
+    log:'#6b5132',logInner:'#b89f71',
+    cobble:'#828282',cobbleL:'#969696',cobbleD:'#6a6a6a',
+    glass:'#c0d8ec',glassDark:'#88b8d4',
+    door:'#8a6430',doorDark:'#6a4a20',
+    stone:'#7d7d7d',torch:'#ffd700',torchOr:'#ff8c00',
+    skin:'#c49468',skinDark:'#a07848',nose:'#b08058',
+    robeBrn:'#563615',robeGrn:'#4f7d1b',robeWht:'#e0d8cc',
+    hair:'#3a2820',water:'#3f76e4',waterL:'#5a90f0',
+    leaf:'#3a8428',leafL:'#4ea038',leafD:'#2a6a1c',
+    wheat:'#d4a94f',wheatGrn:'#5a9a30',
+    fence:'#b89050',path:'#c4a870',pathD:'#a08850',
+    lava:'#cf440f',lavaL:'#ff7030',chest:'#8a6030',chestD:'#6a4820',
+    flower1:'#ff4040',flower2:'#ffe040',
+    plankLine:'#a88040'
   };
 
-  const grassBlades=Array.from({length:180},()=>({
-    x:srand()*960,y:155+srand()*250,h:2+Math.floor(srand()*5),
-    c:[P.grassL,P.grassM,P.grassD][Math.floor(srand()*3)]
-  }));
-  const sparkPool=[];
-  const smokePool=[];
+  // Pre-computed scenery
+  const mcClouds=[
+    {x:40,y:20,w:80,h:14,speed:0.15},
+    {x:280,y:35,w:50,h:10,speed:0.08},
+    {x:500,y:15,w:100,h:16,speed:0.12},
+    {x:720,y:40,w:60,h:12,speed:0.1},
+    {x:900,y:25,w:70,h:14,speed:0.07}
+  ];
 
   const villageState={
-    hero:{x:56,y:310,dir:1,target:720,speed:0.5,carrying:true,step:0},
-    npcs:Array.from({length:8},(_,i)=>({
-      x:120+i*95,y:295+(i%3)*22,
-      dir:Math.random()>0.5?1:-1,speed:0.12+Math.random()*0.18,
-      roamMin:60,roamMax:900,step:Math.random()*7,
-      tone:['#b04030','#305880','#6b4e90','#b07030','#408050','#b08030','#803050','#507830'][i],
-      carrying:i<3
-    })),
-    flags:[{x:200,y:86,ph:0},{x:480,y:82,ph:1.5},{x:760,y:86,ph:3}],
-    torches:[{x:100,y:106},{x:300,y:106},{x:660,y:106},{x:860,y:106}],
+    hero:{x:420,y:0,dir:1,target:700,speed:0.4,step:0,carrying:true},
+    npcs:[
+      {x:140,y:0,dir:1,speed:0.12,step:0,roamMin:80,roamMax:280,robe:'brn',job:'walk'},
+      {x:320,y:0,dir:-1,speed:0.15,step:0,roamMin:200,roamMax:500,robe:'grn',job:'walk'},
+      {x:700,y:0,dir:1,speed:0.1,step:0,roamMin:650,roamMax:830,robe:'brn',job:'farm'},
+      {x:500,y:0,dir:-1,speed:0.13,step:0,roamMin:350,roamMax:600,robe:'wht',job:'walk'},
+      {x:850,y:0,dir:-1,speed:0.08,step:0,roamMin:780,roamMax:920,robe:'grn',job:'walk'}
+    ],
+    builder:{x:600,y:0,armAngle:0,blockY:0,placing:false,timer:0},
     completeHouses:0,buildPct:0,forge:0
   };
 
@@ -4727,409 +4739,540 @@
     villageCtx.fillRect(Math.round(x),Math.round(y),Math.round(w),Math.round(h));
   }
 
-  // === Warm sunset sky ===
-  function drawSky(t){
-    const g=villageCtx.createLinearGradient(0,0,0,80);
-    g.addColorStop(0,'#1a2744');g.addColorStop(0.25,'#2d4a6e');
-    g.addColorStop(0.55,'#c4753a');g.addColorStop(0.8,'#e8a55a');g.addColorStop(1,'#f0c478');
-    villageCtx.fillStyle=g;villageCtx.fillRect(0,0,960,80);
-    // Faint stars
-    for(let i=0;i<20;i++){
-      const sx=47*i+12,sy=5+((i*7)%30);
-      villageCtx.globalAlpha=0.15+0.15*Math.abs(Math.sin(t*0.015+i));
-      drawPixelRect(sx,sy,1,1,'#f8f0e0');
+  const B=10; // block size
+  const GY=260; // ground Y level
+
+  // === Minecraft block textures ===
+  function drawOakPlank(x,y,w,h){
+    drawPixelRect(x,y,w,h,MC.oak);
+    // Horizontal grain lines
+    for(let ly=y+3;ly<y+h;ly+=5){
+      villageCtx.globalAlpha=0.15;drawPixelRect(x,ly,w,1,MC.oakDark);villageCtx.globalAlpha=1;
     }
-    villageCtx.globalAlpha=1;
-    // Sun glow
-    villageCtx.globalAlpha=0.18;
-    const sg=villageCtx.createRadialGradient(480,78,10,480,78,160);
-    sg.addColorStop(0,'#fcd34d');sg.addColorStop(1,'transparent');
-    villageCtx.fillStyle=sg;villageCtx.fillRect(320,0,320,80);
+    // Subtle vertical joints
+    for(let lx=x+B;lx<x+w;lx+=B){
+      villageCtx.globalAlpha=0.08;drawPixelRect(lx,y,1,h,'#000');villageCtx.globalAlpha=1;
+    }
+  }
+  function drawCobble(x,y,w,h){
+    drawPixelRect(x,y,w,h,MC.cobble);
+    // Random stone pattern
+    for(let by=y;by<y+h;by+=B){
+      for(let bx=x;bx<x+w;bx+=B){
+        const r=seededRand(bx*100+by)();
+        if(r>0.6) drawPixelRect(bx+2,by+2,6,6,MC.cobbleL);
+        else if(r>0.3) drawPixelRect(bx+1,by+1,7,7,MC.cobbleD);
+        villageCtx.globalAlpha=0.06;drawPixelRect(bx,by,B,1,'#000');drawPixelRect(bx,by,1,B,'#000');villageCtx.globalAlpha=1;
+      }
+    }
+  }
+  function drawLog(x,y,w,h,horizontal){
+    drawPixelRect(x,y,w,h,MC.log);
+    if(horizontal){for(let lx=x;lx<x+w;lx+=B){villageCtx.globalAlpha=0.1;drawPixelRect(lx,y,1,h,'#000');villageCtx.globalAlpha=1;}}
+    else{for(let ly=y;ly<y+h;ly+=4){villageCtx.globalAlpha=0.1;drawPixelRect(x,ly,w,1,'#3a2a18');villageCtx.globalAlpha=1;}}
+  }
+  function drawGlass(x,y,w,h){
+    drawPixelRect(x,y,w,h,MC.glass);
+    drawPixelRect(x,y,w,1,MC.glassDark);drawPixelRect(x,y,1,h,MC.glassDark);
+    drawPixelRect(x+w-1,y,1,h,MC.glassDark);drawPixelRect(x,y+h-1,w,1,MC.glassDark);
+    // Cross pane
+    drawPixelRect(x+Math.floor(w/2),y,1,h,'#9ab8c8');
+    drawPixelRect(x,y+Math.floor(h/2),w,1,'#9ab8c8');
+    // Shine
+    villageCtx.globalAlpha=0.3;drawPixelRect(x+2,y+2,3,3,'#fff');villageCtx.globalAlpha=1;
+  }
+
+  // === SKY ===
+  function drawSky(){
+    const g=villageCtx.createLinearGradient(0,0,0,GY);
+    g.addColorStop(0,MC.skyLight);g.addColorStop(0.5,MC.sky);g.addColorStop(1,'#a8d8ff');
+    villageCtx.fillStyle=g;villageCtx.fillRect(0,0,960,GY);
+    // Sun
+    drawPixelRect(820,30,20,20,'#fff8d0');
+    drawPixelRect(822,32,16,16,'#fff');
+    villageCtx.globalAlpha=0.08;
+    villageCtx.beginPath();villageCtx.arc(830,40,30,0,Math.PI*2);villageCtx.fillStyle='#fff8d0';villageCtx.fill();
     villageCtx.globalAlpha=1;
   }
 
-  // === Rolling green hills ===
+  // === CLOUDS (blocky Minecraft style) ===
+  function drawClouds(t){
+    mcClouds.forEach(c=>{
+      c.x+=c.speed;if(c.x>980)c.x=-120;
+      // Main cloud body
+      drawPixelRect(c.x,c.y,c.w,c.h,MC.cloud);
+      // Top bumps
+      drawPixelRect(c.x+8,c.y-6,c.w*0.5,8,MC.cloud);
+      drawPixelRect(c.x+c.w*0.35,c.y-8,c.w*0.4,10,MC.cloud);
+      // Bottom shade
+      villageCtx.globalAlpha=0.06;drawPixelRect(c.x,c.y+c.h-3,c.w,3,'#000');villageCtx.globalAlpha=1;
+    });
+  }
+
+  // === DISTANT HILLS (green, blocky) ===
   function drawHills(){
-    villageCtx.fillStyle='#4a6e34';
-    villageCtx.beginPath();villageCtx.moveTo(0,95);
-    for(let x=0;x<=960;x+=8) villageCtx.lineTo(x,72+Math.sin(x*0.006)*14+Math.sin(x*0.018)*6);
-    villageCtx.lineTo(960,95);villageCtx.closePath();villageCtx.fill();
-    villageCtx.fillStyle='#3d5e2a';
-    villageCtx.beginPath();villageCtx.moveTo(0,100);
-    for(let x=0;x<=960;x+=8) villageCtx.lineTo(x,82+Math.sin(x*0.01+2)*10+Math.sin(x*0.025)*5);
-    villageCtx.lineTo(960,100);villageCtx.closePath();villageCtx.fill();
+    // Far hill
+    villageCtx.fillStyle='#5aaa44';
+    villageCtx.beginPath();villageCtx.moveTo(0,GY);
+    for(let x=0;x<=960;x+=B){
+      const h=GY-30-Math.sin(x*0.005)*20-Math.abs(Math.sin(x*0.015))*15;
+      villageCtx.lineTo(x,h);
+    }
+    villageCtx.lineTo(960,GY);villageCtx.closePath();villageCtx.fill();
+    // Tree line on hills
+    for(let x=10;x<960;x+=24+Math.floor(srand()*16)){
+      const hy=GY-30-Math.sin(x*0.005)*20-Math.abs(Math.sin(x*0.015))*15;
+      drawPixelRect(x,hy-12,4,12,MC.log);
+      drawPixelRect(x-4,hy-22,12,14,MC.leaf);
+      drawPixelRect(x-2,hy-26,8,8,MC.leafL);
+    }
   }
 
-  // === Castle wall with battlements, flags, torches ===
-  function drawCastleWall(t){
-    const wg=villageCtx.createLinearGradient(0,90,0,155);
-    wg.addColorStop(0,P.stoneL);wg.addColorStop(0.5,P.stoneM);wg.addColorStop(1,P.stoneD);
-    villageCtx.fillStyle=wg;villageCtx.fillRect(0,90,960,65);
-    for(let y=94;y<155;y+=10){villageCtx.globalAlpha=0.07;drawPixelRect(0,y,960,1,'#000');villageCtx.globalAlpha=1;}
-    for(let x=0;x<960;x+=22){villageCtx.globalAlpha=0.04;drawPixelRect(x,90,1,65,'#000');villageCtx.globalAlpha=1;}
-    // Battlements
-    for(let x=0;x<960;x+=28){drawPixelRect(x,80,16,12,P.stoneM);drawPixelRect(x+1,81,14,10,P.stoneL);}
-    villageCtx.globalAlpha=0.12;drawPixelRect(0,150,960,8,'#000');villageCtx.globalAlpha=1;
-    // Flags
-    villageState.flags.forEach(f=>{
-      drawPixelRect(f.x,f.y-20,3,32,P.timberD);
-      drawPixelRect(f.x,f.y-22,3,3,'#d4a030');
-      for(let i=0;i<16;i++){
-        const wave=Math.sin(t*0.04+f.ph+i*0.3)*2.5;
-        drawPixelRect(f.x+3+i,f.y-18+wave,1,10,'#cc2222');
-        if(i>4&&i<12) drawPixelRect(f.x+3+i,f.y-15+wave,1,4,'#ffdd44');
-      }
-    });
-    // Torches
-    villageState.torches.forEach(tc=>{
-      drawPixelRect(tc.x,tc.y+4,6,14,P.timberD);
-      drawPixelRect(tc.x-1,tc.y+2,8,3,'#6b5840');
-      const fh=6+Math.sin(t*0.12+tc.x)*2.5;
-      const fw=4+Math.sin(t*0.15+tc.x+1)*1;
-      drawPixelRect(tc.x+1,tc.y-fh+2,fw,fh,P.fireO);
-      drawPixelRect(tc.x+1.5,tc.y-fh+4,fw-1,fh*0.6,P.fireY);
-      drawPixelRect(tc.x+2,tc.y-fh+5,fw-2,fh*0.3,P.fireW);
-      villageCtx.globalAlpha=0.06+Math.sin(t*0.08+tc.x)*0.02;
-      const tg=villageCtx.createRadialGradient(tc.x+3,tc.y,2,tc.x+3,tc.y,30);
-      tg.addColorStop(0,P.fireO);tg.addColorStop(1,'transparent');
-      villageCtx.fillStyle=tg;villageCtx.fillRect(tc.x-27,tc.y-30,60,60);
-      villageCtx.globalAlpha=1;
-    });
-  }
-
-  // === Ground (grass + dirt path + cobblestone plaza) ===
+  // === GROUND (grass block style) ===
   function drawGround(){
-    const gg=villageCtx.createLinearGradient(0,155,0,420);
-    gg.addColorStop(0,P.grassM);gg.addColorStop(0.3,P.grassL);gg.addColorStop(1,P.grassD);
-    villageCtx.fillStyle=gg;villageCtx.fillRect(0,155,960,265);
-    // Dirt path
-    drawPixelRect(0,282,960,18,P.dirtM);
-    drawPixelRect(0,280,960,2,P.dirtL);drawPixelRect(0,300,960,2,P.dirtD);
-    for(let x=0;x<960;x+=12){villageCtx.globalAlpha=0.06;drawPixelRect(x+srand()*4,284,4,2,P.dirtD);villageCtx.globalAlpha=1;}
-    // Cobblestone plaza
-    for(let y=258;y<338;y+=10){for(let x=355;x<605;x+=12){
-      const odd=((x/12)+(y/10))%2;
-      drawPixelRect(x,y,11,9,odd?'#9a8a74':'#a89880');
-      villageCtx.globalAlpha=0.08;drawPixelRect(x,y,11,1,'#000');drawPixelRect(x+10,y,1,9,'#000');villageCtx.globalAlpha=1;
-    }}
-    // Grass blades
-    grassBlades.forEach(g=>{
-      if(g.y>278&&g.y<304) return;
-      if(g.x>350&&g.x<610&&g.y>254&&g.y<342) return;
-      drawPixelRect(g.x,g.y-g.h,2,g.h,g.c);
-    });
+    // Grass top layer
+    drawPixelRect(0,GY,960,4,MC.grassTop);
+    drawPixelRect(0,GY+4,960,6,MC.grassDark);
+    // Dirt below
+    drawPixelRect(0,GY+10,960,150,MC.dirt);
+    // Dirt texture
+    for(let y=GY+12;y<420;y+=B){
+      for(let x=0;x<960;x+=B){
+        const r=seededRand(x*50+y*37)();
+        if(r>0.7){villageCtx.globalAlpha=0.08;drawPixelRect(x+2,y+2,4,4,MC.dirtDark);villageCtx.globalAlpha=1;}
+      }
+    }
+    // Grass side texture (visible face of grass block)
+    for(let x=0;x<960;x+=B){
+      const r=seededRand(x*13)();
+      if(r>0.3){
+        villageCtx.globalAlpha=0.2;
+        drawPixelRect(x+1,GY+5,2,3,MC.grassTop);
+        drawPixelRect(x+5,GY+4,3,4,MC.grassTop);
+        villageCtx.globalAlpha=1;
+      }
+    }
+    // Path (dirt path blocks)
+    drawPixelRect(80,GY,800,4,MC.path);
+    for(let x=80;x<880;x+=B){
+      const r=seededRand(x*77)();
+      if(r>0.5) drawPixelRect(x+1,GY+1,8,2,MC.pathD);
+    }
   }
 
-  // === Half-timbered house (Stronghold style) ===
-  function drawTimberHouse(x,y,w,h,roofH){
-    villageCtx.globalAlpha=0.1;drawPixelRect(x+4,y+h,w,5,'#000');villageCtx.globalAlpha=1;
-    drawPixelRect(x,y,w,h,'#e8d8b8');
-    // Timber frame
-    drawPixelRect(x,y,4,h,P.timberD);drawPixelRect(x+w-4,y,4,h,P.timberD);
-    drawPixelRect(x+Math.floor(w/2)-2,y,4,h,P.timberD);
-    drawPixelRect(x,y,w,4,P.timberD);drawPixelRect(x,y+Math.floor(h/2),w,3,P.timberD);drawPixelRect(x,y+h-3,w,3,P.timberD);
-    // Cross braces
-    const mw=Math.floor(w/2);
-    for(let i=0;i<mw;i+=4){const py=y+5+Math.floor(i*(h/2-8)/mw);drawPixelRect(x+4+i,py,2,2,P.timberM);drawPixelRect(x+mw-i,py,2,2,P.timberM);}
-    // Thatched roof
-    for(let ry=0;ry<roofH;ry++){
-      const rw=w+20-ry*(w+20)/roofH;const rx=x-10+ry*(w+20)/(2*roofH);
-      drawPixelRect(rx,y-roofH+ry,rw,1,ry<roofH*0.3?P.thatchD:ry<roofH*0.7?P.thatchM:P.thatchL);
+  // === MINECRAFT HOUSE ===
+  function drawMCHouse(x,w,h,hasChimney){
+    const fy=GY-h;
+    // Cobblestone foundation (1 block)
+    drawCobble(x,GY-B,w,B);
+    // Oak plank walls
+    drawOakPlank(x,fy,w,h-B);
+    // Log frame corners
+    drawLog(x,fy,B,h,false);
+    drawLog(x+w-B,fy,B,h,false);
+    drawLog(x,fy,w,B,true);
+    // Peaked roof (oak stairs style)
+    const roofH=Math.floor(w/2);
+    for(let ry=0;ry<roofH;ry+=4){
+      const rw=w+8-ry*2;const rx=x-4+ry;
+      drawPixelRect(rx,fy-roofH+ry,rw,4,ry%8<4?MC.oakDark:MC.oak);
     }
-    drawPixelRect(x-12,y-2,w+24,4,P.thatchD);
+    // Roof ridge
+    drawPixelRect(x+Math.floor(w/2)-4,fy-roofH-2,8,4,MC.log);
     // Door
-    const dw=Math.floor(w*0.22),dx=x+Math.floor(w/2)-Math.floor(dw/2);
-    drawPixelRect(dx,y+h-Math.floor(h*0.5),dw,Math.floor(h*0.5),P.timberD);
-    drawPixelRect(dx+2,y+h-Math.floor(h*0.48),dw-4,Math.floor(h*0.48),'#2a1a10');
+    const dx=x+Math.floor(w/2)-B;
+    drawPixelRect(dx,GY-2.5*B,2*B,2.5*B,MC.door);
+    drawPixelRect(dx+1,GY-2.4*B,2*B-2,2.3*B,MC.doorDark);
+    drawPixelRect(dx+2*B-4,GY-1.5*B,2,2,'#daa520'); // handle
     // Windows
-    const winY=y+Math.floor(h*0.2);
-    drawPixelRect(x+10,winY,14,12,'#1a2a3a');
-    drawPixelRect(x+11,winY+1,5,4,P.glow);drawPixelRect(x+18,winY+1,5,4,'#f0c860');
-    drawPixelRect(x+11,winY+7,5,4,'#e0a840');drawPixelRect(x+18,winY+7,5,4,P.glow);
-    drawPixelRect(x+16,winY,2,12,P.timberD);drawPixelRect(x+10,winY+5,14,2,P.timberD);
-    if(w>70){const wx=x+w-26;drawPixelRect(wx,winY,14,12,'#1a2a3a');
-      drawPixelRect(wx+1,winY+1,5,4,'#f0c860');drawPixelRect(wx+8,winY+1,5,4,P.glow);
-      drawPixelRect(wx+1,winY+7,5,4,P.glow);drawPixelRect(wx+8,winY+7,5,4,'#e0a840');
-      drawPixelRect(wx+6,winY,2,12,P.timberD);drawPixelRect(wx,winY+5,14,2,P.timberD);
+    if(w>60){
+      drawGlass(x+B+2,fy+B+4,B*1.5,B*1.5);
+      drawGlass(x+w-B*2.5-2,fy+B+4,B*1.5,B*1.5);
+    } else {
+      drawGlass(x+B+2,fy+B+2,B*1.2,B*1.2);
     }
     // Chimney
-    drawPixelRect(x+w-18,y-roofH-6,10,roofH*0.4+6,P.stoneM);drawPixelRect(x+w-20,y-roofH-8,14,3,P.stoneD);
-  }
-
-  // === Tavern/Inn (central, largest) ===
-  function drawTavern(t){
-    const tx=340,ty=165,tw=220,th=115,rh=35;
-    villageCtx.globalAlpha=0.12;drawPixelRect(tx+6,ty+th,tw,8,'#000');villageCtx.globalAlpha=1;
-    drawPixelRect(tx,ty+th-12,tw,12,P.stoneM);
-    drawPixelRect(tx,ty,tw,th,'#e0d0a8');
-    // Frame
-    drawPixelRect(tx,ty,4,th,P.timberD);drawPixelRect(tx+tw-4,ty,4,th,P.timberD);
-    drawPixelRect(tx+Math.floor(tw/3),ty,4,th,P.timberD);drawPixelRect(tx+Math.floor(2*tw/3),ty,4,th,P.timberD);
-    drawPixelRect(tx,ty,tw,4,P.timberD);drawPixelRect(tx,ty+42,tw,3,P.timberD);drawPixelRect(tx,ty+th-15,tw,3,P.timberD);
-    for(let i=0;i<30;i+=3){drawPixelRect(tx+6+i,ty+6+i,3,2,P.timberM);drawPixelRect(tx+tw-36+i,ty+6+i,3,2,P.timberM);}
-    // Roof
-    for(let ry=0;ry<rh;ry++){
-      const rw=tw+30-ry*(tw+30)/rh;const rx=tx-15+ry*(tw+30)/(2*rh);
-      drawPixelRect(rx,ty-rh+ry,rw,1,ry<rh*0.3?P.thatchD:ry<rh*0.7?P.thatchM:P.thatchL);
-    }
-    drawPixelRect(tx-17,ty-2,tw+34,5,P.thatchD);
-    drawPixelRect(tx+Math.floor(tw/2)-3,ty-rh-2,6,4,P.stoneM);
-    // Door
-    drawPixelRect(tx+90,ty+47,40,th-47,P.timberD);drawPixelRect(tx+93,ty+52,34,th-54,'#1a1208');
-    drawPixelRect(tx+88,ty+44,44,6,'#4a3020');
-    // Windows (first floor)
-    [tx+16,tx+56,tx+148,tx+188].forEach((wx,i)=>{
-      const flk=0.7+Math.sin(t*0.03+i*2)*0.15;
-      drawPixelRect(wx,ty+14,22,16,'#1a2a3a');
-      drawPixelRect(wx+1,ty+15,9,6,i%2?P.glow:'#e8b040');drawPixelRect(wx+12,ty+15,9,6,i%2?'#e8b040':P.glow);
-      drawPixelRect(wx+1,ty+23,9,6,i%2?'#d8a030':P.glow);drawPixelRect(wx+12,ty+23,9,6,i%2?P.glow:'#d8a030');
-      drawPixelRect(wx+10,ty+14,2,16,P.timberD);drawPixelRect(wx,ty+21,22,2,P.timberD);
-      villageCtx.globalAlpha=0.05*flk;drawPixelRect(wx-4,ty+10,30,24,P.glow);villageCtx.globalAlpha=1;
-    });
-    // Second floor windows
-    [tx+30,tx+100,tx+170].forEach(wx=>{
-      drawPixelRect(wx,ty+55,18,12,'#1a2a3a');
-      drawPixelRect(wx+1,ty+56,7,4,'#d0a030');drawPixelRect(wx+10,ty+56,7,4,P.glow);
-      drawPixelRect(wx+8,ty+55,2,12,P.timberD);drawPixelRect(wx,ty+60,18,2,P.timberD);
-    });
-    // Sign
-    drawPixelRect(tx+100,ty+32,2,12,'#6b5840');
-    drawPixelRect(tx+86,ty+40,32,14,P.timberM);drawPixelRect(tx+88,ty+42,28,10,'#c4a060');
-    drawPixelRect(tx+96,ty+44,10,6,'#e0c070');drawPixelRect(tx+106,ty+46,3,3,'#e0c070');
-    // Lantern above door
-    drawPixelRect(tx+108,ty+36,2,8,'#6b5840');drawPixelRect(tx+105,ty+36,8,6,P.glow);
-    const lg=0.06+Math.sin(t*0.05)*0.02;
-    villageCtx.globalAlpha=lg;
-    const lgg=villageCtx.createRadialGradient(tx+109,ty+39,2,tx+109,ty+39,24);
-    lgg.addColorStop(0,P.fireO);lgg.addColorStop(1,'transparent');
-    villageCtx.fillStyle=lgg;villageCtx.fillRect(tx+85,ty+15,48,48);
-    villageCtx.globalAlpha=1;
-    // Chimney + smoke
-    drawPixelRect(tx+tw-24,ty-rh-8,12,rh*0.5+8,P.stoneM);drawPixelRect(tx+tw-26,ty-rh-10,16,3,P.stoneD);
-    for(let i=0;i<3;i++){
-      const age=(t*0.6+i*35)%120;const sx=tx+tw-18+Math.sin(age*0.05)*6;const sy=ty-rh-10-age*0.4;const sz=3+age*0.03;
-      villageCtx.globalAlpha=Math.max(0,0.15-age*0.0012);drawPixelRect(sx,sy,sz,sz,'#8a8a82');
-    }
-    villageCtx.globalAlpha=1;
-  }
-
-  // === FORGE with REAL fire animation ===
-  function drawForge(t){
-    const fx=60,fy=172,fw=120,fh=85;
-    villageCtx.globalAlpha=0.12;drawPixelRect(fx+4,fy+fh,fw,6,'#000');villageCtx.globalAlpha=1;
-    // Stone walls
-    drawPixelRect(fx,fy,fw,fh,P.stoneM);
-    for(let sy=fy+4;sy<fy+fh;sy+=8){villageCtx.globalAlpha=0.06;drawPixelRect(fx,sy,fw,1,'#000');villageCtx.globalAlpha=1;}
-    for(let sx=fx;sx<fx+fw;sx+=16){villageCtx.globalAlpha=0.04;drawPixelRect(sx,fy,1,fh,'#000');villageCtx.globalAlpha=1;}
-    // Roof
-    drawPixelRect(fx-8,fy-6,fw+16,10,P.timberD);drawPixelRect(fx-6,fy-4,fw+12,6,'#7a3a2a');
-    // Open front
-    drawPixelRect(fx+20,fy+20,60,fh-20,'#0a0a0a');drawPixelRect(fx+22,fy+22,56,fh-24,'#141414');
-
-    // ===== FIRE ANIMATION =====
-    const fLvl=villageState.forge||0;
-    const baseF=Math.max(4,Math.round(fLvl*30));
-    // Ember bed glow
-    villageCtx.globalAlpha=0.3*fLvl;
-    const eg=villageCtx.createRadialGradient(fx+50,fy+fh-8,4,fx+50,fy+fh-8,35);
-    eg.addColorStop(0,P.fireO);eg.addColorStop(0.5,P.fireR);eg.addColorStop(1,'transparent');
-    villageCtx.fillStyle=eg;villageCtx.fillRect(fx+15,fy+fh-43,70,43);villageCtx.globalAlpha=1;
-    // Glowing coals
-    if(fLvl>0.05) for(let i=0;i<8;i++){
-      const ex=fx+30+i*6+Math.sin(t*0.1+i)*2,ey=fy+fh-10+Math.sin(t*0.08+i*1.5);
-      drawPixelRect(ex,ey,2+Math.sin(t*0.06+i*2),2,Math.sin(t*0.04+i)>0?P.fireO:P.fireR);
-    }
-    // Multi-layer flames
-    if(fLvl>0.05){
-      // Back (red)
-      for(let i=0;i<5;i++){const fX=fx+32+i*8,fH=baseF*(0.4+0.6*Math.abs(Math.sin(t*0.08+i*1.7)));
-        drawPixelRect(fX,fy+fh-10-fH,4+Math.sin(t*0.1+i*2)*2,fH,P.fireR);}
-      // Mid (orange)
-      for(let i=0;i<4;i++){const fX=fx+34+i*9,fH=baseF*(0.5+0.5*Math.abs(Math.sin(t*0.1+i*2.1+0.5)));
-        drawPixelRect(fX,fy+fh-10-fH*0.85,5+Math.sin(t*0.12+i*1.8)*1.5,fH*0.85,P.fireO);}
-      // Core (yellow)
-      for(let i=0;i<3;i++){const fX=fx+38+i*8,fH=baseF*(0.3+0.4*Math.abs(Math.sin(t*0.13+i*2.5+1)));
-        drawPixelRect(fX,fy+fh-10-fH*0.65,3+Math.sin(t*0.15+i*2.2),fH*0.65,P.fireY);}
-      // White hot center
-      if(fLvl>0.3){const whH=baseF*0.2*Math.abs(Math.sin(t*0.15));drawPixelRect(fx+44,fy+fh-10-whH,4,whH,P.fireW);}
-    }
-    // SPARKS (particles!)
-    if(fLvl>0.15&&Math.random()<0.3*fLvl) sparkPool.push({
-      x:fx+38+Math.random()*16,y:fy+fh-14,
-      vx:(Math.random()-0.5)*0.8,vy:-1.5-Math.random()*2,
-      life:40+Math.random()*30,age:0,sz:1+Math.random()
-    });
-    for(let i=sparkPool.length-1;i>=0;i--){
-      const sp=sparkPool[i];sp.x+=sp.vx;sp.y+=sp.vy;sp.vy+=0.02;sp.vx+=(Math.random()-0.5)*0.1;sp.age++;
-      if(sp.age>sp.life){sparkPool.splice(i,1);continue;}
-      villageCtx.globalAlpha=(1-sp.age/sp.life)*0.8;
-      drawPixelRect(sp.x,sp.y,sp.sz,sp.sz,sp.age<sp.life*0.3?P.fireY:sp.age<sp.life*0.7?P.fireO:P.fireR);
-    }
-    villageCtx.globalAlpha=1;
-    // Fire glow on surroundings
-    if(fLvl>0.1){
-      villageCtx.globalAlpha=0.08*fLvl+Math.sin(t*0.06)*0.02;
-      const fg=villageCtx.createRadialGradient(fx+50,fy+fh-20,10,fx+50,fy+fh-20,60+baseF);
-      fg.addColorStop(0,P.fireO);fg.addColorStop(0.5,'rgba(249,115,22,0.3)');fg.addColorStop(1,'transparent');
-      villageCtx.fillStyle=fg;villageCtx.fillRect(fx-20,fy-10,fw+40,fh+30);villageCtx.globalAlpha=1;
-    }
-    // Anvil
-    drawPixelRect(fx+86,fy+fh-32,14,28,'#6b7280');drawPixelRect(fx+82,fy+fh-34,22,4,'#9ca3af');drawPixelRect(fx+84,fy+fh-38,18,4,'#a1a1aa');
-    // Chimney
-    drawPixelRect(fx+fw-22,fy-22,16,22,P.stoneD);drawPixelRect(fx+fw-24,fy-24,20,4,'#5a5248');
-    // THICK SMOKE from chimney
-    if(fLvl>0.1){
-      if(Math.random()<0.15*fLvl) smokePool.push({
-        x:fx+fw-14,y:fy-24,vx:0.2+Math.random()*0.3,vy:-0.5-Math.random()*0.4,
-        sz:4+Math.random()*4,life:100+Math.random()*60,age:0
-      });
-      for(let i=smokePool.length-1;i>=0;i--){
-        const sm=smokePool[i];sm.x+=sm.vx+Math.sin(sm.age*0.03)*0.3;sm.y+=sm.vy;sm.sz+=0.02;sm.age++;
-        if(sm.age>sm.life){smokePool.splice(i,1);continue;}
-        villageCtx.globalAlpha=(1-sm.age/sm.life)*0.2*fLvl;drawPixelRect(sm.x,sm.y,sm.sz,sm.sz,'#6a6a6a');
+    if(hasChimney){
+      drawCobble(x+w-2*B,fy-roofH-B,B,B+4);
+      // Smoke particles
+      for(let i=0;i<2;i++){
+        const age=(Date.now()/80+i*30)%60;
+        const sx=x+w-1.5*B+Math.sin(age*0.08)*4;
+        const sy=fy-roofH-B-age*0.3;
+        villageCtx.globalAlpha=Math.max(0,0.2-age*0.003);
+        drawPixelRect(sx,sy,4,4,'#bbb');
       }
       villageCtx.globalAlpha=1;
     }
   }
 
-  // === Chapel (stone, with steeple) ===
-  function drawChapel(){
-    drawPixelRect(790,180,80,80,P.stoneL);
-    for(let sy=184;sy<260;sy+=8){villageCtx.globalAlpha=0.05;drawPixelRect(790,sy,80,1,'#000');villageCtx.globalAlpha=1;}
-    drawPixelRect(786,174,88,8,P.stoneD);
-    // Steeple
-    drawPixelRect(820,158,20,18,P.stoneL);drawPixelRect(826,148,8,12,P.stoneM);
-    drawPixelRect(828,142,4,8,'#d4a030');drawPixelRect(826,140,8,3,'#d4a030');
-    // Door
-    drawPixelRect(810,212,40,48,P.timberD);drawPixelRect(814,218,32,42,'#1a1208');
-    // Stained glass window
-    drawPixelRect(800,190,16,16,'#1a2a3a');
-    drawPixelRect(801,191,6,6,'#5a80b0');drawPixelRect(809,191,6,6,'#b05a5a');
-    drawPixelRect(801,199,6,6,'#5ab05a');drawPixelRect(809,199,6,6,'#b0a05a');
-    drawPixelRect(807,190,2,16,P.stoneD);drawPixelRect(800,197,16,2,P.stoneD);
-    // Side window
-    drawPixelRect(850,196,12,12,'#1a2a3a');
-    drawPixelRect(851,197,4,4,'#5a80b0');drawPixelRect(857,197,4,4,P.glow);
-    drawPixelRect(855,196,2,12,P.stoneD);drawPixelRect(850,201,12,2,P.stoneD);
+  // === BLACKSMITH (cobblestone + lava) ===
+  function drawBlacksmith(t){
+    const bx=40,bw=100,bh=70,fy=GY-bh;
+    drawCobble(bx,fy,bw,bh);
+    drawLog(bx,fy,B,bh,false);drawLog(bx+bw-B,fy,B,bh,false);
+    drawLog(bx,fy,bw,B,true);
+    // Flat roof (stone slabs)
+    drawPixelRect(bx-4,fy-4,bw+8,6,MC.stone);
+    drawPixelRect(bx-2,fy-2,bw+4,4,'#8a8a8a');
+    // Open front (no door, like MC blacksmith)
+    drawPixelRect(bx+B,GY-40,30,40,'#4a3a2a');
+    // Lava pool inside
+    const lavaFlicker=Math.sin(t*0.1)*0.1;
+    drawPixelRect(bx+B+4,GY-16,22,16,MC.lava);
+    drawPixelRect(bx+B+6,GY-14,8,4,MC.lavaL);
+    drawPixelRect(bx+B+14,GY-12,6,6,MC.lavaL);
+    // Lava glow
+    villageCtx.globalAlpha=0.06+lavaFlicker*0.04;
+    const lg=villageCtx.createRadialGradient(bx+B+15,GY-8,4,bx+B+15,GY-8,30);
+    lg.addColorStop(0,MC.lavaL);lg.addColorStop(1,'transparent');
+    villageCtx.fillStyle=lg;villageCtx.fillRect(bx-10,GY-40,60,50);
+    villageCtx.globalAlpha=1;
+    // Anvil
+    drawPixelRect(bx+55,GY-18,14,8,'#4a4a4a');
+    drawPixelRect(bx+52,GY-20,20,4,'#5a5a5a');
+    drawPixelRect(bx+54,GY-10,16,10,'#3a3a3a');
+    // Fence barrier
+    drawPixelRect(bx+B,GY-40,2,16,MC.fence);
+    drawPixelRect(bx+38,GY-40,2,16,MC.fence);
+    drawPixelRect(bx+B,GY-38,28,2,MC.fence);
+    drawPixelRect(bx+B,GY-32,28,2,MC.fence);
+    // Crafting table on right
+    drawPixelRect(bx+75,GY-B,B,B,MC.chest);
+    drawPixelRect(bx+76,GY-B+1,4,4,'#c4a060');
+    drawPixelRect(bx+76,GY-B+5,4,4,'#a08040');
   }
 
-  // === Trees (round canopy) ===
-  function drawTree(x,y,s){
-    s=s||1;
-    villageCtx.globalAlpha=0.1;drawPixelRect(x+6*s,y+50*s,22*s,5,'#000');villageCtx.globalAlpha=1;
-    drawPixelRect(x+12*s,y+32*s,8*s,20*s,P.timberM);drawPixelRect(x+14*s,y+32*s,4*s,20*s,P.timberL);
-    drawPixelRect(x,y+16*s,32*s,20*s,'#2d6e1e');drawPixelRect(x+4*s,y+6*s,24*s,18*s,'#3a8428');
-    drawPixelRect(x+8*s,y,16*s,14*s,'#4a9e34');
-    drawPixelRect(x+10*s,y+2*s,6*s,4*s,'#5ab840');drawPixelRect(x+6*s,y+12*s,4*s,3*s,'#5ab840');
+  // === HOUSE UNDER CONSTRUCTION (key feature!) ===
+  function drawConstructionHouse(t){
+    const cx=560,cw=120,ch=80,fy=GY-ch;
+    const progress=villageState.buildPct||0;
+    // Foundation always complete
+    drawCobble(cx,GY-B,cw,B);
+    // Walls: built up to progress level
+    const wallH=Math.floor((ch-B)*Math.min(progress+0.3,1));
+    if(wallH>0){
+      drawOakPlank(cx,GY-B-wallH,cw,wallH);
+      drawLog(cx,GY-B-wallH,B,wallH+B,false);
+      if(progress>0.5) drawLog(cx+cw-B,GY-B-wallH,B,wallH+B,false);
+    }
+    // Incomplete top edge (jagged, blocks being placed)
+    if(progress<0.9){
+      const topY=GY-B-wallH;
+      for(let bx=cx+B;bx<cx+cw-B;bx+=B){
+        const r=seededRand(bx*33)();
+        if(r>0.4+progress*0.3){
+          drawPixelRect(bx,topY-B,B,B,MC.oak);
+          // Random placement feel
+          villageCtx.globalAlpha=0.15;drawPixelRect(bx,topY-B,B,1,'#000');villageCtx.globalAlpha=1;
+        }
+      }
+    }
+    // Roof (only if nearly complete)
+    if(progress>0.7){
+      const roofProg=Math.min(1,(progress-0.7)/0.3);
+      const roofW=Math.floor(cw*roofProg);
+      for(let ry=0;ry<30;ry+=4){
+        const rw=Math.min(roofW,cw+8-ry*2);
+        if(rw<=0)break;
+        const rx=cx-4+ry;
+        drawPixelRect(rx,fy-30+ry,rw,4,ry%8<4?MC.oakDark:MC.oak);
+      }
+    }
+    // Door frame
+    if(progress>0.4){
+      const dx=cx+Math.floor(cw/2)-B;
+      drawPixelRect(dx,GY-2.5*B,2*B,2.5*B-wallH>0?wallH:2.5*B,MC.door);
+    }
+    // Window (if walls tall enough)
+    if(progress>0.5){
+      drawGlass(cx+B+2,GY-B-wallH+B+2,B*1.2,B*1.2);
+    }
+    // === SCAFFOLDING ===
+    // Left scaffold
+    drawPixelRect(cx-12,GY-ch+10,4,ch-10,MC.fence);
+    drawPixelRect(cx-12,GY-ch+10,16,3,MC.oak);
+    drawPixelRect(cx-12,GY-ch+40,16,3,MC.oak);
+    // Right scaffold
+    drawPixelRect(cx+cw+8,GY-ch+10,4,ch-10,MC.fence);
+    drawPixelRect(cx+cw-4,GY-ch+10,16,3,MC.oak);
+    drawPixelRect(cx+cw-4,GY-ch+40,16,3,MC.oak);
+    // Loose blocks on ground
+    drawPixelRect(cx-20,GY-B,B,B,MC.oak);
+    drawPixelRect(cx+cw+14,GY-B,B,B,MC.cobble);
+    drawPixelRect(cx+cw+6,GY-2*B,B,B,MC.oak);
   }
 
-  // === Props & decorations ===
-  function drawProps(t){
-    drawTree(8,150,1.2);drawTree(905,155,1.1);drawTree(-8,248,0.9);drawTree(928,250,0.85);
-    // Wood stockpile near forge
-    for(let i=0;i<4;i++){drawPixelRect(48,318+i*5,28,4,P.timberL);drawPixelRect(50,318+i*5,24,2,'#8a6040');}
-    drawPixelRect(46,316,32,4,P.timberM);
-    // Hay bales
-    drawPixelRect(298,268,20,14,'#d4b060');drawPixelRect(300,270,16,10,'#c4a050');
-    drawPixelRect(320,272,16,10,'#d4b060');drawPixelRect(316,260,24,10,'#c4a050');
-    // Barrels near tavern
-    drawPixelRect(326,270,12,16,P.timberM);drawPixelRect(328,274,8,2,'#8a6840');drawPixelRect(328,282,8,2,'#8a6840');
-    // Well in plaza
-    drawPixelRect(508,284,28,24,P.stoneM);drawPixelRect(510,286,24,20,'#1a2a3a');drawPixelRect(512,288,20,16,'#5a8aaa');
-    drawPixelRect(506,276,32,4,P.timberD);drawPixelRect(516,264,8,14,P.timberM);
-    drawPixelRect(504,276,4,8,P.timberM);drawPixelRect(536,276,4,8,P.timberM);
-    drawPixelRect(540,282,6,8,P.timberL);
-    // Market stall
-    drawPixelRect(660,265,80,30,P.timberL);
-    drawPixelRect(660,258,80,8,'#c43030');drawPixelRect(660,258,40,8,'#a02828');
-    drawPixelRect(665,272,12,6,'#4a9e34');drawPixelRect(680,272,12,6,'#e8a030');drawPixelRect(695,272,12,6,'#d04040');drawPixelRect(710,272,12,6,'#e0c060');
-    drawPixelRect(658,258,3,37,P.timberD);drawPixelRect(739,258,3,37,P.timberD);
-    // Cart
-    drawPixelRect(600,274,24,12,P.timberL);drawPixelRect(602,268,20,8,P.timberM);
-    drawPixelRect(596,284,8,8,'#5a4030');drawPixelRect(618,284,8,8,'#5a4030');
-    // Garden patches
-    for(let i=0;i<3;i++){drawPixelRect(775+i*22,310,18,12,P.dirtM);drawPixelRect(777+i*22,308,4,4,'#4a9e34');drawPixelRect(785+i*22,308,4,4,'#3a8428');}
-    // Bushes
-    drawPixelRect(56,306,14,10,'#2d6e1e');drawPixelRect(60,302,8,6,'#3a8428');
-    drawPixelRect(875,312,12,8,'#2d6e1e');drawPixelRect(878,308,7,6,'#3a8428');
+  // === FARM ===
+  function drawFarm(t){
+    const fx=740,fw=160;
+    // Tilled soil
+    drawPixelRect(fx,GY-2,fw,6,'#6a4830');
+    for(let x=fx;x<fx+fw;x+=B){
+      drawPixelRect(x+1,GY-1,8,1,'#5a3a28');
+      drawPixelRect(x+3,GY+1,4,2,'#7a5a40');
+    }
+    // Wheat crops at different stages
+    for(let x=fx+4;x<fx+fw;x+=14){
+      const stage=seededRand(x*19)();
+      const cropH=8+Math.floor(stage*14);
+      const c=stage>0.6?MC.wheat:MC.wheatGrn;
+      drawPixelRect(x,GY-cropH,3,cropH,c);
+      drawPixelRect(x+4,GY-cropH+2,3,cropH-2,c);
+      if(stage>0.6){drawPixelRect(x-1,GY-cropH-2,5,3,'#c4a040');}
+    }
+    // Water source in middle
+    drawPixelRect(fx+70,GY-2,B,4,MC.water);
+    drawPixelRect(fx+71,GY-1,8,2,MC.waterL);
+    // Fence around farm
+    for(let x=fx-4;x<=fx+fw;x+=B){
+      drawPixelRect(x,GY-14,2,14,MC.fence);
+    }
+    drawPixelRect(fx-4,GY-12,fw+8,2,MC.fence);
+    drawPixelRect(fx-4,GY-6,fw+8,2,MC.fence);
+    // Gate opening
+    drawPixelRect(fx+70,GY-14,20,14,MC.grassTop); // clear fence for gate
   }
 
-  // === Characters (small, Stronghold-style) ===
-  function drawCharacter(x,y,color,step,isHero,carrying){
-    villageCtx.globalAlpha=0.15;drawPixelRect(x,y+8,9,3,'#000');villageCtx.globalAlpha=1;
-    const bob=Math.sin(step*2)*0.6,oy=y+bob;
-    drawPixelRect(x+2,oy-12,5,5,'#e8c898');
-    drawPixelRect(x+2,oy-13,5,2,isHero?'#3a2a1a':'#5a3a1a');
-    drawPixelRect(x+1,oy-7,7,7,color);
-    drawPixelRect(x+1,oy-1,7,1,'#4a3020');
+  // === TREES (Minecraft oak style) ===
+  function drawMCTree(x,y){
+    // Trunk
+    drawLog(x,y,6,24,false);
+    // Leaves (blocky cube shape)
+    drawPixelRect(x-12,y-18,30,8,MC.leafD);
+    drawPixelRect(x-10,y-26,26,10,MC.leaf);
+    drawPixelRect(x-6,y-30,18,8,MC.leafL);
+    // Leaf detail
+    villageCtx.globalAlpha=0.12;
+    drawPixelRect(x-8,y-24,6,6,'#2a5a18');
+    drawPixelRect(x+10,y-20,8,6,'#5ab840');
+    villageCtx.globalAlpha=1;
+  }
+
+  // === VILLAGER NPC (Minecraft style) ===
+  function drawVillager(x,y,robeColor,step,armUp){
+    const bob=Math.sin(step*2)*0.5;
+    const oy=y+bob;
+    // Shadow
+    villageCtx.globalAlpha=0.12;drawPixelRect(x-1,GY-1,12,3,'#000');villageCtx.globalAlpha=1;
+    // Big head (Minecraft signature)
+    drawPixelRect(x,oy-28,10,10,MC.skin);
+    drawPixelRect(x+1,oy-27,8,8,MC.skinDark); // face shade
+    drawPixelRect(x+1,oy-27,8,3,MC.skin); // forehead
+    // Eyes
+    drawPixelRect(x+2,oy-24,2,2,'#3a3a3a');
+    drawPixelRect(x+6,oy-24,2,2,'#3a3a3a');
+    // Nose (big Minecraft villager nose!)
+    drawPixelRect(x+3,oy-22,4,4,MC.nose);
+    drawPixelRect(x+4,oy-21,2,3,MC.skinDark);
+    // Unibrow
+    drawPixelRect(x+1,oy-26,8,1,'#5a4030');
+    // Body (robe)
+    const rc=robeColor==='grn'?MC.robeGrn:robeColor==='wht'?MC.robeWht:MC.robeBrn;
+    drawPixelRect(x,oy-18,10,14,rc);
+    // Arms (crossed in front, classic villager pose)
+    if(!armUp){
+      drawPixelRect(x-2,oy-16,3,10,rc);
+      drawPixelRect(x+9,oy-16,3,10,rc);
+      // Hands
+      drawPixelRect(x+2,oy-10,6,3,MC.skin);
+    } else {
+      // Builder: one arm raised holding block
+      drawPixelRect(x-2,oy-16,3,10,rc);
+      drawPixelRect(x+9,oy-22,3,8,rc); // raised arm
+      drawPixelRect(x+9,oy-23,2,2,MC.skin); // hand
+      // Held block
+      drawPixelRect(x+7,oy-30,8,8,MC.oak);
+      villageCtx.globalAlpha=0.12;drawPixelRect(x+7,oy-27,8,1,MC.oakDark);villageCtx.globalAlpha=1;
+    }
+    // Legs
     const sw=Math.sin(step)*1.5;
-    drawPixelRect(x+1,oy,3,5+sw,'#4a4040');drawPixelRect(x+5,oy,3,5-sw,'#4a4040');
-    drawPixelRect(x,oy+4+sw,4,2,'#3a2a1a');drawPixelRect(x+5,oy+4-sw,4,2,'#3a2a1a');
-    drawPixelRect(x-1,oy-5,2,4,'#d8b880');drawPixelRect(x+8,oy-5,2,4,'#d8b880');
-    if(carrying){drawPixelRect(x-2,oy-14,4,4,P.timberL);drawPixelRect(x-2,oy-18,4,4,P.timberM);}
+    drawPixelRect(x+1,oy-4,4,5+sw,MC.robeGrn);
+    drawPixelRect(x+5,oy-4,4,5-sw,MC.robeGrn);
+    // Feet
+    drawPixelRect(x,oy+sw,5,2,'#4a4a4a');
+    drawPixelRect(x+5,oy-sw,5,2,'#4a4a4a');
   }
 
-  // === Construction lots ===
-  function drawHouseLot(x,baseY,progress,done){
-    villageCtx.globalAlpha=0.1;drawPixelRect(x+3,baseY+2,56,4,'#000');villageCtx.globalAlpha=1;
-    drawPixelRect(x,baseY-2,60,4,P.dirtD);
-    if(done||progress>0.08){
-      drawPixelRect(x+6,baseY-28,48,26,'#e0d0a8');
-      drawPixelRect(x+6,baseY-28,3,26,P.timberD);drawPixelRect(x+51,baseY-28,3,26,P.timberD);
-      drawPixelRect(x+6,baseY-28,48,3,P.timberD);drawPixelRect(x+6,baseY-14,48,2,P.timberD);
+  // === BUILDER NPC (on scaffolding, placing blocks!) ===
+  function drawBuilderNPC(t){
+    const b=villageState.builder;
+    const cx=560;
+    b.timer+=0.02;
+    // Builder stands on scaffolding platform
+    const bx=cx+90;
+    const wallH=Math.floor(60*Math.min((villageState.buildPct||0)+0.3,1));
+    const by=GY-B-wallH-4;
+    // Arm raising animation (up and down, placing motion)
+    const armPhase=Math.sin(b.timer*1.5);
+    const isPlacing=armPhase>0.7;
+    // Draw builder villager on scaffolding
+    const bob=Math.sin(b.timer*1.2)*0.3;
+    const oy=by+bob;
+    // Shadow on scaffold
+    villageCtx.globalAlpha=0.1;drawPixelRect(bx-1,by+2,12,2,'#000');villageCtx.globalAlpha=1;
+    // Head
+    drawPixelRect(bx,oy-26,10,10,MC.skin);
+    drawPixelRect(bx+1,oy-25,8,3,MC.skin);
+    drawPixelRect(bx+1,oy-22,8,5,MC.skinDark);
+    drawPixelRect(bx+2,oy-22,2,2,'#3a3a3a');
+    drawPixelRect(bx+6,oy-22,2,2,'#3a3a3a');
+    drawPixelRect(bx+3,oy-20,4,4,MC.nose);
+    drawPixelRect(bx+1,oy-24,8,1,'#5a4030');
+    // Hardhat! (yellow helmet)
+    drawPixelRect(bx-1,oy-28,12,3,'#e8c840');
+    drawPixelRect(bx,oy-29,10,2,'#d4b430');
+    // Body
+    drawPixelRect(bx,oy-16,10,12,MC.robeBrn);
+    // Left arm (down, resting)
+    drawPixelRect(bx-2,oy-14,3,8,MC.robeBrn);
+    drawPixelRect(bx-2,oy-6,3,2,MC.skin);
+    // Right arm (PLACING BLOCK animation!)
+    const armRaise=Math.max(0,armPhase)*8;
+    drawPixelRect(bx+9,oy-14-armRaise,3,8,MC.robeBrn);
+    drawPixelRect(bx+9,oy-15-armRaise,2,2,MC.skin);
+    // Block being held/placed
+    if(armPhase>-0.3){
+      const blockAlpha=isPlacing?0.6+Math.sin(t*0.2)*0.2:1;
+      villageCtx.globalAlpha=blockAlpha;
+      drawPixelRect(bx+7,oy-22-armRaise,B,B,MC.oak);
+      // Plank texture on block
+      villageCtx.globalAlpha=blockAlpha*0.15;
+      drawPixelRect(bx+7,oy-19-armRaise,B,1,MC.oakDark);
+      villageCtx.globalAlpha=1;
     }
-    if(done||progress>0.3){drawPixelRect(x+22,baseY-14,16,14,P.timberD);drawPixelRect(x+24,baseY-12,12,12,'#1a1208');}
-    if(done||progress>0.5){
-      for(let ry=0;ry<14;ry++){const rw=60-ry*60/14;const rx=x+ry*30/14;
-        drawPixelRect(rx,baseY-42+ry,rw,1,ry<5?P.thatchD:ry<10?P.thatchM:P.thatchL);}
+    // Placing particles (when arm is up)
+    if(isPlacing){
+      for(let i=0;i<3;i++){
+        const px=bx+5+Math.sin(t*0.3+i*2)*8;
+        const py=oy-20-armRaise+Math.cos(t*0.2+i*3)*4;
+        villageCtx.globalAlpha=0.3;
+        drawPixelRect(px,py,2,2,'#d4aa60');
+      }
+      villageCtx.globalAlpha=1;
     }
-    if(done||progress>0.65){drawPixelRect(x+12,baseY-24,8,8,'#1a2a3a');drawPixelRect(x+13,baseY-23,3,3,P.glow);drawPixelRect(x+18,baseY-23,3,3,'#e0a840');}
-    if(!done&&progress>0&&progress<0.95){drawPixelRect(x+12,baseY-36,3,10,P.timberM);drawPixelRect(x+42,baseY-40,3,14,P.timberM);drawPixelRect(x+12,baseY-30,33,2,'#8a6a40');}
+    // Legs
+    drawPixelRect(bx+1,oy-4,4,5,MC.robeGrn);
+    drawPixelRect(bx+5,oy-4,4,5,MC.robeGrn);
+    drawPixelRect(bx,oy+1,5,2,'#4a4a4a');
+    drawPixelRect(bx+5,oy+1,5,2,'#4a4a4a');
+  }
+
+  // === PROPS ===
+  function drawProps(){
+    // Torch (several around village)
+    [170,350,530,730].forEach(tx=>{
+      drawPixelRect(tx+1,GY-20,2,16,'#8a6932');
+      // Flame
+      const ft=Date.now()/100;
+      const fh=3+Math.sin(ft+tx)*1;
+      drawPixelRect(tx,GY-20-fh,4,fh,MC.torchOr);
+      drawPixelRect(tx+0.5,GY-20-fh+1,3,fh*0.5,MC.torch);
+      // Glow
+      villageCtx.globalAlpha=0.04;
+      villageCtx.beginPath();villageCtx.arc(tx+2,GY-22,14,0,Math.PI*2);
+      villageCtx.fillStyle=MC.torch;villageCtx.fill();
+      villageCtx.globalAlpha=1;
+    });
+    // Flowers
+    [200,380,490,680].forEach((fx,i)=>{
+      const c=i%2===0?MC.flower1:MC.flower2;
+      drawPixelRect(fx,GY-8,2,6,'#4a8a2a');
+      drawPixelRect(fx-1,GY-10,4,4,c);
+      drawPixelRect(fx,GY-11,2,2,'#fff');
+    });
+    // Chest near blacksmith
+    drawPixelRect(155,GY-14,12,12,MC.chest);
+    drawPixelRect(156,GY-13,10,5,MC.chestD);
+    drawPixelRect(156,GY-7,10,5,'#9a7040');
+    drawPixelRect(159,GY-9,4,2,'#daa520');
+    // Cobblestone path blocks
+    [180,280,370,520].forEach(px=>{
+      drawCobble(px,GY-2,14,4);
+    });
+  }
+
+  // === CHICKEN (Minecraft style!) ===
+  function drawChicken(x,t){
+    const bob=Math.sin(t*3)*0.5;
+    // Body
+    drawPixelRect(x,GY-8+bob,8,6,'#fff');
+    drawPixelRect(x+1,GY-7+bob,6,4,'#eee');
+    // Head
+    drawPixelRect(x+6,GY-12+bob,5,5,'#fff');
+    // Eye
+    drawPixelRect(x+9,GY-11+bob,1,1,'#222');
+    // Beak
+    drawPixelRect(x+10,GY-10+bob,3,2,'#e8a030');
+    // Wattle
+    drawPixelRect(x+9,GY-8+bob,2,2,'#cc3030');
+    // Legs
+    drawPixelRect(x+2,GY-2,1,3,'#d4a030');
+    drawPixelRect(x+5,GY-2,1,3,'#d4a030');
+    // Tail
+    drawPixelRect(x-2,GY-10+bob,3,4,'#ddd');
   }
 
   // === MAIN RENDER LOOP ===
   function tickVillage(){
     const w=960,h=420,t=Date.now()/55;
     // L0: Sky
-    drawSky(t);
+    drawSky();
     // L1: Hills
     drawHills();
-    // L2: Castle wall
-    drawCastleWall(t);
+    // L2: Clouds
+    drawClouds(t);
     // L3: Ground
     drawGround();
-    // L4: Buildings
-    drawTimberHouse(200,185,90,75,22);
-    drawTavern(t);
-    drawTimberHouse(630,188,85,72,20);
-    drawForge(t);
-    drawChapel();
-    // L5: Props
-    drawProps(t);
-    // L6: Construction lots
+    // L4: Buildings (back to front by Y)
+    drawBlacksmith(t);
+    drawMCHouse(190,90,70,true);   // small house
+    drawMCHouse(340,110,80,false);  // medium house
+    drawConstructionHouse(t);       // UNDER CONSTRUCTION!
+    // L5: Farm
+    drawFarm(t);
+    // L6: Trees
+    drawMCTree(16,GY-6);drawMCTree(920,GY-8);drawMCTree(280,GY-10);
+    // L7: Props
+    drawProps();
+    // L8: Construction lots
     for(let i=0;i<5;i++){
       const lx=44+i*176,done=i<villageState.completeHouses,prog=i===villageState.completeHouses?villageState.buildPct:0;
-      drawHouseLot(lx,414,prog,done);
+      // Mini Minecraft construction lot
+      drawCobble(lx,408,50,B);
+      if(done||prog>0.1) drawOakPlank(lx+4,408-20,42,20);
+      if(done||prog>0.4){drawPixelRect(lx+18,408-14,14,14,MC.door);drawPixelRect(lx+19,408-13,12,13,MC.doorDark);}
+      if(done||prog>0.6){
+        for(let ry=0;ry<12;ry+=3){const rw=50-ry*2;drawPixelRect(lx+ry,408-32+ry,rw,3,ry%6<3?MC.oakDark:MC.oak);}
+      }
+      if(!done&&prog>0&&prog<0.95){drawPixelRect(lx+8,408-30,2,14,MC.fence);drawPixelRect(lx+38,408-34,2,18,MC.fence);}
     }
-    // L7: Characters
-    villageState.hero.step+=0.14;
+    // L9: NPCs
+    // Hero
+    villageState.hero.step+=0.12;
     if(Math.abs(villageState.hero.x-villageState.hero.target)<2){
-      villageState.hero.target=villageState.hero.target<480?850:80;villageState.hero.dir*=-1;villageState.hero.carrying=!villageState.hero.carrying;
+      villageState.hero.target=villageState.hero.target<480?820:100;
+      villageState.hero.dir*=-1;villageState.hero.carrying=!villageState.hero.carrying;
     }
-    villageState.hero.x+=villageState.hero.dir*villageState.hero.speed;villageState.hero.y=350;
-    drawCharacter(villageState.hero.x,villageState.hero.y,'#4a8058',villageState.hero.step,true,villageState.hero.carrying);
-    const sorted=villageState.npcs.map((n,i)=>{
-      n.step+=0.11;n.y=318+(i%3)*22;n.x+=n.dir*n.speed;
-      if(n.x<50||n.x>910||Math.random()<0.004) n.dir*=-1;return n;
-    }).sort((a,b)=>a.y-b.y);
-    sorted.forEach(n=>drawCharacter(n.x,n.y,n.tone,n.step,false,n.carrying));
-    // L8: Warm golden overlay
-    villageCtx.globalAlpha=0.04;villageCtx.fillStyle='#f0c060';villageCtx.fillRect(0,0,w,h);villageCtx.globalAlpha=1;
-    // Vignette
-    villageCtx.globalAlpha=0.1;
-    const vig=villageCtx.createRadialGradient(480,210,180,480,210,500);
-    vig.addColorStop(0,'transparent');vig.addColorStop(1,'#1a1208');
-    villageCtx.fillStyle=vig;villageCtx.fillRect(0,0,w,h);villageCtx.globalAlpha=1;
+    villageState.hero.x+=villageState.hero.dir*villageState.hero.speed;
+    drawVillager(villageState.hero.x,GY-6,'grn',villageState.hero.step,false);
+    if(villageState.hero.carrying){
+      drawPixelRect(villageState.hero.x+2,GY-36,6,6,MC.oak);
+      villageCtx.globalAlpha=0.1;drawPixelRect(villageState.hero.x+2,GY-33,6,1,MC.oakDark);villageCtx.globalAlpha=1;
+    }
+    // Other villagers
+    villageState.npcs.forEach(n=>{
+      n.step+=0.1;n.x+=n.dir*n.speed;
+      if(n.x<n.roamMin||n.x>n.roamMax||Math.random()<0.003) n.dir*=-1;
+      drawVillager(n.x,GY-6,n.robe,n.step,false);
+    });
+    // BUILDER NPC (the star of the show!)
+    drawBuilderNPC(t);
+    // Chicken!
+    drawChicken(760,t);
+    drawChicken(810,t+50);
+    // L10: Light warm overlay (very subtle, Minecraft is bright)
+    villageCtx.globalAlpha=0.02;villageCtx.fillStyle='#ffe8c0';villageCtx.fillRect(0,0,w,h);villageCtx.globalAlpha=1;
     villageFrame=requestAnimationFrame(tickVillage);
   }
 
