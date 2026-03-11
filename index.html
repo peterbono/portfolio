@@ -162,6 +162,47 @@
   /* === ACTION COLUMN === */
   .col-action { text-align: center; white-space: nowrap; }
 
+  /* === ADD ROW BUTTON === */
+  .btn-add-row {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: #1c1917; color: #a1a1aa; border: 1px solid #292524;
+    border-radius: 8px; padding: 6px 14px; font-size: 12px; font-weight: 600;
+    cursor: pointer; transition: all .2s; font-family: inherit;
+  }
+  .btn-add-row:hover { background: #292524; color: #fff; border-color: #3f3f46; transform: translateY(-1px); }
+  .btn-add-row .plus-icon { font-size: 16px; font-weight: 700; color: #34d399; }
+
+  /* === ADD ROW MODAL === */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,.7);
+    z-index: 1000; align-items: center; justify-content: center;
+    backdrop-filter: blur(4px);
+  }
+  .modal-overlay.visible { display: flex; }
+  .modal-box {
+    background: #18181b; border: 1px solid #27272a; border-radius: 14px;
+    padding: 24px; width: 420px; max-width: 92vw;
+    box-shadow: 0 20px 60px rgba(0,0,0,.5);
+  }
+  .modal-box h3 { margin: 0 0 16px; font-size: 16px; color: #e4e4e7; font-weight: 700; }
+  .modal-box label { display: block; font-size: 11px; color: #71717a; margin-bottom: 4px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+  .modal-box input, .modal-box select {
+    width: 100%; background: #0a0a0c; border: 1px solid #27272a; border-radius: 8px;
+    padding: 8px 10px; color: #e4e4e7; font-size: 13px; font-family: inherit;
+    margin-bottom: 12px; outline: none; transition: border-color .15s;
+  }
+  .modal-box input:focus, .modal-box select:focus { border-color: #3f3f46; }
+  .modal-box select { cursor: pointer; }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+  .modal-actions button {
+    padding: 8px 18px; border-radius: 8px; font-size: 12px; font-weight: 600;
+    cursor: pointer; font-family: inherit; border: 1px solid transparent; transition: all .15s;
+  }
+  .btn-modal-cancel { background: #27272a; color: #a1a1aa; border-color: #3f3f46; }
+  .btn-modal-cancel:hover { background: #3f3f46; color: #fff; }
+  .btn-modal-save { background: #064e3b; color: #34d399; border-color: #065f46; }
+  .btn-modal-save:hover { background: #34d399; color: #052e1f; }
+
   /* === LINKS === */
   a { color: #60a5fa; text-decoration: none; transition: color .15s; }
   a:hover { color: #93bbfc; text-decoration: underline; }
@@ -173,14 +214,25 @@
 
   /* === PIXEL MMORPG VILLAGE === */
   .village-panel {
-    background: linear-gradient(180deg, #141418 0%, #101014 100%);
-    border: 1px solid #27272f;
-    border-radius: 14px;
-    padding: 14px;
+    background: #1a5a10;
+    border: none;
+    border-radius: 0;
+    padding: 0;
     margin-bottom: 20px;
     width: 100%;
+    overflow: hidden;
   }
-  .village-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+  .village-head {
+    background: linear-gradient(180deg, #141418 0%, #0e1a0c 100%);
+    padding: 12px 14px;
+    border-radius: 10px 10px 0 0;
+  }
+  .village-tip {
+    background: linear-gradient(180deg, #0e1a0c 0%, #141418 100%);
+    padding: 10px 14px;
+    border-radius: 0 0 10px 10px;
+  }
+  .village-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 0; flex-wrap: wrap; }
   .village-title { font-size: 12px; text-transform: uppercase; letter-spacing: 1.3px; color: #a1a1aa; font-weight: 700; }
   .village-metrics { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11px; color: #d4d4d8; }
   .village-metrics strong { color: #34d399; }
@@ -190,12 +242,12 @@
     height: clamp(480px, 68vh, 860px);
     image-rendering: pixelated;
     image-rendering: crisp-edges;
-    border-radius: 10px;
-    border: 1px solid #22222a;
-    background: #1a2334;
+    border-radius: 0;
+    border: none;
+    background: #2a7a1a;
     display: block;
   }
-  .village-tip { margin-top: 10px; color: #71717a; font-size: 11px; }
+  .village-tip { margin-top: 0; color: #71717a; font-size: 11px; }
 
   .view-nav {
     display: inline-flex;
@@ -367,9 +419,10 @@
   <span class="sub-chip" data-subsource="manual">&#128100; Manual</span>
 </div>
 
-<div class="section-header">
-  <h2 class="section-title">Applications</h2>
-  <span class="section-count" id="visible-count"></span>
+<div class="section-header" style="display:flex;align-items:center;gap:12px;">
+  <h2 class="section-title" style="margin:0;">Applications</h2>
+  <button class="btn-add-row" id="btn-add-row" title="Add a job manually"><span class="plus-icon">+</span> Add</button>
+  <span class="section-count" id="visible-count" style="margin-left:auto;"></span>
 </div>
 
 <div class="table-wrap">
@@ -5012,20 +5065,41 @@
     villageCtx.globalAlpha=1;
   }
 
-  // === BACKGROUND — DENSE FOREST edge-to-edge (screen-space trees) ===
+  // === BACKGROUND — SEAMLESS LANDSCAPE (green extends to all edges) ===
   function drawBackground(sky){
     const isNight=sky.phase==='night';
     const HORIZON=100;
     const ctx=villageCtx;
 
-    // 1. Solid dark forest floor from horizon to bottom
+    // 1. Fill ENTIRE canvas below horizon with lush green ground
     const floorCol=isNight?'#0e1a0c':'#2a7a1a';
+    const floorMid=isNight?'#122e10':'#34881e';
+    const floorLight=isNight?'#163814':'#3e9424';
     ctx.fillStyle=floorCol;
-    ctx.fillRect(0,HORIZON,960,320);
-    // Gradient at horizon
-    const g=ctx.createLinearGradient(0,HORIZON-12,0,HORIZON+8);
+    ctx.fillRect(0,HORIZON-2,960,322);
+
+    // Subtle green texture across entire floor (grass variation patches)
+    const sg=seededRand(314);
+    for(let y=HORIZON;y<422;y+=6){
+      for(let x=-4;x<964;x+=7+((sg()*5)|0)){
+        const shade=sg()>0.5?floorMid:floorCol;
+        ctx.fillStyle=shade;
+        ctx.fillRect(x|0,y|0,(3+(sg()*4))|0,(2+(sg()*3))|0);
+      }
+    }
+    // Lighter grass patches for depth
+    for(let i=0;i<80;i++){
+      const px=(sg()*960)|0, py=(HORIZON+10+(sg()*310))|0;
+      ctx.fillStyle=floorLight;
+      ctx.globalAlpha=0.2+sg()*0.15;
+      ctx.fillRect(px,py,(4+(sg()*8))|0,(2+(sg()*4))|0);
+    }
+    ctx.globalAlpha=1;
+
+    // Gradient at horizon (sky→green blend)
+    const g=ctx.createLinearGradient(0,HORIZON-15,0,HORIZON+10);
     g.addColorStop(0,'transparent');g.addColorStop(1,floorCol);
-    ctx.fillStyle=g;ctx.fillRect(0,HORIZON-12,960,20);
+    ctx.fillStyle=g;ctx.fillRect(0,HORIZON-15,960,25);
 
     // 2. Tree palette
     const LD=isNight?'#0e1e0a':'#1a5a10';
@@ -5038,7 +5112,7 @@
 
     // 4. Dense bumpy treeline at horizon (canopies silhouetted against sky)
     const s0=seededRand(777);
-    for(let x=-12;x<972;x+=3+((s0()*3)|0)){
+    for(let x=-20;x<980;x+=3+((s0()*3)|0)){
       const h=10+((s0()*18)|0);
       const ty=HORIZON-6-((s0()*22)|0);
       ctx.fillStyle=LD;ctx.fillRect(x|0,ty|0,(5+(s0()*6))|0,(h+14)|0);
@@ -5046,12 +5120,12 @@
       if(s0()>0.3){ctx.fillStyle=LL;ctx.fillRect((x+1)|0,(ty-3)|0,(3+(s0()*3))|0,(h*0.3)|0);}
     }
 
-    // 5. Forest trees — dense rows, back (small) to front (large)
+    // 5. Forest trees — dense rows, edges go fully past canvas bounds
     const sr=seededRand(42);
-    for(let y=HORIZON+4;y<440;y+=11){
+    for(let y=HORIZON+4;y<450;y+=11){
       const depth=Math.min(1,(y-HORIZON)/(330));
       const spacing=11+((depth*10)|0);
-      for(let x=-30;x<990;x+=spacing+((sr()*6)|0)){
+      for(let x=-50;x<1010;x+=spacing+((sr()*6)|0)){
         const tx=x+((sr()*12)|0)-6;
         const ty=y+((sr()*6)|0)-3;
         // Skip village clearing
@@ -5076,6 +5150,28 @@
           ctx.fillStyle=LL;ctx.fillRect((tx-((fw3/2)|0)+fxc)|0,(ty-th-fh2-2)|0,fw3,fh3);
         }
       }
+    }
+
+    // 6. Edge vegetation — extra grass/bushes at canvas edges for seamless feel
+    const se=seededRand(999);
+    // Bottom edge: dense low bushes
+    for(let x=-10;x<970;x+=4+((se()*5)|0)){
+      const bx=x|0, by=(410+(se()*10))|0;
+      const bw=(4+(se()*6))|0, bh=(3+(se()*5))|0;
+      ctx.fillStyle=se()>0.5?LD:LM;
+      ctx.fillRect(bx,by-bh,bw,bh);
+    }
+    // Left edge: foliage leaking in
+    for(let y=HORIZON+10;y<430;y+=8+((se()*6)|0)){
+      const bw=(6+(se()*12))|0;
+      ctx.fillStyle=se()>0.5?LD:LM;
+      ctx.fillRect(-2,y|0,bw,(4+(se()*5))|0);
+    }
+    // Right edge: foliage leaking in
+    for(let y=HORIZON+10;y<430;y+=8+((se()*6)|0)){
+      const bw=(6+(se()*12))|0;
+      ctx.fillStyle=se()>0.5?LD:LM;
+      ctx.fillRect(960-bw+2,y|0,bw,(4+(se()*5))|0);
     }
   }
 
@@ -6231,14 +6327,167 @@
 
   window.addEventListener('resize', resizeVillageCanvas);
 
+  // --- Add Row Modal ---
+  const addModal = document.getElementById('add-row-modal');
+  const addBtn = document.getElementById('btn-add-row');
+  const addCancel = document.getElementById('add-row-cancel');
+  const addSave = document.getElementById('add-row-save');
+
+  function openAddModal() {
+    // Pre-fill date with today
+    const today = new Date().toISOString().slice(0, 10);
+    document.getElementById('add-date').value = today;
+    document.getElementById('add-company').value = '';
+    document.getElementById('add-role').value = '';
+    document.getElementById('add-url').value = '';
+    document.getElementById('add-location').value = '';
+    document.getElementById('add-status').value = 'manual';
+    document.getElementById('add-notes').value = '';
+    addModal.classList.add('visible');
+    setTimeout(() => document.getElementById('add-company').focus(), 100);
+  }
+
+  function closeAddModal() {
+    addModal.classList.remove('visible');
+  }
+
+  function saveAddRow() {
+    const company = document.getElementById('add-company').value.trim();
+    const role = document.getElementById('add-role').value.trim();
+    if (!company || !role) { document.getElementById('add-company').style.borderColor = company ? '' : '#f87171'; document.getElementById('add-role').style.borderColor = role ? '' : '#f87171'; return; }
+    const date = document.getElementById('add-date').value || new Date().toISOString().slice(0, 10);
+    const url = document.getElementById('add-url').value.trim();
+    const location = document.getElementById('add-location').value.trim();
+    const status = document.getElementById('add-status').value;
+    const notes = document.getElementById('add-notes').value.trim();
+
+    // Format date for display (DD/MM)
+    const [y, m, d] = date.split('-');
+    const dateDisplay = d + '/' + m;
+
+    // Build the badge
+    const badgeMap = { manual: 'manual">À soumettre', submitted: 'submitted">Submitted', saved: 'saved">Easy Apply' };
+    const badge = '<span class="badge ' + badgeMap[status] + '</span>';
+    const actionBtns = status === 'manual'
+      ? '<button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button>'
+      : '';
+
+    // Create row
+    const tr = document.createElement('tr');
+    tr.className = 'data-row';
+    tr.dataset.status = status;
+    if (status === 'submitted') tr.dataset.source = 'manual';
+    tr.innerHTML =
+      '<td class="col-date" data-label="Date">' + dateDisplay + '</td>' +
+      '<td class="col-status" data-label="Status">' + badge + '</td>' +
+      '<td class="col-role" data-label="Role">' + (url ? '<a href="' + url + '" target="_blank">' + role + '</a>' : role) + '</td>' +
+      '<td class="col-company" data-label="Company">' + company + '</td>' +
+      '<td class="col-location" data-label="Location">' + (location || '—') + '</td>' +
+      '<td class="col-salary" data-label="Salary">—</td>' +
+      '<td class="col-ats" data-label="ATS">Manual</td>' +
+      '<td class="col-cv" data-label="CV">—</td>' +
+      '<td class="col-portfolio" data-label="Portfolio">—</td>' +
+      '<td class="col-link" data-label="Link">' + (url ? '<a href="' + url + '" target="_blank">Link</a>' : '—') + '</td>' +
+      '<td class="col-notes notes" data-label="Notes">' + notes + '</td>' +
+      '<td class="col-action" data-label="Action">' + actionBtns + '</td>';
+
+    // Insert at top of tbody
+    tbody.insertBefore(tr, tbody.firstChild);
+
+    // Save to localStorage
+    const added = JSON.parse(localStorage.getItem('added-rows') || '[]');
+    added.push({ date, company, role, url, location, status, notes, ts: Date.now() });
+    localStorage.setItem('added-rows', JSON.stringify(added));
+
+    closeAddModal();
+    updateCounts();
+    applyFilter(currentFilter);
+  }
+
+  function loadAddedRows() {
+    const added = JSON.parse(localStorage.getItem('added-rows') || '[]');
+    if (!added.length) return;
+    added.forEach(item => {
+      // Check if row already exists (by company+role)
+      const key = item.company + '|' + item.role;
+      const exists = rows().some(r => getRowKey(r) === key);
+      if (exists) return;
+      const [y, m, d] = (item.date || '2026-01-01').split('-');
+      const dateDisplay = d + '/' + m;
+      const badgeMap = { manual: 'manual">À soumettre', submitted: 'submitted">Submitted', saved: 'saved">Easy Apply' };
+      const badge = '<span class="badge ' + (badgeMap[item.status] || badgeMap.manual) + '</span>';
+      const actionBtns = item.status === 'manual'
+        ? '<button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this job">Skip ✗</button>'
+        : '';
+      const tr = document.createElement('tr');
+      tr.className = 'data-row';
+      tr.dataset.status = item.status || 'manual';
+      if (item.status === 'submitted') tr.dataset.source = 'manual';
+      tr.innerHTML =
+        '<td class="col-date" data-label="Date">' + dateDisplay + '</td>' +
+        '<td class="col-status" data-label="Status">' + badge + '</td>' +
+        '<td class="col-role" data-label="Role">' + (item.url ? '<a href="' + item.url + '" target="_blank">' + item.role + '</a>' : item.role) + '</td>' +
+        '<td class="col-company" data-label="Company">' + item.company + '</td>' +
+        '<td class="col-location" data-label="Location">' + (item.location || '—') + '</td>' +
+        '<td class="col-salary" data-label="Salary">—</td>' +
+        '<td class="col-ats" data-label="ATS">Manual</td>' +
+        '<td class="col-cv" data-label="CV">—</td>' +
+        '<td class="col-portfolio" data-label="Portfolio">—</td>' +
+        '<td class="col-link" data-label="Link">' + (item.url ? '<a href="' + item.url + '" target="_blank">Link</a>' : '—') + '</td>' +
+        '<td class="col-notes notes" data-label="Notes">' + (item.notes || '') + '</td>' +
+        '<td class="col-action" data-label="Action">' + actionBtns + '</td>';
+      tbody.insertBefore(tr, tbody.firstChild);
+    });
+  }
+
+  addBtn.addEventListener('click', openAddModal);
+  addCancel.addEventListener('click', closeAddModal);
+  addSave.addEventListener('click', saveAddRow);
+  addModal.addEventListener('click', e => { if (e.target === addModal) closeAddModal(); });
+  // Enter key saves
+  document.querySelectorAll('#add-row-modal input').forEach(inp => {
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') saveAddRow(); });
+  });
+
   // --- Init ---
   resizeVillageCanvas();
   applyView('table');
+  loadAddedRows();
   loadManualSubmissions();
   loadSkippedRows();
   updateCounts();
   applyFilter('all');
 })();
 </script>
+
+<!-- Add Row Modal -->
+<div class="modal-overlay" id="add-row-modal">
+  <div class="modal-box">
+    <h3>&#10010; Add a job application</h3>
+    <label for="add-date">Date</label>
+    <input type="date" id="add-date">
+    <label for="add-company">Company *</label>
+    <input type="text" id="add-company" placeholder="e.g. Spotify" required>
+    <label for="add-role">Role *</label>
+    <input type="text" id="add-role" placeholder="e.g. Senior Product Designer" required>
+    <label for="add-url">Job URL</label>
+    <input type="url" id="add-url" placeholder="https://...">
+    <label for="add-location">Location</label>
+    <input type="text" id="add-location" placeholder="e.g. Remote, London, etc.">
+    <label for="add-status">Status</label>
+    <select id="add-status">
+      <option value="manual">À soumettre</option>
+      <option value="submitted">Submitted</option>
+      <option value="saved">Easy Apply</option>
+    </select>
+    <label for="add-notes">Notes</label>
+    <input type="text" id="add-notes" placeholder="Optional notes...">
+    <div class="modal-actions">
+      <button class="btn-modal-cancel" id="add-row-cancel">Cancel</button>
+      <button class="btn-modal-save" id="add-row-save">Add row</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
