@@ -4703,6 +4703,35 @@
 
 </div><!-- end .main -->
 
+<!-- Add Row Modal -->
+<div class="modal-overlay" id="add-row-modal">
+  <div class="modal-box">
+    <h3>&#10010; Add a job application</h3>
+    <label for="add-date">Date</label>
+    <input type="date" id="add-date">
+    <label for="add-company">Company *</label>
+    <input type="text" id="add-company" placeholder="e.g. Spotify" required>
+    <label for="add-role">Role *</label>
+    <input type="text" id="add-role" placeholder="e.g. Senior Product Designer" required>
+    <label for="add-url">Job URL</label>
+    <input type="url" id="add-url" placeholder="https://...">
+    <label for="add-location">Location</label>
+    <input type="text" id="add-location" placeholder="e.g. Remote, London, etc.">
+    <label for="add-status">Status</label>
+    <select id="add-status">
+      <option value="manual">À soumettre</option>
+      <option value="submitted">Submitted</option>
+      <option value="saved">Easy Apply</option>
+    </select>
+    <label for="add-notes">Notes</label>
+    <input type="text" id="add-notes" placeholder="Optional notes...">
+    <div class="modal-actions">
+      <button class="btn-modal-cancel" id="add-row-cancel">Cancel</button>
+      <button class="btn-modal-save" id="add-row-save">Add row</button>
+    </div>
+  </div>
+</div>
+
 <script>
 (function() {
   const table = document.getElementById('main-table');
@@ -6459,35 +6488,6 @@
   applyFilter('all');
 })();
 </script>
-
-<!-- Add Row Modal -->
-<div class="modal-overlay" id="add-row-modal">
-  <div class="modal-box">
-    <h3>&#10010; Add a job application</h3>
-    <label for="add-date">Date</label>
-    <input type="date" id="add-date">
-    <label for="add-company">Company *</label>
-    <input type="text" id="add-company" placeholder="e.g. Spotify" required>
-    <label for="add-role">Role *</label>
-    <input type="text" id="add-role" placeholder="e.g. Senior Product Designer" required>
-    <label for="add-url">Job URL</label>
-    <input type="url" id="add-url" placeholder="https://...">
-    <label for="add-location">Location</label>
-    <input type="text" id="add-location" placeholder="e.g. Remote, London, etc.">
-    <label for="add-status">Status</label>
-    <select id="add-status">
-      <option value="manual">À soumettre</option>
-      <option value="submitted">Submitted</option>
-      <option value="saved">Easy Apply</option>
-    </select>
-    <label for="add-notes">Notes</label>
-    <input type="text" id="add-notes" placeholder="Optional notes...">
-    <div class="modal-actions">
-      <button class="btn-modal-cancel" id="add-row-cancel">Cancel</button>
-      <button class="btn-modal-save" id="add-row-save">Add row</button>
-    </div>
-  </div>
-</div>
 
 </body>
 </html>
