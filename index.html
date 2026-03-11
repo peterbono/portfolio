@@ -167,6 +167,7 @@
     border-radius: 14px;
     padding: 14px;
     margin-bottom: 20px;
+    width: 100%;
   }
   .village-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
   .village-title { font-size: 12px; text-transform: uppercase; letter-spacing: 1.3px; color: #a1a1aa; font-weight: 700; }
@@ -175,8 +176,7 @@
   .forge { color: #fb923c !important; }
   #village-canvas {
     width: 100%;
-    height: auto;
-    max-height: 330px;
+    height: clamp(480px, 68vh, 860px);
     image-rendering: pixelated;
     image-rendering: crisp-edges;
     border-radius: 10px;
@@ -211,6 +211,17 @@
     color: #fff;
   }
   .hidden-view { display: none !important; }
+  .main.village-mode #stats,
+  .main.village-mode #objectives,
+  .main.village-mode .view-nav {
+    position: sticky;
+    top: 10px;
+    z-index: 5;
+    backdrop-filter: blur(4px);
+  }
+  .main.village-mode #village-view {
+    min-height: calc(100vh - 210px);
+  }
   .village-tag {
     padding: 4px 8px;
     border: 1px solid #3f3f46;
@@ -4644,8 +4655,28 @@
   let submittedPct = 0;
   let villageFrame = null;
 
+  const mainEl = document.querySelector('.main');
   const villageCanvas = document.getElementById('village-canvas');
   const villageCtx = villageCanvas.getContext('2d');
+  const decorImage = new Image();
+  let decorReady = false;
+  decorImage.crossOrigin = 'anonymous';
+  decorImage.src = 'https://raw.githubusercontent.com/rottencandy/js-pixel-art-editor/master/example/sprites/town.png';
+  decorImage.onload = () => { decorReady = true; };
+
+  function resizeVillageCanvas() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const cssW = villageCanvas.clientWidth || 960;
+    const cssH = villageCanvas.clientHeight || 560;
+    const baseW = 960;
+    const baseH = 420;
+    villageCanvas.width = Math.round(cssW * dpr);
+    villageCanvas.height = Math.round(cssH * dpr);
+    const sx = cssW / baseW;
+    const sy = cssH / baseH;
+    villageCtx.setTransform(dpr * sx, 0, 0, dpr * sy, 0, 0);
+    villageCtx.imageSmoothingEnabled = false;
+  }
   const villageState = {
     hero: { x: 56, y: 236, dir: 1, target: 560, speed: 0.45, carrying: true, step: 0 },
     npcs: Array.from({ length: 5 }, (_, i) => ({
@@ -4820,14 +4851,20 @@
   }
 
   function tickVillage() {
-    const w = villageCanvas.width;
-    const h = villageCanvas.height;
+    const w = 960;
+    const h = 420;
     const t = Date.now() / 55;
 
     drawPixelRect(0, 0, w, h, '#1f2937');
     drawPixelRect(0, 0, w, 120, '#6b7280');
     drawPixelRect(0, 120, w, 80, '#4b5563');
     drawPixelRect(0, 200, w, 46, '#5b4636');
+
+    if (decorReady) {
+      villageCtx.globalAlpha = 0.2;
+      villageCtx.drawImage(decorImage, 0, 0, decorImage.width, decorImage.height, 0, 0, w, 220);
+      villageCtx.globalAlpha = 1;
+    }
 
     villageState.clouds.forEach(cloud => {
       cloud.x += cloud.speed;
@@ -4873,6 +4910,7 @@
   }
 
   function startVillage() {
+    resizeVillageCanvas();
     if (villageFrame) return;
     villageFrame = requestAnimationFrame(tickVillage);
   }
@@ -4893,6 +4931,7 @@
 
   function applyView(view) {
     const showVillage = view === 'village';
+    mainEl.classList.toggle('village-mode', showVillage);
     villageView.classList.toggle('hidden-view', !showVillage);
     tableView.classList.toggle('hidden-view', showVillage);
     viewTabs.forEach(tab => {
@@ -5053,7 +5092,10 @@
     tab.addEventListener('click', () => applyView(tab.dataset.view));
   });
 
+  window.addEventListener('resize', resizeVillageCanvas);
+
   // --- Init ---
+  resizeVillageCanvas();
   applyView('table');
   loadManualSubmissions();
   updateCounts();
