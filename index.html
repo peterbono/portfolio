@@ -4677,6 +4677,19 @@
     villageCtx.setTransform(dpr * sx, 0, 0, dpr * sy, 0, 0);
     villageCtx.imageSmoothingEnabled = false;
   }
+
+  function updateVillageMetrics(submitted) {
+    const completeHouses = Math.floor(submitted / 100);
+    const buildPct = submitted % 100;
+    document.getElementById('village-houses-complete').textContent = completeHouses;
+    document.getElementById('village-house-progress').textContent = buildPct + '%';
+    document.getElementById('village-forge-power').textContent = submittedPct + '%';
+    villageState.completeHouses = completeHouses;
+    villageState.buildPct = buildPct / 100;
+    villageState.forge = submittedPct / 100;
+    const tag = document.getElementById('village-status-tag');
+    tag.textContent = buildPct === 0 ? 'Maison terminée' : 'Chantier actif';
+  }
   const villageState = {
     hero: { x: 56, y: 236, dir: 1, target: 560, speed: 0.45, carrying: true, step: 0 },
     npcs: Array.from({ length: 5 }, (_, i) => ({
