@@ -167,6 +167,7 @@
     border-radius: 14px;
     padding: 14px;
     margin-bottom: 20px;
+    width: 100%;
   }
   .village-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
   .village-title { font-size: 12px; text-transform: uppercase; letter-spacing: 1.3px; color: #a1a1aa; font-weight: 700; }
@@ -175,8 +176,7 @@
   .forge { color: #fb923c !important; }
   #village-canvas {
     width: 100%;
-    height: auto;
-    max-height: 330px;
+    height: clamp(480px, 68vh, 860px);
     image-rendering: pixelated;
     image-rendering: crisp-edges;
     border-radius: 10px;
@@ -211,6 +211,17 @@
     color: #fff;
   }
   .hidden-view { display: none !important; }
+  .main.village-mode #stats,
+  .main.village-mode #objectives,
+  .main.village-mode .view-nav {
+    position: sticky;
+    top: 10px;
+    z-index: 5;
+    backdrop-filter: blur(4px);
+  }
+  .main.village-mode #village-view {
+    min-height: calc(100vh - 210px);
+  }
   .village-tag {
     padding: 4px 8px;
     border: 1px solid #3f3f46;
@@ -334,8 +345,8 @@
       <span class="forge">Forge: <strong id="village-forge-power">0%</strong></span>
     </div>
   </div>
-  <canvas id="village-canvas" width="640" height="320" aria-label="Village médiéval pixel animé"></canvas>
-  <p class="village-tip">1 maison complète tous les 100 candidatures envoyées. Le forgeron chauffe selon le % submitted et les PNJ patrouillent aléatoirement.</p>
+  <canvas id="village-canvas" width="960" height="420" aria-label="Village médiéval pixel animé"></canvas>
+  <p class="village-tip">1 maison complète tous les 100 candidatures envoyées. Le forgeron chauffe selon le % submitted, les maisons se bâtissent par paliers et les PNJ animent la place du village.</p>
 </div>
 
 <div id="table-view">
@@ -4644,8 +4655,41 @@
   let submittedPct = 0;
   let villageFrame = null;
 
+  const mainEl = document.querySelector('.main');
   const villageCanvas = document.getElementById('village-canvas');
   const villageCtx = villageCanvas.getContext('2d');
+  const decorImage = new Image();
+  let decorReady = false;
+  decorImage.crossOrigin = 'anonymous';
+  decorImage.src = 'https://raw.githubusercontent.com/rottencandy/js-pixel-art-editor/master/example/sprites/town.png';
+  decorImage.onload = () => { decorReady = true; };
+
+  function resizeVillageCanvas() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const cssW = villageCanvas.clientWidth || 960;
+    const cssH = villageCanvas.clientHeight || 560;
+    const baseW = 960;
+    const baseH = 420;
+    villageCanvas.width = Math.round(cssW * dpr);
+    villageCanvas.height = Math.round(cssH * dpr);
+    const sx = cssW / baseW;
+    const sy = cssH / baseH;
+    villageCtx.setTransform(dpr * sx, 0, 0, dpr * sy, 0, 0);
+    villageCtx.imageSmoothingEnabled = false;
+  }
+
+  function updateVillageMetrics(submitted) {
+    const completeHouses = Math.floor(submitted / 100);
+    const buildPct = submitted % 100;
+    document.getElementById('village-houses-complete').textContent = completeHouses;
+    document.getElementById('village-house-progress').textContent = buildPct + '%';
+    document.getElementById('village-forge-power').textContent = submittedPct + '%';
+    villageState.completeHouses = completeHouses;
+    villageState.buildPct = buildPct / 100;
+    villageState.forge = submittedPct / 100;
+    const tag = document.getElementById('village-status-tag');
+    tag.textContent = buildPct === 0 ? 'Maison terminée' : 'Chantier actif';
+  }
   const villageState = {
     hero: { x: 56, y: 236, dir: 1, target: 560, speed: 0.45, carrying: true, step: 0 },
     npcs: Array.from({ length: 5 }, (_, i) => ({
@@ -4700,69 +4744,178 @@
     }
   }
 
-  function updateVillageMetrics(submitted) {
-    const completeHouses = Math.floor(submitted / 100);
-    const buildPct = submitted % 100;
-    document.getElementById('village-houses-complete').textContent = completeHouses;
-    document.getElementById('village-house-progress').textContent = buildPct + '%';
-    document.getElementById('village-forge-power').textContent = submittedPct + '%';
-    villageState.completeHouses = completeHouses;
-    villageState.buildPct = buildPct / 100;
-    villageState.forge = submittedPct / 100;
+  function drawBrickTile(x, y, c1, c2) {
+    drawPixelRect(x, y, 16, 8, c1);
+    drawPixelRect(x, y + 8, 16, 8, c2);
+    drawPixelRect(x, y, 16, 1, '#7c6f5f');
+    drawPixelRect(x, y + 8, 16, 1, '#7c6f5f');
+    drawPixelRect(x + 7, y, 1, 8, '#7c6f5f');
+    drawPixelRect(x + 3, y + 8, 1, 8, '#7c6f5f');
+    drawPixelRect(x + 11, y + 8, 1, 8, '#7c6f5f');
+  }
 
-    const tag = document.getElementById('village-status-tag');
-    tag.textContent = buildPct === 0 ? 'Maison terminée' : 'Chantier actif';
+  function drawTownSquare() {
+    for (let y = 246; y < 420; y += 16) {
+      for (let x = 0; x < 960; x += 16) {
+        const odd = ((x / 16) + (y / 16)) % 2;
+        drawBrickTile(x, y, odd ? '#c9baa0' : '#d5c7ae', odd ? '#beaf93' : '#c9b99f');
+      }
+    }
+    for (let i = 0; i < 90; i++) {
+      const gx = (i * 97) % 940;
+      const gy = 258 + ((i * 41) % 150);
+      drawPixelRect(gx, gy, 3, 2, '#6b8f4e');
+    }
+  }
+
+  function drawMainBuilding() {
+    drawPixelRect(180, 80, 600, 180, '#5f6a6a');
+    drawPixelRect(200, 60, 560, 36, '#8f5a4a');
+    drawPixelRect(270, 70, 420, 26, '#9b6654');
+
+    for (let x = 190; x < 770; x += 16) {
+      drawPixelRect(x, 98, 10, 6, '#6f7a7a');
+    }
+
+    drawPixelRect(430, 112, 120, 148, '#4b3f39');
+    drawPixelRect(444, 128, 92, 122, '#1f2937');
+    drawPixelRect(472, 88, 34, 26, '#3b2f2a');
+    drawPixelRect(478, 94, 22, 14, '#0f172a');
+
+    const windows = [240, 320, 610, 690];
+    windows.forEach(x => {
+      drawPixelRect(x, 130, 44, 32, '#243447');
+      drawPixelRect(x + 4, 134, 16, 12, '#f59e0b');
+      drawPixelRect(x + 24, 134, 16, 12, '#fde68a');
+      drawPixelRect(x - 4, 160, 52, 8, '#7c2d12');
+      drawPixelRect(x - 6, 168, 56, 6, '#4b5563');
+      drawPixelRect(x + 6, 170, 12, 6, '#22c55e');
+      drawPixelRect(x + 28, 170, 12, 6, '#16a34a');
+    });
+
+    for (let i = 0; i < 2; i++) {
+      const bx = i === 0 ? 150 : 760;
+      drawPixelRect(bx, 78, 18, 142, '#d6c5aa');
+      drawPixelRect(bx + 4, 74, 10, 8, '#8f5a4a');
+    }
+
+    // Shop awnings
+    drawPixelRect(180, 196, 160, 22, '#f4d9b6');
+    drawPixelRect(180, 196, 20, 22, '#d97757');
+    drawPixelRect(220, 196, 20, 22, '#d97757');
+    drawPixelRect(260, 196, 20, 22, '#d97757');
+    drawPixelRect(300, 196, 20, 22, '#d97757');
+
+    drawPixelRect(620, 196, 160, 22, '#f4d9b6');
+    drawPixelRect(620, 196, 20, 22, '#d97757');
+    drawPixelRect(660, 196, 20, 22, '#d97757');
+    drawPixelRect(700, 196, 20, 22, '#d97757');
+    drawPixelRect(740, 196, 20, 22, '#d97757');
   }
 
   function drawForge() {
-    drawPixelRect(286, 170, 68, 50, '#4b5563');
-    drawPixelRect(278, 156, 84, 14, '#7c2d12');
-    drawPixelRect(302, 182, 36, 28, '#111827');
-    const flame = Math.max(4, Math.round((villageState.forge || 0) * 26));
-    drawPixelRect(318, 194 - flame, 8, flame, '#fb923c');
-    drawPixelRect(315, 198 - Math.round(flame * 0.6), 14, Math.round(flame * 0.5), '#facc15');
-    if (villageState.forge > 0.6) drawPixelRect(312, 186 - Math.round(flame * 0.7), 20, 3, '#fde047');
+    drawPixelRect(86, 182, 118, 68, '#4b5563');
+    drawPixelRect(72, 170, 136, 14, '#7c2d12');
+    drawPixelRect(118, 196, 54, 44, '#111827');
+    const flame = Math.max(6, Math.round((villageState.forge || 0) * 34));
+    drawPixelRect(140, 226 - flame, 10, flame, '#fb923c');
+    drawPixelRect(136, 228 - Math.round(flame * 0.65), 18, Math.round(flame * 0.52), '#facc15');
+    if (villageState.forge > 0.6) drawPixelRect(132, 214 - Math.round(flame * 0.75), 26, 4, '#fde047');
+    drawPixelRect(98, 206, 10, 22, '#6b7280');
+    drawPixelRect(100, 202, 16, 4, '#9ca3af');
+  }
+
+  function drawFountain(tick) {
+    drawPixelRect(414, 292, 132, 76, '#6b7280');
+    drawPixelRect(430, 308, 100, 46, '#64748b');
+    drawPixelRect(468, 286, 24, 36, '#9ca3af');
+    drawPixelRect(474, 278, 12, 12, '#cbd5e1');
+
+    const wave = Math.sin(tick / 12) * 2;
+    drawPixelRect(436, 314 + wave, 88, 34, '#7dd3fc');
+    drawPixelRect(474, 244 + wave, 10, 52, '#bae6fd');
+    drawPixelRect(472, 242 + wave, 14, 6, '#e0f2fe');
+  }
+
+  function drawStallsAndProps() {
+    drawPixelRect(274, 246, 88, 44, '#8b5a3c');
+    drawPixelRect(278, 252, 20, 10, '#22c55e');
+    drawPixelRect(302, 252, 20, 10, '#ef4444');
+    drawPixelRect(326, 252, 20, 10, '#eab308');
+
+    drawPixelRect(612, 248, 92, 42, '#8b5a3c');
+    drawPixelRect(620, 254, 18, 14, '#f472b6');
+    drawPixelRect(644, 254, 18, 14, '#fbbf24');
+    drawPixelRect(668, 254, 18, 14, '#34d399');
+
+    drawPixelRect(210, 322, 16, 24, '#8b5a3c');
+    drawPixelRect(232, 330, 16, 20, '#8b5a3c');
+    drawPixelRect(710, 336, 16, 20, '#8b5a3c');
+    drawPixelRect(730, 328, 16, 24, '#8b5a3c');
+  }
+
+  function drawTrees() {
+    const trees = [[42, 268], [856, 270], [20, 118], [900, 124]];
+    trees.forEach(([x, y]) => {
+      drawPixelRect(x + 12, y + 40, 10, 22, '#7c2d12');
+      drawPixelRect(x, y + 20, 34, 26, '#166534');
+      drawPixelRect(x + 4, y, 26, 24, '#22c55e');
+    });
   }
 
   function tickVillage() {
-    const w = villageCanvas.width;
-    const h = villageCanvas.height;
-    drawPixelRect(0, 0, w, h, '#1e293b');
-    drawPixelRect(0, 120, w, 32, '#60a5fa');
-    drawPixelRect(0, 140, w, 80, '#3f6212');
-    drawPixelRect(0, 220, w, 100, '#365314');
+    const w = 960;
+    const h = 420;
+    const t = Date.now() / 55;
+
+    drawPixelRect(0, 0, w, h, '#1f2937');
+    drawPixelRect(0, 0, w, 120, '#6b7280');
+    drawPixelRect(0, 120, w, 80, '#4b5563');
+    drawPixelRect(0, 200, w, 46, '#5b4636');
+
+    if (decorReady) {
+      villageCtx.globalAlpha = 0.2;
+      villageCtx.drawImage(decorImage, 0, 0, decorImage.width, decorImage.height, 0, 0, w, 220);
+      villageCtx.globalAlpha = 1;
+    }
 
     villageState.clouds.forEach(cloud => {
       cloud.x += cloud.speed;
-      if (cloud.x > 660) cloud.x = -30;
+      if (cloud.x > 980) cloud.x = -34;
       drawCloud(cloud.x, cloud.y);
     });
 
-    drawPixelRect(0, 242, w, 8, '#7c5a3a');
+    drawMainBuilding();
+    drawTownSquare();
+    drawTrees();
+    drawStallsAndProps();
+    drawFountain(t);
+    drawForge();
 
+    // Construction lots on lower edge
     for (let i = 0; i < 5; i++) {
-      const x = 16 + i * 122;
+      const x = 44 + i * 176;
       const done = i < villageState.completeHouses;
       const progress = i === villageState.completeHouses ? villageState.buildPct : 0;
-      drawHouseLot(x, 216, progress, done);
+      drawHouseLot(x, 414, progress, done);
     }
-
-    drawForge();
 
     villageState.hero.step += 0.14;
     if (Math.abs(villageState.hero.x - villageState.hero.target) < 2) {
-      villageState.hero.target = villageState.hero.target < 320 ? 560 : 40;
+      villageState.hero.target = villageState.hero.target < 480 ? 850 : 80;
       villageState.hero.dir *= -1;
       villageState.hero.carrying = !villageState.hero.carrying;
     }
     villageState.hero.x += villageState.hero.dir * villageState.hero.speed;
+    villageState.hero.y = 362;
     drawCharacter(villageState.hero.x, villageState.hero.y, '#34d399', villageState.hero.step);
     if (villageState.hero.carrying) drawPixelRect(villageState.hero.x + 9, villageState.hero.y - 10, 5, 5, '#a16207');
 
-    villageState.npcs.forEach(npc => {
+    villageState.npcs.forEach((npc, idx) => {
       npc.step += 0.12;
+      npc.y = 338 + (idx % 2) * 28;
       npc.x += npc.dir * npc.speed;
-      if (npc.x < npc.roamMin || npc.x > npc.roamMax || Math.random() < 0.004) npc.dir *= -1;
+      if (npc.x < 40 || npc.x > 920 || Math.random() < 0.004) npc.dir *= -1;
       drawCharacter(npc.x, npc.y, npc.tone, npc.step);
     });
 
@@ -4770,6 +4923,7 @@
   }
 
   function startVillage() {
+    resizeVillageCanvas();
     if (villageFrame) return;
     villageFrame = requestAnimationFrame(tickVillage);
   }
@@ -4790,6 +4944,7 @@
 
   function applyView(view) {
     const showVillage = view === 'village';
+    mainEl.classList.toggle('village-mode', showVillage);
     villageView.classList.toggle('hidden-view', !showVillage);
     tableView.classList.toggle('hidden-view', showVillage);
     viewTabs.forEach(tab => {
@@ -4950,7 +5105,10 @@
     tab.addEventListener('click', () => applyView(tab.dataset.view));
   });
 
+  window.addEventListener('resize', resizeVillageCanvas);
+
   // --- Init ---
+  resizeVillageCanvas();
   applyView('table');
   loadManualSubmissions();
   updateCounts();
