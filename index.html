@@ -4708,7 +4708,7 @@
   // --- Iso constants ---
   const TW=64, TH=32;          // tile width/height
   const HW=TW/2, HH=TH/2;     // half tile
-  const OX=480, OY=105;         // origin (center-top of grid)
+  const OX=480, OY=80;          // origin (center-top of grid) — raised for better visibility
   const COLS=12, ROWS=8;
 
   // --- Weather & time state ---
@@ -5034,7 +5034,7 @@
     const TK=isNight?'#1a1208':'#5a4028';
 
     // 3. Village clearing — ellipse around iso diamond
-    const CX=544,CY=252,RX=295,RY=158;
+    const CX=544,CY=225,RX=330,RY=185;
 
     // 4. Dense bumpy treeline at horizon (canopies silhouetted against sky)
     const s0=seededRand(777);
