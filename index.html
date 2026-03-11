@@ -160,6 +160,66 @@
   .salary { font-size: 12px; color: #f87171; }
   .updated { text-align: right; font-size: 11px; color: #3f3f46; margin-top: 20px; font-weight: 500; }
 
+  /* === PIXEL MMORPG VILLAGE === */
+  .village-panel {
+    background: linear-gradient(180deg, #141418 0%, #101014 100%);
+    border: 1px solid #27272f;
+    border-radius: 14px;
+    padding: 14px;
+    margin-bottom: 20px;
+  }
+  .village-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+  .village-title { font-size: 12px; text-transform: uppercase; letter-spacing: 1.3px; color: #a1a1aa; font-weight: 700; }
+  .village-metrics { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11px; color: #d4d4d8; }
+  .village-metrics strong { color: #34d399; }
+  .forge { color: #fb923c !important; }
+  #village-canvas {
+    width: 100%;
+    height: auto;
+    max-height: 330px;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    border-radius: 10px;
+    border: 1px solid #22222a;
+    background: #1a2334;
+    display: block;
+  }
+  .village-tip { margin-top: 10px; color: #71717a; font-size: 11px; }
+
+  .view-nav {
+    display: inline-flex;
+    gap: 8px;
+    background: #111113;
+    border: 1px solid #1e1e24;
+    padding: 6px;
+    border-radius: 12px;
+    margin-bottom: 16px;
+  }
+  .view-tab {
+    border: 1px solid transparent;
+    background: transparent;
+    color: #a1a1aa;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 8px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .view-tab.active {
+    background: #1b1b22;
+    border-color: #2a2a35;
+    color: #fff;
+  }
+  .hidden-view { display: none !important; }
+  .village-tag {
+    padding: 4px 8px;
+    border: 1px solid #3f3f46;
+    border-radius: 999px;
+    font-size: 10px;
+    color: #d4d4d8;
+    background: #18181b;
+  }
+
   /* === MOBILE === */
   @media (max-width: 900px) {
     .header { padding: 20px 16px 16px; }
@@ -258,6 +318,27 @@
   <div class="stat" data-filter="skipped" style="color:#52525b"><div class="stat-icon">&#8594;</div><div class="stat-number" style="color:#52525b" id="count-skipped">0</div><div class="stat-label">Skipped</div></div>
 </div>
 
+
+<div class="view-nav" role="tablist" aria-label="Vue globale">
+  <button class="view-tab active" id="tab-table" data-view="table" role="tab" aria-selected="true">Vue tableau</button>
+  <button class="view-tab" id="tab-village" data-view="village" role="tab" aria-selected="false">Vue village</button>
+</div>
+
+<div class="village-panel hidden-view" id="village-view">
+  <div class="village-head">
+    <div class="village-title">Mini Pixel MMORPG · Medieval Build Village</div>
+    <span class="village-tag" id="village-status-tag">Chantier actif</span>
+    <div class="village-metrics">
+      <span>Maisons terminées: <strong id="village-houses-complete">0</strong></span>
+      <span>Maison en cours: <strong id="village-house-progress">0%</strong></span>
+      <span class="forge">Forge: <strong id="village-forge-power">0%</strong></span>
+    </div>
+  </div>
+  <canvas id="village-canvas" width="640" height="320" aria-label="Village médiéval pixel animé"></canvas>
+  <p class="village-tip">1 maison complète tous les 100 candidatures envoyées. Le forgeron chauffe selon le % submitted et les PNJ patrouillent aléatoirement.</p>
+</div>
+
+<div id="table-view">
 <div class="sub-filter" id="sub-filter-submitted">
   <span class="sub-chip active" data-subsource="all">All</span>
   <span class="sub-chip" data-subsource="auto">&#129302; Auto (Claude)</span>
@@ -4543,6 +4624,7 @@
 </div>
 
 <p class="updated">Last updated: 2026-03-11</p>
+</div>
 
 </div><!-- end .main -->
 
@@ -4551,11 +4633,173 @@
   const table = document.getElementById('main-table');
   const tbody = table.querySelector('tbody');
   const subFilterEl = document.getElementById('sub-filter-submitted');
+  const tableView = document.getElementById('table-view');
+  const villageView = document.getElementById('village-view');
+  const viewTabs = Array.from(document.querySelectorAll('.view-tab'));
   const rows = () => Array.from(tbody.querySelectorAll('tr.data-row'));
   let currentFilter = 'all';
   let currentSubFilter = 'all';
   let sortCol = -1;
   let sortDir = 'asc';
+  let submittedPct = 0;
+  let villageFrame = null;
+
+  const villageCanvas = document.getElementById('village-canvas');
+  const villageCtx = villageCanvas.getContext('2d');
+  const villageState = {
+    hero: { x: 56, y: 236, dir: 1, target: 560, speed: 0.45, carrying: true, step: 0 },
+    npcs: Array.from({ length: 5 }, (_, i) => ({
+      x: 80 + i * 104,
+      y: 226 + (i % 3) * 10,
+      dir: Math.random() > 0.5 ? 1 : -1,
+      speed: 0.12 + Math.random() * 0.2,
+      roamMin: 20 + i * 10,
+      roamMax: 620 - i * 12,
+      step: Math.random() * 7,
+      tone: ['#fca5a5', '#93c5fd', '#c4b5fd', '#fdba74', '#86efac'][i]
+    })),
+    clouds: [{ x: 20, y: 38, speed: 0.12 }, { x: 260, y: 22, speed: 0.08 }, { x: 480, y: 44, speed: 0.1 }],
+    completeHouses: 0,
+    buildPct: 0,
+    forge: 0
+  };
+
+  function drawPixelRect(x, y, w, h, color) {
+    villageCtx.fillStyle = color;
+    villageCtx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
+  }
+
+  function drawCloud(x, y) {
+    drawPixelRect(x, y, 20, 8, '#cbd5e1');
+    drawPixelRect(x + 4, y - 4, 12, 6, '#e2e8f0');
+  }
+
+  function drawCharacter(x, y, mainColor, step) {
+    drawPixelRect(x + 2, y - 14, 6, 6, '#fde68a');
+    drawPixelRect(x + 1, y - 8, 8, 8, mainColor);
+    drawPixelRect(x + 1, y, 3, 6, '#3f3f46');
+    drawPixelRect(x + 6, y, 3, 6, '#3f3f46');
+    const swing = Math.sin(step) > 0 ? 1 : -1;
+    drawPixelRect(x - 1, y - 6, 2, 5 + swing, '#f5d0a9');
+    drawPixelRect(x + 9, y - 6 - swing, 2, 5, '#f5d0a9');
+  }
+
+  function drawHouseLot(x, baseY, buildProgress, done) {
+    drawPixelRect(x - 2, baseY, 66, 4, '#5b4636');
+    if (done || buildProgress > 0.08) drawPixelRect(x + 8, baseY - 26, 46, 24, '#d4a373');
+    if (done || buildProgress > 0.3) drawPixelRect(x + 26, baseY - 12, 10, 10, '#111827');
+    if (done || buildProgress > 0.5) drawPixelRect(x + 3, baseY - 36, 56, 10, '#7f1d1d');
+    if (done || buildProgress > 0.68) {
+      drawPixelRect(x + 14, baseY - 24, 8, 8, '#fef3c7');
+      drawPixelRect(x + 40, baseY - 24, 8, 8, '#fef3c7');
+    }
+    if (done || buildProgress > 0.82) drawPixelRect(x + 26, baseY - 44, 8, 8, '#9ca3af');
+    if (!done && buildProgress < 0.95) {
+      drawPixelRect(x + 15, baseY - 38, 4, 12, '#92400e');
+      drawPixelRect(x + 34, baseY - 46, 4, 20, '#92400e');
+    }
+  }
+
+  function updateVillageMetrics(submitted) {
+    const completeHouses = Math.floor(submitted / 100);
+    const buildPct = submitted % 100;
+    document.getElementById('village-houses-complete').textContent = completeHouses;
+    document.getElementById('village-house-progress').textContent = buildPct + '%';
+    document.getElementById('village-forge-power').textContent = submittedPct + '%';
+    villageState.completeHouses = completeHouses;
+    villageState.buildPct = buildPct / 100;
+    villageState.forge = submittedPct / 100;
+
+    const tag = document.getElementById('village-status-tag');
+    tag.textContent = buildPct === 0 ? 'Maison terminée' : 'Chantier actif';
+  }
+
+  function drawForge() {
+    drawPixelRect(286, 170, 68, 50, '#4b5563');
+    drawPixelRect(278, 156, 84, 14, '#7c2d12');
+    drawPixelRect(302, 182, 36, 28, '#111827');
+    const flame = Math.max(4, Math.round((villageState.forge || 0) * 26));
+    drawPixelRect(318, 194 - flame, 8, flame, '#fb923c');
+    drawPixelRect(315, 198 - Math.round(flame * 0.6), 14, Math.round(flame * 0.5), '#facc15');
+    if (villageState.forge > 0.6) drawPixelRect(312, 186 - Math.round(flame * 0.7), 20, 3, '#fde047');
+  }
+
+  function tickVillage() {
+    const w = villageCanvas.width;
+    const h = villageCanvas.height;
+    drawPixelRect(0, 0, w, h, '#1e293b');
+    drawPixelRect(0, 120, w, 32, '#60a5fa');
+    drawPixelRect(0, 140, w, 80, '#3f6212');
+    drawPixelRect(0, 220, w, 100, '#365314');
+
+    villageState.clouds.forEach(cloud => {
+      cloud.x += cloud.speed;
+      if (cloud.x > 660) cloud.x = -30;
+      drawCloud(cloud.x, cloud.y);
+    });
+
+    drawPixelRect(0, 242, w, 8, '#7c5a3a');
+
+    for (let i = 0; i < 5; i++) {
+      const x = 16 + i * 122;
+      const done = i < villageState.completeHouses;
+      const progress = i === villageState.completeHouses ? villageState.buildPct : 0;
+      drawHouseLot(x, 216, progress, done);
+    }
+
+    drawForge();
+
+    villageState.hero.step += 0.14;
+    if (Math.abs(villageState.hero.x - villageState.hero.target) < 2) {
+      villageState.hero.target = villageState.hero.target < 320 ? 560 : 40;
+      villageState.hero.dir *= -1;
+      villageState.hero.carrying = !villageState.hero.carrying;
+    }
+    villageState.hero.x += villageState.hero.dir * villageState.hero.speed;
+    drawCharacter(villageState.hero.x, villageState.hero.y, '#34d399', villageState.hero.step);
+    if (villageState.hero.carrying) drawPixelRect(villageState.hero.x + 9, villageState.hero.y - 10, 5, 5, '#a16207');
+
+    villageState.npcs.forEach(npc => {
+      npc.step += 0.12;
+      npc.x += npc.dir * npc.speed;
+      if (npc.x < npc.roamMin || npc.x > npc.roamMax || Math.random() < 0.004) npc.dir *= -1;
+      drawCharacter(npc.x, npc.y, npc.tone, npc.step);
+    });
+
+    villageFrame = requestAnimationFrame(tickVillage);
+  }
+
+  function startVillage() {
+    if (villageFrame) return;
+    villageFrame = requestAnimationFrame(tickVillage);
+  }
+
+  function stopVillage() {
+    if (!villageFrame) return;
+    cancelAnimationFrame(villageFrame);
+    villageFrame = null;
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      stopVillage();
+      return;
+    }
+    if (!villageView.classList.contains('hidden-view')) startVillage();
+  });
+
+  function applyView(view) {
+    const showVillage = view === 'village';
+    villageView.classList.toggle('hidden-view', !showVillage);
+    tableView.classList.toggle('hidden-view', showVillage);
+    viewTabs.forEach(tab => {
+      const active = tab.dataset.view === view;
+      tab.classList.toggle('active', active);
+      tab.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    if (showVillage) startVillage();
+    else stopVillage();
+  }
 
   // --- Row key for localStorage ---
   function getRowKey(row) {
@@ -4591,6 +4835,7 @@
   function updateProgress(submitted, total) {
     const actionable = total - document.querySelectorAll('tr[data-status="skipped"]').length;
     const pct = actionable > 0 ? Math.round((submitted / actionable) * 100) : 0;
+    submittedPct = pct;
     const circle = document.getElementById('progress-circle');
     const circumference = 2 * Math.PI * 30; // r=30
     const offset = circumference - (pct / 100) * circumference;
@@ -4611,6 +4856,7 @@
     document.getElementById('count-failed').textContent = counts.failed;
     document.getElementById('count-skipped').textContent = counts.skipped;
     updateProgress(counts.submitted, all.length);
+    updateVillageMetrics(counts.submitted);
   }
 
   // --- Visible count ---
@@ -4700,7 +4946,12 @@
     });
   });
 
+  viewTabs.forEach(tab => {
+    tab.addEventListener('click', () => applyView(tab.dataset.view));
+  });
+
   // --- Init ---
+  applyView('table');
   loadManualSubmissions();
   updateCounts();
   applyFilter('all');
