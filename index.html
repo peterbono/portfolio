@@ -136,17 +136,30 @@
   .badge.applied { background: #052e1f; color: #4ade80; border-color: #064e3b; }
   .badge.wip { background: #2a1505; color: #facc15; border-color: #422006; }
   .badge.pending { background: #0c2844; color: #60a5fa; border-color: #1e3a5f; }
+  .badge.a_soumettre { background: #2a1505; color: #fb923c; border-color: #422006; }
+  .badge.a_soumettre::before { content: "\25CF"; color: #fb923c; }
 
   /* === BUTTON "Applied" === */
   .btn-applied {
     display: inline-flex; align-items: center; gap: 4px;
     background: #064e3b; color: #34d399; border: 1px solid #065f46;
     border-radius: 6px; padding: 4px 10px; font-size: 11px; font-weight: 600;
-    cursor: pointer; margin-left: 8px; transition: all .2s;
+    cursor: pointer; transition: all .2s;
     vertical-align: middle; font-family: inherit; letter-spacing: .3px;
   }
   .btn-applied:hover { background: #34d399; color: #052e1f; border-color: #34d399; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(52,211,153,.2); }
   .btn-applied:active { transform: translateY(0); }
+
+  /* === BUTTON "Skip" === */
+  .btn-skip {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: #1c1c22; color: #71717a; border: 1px solid #27272a;
+    border-radius: 6px; padding: 4px 10px; font-size: 11px; font-weight: 600;
+    cursor: pointer; margin-left: 6px; transition: all .2s;
+    vertical-align: middle; font-family: inherit; letter-spacing: .3px;
+  }
+  .btn-skip:hover { background: #7f1d1d; color: #fca5a5; border-color: #991b1b; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(248,113,113,.15); }
+  .btn-skip:active { transform: translateY(0); }
 
   /* === ACTION COLUMN === */
   .col-action { text-align: center; white-space: nowrap; }
@@ -7826,15 +7839,32 @@
 
   function loadManualSubmissions() {
     const saved = JSON.parse(localStorage.getItem('manual-submissions') || '[]');
-    if (!saved.length) return;
+    const skipped = JSON.parse(localStorage.getItem('skipped-submissions') || '[]');
     rows().forEach(r => {
-      if (r.dataset.status === 'manual' && saved.includes(getRowKey(r))) {
+      const s = r.dataset.status;
+      if ((s === 'manual' || s === 'a_soumettre') && saved.includes(getRowKey(r))) {
         r.dataset.status = 'submitted';
         r.dataset.source = 'manual';
-        const statusCell = r.querySelector('.col-status');
-        statusCell.innerHTML = '<span class="badge submitted">Submitted</span>';
+        r.querySelector('.col-status').innerHTML = '<span class="badge submitted">Submitted</span>';
+        const ac = r.querySelector('.col-action');
+        if (ac) ac.innerHTML = '';
+      } else if ((s === 'manual' || s === 'a_soumettre') && skipped.includes(getRowKey(r))) {
+        r.dataset.status = 'skipped';
+        r.querySelector('.col-status').innerHTML = '<span class="badge skipped">Skipped</span>';
+        const ac = r.querySelector('.col-action');
+        if (ac) ac.innerHTML = '';
       }
     });
+  }
+
+  function saveSkippedSubmissions() {
+    const keys = [];
+    rows().forEach(r => {
+      if (r.dataset.status === 'skipped') {
+        keys.push(getRowKey(r));
+      }
+    });
+    localStorage.setItem('skipped-submissions', JSON.stringify(keys));
   }
 
   // --- Progress ring ---
@@ -7853,7 +7883,7 @@
   function updateCounts() {
     const all = rows();
     const counts = { submitted: 0, manual: 0, saved: 0, already: 0, failed: 0, skipped: 0 };
-    all.forEach(r => { const s = r.dataset.status; if (counts[s] !== undefined) counts[s]++; });
+    all.forEach(r => { const s = r.dataset.status; if (s === 'a_soumettre') counts.manual++; else if (counts[s] !== undefined) counts[s]++; });
     document.getElementById('count-all').textContent = all.length;
     document.getElementById('count-submitted').textContent = counts.submitted;
     document.getElementById('count-manual').textContent = counts.manual;
@@ -7884,7 +7914,8 @@
 
     document.querySelectorAll('.stat').forEach(s => s.classList.toggle('active', s.dataset.filter === filter));
     rows().forEach(r => {
-      let match = filter === 'all' || r.dataset.status === filter;
+      const s = r.dataset.status;
+      let match = filter === 'all' || s === filter || (filter === 'manual' && s === 'a_soumettre');
       if (match && filter === 'submitted' && currentSubFilter !== 'all') {
         match = (r.dataset.source || 'auto') === currentSubFilter;
       }
@@ -7907,13 +7938,34 @@
     });
   });
 
+  // --- Inject CTA buttons into all manual / a_soumettre rows ---
+  function injectCTAButtons() {
+    rows().forEach(r => {
+      const s = r.dataset.status;
+      if (s !== 'manual' && s !== 'a_soumettre') return;
+      let actionCell = r.querySelector('.col-action');
+      if (!actionCell) {
+        // Find last empty td or create col-action
+        const cells = r.querySelectorAll('td');
+        const lastCell = cells[cells.length - 1];
+        if (lastCell && !lastCell.textContent.trim()) {
+          lastCell.classList.add('col-action');
+          lastCell.setAttribute('data-label', 'Action');
+          actionCell = lastCell;
+        }
+      }
+      if (actionCell && !actionCell.querySelector('.btn-applied')) {
+        actionCell.innerHTML = '<button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this listing">Skip ✗</button>';
+      }
+    });
+  }
+
   // --- Button "Applied" click ---
   tbody.addEventListener('click', e => {
     const btn = e.target.closest('.btn-applied');
     if (!btn) return;
     const row = btn.closest('tr.data-row');
-    if (!row || row.dataset.status !== 'manual') return;
-    // Animate
+    if (!row || (row.dataset.status !== 'manual' && row.dataset.status !== 'a_soumettre')) return;
     btn.textContent = '✓';
     btn.style.pointerEvents = 'none';
     row.style.transition = 'opacity .3s';
@@ -7922,8 +7974,32 @@
       row.dataset.status = 'submitted';
       row.dataset.source = 'manual';
       row.querySelector('.col-status').innerHTML = '<span class="badge submitted">Submitted</span>';
-      row.querySelector('.col-action').innerHTML = '';
+      const ac = row.querySelector('.col-action');
+      if (ac) ac.innerHTML = '';
       row.style.opacity = '1';
+      saveManualSubmissions();
+      updateCounts();
+      applyFilter(currentFilter);
+    }, 300);
+  });
+
+  // --- Button "Skip" click ---
+  tbody.addEventListener('click', e => {
+    const btn = e.target.closest('.btn-skip');
+    if (!btn) return;
+    const row = btn.closest('tr.data-row');
+    if (!row || (row.dataset.status !== 'manual' && row.dataset.status !== 'a_soumettre')) return;
+    btn.textContent = '✗';
+    btn.style.pointerEvents = 'none';
+    row.style.transition = 'opacity .3s';
+    row.style.opacity = '.5';
+    setTimeout(() => {
+      row.dataset.status = 'skipped';
+      row.querySelector('.col-status').innerHTML = '<span class="badge skipped">Skipped</span>';
+      const ac = row.querySelector('.col-action');
+      if (ac) ac.innerHTML = '';
+      row.style.opacity = '1';
+      saveSkippedSubmissions();
       saveManualSubmissions();
       updateCounts();
       applyFilter(currentFilter);
@@ -7962,6 +8038,7 @@
   resizeVillageCanvas();
   applyView('table');
   loadManualSubmissions();
+  injectCTAButtons();
   updateCounts();
   applyFilter('all');
 })();
