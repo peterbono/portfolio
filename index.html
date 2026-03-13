@@ -2390,7 +2390,8 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">16 custom Qs + explicit no-AI policy</td>
-    <td class="col-action" data-label="Action"><a href="https://job-boards.greenhouse.io/canonical/jobs/7043028" target="_blank">View</a></td>
+    <td class="col-link" data-label="Link"><a href="https://job-boards.greenhouse.io/canonical/jobs/7043028" target="_blank">🔗</a></td>
+    <td class="col-action" data-label="Action"></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-12</td>
@@ -2403,7 +2404,8 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Notion React state issues, form_input broken</td>
-    <td class="col-action" data-label="Action"><a href="https://garden3d.notion.site/Senior-Product-Designer-317131fea2c780e6a8aeeef3aeb213f7" target="_blank">View</a></td>
+    <td class="col-link" data-label="Link"><a href="https://garden3d.notion.site/Senior-Product-Designer-317131fea2c780e6a8aeeef3aeb213f7" target="_blank">🔗</a></td>
+    <td class="col-action" data-label="Action"></td>
   </tr>
   <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-12</td>
@@ -7968,8 +7970,14 @@
           r.appendChild(actionCell);
         }
       }
-      if (actionCell && !actionCell.querySelector('.btn-applied')) {
-        actionCell.innerHTML = '<button class="btn-applied" title="Mark as submitted">Applied ✓</button><button class="btn-skip" title="Skip this listing">Skip ✗</button>';
+      if (actionCell) {
+        // Always ensure both buttons are present
+        if (!actionCell.querySelector('.btn-applied')) {
+          actionCell.insertAdjacentHTML('afterbegin', '<button class="btn-applied" title="Mark as submitted">Applied ✓</button>');
+        }
+        if (!actionCell.querySelector('.btn-skip')) {
+          actionCell.insertAdjacentHTML('beforeend', '<button class="btn-skip" title="Skip this listing">Skip ✗</button>');
+        }
       }
     });
   }
