@@ -1019,6 +1019,8 @@
     <td class="col-cv" data-label="CV" style="color:#ef4444">❌</td>
     <td class="col-portfolio" data-label="Portfolio" style="color:#ef4444">❌</td>
     <td class="col-notes" data-label="Notes">Breezy form not loaded — manual submit needed</td>
+    <td class="col-link" data-label="Link"></td>
+    <td class="col-action" data-label="Action"></td>
   </tr>
   <tr class="data-row" data-status="a_soumettre" data-source="vps-bot-r5">
     <td class="col-date" data-label="Date">2026-03-13</td>
@@ -1031,6 +1033,8 @@
     <td class="col-cv" data-label="CV" style="color:#ef4444">❌</td>
     <td class="col-portfolio" data-label="Portfolio" style="color:#ef4444">❌</td>
     <td class="col-notes" data-label="Notes">Breezy form not loaded — manual submit needed</td>
+    <td class="col-link" data-label="Link"></td>
+    <td class="col-action" data-label="Action"></td>
   </tr>
   <tr class="data-row" data-status="a_soumettre" data-source="vps-bot-r5">
     <td class="col-date" data-label="Date">2026-03-13</td>
@@ -1043,6 +1047,8 @@
     <td class="col-cv" data-label="CV" style="color:#ef4444">❌</td>
     <td class="col-portfolio" data-label="Portfolio" style="color:#ef4444">❌</td>
     <td class="col-notes" data-label="Notes">Manatal form not loaded — manual submit needed</td>
+    <td class="col-link" data-label="Link"></td>
+    <td class="col-action" data-label="Action"></td>
   </tr>
   <tr class="data-row" data-status="a_soumettre" data-source="vps-bot-r5">
     <td class="col-date" data-label="Date">2026-03-13</td>
@@ -1055,6 +1061,8 @@
     <td class="col-cv" data-label="CV" style="color:#ef4444">❌</td>
     <td class="col-portfolio" data-label="Portfolio" style="color:#ef4444">❌</td>
     <td class="col-notes" data-label="Notes">Manatal form not loaded — manual submit needed</td>
+    <td class="col-link" data-label="Link"></td>
+    <td class="col-action" data-label="Action"></td>
   </tr>
   <tr class="data-row" data-status="submitted" data-source="vps-bot-r4">
     <td class="col-date" data-label="Date">2026-03-12</td>
@@ -7945,13 +7953,19 @@
       if (s !== 'manual' && s !== 'a_soumettre') return;
       let actionCell = r.querySelector('.col-action');
       if (!actionCell) {
-        // Find last empty td or create col-action
+        // Find last empty td
         const cells = r.querySelectorAll('td');
         const lastCell = cells[cells.length - 1];
         if (lastCell && !lastCell.textContent.trim()) {
           lastCell.classList.add('col-action');
           lastCell.setAttribute('data-label', 'Action');
           actionCell = lastCell;
+        } else {
+          // No empty td found — append a new one
+          actionCell = document.createElement('td');
+          actionCell.classList.add('col-action');
+          actionCell.setAttribute('data-label', 'Action');
+          r.appendChild(actionCell);
         }
       }
       if (actionCell && !actionCell.querySelector('.btn-applied')) {
