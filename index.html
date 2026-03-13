@@ -173,6 +173,46 @@
   .salary { font-size: 12px; color: #f87171; }
   .updated { text-align: right; font-size: 11px; color: #3f3f46; margin-top: 20px; font-weight: 500; }
 
+  /* === SEARCH & COMPANY FILTER === */
+  .search-bar {
+    display: flex; gap: 10px; margin-bottom: 16px; align-items: center; flex-wrap: wrap;
+  }
+  .search-bar input[type="text"] {
+    flex: 1; min-width: 220px; padding: 10px 16px 10px 40px;
+    background: #111113; border: 1px solid #1e1e24; border-radius: 10px;
+    color: #e0e0e0; font-size: 13px; font-family: inherit; outline: none;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  .search-bar input[type="text"]:focus {
+    border-color: #60a5fa; box-shadow: 0 0 0 3px rgba(96,165,250,.15);
+  }
+  .search-bar input[type="text"]::placeholder { color: #52525b; }
+  .search-input-wrap {
+    position: relative; flex: 1; min-width: 220px;
+  }
+  .search-input-wrap::before {
+    content: "\1F50D"; position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+    font-size: 14px; pointer-events: none; opacity: .5;
+  }
+  .search-bar select {
+    padding: 10px 36px 10px 14px;
+    background: #111113; border: 1px solid #1e1e24; border-radius: 10px;
+    color: #e0e0e0; font-size: 13px; font-family: inherit; outline: none;
+    cursor: pointer; appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2371717a' d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 12px center;
+    transition: border-color .2s, box-shadow .2s;
+    min-width: 180px;
+  }
+  .search-bar select:focus {
+    border-color: #60a5fa; box-shadow: 0 0 0 3px rgba(96,165,250,.15);
+  }
+  .search-clear {
+    background: none; border: none; color: #52525b; font-size: 18px;
+    cursor: pointer; padding: 4px 8px; transition: color .15s;
+  }
+  .search-clear:hover { color: #f87171; }
+
   /* === PIXEL MMORPG VILLAGE === */
   .village-panel {
     background: linear-gradient(180deg, #141418 0%, #101014 100%);
@@ -367,6 +407,16 @@
   <span class="sub-chip active" data-subsource="all">All</span>
   <span class="sub-chip" data-subsource="auto">&#129302; Auto (Claude)</span>
   <span class="sub-chip" data-subsource="manual">&#128100; Manual</span>
+</div>
+
+<div class="search-bar" id="search-bar">
+  <div class="search-input-wrap">
+    <input type="text" id="search-input" placeholder="Search by company, role, ATS, location...">
+  </div>
+  <select id="company-filter">
+    <option value="">All companies</option>
+  </select>
+  <button class="search-clear" id="search-clear" title="Clear filters">&times;</button>
 </div>
 
 <div class="section-header">
@@ -7557,8 +7607,13 @@
   const villageView = document.getElementById('village-view');
   const viewTabs = Array.from(document.querySelectorAll('.view-tab'));
   const rows = () => Array.from(tbody.querySelectorAll('tr.data-row'));
+  const searchInput = document.getElementById('search-input');
+  const companyFilter = document.getElementById('company-filter');
+  const searchClear = document.getElementById('search-clear');
   let currentFilter = 'all';
   let currentSubFilter = 'all';
+  let currentSearch = '';
+  let currentCompany = '';
   let sortCol = -1;
   let sortDir = 'asc';
   let submittedPct = 0;
@@ -8291,21 +8346,51 @@
     else el.textContent = visible + ' shown';
   }
 
+  // --- Populate company dropdown ---
+  function populateCompanyDropdown() {
+    const companies = new Set();
+    rows().forEach(r => {
+      const company = (r.querySelector('.col-company') || r.cells[3])?.textContent?.trim();
+      if (company) companies.add(company);
+    });
+    const sorted = Array.from(companies).sort((a, b) => a.localeCompare(b, undefined, {sensitivity: 'base'}));
+    companyFilter.innerHTML = '<option value="">All companies (' + sorted.length + ')</option>';
+    sorted.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c;
+      opt.textContent = c;
+      companyFilter.appendChild(opt);
+    });
+  }
+
   // --- Filter ---
   function applyFilter(filter) {
-    currentFilter = filter;
-    subFilterEl.classList.toggle('visible', filter === 'submitted');
-    if (filter !== 'submitted') {
+    if (filter !== undefined) currentFilter = filter;
+    subFilterEl.classList.toggle('visible', currentFilter === 'submitted');
+    if (currentFilter !== 'submitted') {
       currentSubFilter = 'all';
       subFilterEl.querySelectorAll('.sub-chip').forEach(c => c.classList.toggle('active', c.dataset.subsource === 'all'));
     }
 
-    document.querySelectorAll('.stat').forEach(s => s.classList.toggle('active', s.dataset.filter === filter));
+    const q = currentSearch.toLowerCase();
+    const comp = currentCompany;
+
+    document.querySelectorAll('.stat').forEach(s => s.classList.toggle('active', s.dataset.filter === currentFilter));
     rows().forEach(r => {
       const s = r.dataset.status;
-      let match = filter === 'all' || s === filter || (filter === 'manual' && s === 'a_soumettre');
-      if (match && filter === 'submitted' && currentSubFilter !== 'all') {
+      let match = currentFilter === 'all' || s === currentFilter || (currentFilter === 'manual' && s === 'a_soumettre');
+      if (match && currentFilter === 'submitted' && currentSubFilter !== 'all') {
         match = (r.dataset.source || 'auto') === currentSubFilter;
+      }
+      // Search filter
+      if (match && q) {
+        const text = r.textContent.toLowerCase();
+        match = q.split(/\s+/).every(word => text.includes(word));
+      }
+      // Company filter
+      if (match && comp) {
+        const company = (r.querySelector('.col-company') || r.cells[3])?.textContent?.trim() || '';
+        match = company === comp;
       }
       r.classList.toggle('hidden', !match);
     });
@@ -8434,11 +8519,33 @@
 
   window.addEventListener('resize', resizeVillageCanvas);
 
+  // --- Search & company filter ---
+  let searchTimeout;
+  searchInput.addEventListener('input', () => {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+      currentSearch = searchInput.value.trim();
+      applyFilter();
+    }, 200);
+  });
+  companyFilter.addEventListener('change', () => {
+    currentCompany = companyFilter.value;
+    applyFilter();
+  });
+  searchClear.addEventListener('click', () => {
+    searchInput.value = '';
+    companyFilter.value = '';
+    currentSearch = '';
+    currentCompany = '';
+    applyFilter('all');
+  });
+
   // --- Init ---
   resizeVillageCanvas();
   applyView('table');
   loadManualSubmissions();
   injectCTAButtons();
+  populateCompanyDropdown();
   updateCounts();
   applyFilter('all');
 })();
