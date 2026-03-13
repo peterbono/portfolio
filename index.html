@@ -136,30 +136,17 @@
   .badge.applied { background: #052e1f; color: #4ade80; border-color: #064e3b; }
   .badge.wip { background: #2a1505; color: #facc15; border-color: #422006; }
   .badge.pending { background: #0c2844; color: #60a5fa; border-color: #1e3a5f; }
-  .badge.a_soumettre { background: #2a1505; color: #fb923c; border-color: #422006; }
-  .badge.a_soumettre::before { content: "\25CF"; color: #fb923c; }
 
   /* === BUTTON "Applied" === */
   .btn-applied {
     display: inline-flex; align-items: center; gap: 4px;
     background: #064e3b; color: #34d399; border: 1px solid #065f46;
     border-radius: 6px; padding: 4px 10px; font-size: 11px; font-weight: 600;
-    cursor: pointer; transition: all .2s;
+    cursor: pointer; margin-left: 8px; transition: all .2s;
     vertical-align: middle; font-family: inherit; letter-spacing: .3px;
   }
   .btn-applied:hover { background: #34d399; color: #052e1f; border-color: #34d399; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(52,211,153,.2); }
   .btn-applied:active { transform: translateY(0); }
-
-  /* === BUTTON "Skip" === */
-  .btn-skip {
-    display: inline-flex; align-items: center; gap: 4px;
-    background: #1c1c22; color: #71717a; border: 1px solid #27272a;
-    border-radius: 6px; padding: 4px 10px; font-size: 11px; font-weight: 600;
-    cursor: pointer; margin-left: 6px; transition: all .2s;
-    vertical-align: middle; font-family: inherit; letter-spacing: .3px;
-  }
-  .btn-skip:hover { background: #7f1d1d; color: #fca5a5; border-color: #991b1b; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(248,113,113,.15); }
-  .btn-skip:active { transform: translateY(0); }
 
   /* === ACTION COLUMN === */
   .col-action { text-align: center; white-space: nowrap; }
@@ -394,982 +381,382 @@
 </thead>
 <tbody>
 <!-- TRACKER_INSERT -->
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r16">
+  <tr class="data-row" data-status="submitted" data-source="vps-bot">
     <td class="col-date" data-label="Date">2026-03-13</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Senior Product Designer</td>
-    <td class="col-company" data-label="Company">Coins.ph</td>
-    <td class="col-location" data-label="Location">Singapore (UTC+8)</td>
+    <td class="col-role" data-label="Role">Web Designer</td>
+    <td class="col-company" data-label="Company">Quantum Metric</td>
+    <td class="col-location" data-label="Location">United States (Remote)</td>
+    <td class="col-salary" data-label="Salary">$90K-$110K</td>
     <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV"><span class="badge badge-cv">CV</span></td>
-    <td class="col-source" data-label="Source">R16</td>
+    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
+    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
+    <td class="col-notes notes" data-label="Notes">VPS bot auto-submitted via Lever</td>
+    <td><a href="https://jobs.lever.co/quantummetric/c1f16f4e-1fef-4151-8ef5-cc3f335591cf" target="_blank">🔗</a></td>
+    <td></td>
   </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r16">
+  <tr class="data-row" data-status="submitted" data-source="vps-bot">
     <td class="col-date" data-label="Date">2026-03-13</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Product Designer UI/UX</td>
-    <td class="col-company" data-label="Company">Gate.io</td>
-    <td class="col-location" data-label="Location">APAC Remote</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV"><span class="badge badge-cv">CV</span></td>
-    <td class="col-source" data-label="Source">R16</td>
+    <td class="col-role" data-label="Role">Staff Product Designer — AI</td>
+    <td class="col-company" data-label="Company">Talkdesk</td>
+    <td class="col-location" data-label="Location">Portugal (Remote)</td>
+    <td class="col-salary" data-label="Salary">-</td>
+    <td class="col-ats" data-label="ATS">Easy Apply</td>
+    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
+    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
+    <td class="col-notes notes" data-label="Notes">LinkedIn Easy Apply - VPS bot</td>
+    <td><a href="https://www.linkedin.com/jobs/view/4375669338/" target="_blank">🔗</a></td>
+    <td></td>
   </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r16">
+  <tr class="data-row" data-status="submitted" data-source="vps-bot">
+    <td class="col-date" data-label="Date">2026-03-13</td>
+    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
+    <td class="col-role" data-label="Role">Sr. Product Designer</td>
+    <td class="col-company" data-label="Company">Petvisor</td>
+    <td class="col-location" data-label="Location">United Kingdom (Remote)</td>
+    <td class="col-salary" data-label="Salary">-</td>
+    <td class="col-ats" data-label="ATS">Easy Apply</td>
+    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
+    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
+    <td class="col-notes notes" data-label="Notes">LinkedIn Easy Apply - VPS bot</td>
+    <td><a href="https://www.linkedin.com/jobs/view/4385147171/" target="_blank">🔗</a></td>
+    <td></td>
+  </tr>
+  <tr class="data-row" data-status="submitted" data-source="vps-bot">
+    <td class="col-date" data-label="Date">2026-03-13</td>
+    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
+    <td class="col-role" data-label="Role">UI/UX Designer</td>
+    <td class="col-company" data-label="Company">Version 1</td>
+    <td class="col-location" data-label="Location">Birmingham, UK (Remote)</td>
+    <td class="col-salary" data-label="Salary">-</td>
+    <td class="col-ats" data-label="ATS">Easy Apply</td>
+    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
+    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
+    <td class="col-notes notes" data-label="Notes">LinkedIn Easy Apply - VPS bot</td>
+    <td><a href="https://www.linkedin.com/jobs/view/4383024866/" target="_blank">🔗</a></td>
+    <td></td>
+  </tr>
+  <tr class="data-row" data-status="submitted" data-source="vps-bot">
+    <td class="col-date" data-label="Date">2026-03-13</td>
+    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
+    <td class="col-role" data-label="Role">Senior Product Designer (Mobile iOS)</td>
+    <td class="col-company" data-label="Company">Collabera</td>
+    <td class="col-location" data-label="Location">North Chicago, IL (Remote)</td>
+    <td class="col-salary" data-label="Salary">$60-68/hr</td>
+    <td class="col-ats" data-label="ATS">Easy Apply</td>
+    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
+    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
+    <td class="col-notes notes" data-label="Notes">LinkedIn Easy Apply - VPS bot</td>
+    <td><a href="https://www.linkedin.com/jobs/view/4383037267/" target="_blank">🔗</a></td>
+    <td></td>
+  </tr>
+  <tr class="data-row" data-status="submitted" data-source="vps-bot">
+    <td class="col-date" data-label="Date">2026-03-13</td>
+    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
+    <td class="col-role" data-label="Role">Product Designer / UI/UX Designer</td>
+    <td class="col-company" data-label="Company">ThinkSeb</td>
+    <td class="col-location" data-label="Location">Portugal (Remote)</td>
+    <td class="col-salary" data-label="Salary">-</td>
+    <td class="col-ats" data-label="ATS">Easy Apply</td>
+    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
+    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
+    <td class="col-notes notes" data-label="Notes">LinkedIn Easy Apply - VPS bot</td>
+    <td><a href="https://www.linkedin.com/jobs/view/4383103526/" target="_blank">🔗</a></td>
+    <td></td>
+  </tr>
+  <tr class="data-row" data-status="submitted" data-source="vps-bot">
     <td class="col-date" data-label="Date">2026-03-13</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Product Designer</td>
-    <td class="col-company" data-label="Company">Insider One</td>
-    <td class="col-location" data-label="Location">Istanbul (UTC+3)</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV"><span class="badge badge-cv">CV</span></td>
-    <td class="col-source" data-label="Source">R16</td>
+    <td class="col-company" data-label="Company">Unicorn (UAE)</td>
+    <td class="col-location" data-label="Location">UAE (Remote)</td>
+    <td class="col-salary" data-label="Salary">-</td>
+    <td class="col-ats" data-label="ATS">Easy Apply</td>
+    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
+    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
+    <td class="col-notes notes" data-label="Notes">LinkedIn Easy Apply - VPS bot</td>
+    <td><a href="https://www.linkedin.com/jobs/view/4383093156/" target="_blank">🔗</a></td>
+    <td></td>
   </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r16">
+  <tr class="data-row" data-status="submitted" data-source="vps-bot">
+    <td class="col-date" data-label="Date">2026-03-13</td>
+    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
+    <td class="col-role" data-label="Role">Senior Service Designer</td>
+    <td class="col-company" data-label="Company">ServiceNow (Ireland)</td>
+    <td class="col-location" data-label="Location">Ireland (Remote)</td>
+    <td class="col-salary" data-label="Salary">-</td>
+    <td class="col-ats" data-label="ATS">Easy Apply</td>
+    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
+    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
+    <td class="col-notes notes" data-label="Notes">LinkedIn Easy Apply - VPS bot</td>
+    <td><a href="https://www.linkedin.com/jobs/view/4361470133/" target="_blank">🔗</a></td>
+    <td></td>
+  </tr>
+  <tr class="data-row" data-status="submitted" data-source="vps-bot">
     <td class="col-date" data-label="Date">2026-03-13</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
     <td class="col-role" data-label="Role">Senior UX Designer</td>
-    <td class="col-company" data-label="Company">CSIT Singapore</td>
-    <td class="col-location" data-label="Location">Singapore (UTC+8)</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV"><span class="badge badge-cv">CV</span></td>
-    <td class="col-source" data-label="Source">R16</td>
+    <td class="col-company" data-label="Company">NCR Voyix (Atlanta)</td>
+    <td class="col-location" data-label="Location">Atlanta, GA (Remote)</td>
+    <td class="col-salary" data-label="Salary">-</td>
+    <td class="col-ats" data-label="ATS">Easy Apply</td>
+    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
+    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
+    <td class="col-notes notes" data-label="Notes">LinkedIn Easy Apply - VPS bot</td>
+    <td><a href="https://www.linkedin.com/jobs/view/4383962719/" target="_blank">🔗</a></td>
+    <td></td>
   </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r16">
+  <tr class="data-row" data-status="submitted" data-source="vps-bot">
     <td class="col-date" data-label="Date">2026-03-13</td>
     <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
+    <td class="col-role" data-label="Role">Graphic Designer</td>
+    <td class="col-company" data-label="Company">Lemon Studios (Latin America)</td>
+    <td class="col-location" data-label="Location">Latin America (Remote)</td>
+    <td class="col-salary" data-label="Salary">-</td>
+    <td class="col-ats" data-label="ATS">Easy Apply</td>
+    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
+    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
+    <td class="col-notes notes" data-label="Notes">LinkedIn Easy Apply - VPS bot</td>
+    <td><a href="https://www.linkedin.com/jobs/view/4383999996/" target="_blank">🔗</a></td>
+    <td></td>
+  </tr>
+  <tr class="data-row" data-status="submitted" data-source="vps-bot">
+    <td class="col-date" data-label="Date">2026-03-13</td>
+    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
+    <td class="col-role" data-label="Role">Visual Designer</td>
+    <td class="col-company" data-label="Company">Helix (Australia)</td>
+    <td class="col-location" data-label="Location">Australia (Remote)</td>
+    <td class="col-salary" data-label="Salary">-</td>
+    <td class="col-ats" data-label="ATS">Easy Apply</td>
+    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
+    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
+    <td class="col-notes notes" data-label="Notes">LinkedIn Easy Apply - VPS bot</td>
+    <td><a href="https://www.linkedin.com/jobs/view/4383095182/" target="_blank">🔗</a></td>
+    <td></td>
+  </tr>
+  <tr class="data-row" data-status="manual" data-source="vps-bot">
+    <td class="col-date" data-label="Date">2026-03-13</td>
+    <td class="col-status" data-label="Status"><span class="badge manual">A soumettre</span></td>
     <td class="col-role" data-label="Role">Senior Product Designer</td>
-    <td class="col-company" data-label="Company">Crypto.com</td>
-    <td class="col-location" data-label="Location">Europe Remote</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV"><span class="badge badge-cv">CV</span></td>
-    <td class="col-source" data-label="Source">R16</td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r15">
-    <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Senior Product Designer</td>
-    <td class="col-company" data-label="Company">HighLevel</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV"><span class="badge badge-cv">CV</span></td>
-    <td class="col-source" data-label="Source">R15</td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r15">
-    <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Lead Designer</td>
-    <td class="col-company" data-label="Company">Hive</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV"><span class="badge badge-cv">CV</span></td>
-    <td class="col-source" data-label="Source">R15</td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r15">
-    <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Senior Product Designer - UI/UX</td>
-    <td class="col-company" data-label="Company">Samba TV</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV"><span class="badge badge-cv">CV</span></td>
-    <td class="col-source" data-label="Source">R15</td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r15">
-    <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Senior UX & Gamification Design Lead</td>
-    <td class="col-company" data-label="Company">WISEcode</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV"><span class="badge badge-cv">CV</span></td>
-    <td class="col-source" data-label="Source">R15</td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r14">
-    <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Sr. UX Designer - Design System</td>
-    <td class="col-company" data-label="Company">Coupa Software</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV"><span class="badge badge-cv">CV</span></td>
-    <td class="col-source" data-label="Source">R14</td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r14">
-    <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Staff/Senior Product Designer</td>
-    <td class="col-company" data-label="Company">Wealthsimple</td>
-    <td class="col-location" data-label="Location">Remote Canada</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV"><span class="badge badge-cv">CV</span></td>
-    <td class="col-source" data-label="Source">R14</td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r14">
-    <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Lead Product Designer</td>
-    <td class="col-company" data-label="Company">TXI</td>
-    <td class="col-location" data-label="Location">Remote US</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV"><span class="badge badge-cv">CV</span></td>
-    <td class="col-source" data-label="Source">R14</td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r13">
-    <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Product Designer, Design Systems</td>
-    <td class="col-company" data-label="Company">Finix</td>
-    <td class="col-location" data-label="Location">Remote US</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV"><span class="badge badge-cv">CV</span></td>
-    <td class="col-source" data-label="Source">R13</td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r13">
-    <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Head of Product Design</td>
-    <td class="col-company" data-label="Company">Valence</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV"><span class="badge badge-cv">CV</span></td>
-    <td class="col-source" data-label="Source">R13</td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r13">
-    <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Product Designer</td>
-    <td class="col-company" data-label="Company">doola</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV"><span class="badge badge-cv">CV</span></td>
-    <td class="col-source" data-label="Source">R13</td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r13">
-    <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Senior Product Designer (Monetization)</td>
-    <td class="col-company" data-label="Company">Xsolla</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV"><span class="badge badge-cv">CV</span></td>
-    <td class="col-source" data-label="Source">R13</td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r13">
-    <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Senior Product Designer - Gamification</td>
-    <td class="col-company" data-label="Company">Tradeify</td>
-    <td class="col-location" data-label="Location">Remote US</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV"><span class="badge badge-cv">CV</span></td>
-    <td class="col-source" data-label="Source">R13</td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r12">
-    <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Product Designer (Trust & Safety, Remote)</td>
-    <td class="col-company" data-label="Company">PadSplit</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
+    <td class="col-company" data-label="Company">LeafLink</td>
+    <td class="col-location" data-label="Location">United States (Remote)</td>
+    <td class="col-salary" data-label="Salary">$130K-$155K</td>
+    <td class="col-ats" data-label="ATS">Greenhouse</td>
     <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
     <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R12 — Housing marketplace, trust & safety design</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.lever.co/padsplit/d65ac87c-0d18-4229-9077-9c033d5bca3d" target="_blank">🔗</a></td>
+    <td class="col-notes notes" data-label="Notes">Form filled, needs dropdown answers (auth to work, sponsorship). Submit manually.</td>
+    <td><a href="https://job-boards.greenhouse.io/leaflink/jobs/8460682002" target="_blank">🔗</a></td>
     <td></td>
   </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r12">
+  <tr class="data-row" data-status="manual" data-source="vps-bot">
     <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Product Designer</td>
-    <td class="col-company" data-label="Company">Livefront</td>
-    <td class="col-location" data-label="Location">Remote (US)</td>
-    <td class="col-salary" data-label="Salary">$75k-$105k</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R12 — Digital product consultancy</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.lever.co/livefront/277a6de3-4f66-4815-b016-5984b5f5671d" target="_blank">🔗</a></td>
-    <td></td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r12">
-    <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Creative Director (Remote)</td>
-    <td class="col-company" data-label="Company">Huckleberry Labs</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R12 — Mobile app startup, brand leadership</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.lever.co/Huckleberrylabs/a9fed6ac-8703-4730-bdf1-501c0fff9b26" target="_blank">🔗</a></td>
-    <td></td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r12">
-    <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Product Designer</td>
-    <td class="col-company" data-label="Company">Viget</td>
-    <td class="col-location" data-label="Location">Remote (US)</td>
-    <td class="col-salary" data-label="Salary">$75k-$105k</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R12 — Digital agency, 2nd role at Viget</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.lever.co/viget/c1d00dd1-a38d-4302-a046-df3995a712e6" target="_blank">🔗</a></td>
-    <td></td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r11">
-    <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Senior UX/UI Designer (Remote, AI/SaaS)</td>
-    <td class="col-company" data-label="Company">Decile Group</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R11 — VC SaaS + AI, design systems</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.lever.co/decilegroup/6d1c564a-341e-4172-afab-b21c536eb66d" target="_blank">🔗</a></td>
-    <td></td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r11">
-    <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Senior Product Designer (AI/Web)</td>
-    <td class="col-company" data-label="Company">HappyCo</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R11 — PropTech, agentic AI workflows</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.lever.co/happyco/cae68d58-cc05-4d2e-8828-19ccaebfb201" target="_blank">🔗</a></td>
-    <td></td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r11">
-    <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Senior Product Designer (UX, E-commerce)</td>
-    <td class="col-company" data-label="Company">CSC Generation</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R11 — Sur La Table, e-commerce UX</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.lever.co/cscgeneration-2/31f0916c-138d-4d80-b77e-e8d0a748d921" target="_blank">🔗</a></td>
-    <td></td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r10">
-    <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Staff Product Designer, CORE (Mobile)</td>
-    <td class="col-company" data-label="Company">US Mobile</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R10 — MVNO telecom, visual & interactive design</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.lever.co/USMobile/a6d3bccc-c2fb-4f3a-b1ec-08b0b7fda821" target="_blank">🔗</a></td>
-    <td></td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r10">
-    <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Senior Product Designer (Remote)</td>
-    <td class="col-company" data-label="Company">PadSplit</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R10 — Housing marketplace, growth design + AI</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.lever.co/padsplit/82ea697a-ffad-404f-b1a5-af1922a425f3" target="_blank">🔗</a></td>
-    <td></td>
-  </tr>
-  <tr class="data-row" data-status="a_soumettre" data-source="vps-bot-r10">
-    <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge a_soumettre">A soumettre</span></td>
-    <td class="col-role" data-label="Role">Senior UX Designer (EMEA Remote)</td>
-    <td class="col-company" data-label="Company">Canonical</td>
-    <td class="col-location" data-label="Location">Remote EMEA</td>
+    <td class="col-status" data-label="Status"><span class="badge manual">A soumettre</span></td>
+    <td class="col-role" data-label="Role">Senior Product Designer, Policies</td>
+    <td class="col-company" data-label="Company">GitLab</td>
+    <td class="col-location" data-label="Location">United Kingdom (Remote)</td>
     <td class="col-salary" data-label="Salary">-</td>
     <td class="col-ats" data-label="ATS">Greenhouse</td>
-    <td class="col-cv" data-label="CV" style="color:#f59e0b">⏳</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#f59e0b">⏳</td>
-    <td class="col-notes" data-label="Notes">VPS bot R10 — Ubuntu/open source, Greenhouse needs manual submit</td>
-    <td class="col-link" data-label="Link"><a href="https://boards.greenhouse.io/canonical/jobs/4388219" target="_blank">🔗</a></td>
-    <td></td>
-  </tr>
-  <tr class="data-row" data-status="a_soumettre" data-source="vps-bot-r10">
-    <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge a_soumettre">A soumettre</span></td>
-    <td class="col-role" data-label="Role">UX Designer - Workplace Tools (EMEA Remote)</td>
-    <td class="col-company" data-label="Company">Canonical</td>
-    <td class="col-location" data-label="Location">Remote EMEA</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Greenhouse</td>
-    <td class="col-cv" data-label="CV" style="color:#f59e0b">⏳</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#f59e0b">⏳</td>
-    <td class="col-notes" data-label="Notes">VPS bot R10 — Canonical internal tools, Greenhouse manual</td>
-    <td class="col-link" data-label="Link"><a href="https://boards.greenhouse.io/canonical/jobs/5295557" target="_blank">🔗</a></td>
-    <td></td>
-  </tr>
-  <tr class="data-row" data-status="a_soumettre" data-source="vps-bot-r10">
-    <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge a_soumettre">A soumettre</span></td>
-    <td class="col-role" data-label="Role">UX Designer (EMEA Remote)</td>
-    <td class="col-company" data-label="Company">Canonical</td>
-    <td class="col-location" data-label="Location">Remote EMEA</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Greenhouse</td>
-    <td class="col-cv" data-label="CV" style="color:#f59e0b">⏳</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#f59e0b">⏳</td>
-    <td class="col-notes" data-label="Notes">VPS bot R10 — Canonical design team, Greenhouse manual</td>
-    <td class="col-link" data-label="Link"><a href="https://boards.greenhouse.io/canonical/jobs/3541691" target="_blank">🔗</a></td>
-    <td></td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r9">
-    <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Senior Product Designer, Design Systems</td>
-    <td class="col-company" data-label="Company">Bumble</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
     <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
     <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R9 — Dating app, design systems role</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.lever.co/bumbleinc/085a722c-2ae8-4c36-b75b-c11730971ae4" target="_blank">🔗</a></td>
+    <td class="col-notes notes" data-label="Notes">Form filled, needs custom questions completed. Submit manually.</td>
+    <td><a href="https://job-boards.greenhouse.io/gitlab/jobs/8427980002" target="_blank">🔗</a></td>
     <td></td>
   </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r9">
+  <tr class="data-row" data-status="manual" data-source="vps-bot">
     <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Senior Product Designer (Design System)</td>
-    <td class="col-company" data-label="Company">Lodgify</td>
-    <td class="col-location" data-label="Location">Remote (Barcelona)</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R9 — Vacation rental SaaS, design system owner role</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.lever.co/lodgify/5b2979a7-29a9-4db0-86f5-47ddf3ba8041" target="_blank">🔗</a></td>
-    <td></td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r9">
-    <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Senior Product Designer</td>
-    <td class="col-company" data-label="Company">vivenu</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R9 — Ticketing platform, design systems focus</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.lever.co/vivenu/15e2938b-06ee-41cd-abf6-225500a279a7" target="_blank">🔗</a></td>
-    <td></td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r9">
-    <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Senior Product Designer (UX/UI)</td>
-    <td class="col-company" data-label="Company">Qonto</td>
-    <td class="col-location" data-label="Location">Remote (Paris)</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R9 — French fintech, 600k+ customers</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.lever.co/qonto/1c86929a-a325-47ac-acca-890a0524d8dd" target="_blank">🔗</a></td>
-    <td></td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r9">
-    <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Senior Product Designer</td>
-    <td class="col-company" data-label="Company">Everbridge</td>
-    <td class="col-location" data-label="Location">Remote (Canada)</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R9 — Enterprise safety platform, design systems</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.lever.co/everbridge/d83c4c81-f0a5-47e0-be77-15a6d9d95522" target="_blank">🔗</a></td>
-    <td></td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r9">
-    <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Staff UI/UX Product Designer (Remote)</td>
-    <td class="col-company" data-label="Company">Hospitable</td>
-    <td class="col-location" data-label="Location">Remote (EMEA/USA)</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Workable</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R9 — Airbnb automation SaaS</td>
-    <td class="col-link" data-label="Link"><a href="https://apply.workable.com/hospitable/j/56CFE0BC48/" target="_blank">🔗</a></td>
-    <td></td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r8">
-    <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Web Brand Design (UI/UX, Crypto)</td>
-    <td class="col-company" data-label="Company">Anchorage Digital</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R8 — Crypto institutional platform</td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r7">
-    <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Senior Product Designer - Vault Platform</td>
-    <td class="col-company" data-label="Company">Veeva Systems</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R7 — Life sciences SaaS platform</td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r7">
-    <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Senior UI/UX Designer</td>
+    <td class="col-status" data-label="Status"><span class="badge manual">A soumettre</span></td>
+    <td class="col-role" data-label="Role">Senior UX/UI Designer</td>
     <td class="col-company" data-label="Company">Superside</td>
-    <td class="col-location" data-label="Location">Remote</td>
+    <td class="col-location" data-label="Location">Latin America (Remote)</td>
     <td class="col-salary" data-label="Salary">-</td>
     <td class="col-ats" data-label="ATS">Lever</td>
     <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
     <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R7 — Design agency, web services</td>
+    <td class="col-notes notes" data-label="Notes">Form fully filled, blocked by hCaptcha. Need to solve captcha + click submit.</td>
+    <td><a href="https://jobs.lever.co/superside/0368aef2-4880-4839-933c-aa3af97bd427/apply" target="_blank">🔗</a></td>
+    <td></td>
   </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r7">
+  <tr class="data-row" data-status="manual" data-source="vps-bot">
     <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Product Designer (Agency)</td>
-    <td class="col-company" data-label="Company">Viget</td>
-    <td class="col-location" data-label="Location">Remote US</td>
+    <td class="col-status" data-label="Status"><span class="badge manual">A soumettre</span></td>
+    <td class="col-role" data-label="Role">Graphic Designer, Europe</td>
+    <td class="col-company" data-label="Company">Binance</td>
+    <td class="col-location" data-label="Location">Madrid, Spain (Remote)</td>
     <td class="col-salary" data-label="Salary">-</td>
     <td class="col-ats" data-label="ATS">Lever</td>
     <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
     <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R7 — Digital agency since 1999</td>
+    <td class="col-notes notes" data-label="Notes">Form filled, blocked by hCaptcha. Need to solve captcha + click submit.</td>
+    <td><a href="https://jobs.lever.co/binance/5c3e024d-99d6-4bb3-b63b-1dcf57a00bf2/apply" target="_blank">🔗</a></td>
+    <td></td>
   </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r7">
+  <tr class="data-row" data-status="manual" data-source="vps-bot">
     <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Senior Product Designer (Digital Agency)</td>
-    <td class="col-company" data-label="Company">November Five</td>
-    <td class="col-location" data-label="Location">Belgium / Remote</td>
+    <td class="col-status" data-label="Status"><span class="badge manual">A soumettre</span></td>
+    <td class="col-role" data-label="Role">Senior Web Designer</td>
+    <td class="col-company" data-label="Company">Kraken</td>
+    <td class="col-location" data-label="Location">Cyprus (Remote)</td>
     <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Workable</td>
+    <td class="col-ats" data-label="ATS">Ashby</td>
+    <td class="col-cv" data-label="CV" style="color:#fb923c">⚠️</td>
+    <td class="col-portfolio" data-label="Portfolio" style="color:#fb923c">⚠️</td>
+    <td class="col-notes notes" data-label="Notes">Ashby CSP blocks CV upload. Apply manually.</td>
+    <td><a href="https://jobs.ashbyhq.com/kraken.com/7389242b-f0c6-4fe3-b165-547d994effdd/application" target="_blank">🔗</a></td>
+    <td></td>
+  </tr>
+  <tr class="data-row" data-status="manual" data-source="vps-bot">
+    <td class="col-date" data-label="Date">2026-03-13</td>
+    <td class="col-status" data-label="Status"><span class="badge manual">A soumettre</span></td>
+    <td class="col-role" data-label="Role">Senior Product Designer</td>
+    <td class="col-company" data-label="Company">Microsoft</td>
+    <td class="col-location" data-label="Location">Prague, Czechia (Remote)</td>
+    <td class="col-salary" data-label="Salary">-</td>
+    <td class="col-ats" data-label="ATS">Microsoft Careers</td>
+    <td class="col-cv" data-label="CV" style="color:#fb923c">⚠️</td>
+    <td class="col-portfolio" data-label="Portfolio" style="color:#fb923c">⚠️</td>
+    <td class="col-notes notes" data-label="Notes">Custom Microsoft ATS. Apply manually.</td>
+    <td><a href="https://apply.careers.microsoft.com/careers/job/1970393556756211" target="_blank">🔗</a></td>
+    <td></td>
+  </tr>
+  <tr class="data-row" data-status="manual" data-source="vps-bot">
+    <td class="col-date" data-label="Date">2026-03-13</td>
+    <td class="col-status" data-label="Status"><span class="badge manual">A soumettre</span></td>
+    <td class="col-role" data-label="Role">Senior UX Designer</td>
+    <td class="col-company" data-label="Company">Daxko</td>
+    <td class="col-location" data-label="Location">Birmingham, AL (Remote)</td>
+    <td class="col-salary" data-label="Salary">$110K-$170K</td>
+    <td class="col-ats" data-label="ATS">Gem</td>
+    <td class="col-cv" data-label="CV" style="color:#fb923c">⚠️</td>
+    <td class="col-portfolio" data-label="Portfolio" style="color:#fb923c">⚠️</td>
+    <td class="col-notes notes" data-label="Notes">Gem ATS. Apply manually.</td>
+    <td><a href="https://jobs.gem.com/daxko/am9icG9zdDpFyuZPNAK51mdcKgE1Q73l" target="_blank">🔗</a></td>
+    <td></td>
+  </tr>
+  <tr class="data-row" data-status="manual" data-source="vps-bot">
+    <td class="col-date" data-label="Date">2026-03-13</td>
+    <td class="col-status" data-label="Status"><span class="badge manual">A soumettre</span></td>
+    <td class="col-role" data-label="Role">Senior Product Designer</td>
+    <td class="col-company" data-label="Company">Tripadvisor</td>
+    <td class="col-location" data-label="Location">Lisbon, Portugal (Remote)</td>
+    <td class="col-salary" data-label="Salary">-</td>
+    <td class="col-ats" data-label="ATS">Greenhouse</td>
     <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
     <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R7 — Belgian digital agency</td>
+    <td class="col-notes notes" data-label="Notes">Form filled, needs country select + phone format fix. Submit manually.</td>
+    <td><a href="https://job-boards.greenhouse.io/tripadvisor/jobs/7573813" target="_blank">🔗</a></td>
+    <td></td>
   </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r7">
+  <tr class="data-row" data-status="manual" data-source="vps-bot">
     <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Senior Product Designer (Fintech, Remote)</td>
-    <td class="col-company" data-label="Company">Facet</td>
-    <td class="col-location" data-label="Location">Remote</td>
+    <td class="col-status" data-label="Status"><span class="badge manual">A soumettre</span></td>
+    <td class="col-role" data-label="Role">UX Designer</td>
+    <td class="col-company" data-label="Company">DoiT</td>
+    <td class="col-location" data-label="Location">United Kingdom (Remote)</td>
     <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Workable</td>
+    <td class="col-ats" data-label="ATS">Greenhouse</td>
     <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
     <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R7 — Personal finance fintech</td>
+    <td class="col-notes notes" data-label="Notes">Form filled, needs dropdown questions (country, visa, experience). Submit manually.</td>
+    <td><a href="https://job-boards.greenhouse.io/doitintl/jobs/7580720003" target="_blank">🔗</a></td>
+    <td></td>
   </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r6">
+  <tr class="data-row" data-status="manual" data-source="vps-bot">
     <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Product Designer (All Levels, Remote)</td>
-    <td class="col-company" data-label="Company">Owner</td>
-    <td class="col-location" data-label="Location">San Francisco / Remote</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R6 — Restaurant SaaS, remote-first</td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r6">
-    <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Product Designer (Digital Banking)</td>
-    <td class="col-company" data-label="Company">Lumin Digital</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R6 — Digital banking platform</td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r6">
-    <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Product Designer (Healthcare)</td>
-    <td class="col-company" data-label="Company">Artera</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R6 — Patient communication platform</td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r6">
-    <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Product Designer (Remote, E-commerce)</td>
-    <td class="col-company" data-label="Company">Okendo</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R6 — Customer marketing / reviews platform</td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r5">
-    <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Senior Product UI/UX Designer (Remote Contract)</td>
-    <td class="col-company" data-label="Company">Human Intelligence</td>
-    <td class="col-location" data-label="Location">Remote Global</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Workable</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R5 — Short term contract, global remote</td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r5">
-    <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Product Designer: Customer Activation (Remote)</td>
-    <td class="col-company" data-label="Company">Constructor</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Workable</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R5 — E-commerce search & discovery platform</td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r5">
-    <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Product Designer (Telehealth)</td>
-    <td class="col-company" data-label="Company">Bask Health</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Workable</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R5 — Telehealth SaaS</td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r5">
-    <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">A soumettre</span></td>
     <td class="col-role" data-label="Role">Product Designer</td>
-    <td class="col-company" data-label="Company">Metabase</td>
-    <td class="col-location" data-label="Location">Remote</td>
+    <td class="col-company" data-label="Company">Revolut</td>
+    <td class="col-location" data-label="Location">Czechia (Remote)</td>
     <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R5 — Open-source BI analytics</td>
+    <td class="col-ats" data-label="ATS">Custom + reCAPTCHA</td>
+    <td class="col-cv" data-label="CV" style="color:#fb923c">⚠️</td>
+    <td class="col-portfolio" data-label="Portfolio" style="color:#fb923c">⚠️</td>
+    <td class="col-notes notes" data-label="Notes">Custom Revolut ATS with reCAPTCHA. Apply manually.</td>
+    <td><a href="https://www.revolut.com/careers/apply/3c464d62-846f-49eb-81a3-67747a9b8cfd/" target="_blank">🔗</a></td>
+    <td></td>
   </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r5">
+  <tr class="data-row" data-status="manual" data-source="vps-bot">
     <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Senior Designer (Experience & Visual Design)</td>
-    <td class="col-company" data-label="Company">CourtAvenue</td>
-    <td class="col-location" data-label="Location">Remote</td>
+    <td class="col-status" data-label="Status"><span class="badge manual">A soumettre</span></td>
+    <td class="col-role" data-label="Role">Principal Product Designer</td>
+    <td class="col-company" data-label="Company">Unqork</td>
+    <td class="col-location" data-label="Location">United States (Remote)</td>
     <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R5 — Creative tech agency</td>
+    <td class="col-ats" data-label="ATS">Greenhouse (embedded)</td>
+    <td class="col-cv" data-label="CV" style="color:#fb923c">⚠️</td>
+    <td class="col-portfolio" data-label="Portfolio" style="color:#fb923c">⚠️</td>
+    <td class="col-notes notes" data-label="Notes">Embedded Greenhouse form not loading in VPS. Apply manually.</td>
+    <td><a href="https://unqork.com/career-details/?gh_jid=8373055002" target="_blank">🔗</a></td>
+    <td></td>
   </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r5">
+  <tr class="data-row" data-status="manual" data-source="vps-bot">
     <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">A soumettre</span></td>
     <td class="col-role" data-label="Role">Product Designer</td>
-    <td class="col-company" data-label="Company">Inclusion Cloud</td>
-    <td class="col-location" data-label="Location">Remote</td>
+    <td class="col-company" data-label="Company">Fundraise Up</td>
+    <td class="col-location" data-label="Location">Belgrade, Serbia (Remote)</td>
     <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Manatal</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R5 — Cloud consulting</td>
+    <td class="col-ats" data-label="ATS">Greenhouse</td>
+    <td class="col-cv" data-label="CV" style="color:#fb923c">⚠️</td>
+    <td class="col-portfolio" data-label="Portfolio" style="color:#fb923c">⚠️</td>
+    <td class="col-notes notes" data-label="Notes">Greenhouse embedded on company site, form didn't load. Apply manually.</td>
+    <td><a href="https://fundraiseup.com/careers/4672142005/?gh_jid=4672142005" target="_blank">🔗</a></td>
+    <td></td>
   </tr>
-  <tr class="data-row" data-status="a_soumettre" data-source="vps-bot-r5">
+  <tr class="data-row" data-status="manual" data-source="vps-bot">
     <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge a_soumettre">A soumettre</span></td>
-    <td class="col-role" data-label="Role">UI/UX Designer</td>
-    <td class="col-company" data-label="Company">Erbis</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Breezy</td>
-    <td class="col-cv" data-label="CV" style="color:#ef4444">❌</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#ef4444">❌</td>
-    <td class="col-notes" data-label="Notes">Breezy form not loaded — manual submit needed</td>
-    <td class="col-link" data-label="Link"></td>
-    <td class="col-action" data-label="Action"></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">A soumettre</span></td>
+    <td class="col-role" data-label="Role">Staff Product Designer, Platform</td>
+    <td class="col-company" data-label="Company">Clio</td>
+    <td class="col-location" data-label="Location">United States (Remote)</td>
+    <td class="col-salary" data-label="Salary">$148K-$222K</td>
+    <td class="col-ats" data-label="ATS">Workday</td>
+    <td class="col-cv" data-label="CV" style="color:#fb923c">⚠️</td>
+    <td class="col-portfolio" data-label="Portfolio" style="color:#fb923c">⚠️</td>
+    <td class="col-notes notes" data-label="Notes">Workday requires account creation. Apply manually.</td>
+    <td><a href="https://clio.wd3.myworkdayjobs.com/en-US/ClioCareerSite/job/Vancouver/Staff-Product-Designer--Manage_BF-REQ-3405" target="_blank">🔗</a></td>
+    <td></td>
   </tr>
-  <tr class="data-row" data-status="a_soumettre" data-source="vps-bot-r5">
+  <tr class="data-row" data-status="manual" data-source="vps-bot">
     <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge a_soumettre">A soumettre</span></td>
-    <td class="col-role" data-label="Role">Product Designer (UI/UX)</td>
-    <td class="col-company" data-label="Company">flowkey</td>
-    <td class="col-location" data-label="Location">Berlin / Remote</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Breezy</td>
-    <td class="col-cv" data-label="CV" style="color:#ef4444">❌</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#ef4444">❌</td>
-    <td class="col-notes" data-label="Notes">Breezy form not loaded — manual submit needed</td>
-    <td class="col-link" data-label="Link"></td>
-    <td class="col-action" data-label="Action"></td>
+    <td class="col-status" data-label="Status"><span class="badge manual">A soumettre</span></td>
+    <td class="col-role" data-label="Role">UX Designer</td>
+    <td class="col-company" data-label="Company">HireArt</td>
+    <td class="col-location" data-label="Location">Austin, TX (Remote)</td>
+    <td class="col-salary" data-label="Salary">$40/hr</td>
+    <td class="col-ats" data-label="ATS">HireArt</td>
+    <td class="col-cv" data-label="CV" style="color:#fb923c">⚠️</td>
+    <td class="col-portfolio" data-label="Portfolio" style="color:#fb923c">⚠️</td>
+    <td class="col-notes notes" data-label="Notes">Custom HireArt platform. Apply manually.</td>
+    <td><a href="https://app.hireart.com/jobs/c03729e7/apply" target="_blank">🔗</a></td>
+    <td></td>
   </tr>
-  <tr class="data-row" data-status="a_soumettre" data-source="vps-bot-r5">
+  <tr class="data-row" data-status="manual" data-source="vps-bot">
     <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge a_soumettre">A soumettre</span></td>
-    <td class="col-role" data-label="Role">Product Designer (Philippines)</td>
-    <td class="col-company" data-label="Company">White Cloak Technologies</td>
-    <td class="col-location" data-label="Location">Philippines</td>
+    <td class="col-status" data-label="Status"><span class="badge manual">A soumettre</span></td>
+    <td class="col-role" data-label="Role">Product Designer</td>
+    <td class="col-company" data-label="Company">TUI</td>
+    <td class="col-location" data-label="Location">Milan, Italy (Remote)</td>
     <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Manatal</td>
-    <td class="col-cv" data-label="CV" style="color:#ef4444">❌</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#ef4444">❌</td>
-    <td class="col-notes" data-label="Notes">Manatal form not loaded — manual submit needed</td>
-    <td class="col-link" data-label="Link"></td>
-    <td class="col-action" data-label="Action"></td>
+    <td class="col-ats" data-label="ATS">TUI Careers</td>
+    <td class="col-cv" data-label="CV" style="color:#fb923c">⚠️</td>
+    <td class="col-portfolio" data-label="Portfolio" style="color:#fb923c">⚠️</td>
+    <td class="col-notes notes" data-label="Notes">Custom TUI careers site. Apply manually.</td>
+    <td><a href="https://careers.tuigroup.com/job/-/-/2743/36083919808" target="_blank">🔗</a></td>
+    <td></td>
   </tr>
-  <tr class="data-row" data-status="a_soumettre" data-source="vps-bot-r5">
+  <tr class="data-row" data-status="manual" data-source="vps-bot">
     <td class="col-date" data-label="Date">2026-03-13</td>
-    <td class="col-status" data-label="Status"><span class="badge a_soumettre">A soumettre</span></td>
-    <td class="col-role" data-label="Role">Senior Product Designer (Global Fintech)</td>
-    <td class="col-company" data-label="Company">Hoxton Wealth</td>
-    <td class="col-location" data-label="Location">Global / Remote</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Manatal</td>
-    <td class="col-cv" data-label="CV" style="color:#ef4444">❌</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#ef4444">❌</td>
-    <td class="col-notes" data-label="Notes">Manatal form not loaded — manual submit needed</td>
-    <td class="col-link" data-label="Link"></td>
-    <td class="col-action" data-label="Action"></td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r4">
-    <td class="col-date" data-label="Date">2026-03-12</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Senior Product Designer (Fintech/Web3)</td>
-    <td class="col-company" data-label="Company">Superstate</td>
-    <td class="col-location" data-label="Location">NYC / Remote</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R4 — Tokenized funds, Web3</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.lever.co/superstate/0046ae75-8036-4b30-84e6-f7bb124c7b99/apply" target="_blank">🔗</a></td>
-    <td class="col-action" data-label="Action"></td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r4">
-    <td class="col-date" data-label="Date">2026-03-12</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Senior Product Designer (Data-Driven SaaS)</td>
-    <td class="col-company" data-label="Company">Spreetail</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R4 — Enterprise SaaS</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.lever.co/spreetail/d8a48896-ea5e-406c-a4f4-a53a5cc62dc6/apply" target="_blank">🔗</a></td>
-    <td class="col-action" data-label="Action"></td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r4">
-    <td class="col-date" data-label="Date">2026-03-12</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">UI/UX Designer (CRM/ERP/SaaS)</td>
-    <td class="col-company" data-label="Company">All Cares</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Breezy HR</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R4</td>
-    <td class="col-link" data-label="Link"><a href="https://allcares.breezy.hr/p/c17c51e60903-ui-ux-designer/apply" target="_blank">🔗</a></td>
-    <td class="col-action" data-label="Action"></td>
-  </tr>
-  <tr class="data-row" data-status="a_soumettre" data-source="vps-bot-r4">
-    <td class="col-date" data-label="Date">2026-03-12</td>
-    <td class="col-status" data-label="Status"><span class="badge a_soumettre">A soumettre</span></td>
-    <td class="col-role" data-label="Role">Senior Product Designer & UX Researcher (4-day week)</td>
-    <td class="col-company" data-label="Company">Stack Influence</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Breezy HR</td>
-    <td class="col-cv" data-label="CV" style="color:#ef4444">❌ CSP</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">Submitted sans CV — reupload needed</td>
-    <td class="col-link" data-label="Link"><a href="https://stack-influence.breezy.hr/p/0dc7941cdd54-senior-product-designer-and-ux-researcher-remote-4-day-week/apply" target="_blank">🔗</a></td>
-    <td class="col-action" data-label="Action"></td>
-  </tr>
-  <tr class="data-row" data-status="a_soumettre" data-source="vps-bot-r4">
-    <td class="col-date" data-label="Date">2026-03-12</td>
-    <td class="col-status" data-label="Status"><span class="badge a_soumettre">A soumettre</span></td>
-    <td class="col-role" data-label="Role">Remote UX Designer (Freelance)</td>
-    <td class="col-company" data-label="Company">FreeUp</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Breezy HR</td>
-    <td class="col-cv" data-label="CV" style="color:#ef4444">❌ CSP</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">Submitted sans CV — reupload needed</td>
-    <td class="col-link" data-label="Link"><a href="https://freeeup.breezy.hr/p/4c21ae6e576b-remote-ux-designer/apply" target="_blank">🔗</a></td>
-    <td class="col-action" data-label="Action"></td>
-  </tr>
-  <tr class="data-row" data-status="a_soumettre" data-source="vps-bot-r4">
-    <td class="col-date" data-label="Date">2026-03-12</td>
-    <td class="col-status" data-label="Status"><span class="badge a_soumettre">A soumettre</span></td>
-    <td class="col-role" data-label="Role">UI/UX Designer (Philippines Remote)</td>
-    <td class="col-company" data-label="Company">Muvr</td>
+    <td class="col-status" data-label="Status"><span class="badge manual">A soumettre</span></td>
+    <td class="col-role" data-label="Role">Senior Graphic Designer</td>
+    <td class="col-company" data-label="Company">Outsourced Pro</td>
     <td class="col-location" data-label="Location">Philippines (Remote)</td>
     <td class="col-salary" data-label="Salary">-</td>
     <td class="col-ats" data-label="ATS">Breezy HR</td>
-    <td class="col-cv" data-label="CV" style="color:#ef4444">❌ CSP</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">Submitted sans CV — APAC role! 🇵🇭</td>
-    <td class="col-link" data-label="Link"><a href="https://muvr-technologies.breezy.hr/p/554aa1b22372-ui-ux-designer/apply" target="_blank">🔗</a></td>
-    <td class="col-action" data-label="Action"></td>
-  </tr>
-  <tr class="data-row" data-status="a_soumettre" data-source="vps-bot-r4">
-    <td class="col-date" data-label="Date">2026-03-12</td>
-    <td class="col-status" data-label="Status"><span class="badge a_soumettre">A soumettre</span></td>
-    <td class="col-role" data-label="Role">UI/UX Designer</td>
-    <td class="col-company" data-label="Company">ResultStack</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Breezy HR</td>
-    <td class="col-cv" data-label="CV" style="color:#ef4444">❌ CSP</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">Submitted sans CV — reupload needed</td>
-    <td class="col-link" data-label="Link"><a href="https://resultstack.breezy.hr/p/8ab63ed42e2c-ui-ux-designer/apply" target="_blank">🔗</a></td>
-    <td class="col-action" data-label="Action"></td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r3">
-    <td class="col-date" data-label="Date">2026-03-12</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Senior UI/UX Designer</td>
-    <td class="col-company" data-label="Company">9D Technologies & Imagination AI</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Workable</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R3</td>
-    <td class="col-link" data-label="Link"><a href="https://apply.workable.com/9dtechnologies-1/j/1F0B1FE000/apply/" target="_blank">🔗</a></td>
-    <td class="col-action" data-label="Action"></td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r3">
-    <td class="col-date" data-label="Date">2026-03-12</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Principal Product Designer (Remote)</td>
-    <td class="col-company" data-label="Company">Momentum IO</td>
-    <td class="col-location" data-label="Location">Remote (PST hours)</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Workable</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R3</td>
-    <td class="col-link" data-label="Link"><a href="https://apply.workable.com/momentumdesinglab/j/C83567E609/apply/" target="_blank">🔗</a></td>
-    <td class="col-action" data-label="Action"></td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r3">
-    <td class="col-date" data-label="Date">2026-03-12</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Lead Product Designer (Remote)</td>
-    <td class="col-company" data-label="Company">Goody</td>
-    <td class="col-location" data-label="Location">Remote (US/Canada)</td>
-    <td class="col-salary" data-label="Salary">$160K-$200K + equity</td>
-    <td class="col-ats" data-label="ATS">Workable</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R3 — high comp!</td>
-    <td class="col-link" data-label="Link"><a href="https://apply.workable.com/goody/j/979ADA1467/apply/" target="_blank">🔗</a></td>
-    <td class="col-action" data-label="Action"></td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r3">
-    <td class="col-date" data-label="Date">2026-03-12</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Senior Product Designer</td>
-    <td class="col-company" data-label="Company">Rareloop</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Workable</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R3</td>
-    <td class="col-link" data-label="Link"><a href="https://apply.workable.com/rareloop/j/A0EC79C366/apply/" target="_blank">🔗</a></td>
-    <td class="col-action" data-label="Action"></td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r3">
-    <td class="col-date" data-label="Date">2026-03-12</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Senior Product Designer, Design Systems</td>
-    <td class="col-company" data-label="Company">Bumble</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R3 — Design Systems role! 🎯</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.lever.co/bumbleinc/085a722c-2ae8-4c36-b75b-c11730971ae4/apply" target="_blank">🔗</a></td>
-    <td class="col-action" data-label="Action"></td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r3">
-    <td class="col-date" data-label="Date">2026-03-12</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Senior Product Designer</td>
-    <td class="col-company" data-label="Company">Cloudinary</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R3 — DAM + Design System</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.lever.co/cloudinary/4ee4efc6-a1d9-4742-85f5-90d6aedc3cd2/apply" target="_blank">🔗</a></td>
-    <td class="col-action" data-label="Action"></td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r3">
-    <td class="col-date" data-label="Date">2026-03-12</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">UI/UX Software Interface Designer</td>
-    <td class="col-company" data-label="Company">Biztree</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Manatal</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R3</td>
-    <td class="col-link" data-label="Link"><a href="https://www.careers-page.com/biztree/job/L664RYYR" target="_blank">🔗</a></td>
-    <td class="col-action" data-label="Action"></td>
-  </tr>
-  <tr class="data-row" data-status="a_soumettre" data-source="vps-bot-r3">
-    <td class="col-date" data-label="Date">2026-03-12</td>
-    <td class="col-status" data-label="Status"><span class="badge a_soumettre">A soumettre</span></td>
-    <td class="col-role" data-label="Role">Senior UI/UX Designer</td>
-    <td class="col-company" data-label="Company">Makaseb (MindHux)</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Manatal</td>
-    <td class="col-cv" data-label="CV">-</td>
-    <td class="col-portfolio" data-label="Portfolio">-</td>
-    <td class="col-notes" data-label="Notes">Submit_failed — form not loading</td>
-    <td class="col-link" data-label="Link"><a href="https://www.careers-page.com/makaseb/job/L95W6X66" target="_blank">🔗</a></td>
-    <td class="col-action" data-label="Action"></td>
-  </tr>
-  <tr class="data-row" data-status="a_soumettre" data-source="vps-bot-r3">
-    <td class="col-date" data-label="Date">2026-03-12</td>
-    <td class="col-status" data-label="Status"><span class="badge a_soumettre">A soumettre</span></td>
-    <td class="col-role" data-label="Role">UX/UI Designer</td>
-    <td class="col-company" data-label="Company">Bangkok Silicon</td>
-    <td class="col-location" data-label="Location">Bangkok, Thailand</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Manatal</td>
-    <td class="col-cv" data-label="CV">-</td>
-    <td class="col-portfolio" data-label="Portfolio">-</td>
-    <td class="col-notes" data-label="Notes">Submit_failed — LOCAL BKK role! 🇹🇭</td>
-    <td class="col-link" data-label="Link"><a href="https://www.careers-page.com/bangkok-silicon/job/L45W8RV5" target="_blank">🔗</a></td>
-    <td class="col-action" data-label="Action"></td>
-  </tr>
-  <tr class="data-row" data-status="a_soumettre" data-source="vps-bot-r3">
-    <td class="col-date" data-label="Date">2026-03-12</td>
-    <td class="col-status" data-label="Status"><span class="badge a_soumettre">A soumettre</span></td>
-    <td class="col-role" data-label="Role">Senior Product Designer (Design System)</td>
-    <td class="col-company" data-label="Company">Lodgify</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV">-</td>
-    <td class="col-portfolio" data-label="Portfolio">-</td>
-    <td class="col-notes" data-label="Notes">Page timeout — Design Systems role</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.lever.co/lodgify/5b2979a7-29a9-4db0-86f5-47ddf3ba8041/apply" target="_blank">🔗</a></td>
-    <td class="col-action" data-label="Action"></td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r2">
-    <td class="col-date" data-label="Date">2026-03-12</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Senior Product UI/UX Designer (Remote Contract)</td>
-    <td class="col-company" data-label="Company">Human Intelligence</td>
-    <td class="col-location" data-label="Location">Remote (PH/VN/ID/LATAM)</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Workable</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R2 — APAC friendly!</td>
-    <td class="col-link" data-label="Link"><a href="https://apply.workable.com/humanintelligence/j/3BA3A159C2/apply/" target="_blank">🔗</a></td>
-    <td></td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r2">
-    <td class="col-date" data-label="Date">2026-03-12</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Senior UX/UI Designer (Remote)</td>
-    <td class="col-company" data-label="Company">Decile Group</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R2 — SaaS + AI for VC</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.lever.co/decilegroup/6d1c564a-341e-4172-afab-b21c536eb66d/apply" target="_blank">🔗</a></td>
-    <td></td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r2">
-    <td class="col-date" data-label="Date">2026-03-12</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Remote Senior Product Designer</td>
-    <td class="col-company" data-label="Company">Global Channel Management</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Manatal</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R2</td>
-    <td class="col-link" data-label="Link"><a href="https://www.careers-page.com/global-channel-managementinc/job/L68V553R" target="_blank">🔗</a></td>
-    <td></td>
-  </tr>
-  <tr class="data-row" data-status="submitted" data-source="vps-bot-r2">
-    <td class="col-date" data-label="Date">2026-03-12</td>
-    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
-    <td class="col-role" data-label="Role">Product Designer (Fintech)</td>
-    <td class="col-company" data-label="Company">Artax Advisors</td>
-    <td class="col-location" data-label="Location">Remote</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Manatal</td>
-    <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
-    <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
-    <td class="col-notes" data-label="Notes">VPS bot R2</td>
-    <td class="col-link" data-label="Link"><a href="https://www.careers-page.com/artax-advisors/job/LR5465V6" target="_blank">🔗</a></td>
-    <td></td>
-  </tr>
-  <tr class="data-row" data-status="manual" data-source="vps-bot-r2">
-    <td class="col-date" data-label="Date">2026-03-12</td>
-    <td class="col-status" data-label="Status"><span class="badge manual">A soumettre</span></td>
-    <td class="col-role" data-label="Role">Senior UX/UI Designer (Remote)</td>
-    <td class="col-company" data-label="Company">SemanticBits</td>
-    <td class="col-location" data-label="Location">Remote US</td>
-    <td class="col-salary" data-label="Salary">-</td>
-    <td class="col-ats" data-label="ATS">Lever</td>
-    <td class="col-cv" data-label="CV">-</td>
-    <td class="col-portfolio" data-label="Portfolio">-</td>
-    <td class="col-notes" data-label="Notes">Bot submit failed — retry manually</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.lever.co/semanticbits/4b173579-dac1-41cc-a5fd-a596340c02bb/apply" target="_blank">🔗</a></td>
+    <td class="col-cv" data-label="CV" style="color:#fb923c">⚠️</td>
+    <td class="col-portfolio" data-label="Portfolio" style="color:#fb923c">⚠️</td>
+    <td class="col-notes notes" data-label="Notes">Breezy HR form not filling. Apply manually.</td>
+    <td><a href="https://outsourcedproglobal.applytojob.com/apply/JgKdln8lsT/Senior-Graphic-Designer" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="submitted" data-source="vps-bot">
@@ -1383,7 +770,7 @@
     <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
     <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
     <td class="col-notes" data-label="Notes">VPS bot auto-submitted</td>
-    <td class="col-link" data-label="Link"><a href="https://apply.workable.com/facetwealth/j/6688EC60B7/apply/" target="_blank">🔗</a></td>
+    <td><a href="https://apply.workable.com/facetwealth/j/6688EC60B7/apply/" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="submitted" data-source="vps-bot">
@@ -1397,7 +784,7 @@
     <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
     <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
     <td class="col-notes" data-label="Notes">VPS bot auto-submitted</td>
-    <td class="col-link" data-label="Link"><a href="https://apply.workable.com/remote-recruitment/j/56E8728D7A/apply/" target="_blank">🔗</a></td>
+    <td><a href="https://apply.workable.com/remote-recruitment/j/56E8728D7A/apply/" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="submitted" data-source="vps-bot">
@@ -1411,7 +798,7 @@
     <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
     <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
     <td class="col-notes" data-label="Notes">VPS bot auto-submitted</td>
-    <td class="col-link" data-label="Link"><a href="https://apply.workable.com/wearewqa/j/6F1788B92E/apply/" target="_blank">🔗</a></td>
+    <td><a href="https://apply.workable.com/wearewqa/j/6F1788B92E/apply/" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="submitted" data-source="vps-bot">
@@ -1425,7 +812,7 @@
     <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
     <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
     <td class="col-notes" data-label="Notes">VPS bot auto-submitted</td>
-    <td class="col-link" data-label="Link"><a href="https://apply.workable.com/pearltalent/j/390495AA69/apply/" target="_blank">🔗</a></td>
+    <td><a href="https://apply.workable.com/pearltalent/j/390495AA69/apply/" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="submitted" data-source="vps-bot">
@@ -1439,7 +826,7 @@
     <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
     <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
     <td class="col-notes" data-label="Notes">VPS bot auto-submitted</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.lever.co/owner/31debd05-e895-4cd2-b607-be23e82a68fd/apply" target="_blank">🔗</a></td>
+    <td><a href="https://jobs.lever.co/owner/31debd05-e895-4cd2-b607-be23e82a68fd/apply" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="submitted" data-source="vps-bot">
@@ -1453,7 +840,7 @@
     <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
     <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
     <td class="col-notes" data-label="Notes">VPS bot auto-submitted</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.lever.co/metabase/b6ab96a1-5d3f-4e5b-a611-5a79d333d62f/apply" target="_blank">🔗</a></td>
+    <td><a href="https://jobs.lever.co/metabase/b6ab96a1-5d3f-4e5b-a611-5a79d333d62f/apply" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="submitted" data-source="vps-bot">
@@ -1467,7 +854,7 @@
     <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
     <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
     <td class="col-notes" data-label="Notes">VPS bot auto-submitted</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.lever.co/padsplit/82ea697a-ffad-404f-b1a5-af1922a425f3/apply" target="_blank">🔗</a></td>
+    <td><a href="https://jobs.lever.co/padsplit/82ea697a-ffad-404f-b1a5-af1922a425f3/apply" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="submitted" data-source="vps-bot">
@@ -1481,7 +868,7 @@
     <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
     <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
     <td class="col-notes" data-label="Notes">VPS bot auto-submitted</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.lever.co/LuminDigital/5665b8d0-197e-47b0-8be1-00f34ade0c7c/apply" target="_blank">🔗</a></td>
+    <td><a href="https://jobs.lever.co/LuminDigital/5665b8d0-197e-47b0-8be1-00f34ade0c7c/apply" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="submitted" data-source="vps-bot">
@@ -1495,7 +882,7 @@
     <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
     <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
     <td class="col-notes" data-label="Notes">VPS bot auto-submitted</td>
-    <td class="col-link" data-label="Link"><a href="https://www.careers-page.com/nearshore-business-solutions/job/X99448YR" target="_blank">🔗</a></td>
+    <td><a href="https://www.careers-page.com/nearshore-business-solutions/job/X99448YR" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="vps-bot">
@@ -1509,7 +896,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Bot filled form but submit failed — retry manually</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.lever.co/circleco/4000f279-373f-4115-82a8-a6fcf3ced257/apply" target="_blank">🔗</a></td>
+    <td><a href="https://jobs.lever.co/circleco/4000f279-373f-4115-82a8-a6fcf3ced257/apply" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="vps-bot">
@@ -1523,7 +910,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Bot filled form but submit failed — retry manually</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.lever.co/innocraft/edbe49ea-c0ea-486c-9dca-9f7d133aad57/apply" target="_blank">🔗</a></td>
+    <td><a href="https://jobs.lever.co/innocraft/edbe49ea-c0ea-486c-9dca-9f7d133aad57/apply" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="vps-bot">
@@ -1537,7 +924,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Bot filled form but submit failed — retry manually</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.lever.co/articulate/76a17f4d-8b38-4896-af16-ce3d7dc10df2/apply" target="_blank">🔗</a></td>
+    <td><a href="https://jobs.lever.co/articulate/76a17f4d-8b38-4896-af16-ce3d7dc10df2/apply" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="scout-vps">
@@ -1551,7 +938,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Greenhouse — manual submit needed</td>
-    <td class="col-link" data-label="Link"><a href="https://boards.greenhouse.io/apolloio/jobs/4789887004" target="_blank">🔗</a></td>
+    <td><a href="https://boards.greenhouse.io/apolloio/jobs/4789887004" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="scout-vps">
@@ -1565,7 +952,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Greenhouse — manual submit needed</td>
-    <td class="col-link" data-label="Link"><a href="https://boards.greenhouse.io/xapo61/jobs/4316711003" target="_blank">🔗</a></td>
+    <td><a href="https://boards.greenhouse.io/xapo61/jobs/4316711003" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="scout-vps">
@@ -1579,7 +966,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Greenhouse — Design Systems role! Priority</td>
-    <td class="col-link" data-label="Link"><a href="https://boards.greenhouse.io/remotecom/jobs/4852625003" target="_blank">🔗</a></td>
+    <td><a href="https://boards.greenhouse.io/remotecom/jobs/4852625003" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="scout-vps">
@@ -1593,7 +980,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Greenhouse — manual submit needed</td>
-    <td class="col-link" data-label="Link"><a href="https://boards.greenhouse.io/remotecom/jobs/5600086003" target="_blank">🔗</a></td>
+    <td><a href="https://boards.greenhouse.io/remotecom/jobs/5600086003" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="scout-vps">
@@ -1607,7 +994,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Greenhouse — manual submit needed</td>
-    <td class="col-link" data-label="Link"><a href="https://boards.greenhouse.io/ezcaterinc/jobs/4162855007" target="_blank">🔗</a></td>
+    <td><a href="https://boards.greenhouse.io/ezcaterinc/jobs/4162855007" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="scout-vps">
@@ -1621,7 +1008,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Greenhouse — manual submit needed</td>
-    <td class="col-link" data-label="Link"><a href="https://boards.greenhouse.io/shopltk/jobs/5749526003" target="_blank">🔗</a></td>
+    <td><a href="https://boards.greenhouse.io/shopltk/jobs/5749526003" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="scout-vps">
@@ -1635,7 +1022,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Greenhouse — manual submit needed</td>
-    <td class="col-link" data-label="Link"><a href="https://boards.greenhouse.io/shopltk/jobs/5736659003" target="_blank">🔗</a></td>
+    <td><a href="https://boards.greenhouse.io/shopltk/jobs/5736659003" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="scout-vps">
@@ -1649,7 +1036,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Greenhouse — APAC friendly (Philippines!) Priority</td>
-    <td class="col-link" data-label="Link"><a href="https://boards.greenhouse.io/thumbtack/jobs/5609364" target="_blank">🔗</a></td>
+    <td><a href="https://boards.greenhouse.io/thumbtack/jobs/5609364" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="scout-vps">
@@ -1663,7 +1050,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Greenhouse — manual submit needed</td>
-    <td class="col-link" data-label="Link"><a href="https://boards.greenhouse.io/onxmaps/jobs/4414862006" target="_blank">🔗</a></td>
+    <td><a href="https://boards.greenhouse.io/onxmaps/jobs/4414862006" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="scout-vps">
@@ -1677,7 +1064,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Greenhouse — manual submit needed</td>
-    <td class="col-link" data-label="Link"><a href="https://boards.greenhouse.io/splice/jobs/6493947002" target="_blank">🔗</a></td>
+    <td><a href="https://boards.greenhouse.io/splice/jobs/6493947002" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="scout-vps">
@@ -1691,7 +1078,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Greenhouse — manual submit needed</td>
-    <td class="col-link" data-label="Link"><a href="https://boards.greenhouse.io/seamlessai/jobs/4991299004" target="_blank">🔗</a></td>
+    <td><a href="https://boards.greenhouse.io/seamlessai/jobs/4991299004" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="scout-vps">
@@ -1705,7 +1092,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Greenhouse — manual submit needed</td>
-    <td class="col-link" data-label="Link"><a href="https://boards.greenhouse.io/heartflowinc/jobs/5162251004" target="_blank">🔗</a></td>
+    <td><a href="https://boards.greenhouse.io/heartflowinc/jobs/5162251004" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="scout-vps">
@@ -1719,7 +1106,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Greenhouse — manual submit needed</td>
-    <td class="col-link" data-label="Link"><a href="https://boards.greenhouse.io/idme/jobs/5722851003" target="_blank">🔗</a></td>
+    <td><a href="https://boards.greenhouse.io/idme/jobs/5722851003" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="scout-vps">
@@ -1733,7 +1120,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Greenhouse — manual submit needed</td>
-    <td class="col-link" data-label="Link"><a href="https://boards.greenhouse.io/benchprep/jobs/5596527002" target="_blank">🔗</a></td>
+    <td><a href="https://boards.greenhouse.io/benchprep/jobs/5596527002" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="scout-vps">
@@ -1747,7 +1134,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Greenhouse — manual submit needed</td>
-    <td class="col-link" data-label="Link"><a href="https://boards.greenhouse.io/runwise/jobs/4001861006" target="_blank">🔗</a></td>
+    <td><a href="https://boards.greenhouse.io/runwise/jobs/4001861006" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="scout-vps">
@@ -1761,7 +1148,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Greenhouse — manual submit needed</td>
-    <td class="col-link" data-label="Link"><a href="https://boards.greenhouse.io/rackner/jobs/4428851005" target="_blank">🔗</a></td>
+    <td><a href="https://boards.greenhouse.io/rackner/jobs/4428851005" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="scout-vps">
@@ -1775,7 +1162,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Ashby (CSP blocks fetch) — APAC! Priority</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/bjakcareer/a28ea9fb-d14b-4800-a926-d03aa97756e5" target="_blank">🔗</a></td>
+    <td><a href="https://jobs.ashbyhq.com/bjakcareer/a28ea9fb-d14b-4800-a926-d03aa97756e5" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="scout-vps">
@@ -1789,7 +1176,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Ashby (CSP blocks fetch) — manual submit</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/rula/2cba9b06-d875-4ed0-8d22-ea44840b81c8" target="_blank">🔗</a></td>
+    <td><a href="https://jobs.ashbyhq.com/rula/2cba9b06-d875-4ed0-8d22-ea44840b81c8" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="scout-vps">
@@ -1803,7 +1190,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Ashby (CSP blocks fetch) — manual submit</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/Jerry.ai/0a454f80-8923-4b30-be18-9d21b1c5a9f2" target="_blank">🔗</a></td>
+    <td><a href="https://jobs.ashbyhq.com/Jerry.ai/0a454f80-8923-4b30-be18-9d21b1c5a9f2" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="scout-vps">
@@ -1817,7 +1204,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Ashby (CSP blocks fetch) — manual submit</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/Jerry.ai/ed38c413-0188-403b-a7e4-cfe1f1e70b9d" target="_blank">🔗</a></td>
+    <td><a href="https://jobs.ashbyhq.com/Jerry.ai/ed38c413-0188-403b-a7e4-cfe1f1e70b9d" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="scout-vps">
@@ -1831,7 +1218,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Ashby (CSP blocks fetch) — manual submit</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/close/39115486-07d1-4e6a-9480-e7786a168fe4" target="_blank">🔗</a></td>
+    <td><a href="https://jobs.ashbyhq.com/close/39115486-07d1-4e6a-9480-e7786a168fe4" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="scout-vps">
@@ -1845,7 +1232,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Ashby (CSP blocks fetch) — manual submit</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/Solace/6dc32ee4-b858-46d0-b627-2998edc68c9d" target="_blank">🔗</a></td>
+    <td><a href="https://jobs.ashbyhq.com/Solace/6dc32ee4-b858-46d0-b627-2998edc68c9d" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="scout-vps">
@@ -1859,7 +1246,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Ashby (CSP blocks fetch) — manual submit</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/empower%20finance/b99cc94f-5807-4690-b7e3-384a3cbaf482" target="_blank">🔗</a></td>
+    <td><a href="https://jobs.ashbyhq.com/empower%20finance/b99cc94f-5807-4690-b7e3-384a3cbaf482" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="scout-vps">
@@ -1873,7 +1260,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Ashby (CSP blocks fetch) — manual submit</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/drata/bcbf7c2e-5bc3-4cb8-bd68-87eb76f31c9b" target="_blank">🔗</a></td>
+    <td><a href="https://jobs.ashbyhq.com/drata/bcbf7c2e-5bc3-4cb8-bd68-87eb76f31c9b" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="scout-vps">
@@ -1887,7 +1274,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Ashby — Design Systems! Priority</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/snowflake/206b38e4-00d4-4bc4-9881-9ad5550c3a02" target="_blank">🔗</a></td>
+    <td><a href="https://jobs.ashbyhq.com/snowflake/206b38e4-00d4-4bc4-9881-9ad5550c3a02" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="scout-vps">
@@ -1901,7 +1288,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Ashby — Design System! Priority</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/backmarket/53d4b35c-0b5c-4806-94b7-209efb185c86" target="_blank">🔗</a></td>
+    <td><a href="https://jobs.ashbyhq.com/backmarket/53d4b35c-0b5c-4806-94b7-209efb185c86" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="scout-vps">
@@ -1915,7 +1302,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Ashby — Design System! Priority</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/replit/955b73a9-4aec-456d-876b-38ac98cbdecd" target="_blank">🔗</a></td>
+    <td><a href="https://jobs.ashbyhq.com/replit/955b73a9-4aec-456d-876b-38ac98cbdecd" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="scout-vps">
@@ -1929,7 +1316,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Ashby — Design Systems exp! Priority</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/Redis/83f04ca8-108f-4d50-88eb-a26ed7705687" target="_blank">🔗</a></td>
+    <td><a href="https://jobs.ashbyhq.com/Redis/83f04ca8-108f-4d50-88eb-a26ed7705687" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="scout-vps">
@@ -1943,7 +1330,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Ashby — Design Systems! Priority</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/accurx/464b5353-4fe2-4e86-b6d7-f2cfe87e573a/application" target="_blank">🔗</a></td>
+    <td><a href="https://jobs.ashbyhq.com/accurx/464b5353-4fe2-4e86-b6d7-f2cfe87e573a/application" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="scout-vps">
@@ -1957,7 +1344,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Ashby — manual submit</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/ramp/39d302da-b017-4f18-b6ad-f0e77d024e2c" target="_blank">🔗</a></td>
+    <td><a href="https://jobs.ashbyhq.com/ramp/39d302da-b017-4f18-b6ad-f0e77d024e2c" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="scout-vps">
@@ -1971,7 +1358,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Ashby — manual submit</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/relayfi/c9528183-5a50-4db2-8e8a-9c6707a773f0" target="_blank">🔗</a></td>
+    <td><a href="https://jobs.ashbyhq.com/relayfi/c9528183-5a50-4db2-8e8a-9c6707a773f0" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="scout-vps">
@@ -1985,7 +1372,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Ashby — manual submit</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/accurx/aa2d36f7-2dbb-4e8c-8a6c-3124f550b12e" target="_blank">🔗</a></td>
+    <td><a href="https://jobs.ashbyhq.com/accurx/aa2d36f7-2dbb-4e8c-8a6c-3124f550b12e" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="scout-vps">
@@ -1999,7 +1386,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Ashby — manual submit</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/SecondDinner/ca088871-1619-493a-ae1e-2c787d4aa570" target="_blank">🔗</a></td>
+    <td><a href="https://jobs.ashbyhq.com/SecondDinner/ca088871-1619-493a-ae1e-2c787d4aa570" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="scout-vps">
@@ -2013,7 +1400,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Ashby — manual submit</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/solidroad/139448a7-bed6-45c2-92b4-4e7b37d3b6cd" target="_blank">🔗</a></td>
+    <td><a href="https://jobs.ashbyhq.com/solidroad/139448a7-bed6-45c2-92b4-4e7b37d3b6cd" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="submitted" data-source="auto">
@@ -2027,7 +1414,7 @@
     <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
     <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
     <td class="col-notes" data-label="Notes">Full form + CV + 4 custom questions (ice cream, portfolio, excites, skills, SaaS). Confirmation page shown.</td>
-    <td class="col-link" data-label="Link"><a href="https://apply.workable.com/hospitable/j/56CFE0BC48/" target="_blank">🔗</a></td>
+    <td><a href="https://apply.workable.com/hospitable/j/56CFE0BC48/" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="auto">
@@ -2041,7 +1428,7 @@
     <td class="col-cv" data-label="CV" style="color:#f87171">❌ CSP</td>
     <td class="col-portfolio" data-label="Portfolio" style="color:#fbbf24">⏳</td>
     <td class="col-notes" data-label="Notes">Greenhouse CSP blocks CV upload. Form not filled — skip to manual.</td>
-    <td class="col-link" data-label="Link"><a href="https://job-boards.greenhouse.io/usergems/jobs/5732105004" target="_blank">🔗</a></td>
+    <td><a href="https://job-boards.greenhouse.io/usergems/jobs/5732105004" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="skipped" data-source="auto">
@@ -2055,7 +1442,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Listing closed (not_found)</td>
-    <td class="col-link" data-label="Link"><a href="https://apply.workable.com/careers-at-sleek/j/935A79790E/" target="_blank">🔗</a></td>
+    <td><a href="https://apply.workable.com/careers-at-sleek/j/935A79790E/" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="skipped" data-source="auto">
@@ -2069,7 +1456,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Listing closed</td>
-    <td class="col-link" data-label="Link"><a href="https://teylor.breezy.hr/p/2b227680e02c01-product-designer-remote-europe" target="_blank">🔗</a></td>
+    <td><a href="https://teylor.breezy.hr/p/2b227680e02c01-product-designer-remote-europe" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="skipped" data-source="auto">
@@ -2097,7 +1484,7 @@
     <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
     <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
     <td class="col-notes" data-label="Notes">Full form submitted: CV + cover letter + LinkedIn + portfolio. Manatal ATS (careers-page.com). Confirmation page shown.</td>
-    <td class="col-link" data-label="Link"><a href="https://www.careers-page.com/inclusioncloud/job/93RXXY3Y" target="_blank">🔗</a></td>
+    <td><a href="https://www.careers-page.com/inclusioncloud/job/93RXXY3Y" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="auto">
@@ -2111,7 +1498,7 @@
     <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
     <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
     <td class="col-notes" data-label="Notes">Form 100% filled + CV uploaded (1.6MB). Puzzle CAPTCHA blocking submit. Manual CAPTCHA + click needed.</td>
-    <td class="col-link" data-label="Link"><a href="https://careers.hostaway.com/o/senior-product-designer-remote-emea" target="_blank">🔗</a></td>
+    <td><a href="https://careers.hostaway.com/o/senior-product-designer-remote-emea" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="auto">
@@ -2125,7 +1512,7 @@
     <td class="col-cv" data-label="CV" style="color:#f87171">❌</td>
     <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
     <td class="col-notes" data-label="Notes">Form filled (name/email/phone/country/LinkedIn/website). CSP blocks GitHub fetch AND file_upload tool. Manual CV upload needed.</td>
-    <td class="col-link" data-label="Link"><a href="https://job-boards.greenhouse.io/autods/jobs/5147020008" target="_blank">🔗</a></td>
+    <td><a href="https://job-boards.greenhouse.io/autods/jobs/5147020008" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="skipped" data-source="auto">
@@ -2139,7 +1526,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Listing closed (410 Gone)</td>
-    <td class="col-link" data-label="Link"><a href="https://remotive.com/remote-jobs/design/senior-product-designer-2140889" target="_blank">🔗</a></td>
+    <td><a href="https://remotive.com/remote-jobs/design/senior-product-designer-2140889" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="skipped" data-source="auto">
@@ -2167,7 +1554,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Hybrid only, not remote. Does not match criteria.</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.lever.co/qonto" target="_blank">🔗</a></td>
+    <td><a href="https://jobs.lever.co/qonto" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="auto">
@@ -2181,7 +1568,7 @@
     <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
     <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
     <td class="col-notes" data-label="Notes">Form 100% filled (CV+cover+portfolio+salary+all Qs). Submit button not responding (React). Manual click needed.</td>
-    <td class="col-link" data-label="Link"><a href="https://apply.workable.com/facetwealth/j/6688EC60B7/apply/" target="_blank">🔗</a></td>
+    <td><a href="https://apply.workable.com/facetwealth/j/6688EC60B7/apply/" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="skipped" data-source="auto">
@@ -2209,7 +1596,7 @@
     <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
     <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
     <td class="col-notes" data-label="Notes">CV + cover letter + LinkedIn + salary + portfolio link</td>
-    <td class="col-link" data-label="Link"><a href="https://maptiler.peopleforce.io/careers/v/178604-senior-uxui-designer-web" target="_blank">🔗</a></td>
+    <td><a href="https://maptiler.peopleforce.io/careers/v/178604-senior-uxui-designer-web" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="auto">
@@ -2223,7 +1610,7 @@
     <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
     <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
     <td class="col-notes" data-label="Notes">Form filled, submit button not responding (React state issue). Manual submit needed.</td>
-    <td class="col-link" data-label="Link"><a href="https://apply.workable.com/constructor-1/j/9951438A60/apply/" target="_blank">🔗</a></td>
+    <td><a href="https://apply.workable.com/constructor-1/j/9951438A60/apply/" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="auto">
@@ -2237,7 +1624,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">ATS broken "Job Board Not Configured". Deadline March 8 may have passed.</td>
-    <td class="col-link" data-label="Link"><a href="https://raredays.applytojobs.ca/design/43990" target="_blank">🔗</a></td>
+    <td><a href="https://raredays.applytojobs.ca/design/43990" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="skipped" data-source="auto">
@@ -2279,7 +1666,7 @@
     <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
     <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
     <td class="col-notes" data-label="Notes">CV + portfolio file + link + custom Qs answered</td>
-    <td class="col-link" data-label="Link"><a href="https://apply.workable.com/fabulousco/j/D693F9A276/apply/?success" target="_blank">🔗</a></td>
+    <td><a href="https://apply.workable.com/fabulousco/j/D693F9A276/apply/?success" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="auto">
@@ -2293,7 +1680,7 @@
     <td class="col-cv" data-label="CV" style="color:#34d399">✅ PDF</td>
     <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
     <td class="col-notes" data-label="Notes">Form 95% filled, needs photo upload then submit</td>
-    <td class="col-link" data-label="Link"><a href="https://apply.workable.com/humanintelligence/j/3BA3A159C2/apply/" target="_blank">🔗</a></td>
+    <td><a href="https://apply.workable.com/humanintelligence/j/3BA3A159C2/apply/" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="auto">
@@ -2307,7 +1694,7 @@
     <td class="col-cv" data-label="CV" style="color:#f87171">❌</td>
     <td class="col-portfolio" data-label="Portfolio" style="color:#34d399">✅</td>
     <td class="col-notes" data-label="Notes">Fields filled via JS, CSP blocks CV upload</td>
-    <td class="col-link" data-label="Link"><a href="https://job-boards.greenhouse.io/mesh/jobs/5123676008" target="_blank">🔗</a></td>
+    <td><a href="https://job-boards.greenhouse.io/mesh/jobs/5123676008" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="auto">
@@ -2321,7 +1708,7 @@
     <td class="col-cv" data-label="CV" style="color:#f87171">❌</td>
     <td class="col-portfolio" data-label="Portfolio" style="color:#f87171">❌</td>
     <td class="col-notes" data-label="Notes">Ashby = always manual (CSP blocks fetch)</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/migaku" target="_blank">🔗</a></td>
+    <td><a href="https://jobs.ashbyhq.com/migaku" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="auto">
@@ -2335,7 +1722,7 @@
     <td class="col-cv" data-label="CV" style="color:#f87171">❌</td>
     <td class="col-portfolio" data-label="Portfolio" style="color:#f87171">❌</td>
     <td class="col-notes" data-label="Notes">Notion form partially filled (name, email, designer checkbox). Needs date field + rest</td>
-    <td class="col-link" data-label="Link"><a href="https://garden3d.notion.site/1f1131fea2c78095922ec7e09bd96101" target="_blank">🔗</a></td>
+    <td><a href="https://garden3d.notion.site/1f1131fea2c78095922ec7e09bd96101" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="auto">
@@ -2349,7 +1736,7 @@
     <td class="col-cv" data-label="CV" style="color:#f87171">❌</td>
     <td class="col-portfolio" data-label="Portfolio" style="color:#f87171">❌</td>
     <td class="col-notes" data-label="Notes">Ashby = always manual. Deadline Apr 8</td>
-    <td class="col-link" data-label="Link"><a href="https://jobs.ashbyhq.com/camunda/0f8e63ed-4600-4875-8119-bc69e2f24ed7" target="_blank">🔗</a></td>
+    <td><a href="https://jobs.ashbyhq.com/camunda/0f8e63ed-4600-4875-8119-bc69e2f24ed7" target="_blank">🔗</a></td>
     <td></td>
   </tr>
   <tr class="data-row" data-status="skipped" data-source="auto">
@@ -2390,8 +1777,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">16 custom Qs + explicit no-AI policy</td>
-    <td class="col-link" data-label="Link"><a href="https://job-boards.greenhouse.io/canonical/jobs/7043028" target="_blank">🔗</a></td>
-    <td class="col-action" data-label="Action"></td>
+    <td class="col-action" data-label="Action"><a href="https://job-boards.greenhouse.io/canonical/jobs/7043028" target="_blank">View</a></td>
   </tr>
   <tr class="data-row" data-status="manual" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-12</td>
@@ -2404,8 +1790,7 @@
     <td class="col-cv" data-label="CV">-</td>
     <td class="col-portfolio" data-label="Portfolio">-</td>
     <td class="col-notes" data-label="Notes">Notion React state issues, form_input broken</td>
-    <td class="col-link" data-label="Link"><a href="https://garden3d.notion.site/Senior-Product-Designer-317131fea2c780e6a8aeeef3aeb213f7" target="_blank">🔗</a></td>
-    <td class="col-action" data-label="Action"></td>
+    <td class="col-action" data-label="Action"><a href="https://garden3d.notion.site/Senior-Product-Designer-317131fea2c780e6a8aeeef3aeb213f7" target="_blank">View</a></td>
   </tr>
   <tr class="data-row" data-status="submitted" data-source="auto">
     <td class="col-date" data-label="Date">2026-03-12</td>
@@ -7849,32 +7234,15 @@
 
   function loadManualSubmissions() {
     const saved = JSON.parse(localStorage.getItem('manual-submissions') || '[]');
-    const skipped = JSON.parse(localStorage.getItem('skipped-submissions') || '[]');
+    if (!saved.length) return;
     rows().forEach(r => {
-      const s = r.dataset.status;
-      if ((s === 'manual' || s === 'a_soumettre') && saved.includes(getRowKey(r))) {
+      if (r.dataset.status === 'manual' && saved.includes(getRowKey(r))) {
         r.dataset.status = 'submitted';
         r.dataset.source = 'manual';
-        r.querySelector('.col-status').innerHTML = '<span class="badge submitted">Submitted</span>';
-        const ac = r.querySelector('.col-action');
-        if (ac) ac.innerHTML = '';
-      } else if ((s === 'manual' || s === 'a_soumettre') && skipped.includes(getRowKey(r))) {
-        r.dataset.status = 'skipped';
-        r.querySelector('.col-status').innerHTML = '<span class="badge skipped">Skipped</span>';
-        const ac = r.querySelector('.col-action');
-        if (ac) ac.innerHTML = '';
+        const statusCell = r.querySelector('.col-status');
+        statusCell.innerHTML = '<span class="badge submitted">Submitted</span>';
       }
     });
-  }
-
-  function saveSkippedSubmissions() {
-    const keys = [];
-    rows().forEach(r => {
-      if (r.dataset.status === 'skipped') {
-        keys.push(getRowKey(r));
-      }
-    });
-    localStorage.setItem('skipped-submissions', JSON.stringify(keys));
   }
 
   // --- Progress ring ---
@@ -7893,7 +7261,7 @@
   function updateCounts() {
     const all = rows();
     const counts = { submitted: 0, manual: 0, saved: 0, already: 0, failed: 0, skipped: 0 };
-    all.forEach(r => { const s = r.dataset.status; if (s === 'a_soumettre') counts.manual++; else if (counts[s] !== undefined) counts[s]++; });
+    all.forEach(r => { const s = r.dataset.status; if (counts[s] !== undefined) counts[s]++; });
     document.getElementById('count-all').textContent = all.length;
     document.getElementById('count-submitted').textContent = counts.submitted;
     document.getElementById('count-manual').textContent = counts.manual;
@@ -7924,8 +7292,7 @@
 
     document.querySelectorAll('.stat').forEach(s => s.classList.toggle('active', s.dataset.filter === filter));
     rows().forEach(r => {
-      const s = r.dataset.status;
-      let match = filter === 'all' || s === filter || (filter === 'manual' && s === 'a_soumettre');
+      let match = filter === 'all' || r.dataset.status === filter;
       if (match && filter === 'submitted' && currentSubFilter !== 'all') {
         match = (r.dataset.source || 'auto') === currentSubFilter;
       }
@@ -7948,46 +7315,13 @@
     });
   });
 
-  // --- Inject CTA buttons into all manual / a_soumettre rows ---
-  function injectCTAButtons() {
-    rows().forEach(r => {
-      const s = r.dataset.status;
-      if (s !== 'manual' && s !== 'a_soumettre') return;
-      let actionCell = r.querySelector('.col-action');
-      if (!actionCell) {
-        // Find last empty td
-        const cells = r.querySelectorAll('td');
-        const lastCell = cells[cells.length - 1];
-        if (lastCell && !lastCell.textContent.trim()) {
-          lastCell.classList.add('col-action');
-          lastCell.setAttribute('data-label', 'Action');
-          actionCell = lastCell;
-        } else {
-          // No empty td found — append a new one
-          actionCell = document.createElement('td');
-          actionCell.classList.add('col-action');
-          actionCell.setAttribute('data-label', 'Action');
-          r.appendChild(actionCell);
-        }
-      }
-      if (actionCell) {
-        // Always ensure both buttons are present
-        if (!actionCell.querySelector('.btn-applied')) {
-          actionCell.insertAdjacentHTML('afterbegin', '<button class="btn-applied" title="Mark as submitted">Applied ✓</button>');
-        }
-        if (!actionCell.querySelector('.btn-skip')) {
-          actionCell.insertAdjacentHTML('beforeend', '<button class="btn-skip" title="Skip this listing">Skip ✗</button>');
-        }
-      }
-    });
-  }
-
   // --- Button "Applied" click ---
   tbody.addEventListener('click', e => {
     const btn = e.target.closest('.btn-applied');
     if (!btn) return;
     const row = btn.closest('tr.data-row');
-    if (!row || (row.dataset.status !== 'manual' && row.dataset.status !== 'a_soumettre')) return;
+    if (!row || row.dataset.status !== 'manual') return;
+    // Animate
     btn.textContent = '✓';
     btn.style.pointerEvents = 'none';
     row.style.transition = 'opacity .3s';
@@ -7996,32 +7330,8 @@
       row.dataset.status = 'submitted';
       row.dataset.source = 'manual';
       row.querySelector('.col-status').innerHTML = '<span class="badge submitted">Submitted</span>';
-      const ac = row.querySelector('.col-action');
-      if (ac) ac.innerHTML = '';
+      row.querySelector('.col-action').innerHTML = '';
       row.style.opacity = '1';
-      saveManualSubmissions();
-      updateCounts();
-      applyFilter(currentFilter);
-    }, 300);
-  });
-
-  // --- Button "Skip" click ---
-  tbody.addEventListener('click', e => {
-    const btn = e.target.closest('.btn-skip');
-    if (!btn) return;
-    const row = btn.closest('tr.data-row');
-    if (!row || (row.dataset.status !== 'manual' && row.dataset.status !== 'a_soumettre')) return;
-    btn.textContent = '✗';
-    btn.style.pointerEvents = 'none';
-    row.style.transition = 'opacity .3s';
-    row.style.opacity = '.5';
-    setTimeout(() => {
-      row.dataset.status = 'skipped';
-      row.querySelector('.col-status').innerHTML = '<span class="badge skipped">Skipped</span>';
-      const ac = row.querySelector('.col-action');
-      if (ac) ac.innerHTML = '';
-      row.style.opacity = '1';
-      saveSkippedSubmissions();
       saveManualSubmissions();
       updateCounts();
       applyFilter(currentFilter);
@@ -8060,7 +7370,6 @@
   resizeVillageCanvas();
   applyView('table');
   loadManualSubmissions();
-  injectCTAButtons();
   updateCounts();
   applyFilter('all');
 })();
