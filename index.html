@@ -10355,7 +10355,7 @@
     rejRows.forEach(key => { const co = key.split('|')[0]; if (co) rejected.add(co); });
 
     rows().forEach(r => {
-      if (r.dataset.status !== 'submitted') return;
+      if (r.dataset.status !== 'submitted' && r.dataset.status !== 'manual') return;
       const company = (r.querySelector('.col-company') || r.cells[3])?.textContent?.trim() || '';
       if (rejected.has(company)) {
         r.dataset.status = 'rejected';
