@@ -540,6 +540,48 @@
 </thead>
 <tbody>
 <!-- TRACKER_INSERT — WARNING: Before adding rows, check for existing company+role combo to avoid duplicates -->
+  <tr class="data-row" data-status="submitted">
+    <td class="col-date" data-label="Date">2026-03-17</td>
+    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
+    <td class="col-role" data-label="Role">Design System Designer</td>
+    <td class="col-company" data-label="Company">GRVT Technologies</td>
+    <td class="col-location" data-label="Location">Remote</td>
+    <td class="col-salary" data-label="Salary">—</td>
+    <td class="col-ats" data-label="ATS">Ashby</td>
+    <td class="col-cv" data-label="CV">✓</td>
+    <td class="col-portfolio" data-label="Portfolio">✓</td>
+    <td class="col-link" data-label="Link">—</td>
+    <td class="col-notes notes" data-label="Notes">Gmail auto-detect</td>
+    <td class="col-action" data-label="Action"></td>
+  </tr>
+  <tr class="data-row" data-status="submitted">
+    <td class="col-date" data-label="Date">2026-03-17</td>
+    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
+    <td class="col-role" data-label="Role">Senior Product Designer</td>
+    <td class="col-company" data-label="Company">Zyte</td>
+    <td class="col-location" data-label="Location">Remote</td>
+    <td class="col-salary" data-label="Salary">—</td>
+    <td class="col-ats" data-label="ATS">Workable</td>
+    <td class="col-cv" data-label="CV">✓</td>
+    <td class="col-portfolio" data-label="Portfolio">✓</td>
+    <td class="col-link" data-label="Link">—</td>
+    <td class="col-notes notes" data-label="Notes">Gmail auto-detect</td>
+    <td class="col-action" data-label="Action"></td>
+  </tr>
+  <tr class="data-row" data-status="submitted">
+    <td class="col-date" data-label="Date">2026-03-13</td>
+    <td class="col-status" data-label="Status"><span class="badge submitted">Submitted</span></td>
+    <td class="col-role" data-label="Role">Senior UX Designer</td>
+    <td class="col-company" data-label="Company">SeatGeek</td>
+    <td class="col-location" data-label="Location">Remote</td>
+    <td class="col-salary" data-label="Salary">—</td>
+    <td class="col-ats" data-label="ATS">Custom</td>
+    <td class="col-cv" data-label="CV">✓</td>
+    <td class="col-portfolio" data-label="Portfolio">✓</td>
+    <td class="col-link" data-label="Link">—</td>
+    <td class="col-notes notes" data-label="Notes">Gmail auto-detect</td>
+    <td class="col-action" data-label="Action"></td>
+  </tr>
   <tr class="data-row" data-status="skipped">
     <td class="col-date" data-label="Date">2026-03-14</td>
     <td class="col-status" data-label="Status"><span class="badge skipped">Skipped</span></td>
@@ -9707,7 +9749,7 @@
   // Company HQ mapping (researched) for "Remote" jobs without region in location
   const COMPANY_HQ = {
     // APAC
-    'Agoda':'apac','Makro PRO':'apac','Seven Peaks':'apac','BukuWarung':'apac','MoMo (M_Service)':'apac',
+    'Agoda':'apac','Makro PRO':'apac','Seven Peaks':'apac','BukuWarung':'apac','MoMo (M_Service)':'apac','GRVT Technologies':'apac','ELSA':'apac',
     'BJAK':'apac','M TELECOMMUNICATIONS SDN BHD':'apac','mx51':'apac','Okendo':'apac','ecoPortal':'apac',
     'InnoCraft (Matomo)':'apac','TOKEN2049':'apac','Linktree':'apac','Who Gives A Crap':'apac',
     'Heidi':'apac','Vivo':'apac','Crossing Hurdles':'apac','PickFans':'apac','Dijitally':'apac',
@@ -9715,7 +9757,7 @@
     'Wiraa':'apac','9D Technologies':'apac','Celer Network':'apac','Crestbrick':'apac',
     'Great Value Hiring':'apac','Uplers':'apac','Samsung Food':'apac',
     // EMEA
-    'Canonical':'emea','TryHackMe':'emea','Accurx':'emea','vivenu':'emea','Tabby':'emea',
+    'Canonical':'emea','TryHackMe':'emea','Accurx':'emea','vivenu':'emea','Tabby':'emea','Zyte':'emea',
     'The Citco Group Limited':'emea','Nagarro':'emea','Nezt':'emea','AppliedAI':'emea',
     'Digipal':'emea','Quadcode':'emea','Planner 5D':'emea','Renmoney':'emea','Scoutit':'emea',
     'Oogwai Analytics':'emea','AMBERSTAR':'emea','Social Discovery Group':'emea','Cloudinary':'emea',
@@ -9778,7 +9820,7 @@
     'ElectronX':'americas','Gusto':'americas','Triple Whale':'americas','Whatnot':'americas',
     'AITHER':'americas','Pinterest':'americas','New Era Technology':'americas','Spoke':'americas',
     'ClickUp':'americas','Hostaway':'americas','Uscreen':'americas','Upstart 13':'americas',
-    'Seed Health':'americas','Zapier':'americas','MetaLab':'americas','Buyers Edge Platform':'americas',
+    'Seed Health':'americas','Zapier':'americas','MetaLab':'americas','Buyers Edge Platform':'americas','SeatGeek':'americas','Super.com':'americas',
     'CrowdRiff':'americas','Cleric':'americas','Vetcove':'americas','Hungryroot':'americas',
     'Stable':'americas','DailyPay':'americas','Mark43':'americas','Pvotal Technologies':'americas',
     'Omie':'americas','TeamSnap':'americas','AXS':'americas','MagicSchool AI':'americas',
@@ -9883,7 +9925,8 @@
     'Social Discovery Group','Nourish Care','Crossover','Artificial Labs','Zenitech',
     'Deel','Patrianna','Primer','Primer.io','Breadcrumb','SmartRecruiters','Bazaarvoice',
     'vivenu','Sertis','Sinch','Coder','MapTiler','CoW DAO','CoW Protocol (CoW DAO)',
-    'Spoke','XBOW','Playlist','Shae Group','Human Intelligence'
+    'Spoke','XBOW','Playlist','Shae Group','Human Intelligence',
+    'Super.com','Addepar'
   ];
   // Merge known + cached rejections
   const cachedRej = loadCachedRejections();
