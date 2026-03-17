@@ -166,6 +166,12 @@
   }
   .btn-skip:hover { background: #7f1d1d; color: #fca5a5; border-color: #991b1b; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(248,113,113,.15); }
   .btn-skip:active { transform: translateY(0); }
+  .btn-reject {
+    padding: 5px 10px; border-radius: 6px; font-size: 11px; font-weight: 600;
+    cursor: pointer; font-family: inherit; transition: all .15s;
+    background: transparent; color: #a855f7; border: 1px solid #581c87;
+  }
+  .btn-reject:hover { background: #581c87; color: #e9d5ff; border-color: #7e22ce; }
 
   /* === ACTION COLUMN === */
   .col-action { text-align: center; white-space: nowrap; }
@@ -9829,7 +9835,19 @@
   let villageFrame = null;
 
   // --- 3D Village Bridge API ---
-  const villageState = { completeHouses: 0, buildPct: 0, forge: 0 };
+  const villageState = { completeHouses: 0, buildPct: 0, forge: 0, submittedJobs: [], rejectedCompanies: new Set() };
+
+  function collectSubmittedJobs() {
+    const jobs = [];
+    rows().forEach(r => {
+      if (r.dataset.status === 'submitted') {
+        const company = (r.querySelector('.col-company') || r.cells[3])?.textContent?.trim() || '';
+        const role = (r.querySelector('.col-role') || r.cells[2])?.textContent?.trim() || '';
+        if (company) jobs.push({ company, role });
+      }
+    });
+    return jobs;
+  }
 
   function updateVillageMetrics(submitted) {
     const completeHouses = Math.floor(submitted / 100);
@@ -9840,10 +9858,35 @@
     villageState.completeHouses = completeHouses;
     villageState.buildPct = buildPct / 100;
     villageState.forge = submittedPct / 100;
+    villageState.submittedJobs = collectSubmittedJobs();
     const tag = document.getElementById('village-status-tag');
     tag.textContent = buildPct === 0 ? 'Maison terminée' : 'Chantier actif';
     if (window.voxelVillage) window.voxelVillage.updateState(villageState);
   }
+
+  // Try loading rejections from localStorage (offline cache)
+  function loadCachedRejections() {
+    try {
+      const cached = localStorage.getItem('village_rejections');
+      if (cached) return new Set(JSON.parse(cached));
+    } catch (e) {}
+    return new Set();
+  }
+  function saveCachedRejections(rejected) {
+    try { localStorage.setItem('village_rejections', JSON.stringify([...rejected])); } catch (e) {}
+  }
+  // Known rejections from Gmail (🦸‍♂️Candidature label, parsed 2026-03-17)
+  const KNOWN_REJECTIONS = [
+    'Social Discovery Group','Nourish Care','Crossover','Artificial Labs','Zenitech',
+    'Deel','Patrianna','Primer','Primer.io','Breadcrumb','SmartRecruiters','Bazaarvoice',
+    'vivenu','Sertis','Sinch','Coder','MapTiler','CoW DAO','CoW Protocol (CoW DAO)',
+    'Spoke','XBOW','Playlist','Shae Group','Human Intelligence'
+  ];
+  // Merge known + cached rejections
+  const cachedRej = loadCachedRejections();
+  KNOWN_REJECTIONS.forEach(c => cachedRej.add(c));
+  saveCachedRejections(cachedRej);
+  villageState.rejectedCompanies = cachedRej;
 
   function startVillage() {
     if (window.voxelVillage) {
@@ -10055,6 +10098,15 @@
 
   // --- Inject CTA buttons into all manual / a_soumettre rows ---
   function injectCTAButtons() {
+    // Add reject buttons for submitted rows
+    rows().forEach(r => {
+      if (r.dataset.status === 'submitted') {
+        let ac = r.querySelector('.col-action');
+        if (ac && !ac.querySelector('.btn-reject')) {
+          ac.insertAdjacentHTML('beforeend', '<button class="btn-reject" title="Mark as rejected">Reject 💀</button>');
+        }
+      }
+    });
     rows().forEach(r => {
       const s = r.dataset.status;
       if (s !== 'manual' && s !== 'a_soumettre') return;
@@ -10086,6 +10138,23 @@
       }
     });
   }
+
+  // --- Button "Reject" click ---
+  tbody.addEventListener('click', e => {
+    const btn = e.target.closest('.btn-reject');
+    if (!btn) return;
+    const row = btn.closest('tr.data-row');
+    if (!row) return;
+    const company = (row.querySelector('.col-company') || row.cells[3])?.textContent?.trim() || '';
+    if (!company) return;
+    btn.textContent = '💀';
+    btn.style.pointerEvents = 'none';
+    // Add to rejections
+    villageState.rejectedCompanies.add(company);
+    saveCachedRejections(villageState.rejectedCompanies);
+    // Update village to kill the villager
+    if (window.voxelVillage) window.voxelVillage.updateState(villageState);
+  });
 
   // --- Button "Applied" click ---
   tbody.addEventListener('click', e => {
@@ -11208,6 +11277,146 @@ class VillagerNPC {
 }
 
 // ============================================================
+// G2. SUBMITTED VILLAGERS (1 per submitted application)
+// ============================================================
+class SubmittedVillagerNPC {
+  constructor(scene, company, role, isDead) {
+    this.group = new THREE.Group();
+    this.company = company;
+    this.jobRole = role;
+    this.isDead = isDead;
+    this._scene = scene;
+
+    // Deterministic position from company name hash
+    let hash = 0;
+    for (let i = 0; i < company.length; i++) hash = ((hash << 5) - hash + company.charCodeAt(i)) | 0;
+    const hAbs = Math.abs(hash);
+    const spawnX = 3 + (hAbs % (WORLD_W - 6));
+    const spawnZ = 3 + ((hAbs >> 8) % (WORLD_D - 6));
+
+    // Appearance from hash
+    const skinTones = ['#D2A06C', '#C49A6C', '#E0BF98', '#B87A4B', '#8D5524', '#A0785A'];
+    const skin = skinTones[hAbs % skinTones.length];
+    const shirtColors = ['#E06040', '#4A90D9', '#65B847', '#D4A843', '#B05EC5', '#48B8D0', '#E8A020', '#D05070'];
+    const shirt = shirtColors[(hAbs >> 3) % shirtColors.length];
+    const pantsColors = ['#4A3728', '#3A4A5A', '#5A3A3A', '#2A3A2A'];
+    const pants = pantsColors[(hAbs >> 6) % pantsColors.length];
+
+    // Build body
+    this.head = this._box(0.32, 0.32, 0.32, skin, 0, 1.3, 0);
+    this._box(0.38, 0.42, 0.22, shirt, 0, 0.88, 0); // torso
+    this.lArm = this._box(0.13, 0.38, 0.13, skin, -0.26, 0.88, 0);
+    this.rArm = this._box(0.13, 0.38, 0.13, skin, 0.26, 0.88, 0);
+    this.lLeg = this._box(0.14, 0.38, 0.14, pants, -0.09, 0.22, 0);
+    this.rLeg = this._box(0.14, 0.38, 0.14, pants, 0.09, 0.22, 0);
+    this.lArm.geometry.translate(0, -0.19, 0); this.lArm.position.y += 0.19;
+    this.rArm.geometry.translate(0, -0.19, 0); this.rArm.position.y += 0.19;
+    this.lLeg.geometry.translate(0, -0.19, 0); this.lLeg.position.y += 0.19;
+    this.rLeg.geometry.translate(0, -0.19, 0); this.rLeg.position.y += 0.19;
+
+    const groundY = getHeight(Math.floor(spawnX), Math.floor(spawnZ));
+    this.group.position.set(spawnX, groundY + 1, spawnZ);
+    this.group.scale.set(0.7, 0.7, 0.7);
+    scene.add(this.group);
+
+    // State
+    this.state = isDead ? 'DEAD' : 'IDLE';
+    this.timer = 2 + (hAbs % 5);
+    this.walkTarget = new THREE.Vector3();
+    this.walkSpeed = 0.8 + (hAbs % 30) / 50;
+    this._phase = (hAbs % 100) / 10;
+
+    if (isDead) this._die();
+
+    // Nameplate (hidden, shown on click)
+    this.label = null;
+  }
+
+  _box(w, h, d, color, x, y, z) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({ color, roughness: 0.85 }));
+    m.position.set(x, y, z); m.castShadow = true;
+    m.userData.submittedVillager = this;
+    this.group.add(m);
+    return m;
+  }
+
+  _die() {
+    this.isDead = true;
+    this.state = 'DEAD';
+    // Lay flat on ground — rotate X 90deg
+    this.group.rotation.x = -Math.PI / 2;
+    const groundY = getHeight(Math.floor(this.group.position.x), Math.floor(this.group.position.z));
+    this.group.position.y = groundY + 0.3;
+    // Grey out all materials
+    this.group.traverse(child => {
+      if (child.isMesh && child.material) {
+        const c = child.material.color;
+        const grey = c.r * 0.3 + c.g * 0.3 + c.b * 0.3;
+        child.material = child.material.clone();
+        child.material.color.setRGB(grey * 0.6, grey * 0.6, grey * 0.65);
+      }
+    });
+    // Add small cross tombstone
+    const cross1 = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.6, 0.08), new THREE.MeshStandardMaterial({ color: '#5C3A1A' }));
+    cross1.position.set(this.group.position.x, getHeight(Math.floor(this.group.position.x), Math.floor(this.group.position.z)) + 0.5, this.group.position.z - 0.5);
+    this._scene.add(cross1);
+    const cross2 = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.08, 0.08), new THREE.MeshStandardMaterial({ color: '#5C3A1A' }));
+    cross2.position.set(cross1.position.x, cross1.position.y + 0.15, cross1.position.z);
+    this._scene.add(cross2);
+  }
+
+  kill() {
+    if (this.isDead) return;
+    this._die();
+  }
+
+  update(dt) {
+    if (this.isDead) return;
+    const t = performance.now() * 0.001;
+    this.timer -= dt;
+
+    if (this.state === 'IDLE') {
+      this.head.rotation.y = Math.sin(t * 0.5 + this._phase) * 0.2;
+      if (this.timer <= 0) {
+        this.state = Math.random() < 0.6 ? 'WALK' : 'IDLE';
+        this.timer = 4 + Math.random() * 6;
+        if (this.state === 'WALK') {
+          const a = Math.random() * Math.PI * 2, d = 3 + Math.random() * 5;
+          let tx = this.group.position.x + Math.cos(a) * d;
+          let tz = this.group.position.z + Math.sin(a) * d;
+          tx = Math.max(3, Math.min(WORLD_W - 3, tx));
+          tz = Math.max(3, Math.min(WORLD_D - 3, tz));
+          this.walkTarget.set(tx, 1, tz);
+        }
+      }
+    } else if (this.state === 'WALK') {
+      const pos = this.group.position;
+      const dx = this.walkTarget.x - pos.x, dz = this.walkTarget.z - pos.z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      if (dist < 0.5 || this.timer <= 0) {
+        this.state = 'IDLE'; this.timer = 3 + Math.random() * 5;
+        this.head.rotation.set(0, 0, 0);
+        this.lLeg.rotation.x = 0; this.rLeg.rotation.x = 0;
+        this.lArm.rotation.x = 0; this.rArm.rotation.x = 0;
+      } else {
+        const spd = this.walkSpeed * dt;
+        pos.x += (dx / dist) * Math.min(spd, dist);
+        pos.z += (dz / dist) * Math.min(spd, dist);
+        pos.y = getHeight(Math.max(0, Math.min(WORLD_W - 1, Math.floor(pos.x))), Math.max(0, Math.min(WORLD_D - 1, Math.floor(pos.z)))) + 1;
+        const targetRot = Math.atan2(dx, dz);
+        let diff = targetRot - this.group.rotation.y;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        this.group.rotation.y += diff * Math.min(1, dt * 5);
+        const s = Math.sin(t * 5);
+        this.lLeg.rotation.x = s * 0.3; this.rLeg.rotation.x = -s * 0.3;
+        this.lArm.rotation.x = -s * 0.15; this.rArm.rotation.x = s * 0.15;
+      }
+    }
+  }
+}
+
+// ============================================================
 // H. PLAYER CONTROLS + PHYSICS
 // ============================================================
 class PlayerController {
@@ -11622,6 +11831,10 @@ if (container) {
   const villagers = [];
   let villagerHouseCount = 0;
 
+  // Submitted villagers — 1 per submitted application
+  const submittedVillagers = [];
+  const submittedVillagerMap = {}; // key: company|role → villager
+
   // Camera start position — overlooking the village from a good angle
   const camX = WORLD_W * 0.6, camZ = WORLD_D * 0.7;
   const camH = getHeight(Math.floor(camX), Math.floor(camZ));
@@ -11639,6 +11852,7 @@ if (container) {
     bot.update(dt);
     cows.forEach(c => c.update(dt));
     villagers.forEach(v => v.update(dt, cows));
+    submittedVillagers.forEach(sv => sv.update(dt));
     particles.update(dt);
     updateDayNight(elapsed, lights, skyMat, scene);
     renderer.render(scene, camera);
@@ -11651,6 +11865,52 @@ if (container) {
     if (w > 0 && h > 0) { camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h); }
   });
   ro.observe(container);
+
+  // Click on villager to see info
+  const raycaster = new THREE.Raycaster();
+  const clickMouse = new THREE.Vector2();
+  let villagerTooltip = null;
+
+  container.addEventListener('click', (e) => {
+    if (player.controls.isLocked) {
+      // FPS mode — cast from center
+      raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+    } else {
+      return; // only works in FPS mode
+    }
+    const allMeshes = [];
+    submittedVillagers.forEach(sv => {
+      sv.group.traverse(child => { if (child.isMesh) allMeshes.push(child); });
+    });
+    const hits = raycaster.intersectObjects(allMeshes, false);
+    if (hits.length > 0) {
+      const sv = hits[0].object.userData.submittedVillager;
+      if (sv) {
+        // Show/hide tooltip
+        if (villagerTooltip) { scene.remove(villagerTooltip); villagerTooltip = null; }
+        const canvas = document.createElement('canvas');
+        canvas.width = 512; canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = sv.isDead ? 'rgba(80,20,20,0.9)' : 'rgba(20,20,40,0.9)';
+        ctx.roundRect(0, 0, 512, 128, 12); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 28px sans-serif';
+        ctx.fillText(sv.isDead ? '💀 RIP' : '🧑 Villager', 16, 40);
+        ctx.font = '22px sans-serif'; ctx.fillStyle = '#ccc';
+        ctx.fillText(sv.company, 16, 75);
+        ctx.font = '18px sans-serif'; ctx.fillStyle = '#999';
+        ctx.fillText(sv.jobRole, 16, 105);
+        const tex = new THREE.CanvasTexture(canvas);
+        const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+        villagerTooltip = new THREE.Sprite(spriteMat);
+        villagerTooltip.scale.set(4, 1, 1);
+        villagerTooltip.position.copy(sv.group.position);
+        villagerTooltip.position.y += sv.isDead ? 1.5 : 2.5;
+        scene.add(villagerTooltip);
+        // Auto-hide after 4s
+        setTimeout(() => { if (villagerTooltip) { scene.remove(villagerTooltip); villagerTooltip = null; } }, 4000);
+      }
+    }
+  });
 
   // Public API
   window.voxelVillage = {
@@ -11683,6 +11943,26 @@ if (container) {
           villagers.push(new VillagerNPC(scene, s.x + 2, s.z + 2, role));
         });
         villagerHouseCount++;
+      }
+      // Spawn submitted villagers (1 per submitted application)
+      if (state.submittedJobs) {
+        state.submittedJobs.forEach(job => {
+          const key = job.company + '|' + job.role;
+          if (!submittedVillagerMap[key]) {
+            const isRejected = state.rejectedCompanies && state.rejectedCompanies.has(job.company);
+            const sv = new SubmittedVillagerNPC(scene, job.company, job.role, isRejected);
+            submittedVillagers.push(sv);
+            submittedVillagerMap[key] = sv;
+          }
+        });
+      }
+      // Kill villagers for newly rejected companies
+      if (state.rejectedCompanies) {
+        submittedVillagers.forEach(sv => {
+          if (!sv.isDead && state.rejectedCompanies.has(sv.company)) {
+            sv.kill();
+          }
+        });
       }
       // Forge fire — intensity scales with submitted percentage
       forgeFireIntensity = state.forge || 0;
