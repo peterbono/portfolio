@@ -139,6 +139,8 @@
   .badge.saved::before { content: "\25CF"; color: #38bdf8; }
   .badge.failed { background: #2a0808; color: #f87171; border-color: #450a0a; }
   .badge.failed::before { content: "\25CF"; color: #f87171; }
+  .badge.rejected { background: #1a0a2e; color: #a855f7; border-color: #3b0764; }
+  .badge.rejected::before { content: "\1F480"; }
   .badge.applied { background: #052e1f; color: #4ade80; border-color: #064e3b; }
   .badge.wip { background: #2a1505; color: #facc15; border-color: #422006; }
   .badge.pending { background: #0c2844; color: #60a5fa; border-color: #1e3a5f; }
@@ -462,6 +464,7 @@
   <div class="stat" data-filter="manual" style="color:#fb923c"><div class="stat-icon">&#9998;</div><div class="stat-number" style="color:#fb923c" id="count-manual">0</div><div class="stat-label">To Submit</div></div>
   <div class="stat" data-filter="saved" style="color:#38bdf8"><div class="stat-icon">&#9889;</div><div class="stat-number" style="color:#38bdf8" id="count-saved">0</div><div class="stat-label">Easy Apply</div></div>
   <div class="stat" data-filter="already" style="color:#a78bfa"><div class="stat-icon">&#8635;</div><div class="stat-number" style="color:#a78bfa" id="count-applied">0</div><div class="stat-label">Already</div></div>
+  <div class="stat" data-filter="rejected" style="color:#a855f7"><div class="stat-icon">&#128128;</div><div class="stat-number" style="color:#a855f7" id="count-rejected">0</div><div class="stat-label">Rejected</div></div>
   <div class="stat" data-filter="failed" style="color:#f87171"><div class="stat-icon">&#10007;</div><div class="stat-number" style="color:#f87171" id="count-failed">0</div><div class="stat-label">Failed</div></div>
   <div class="stat" data-filter="skipped" style="color:#52525b"><div class="stat-icon">&#8594;</div><div class="stat-number" style="color:#52525b" id="count-skipped">0</div><div class="stat-label">Skipped</div></div>
 </div>
@@ -10004,7 +10007,7 @@
   // --- Count & display stats ---
   function updateCounts() {
     const all = rows();
-    const counts = { submitted: 0, manual: 0, saved: 0, already: 0, failed: 0, skipped: 0 };
+    const counts = { submitted: 0, manual: 0, saved: 0, already: 0, failed: 0, skipped: 0, rejected: 0 };
     all.forEach(r => { const s = r.dataset.status; if (s === 'a_soumettre') counts.manual++; else if (counts[s] !== undefined) counts[s]++; });
     document.getElementById('count-all').textContent = all.length;
     document.getElementById('count-submitted').textContent = counts.submitted;
@@ -10013,6 +10016,7 @@
     document.getElementById('count-applied').textContent = counts.already;
     document.getElementById('count-failed').textContent = counts.failed;
     document.getElementById('count-skipped').textContent = counts.skipped;
+    document.getElementById('count-rejected').textContent = counts.rejected;
     updateProgress(counts.submitted, all.length);
     updateVillageMetrics(counts.submitted);
   }
@@ -10147,13 +10151,27 @@
     if (!row) return;
     const company = (row.querySelector('.col-company') || row.cells[3])?.textContent?.trim() || '';
     if (!company) return;
-    btn.textContent = '💀';
-    btn.style.pointerEvents = 'none';
-    // Add to rejections
-    villageState.rejectedCompanies.add(company);
-    saveCachedRejections(villageState.rejectedCompanies);
-    // Update village to kill the villager
-    if (window.voxelVillage) window.voxelVillage.updateState(villageState);
+    row.style.transition = 'opacity .3s';
+    row.style.opacity = '.5';
+    setTimeout(() => {
+      row.dataset.status = 'rejected';
+      row.querySelector('.col-status').innerHTML = '<span class="badge rejected">Rejected</span>';
+      const ac = row.querySelector('.col-action');
+      if (ac) ac.innerHTML = '';
+      row.style.opacity = '1';
+      // Add to rejections
+      villageState.rejectedCompanies.add(company);
+      saveCachedRejections(villageState.rejectedCompanies);
+      // Save in localStorage for persistence
+      const rejKeys = JSON.parse(localStorage.getItem('village_rejected_rows') || '[]');
+      const key = company + '|' + ((row.querySelector('.col-role') || row.cells[2])?.textContent?.trim() || '');
+      if (!rejKeys.includes(key)) rejKeys.push(key);
+      localStorage.setItem('village_rejected_rows', JSON.stringify(rejKeys));
+      updateCounts();
+      applyFilter(currentFilter);
+      // Update village to kill the villager
+      if (window.voxelVillage) window.voxelVillage.updateState(villageState);
+    }, 300);
   });
 
   // --- Button "Applied" click ---
@@ -10286,8 +10304,28 @@
     });
   };
 
+  // --- Apply known rejections to submitted rows ---
+  function applyRejections() {
+    const rejected = villageState.rejectedCompanies;
+    // Also load manually rejected rows
+    const rejRows = JSON.parse(localStorage.getItem('village_rejected_rows') || '[]');
+    rejRows.forEach(key => { const co = key.split('|')[0]; if (co) rejected.add(co); });
+
+    rows().forEach(r => {
+      if (r.dataset.status !== 'submitted') return;
+      const company = (r.querySelector('.col-company') || r.cells[3])?.textContent?.trim() || '';
+      if (rejected.has(company)) {
+        r.dataset.status = 'rejected';
+        r.querySelector('.col-status').innerHTML = '<span class="badge rejected">Rejected</span>';
+        const ac = r.querySelector('.col-action');
+        if (ac) ac.innerHTML = '';
+      }
+    });
+  }
+
   // --- Init ---
   loadManualSubmissions();
+  applyRejections();
   injectCTAButtons();
   populateCompanyDropdown();
   detectDuplicates();
