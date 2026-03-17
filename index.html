@@ -499,7 +499,6 @@
     <option value="apac">🌏 APAC</option>
     <option value="emea">🌍 EMEA</option>
     <option value="americas">🌎 Americas</option>
-    <option value="remote">🌐 Remote (Global)</option>
   </select>
   <select id="company-filter">
     <option value="">All companies</option>
@@ -9696,8 +9695,109 @@
   let currentCompany = '';
   let currentArea = '';
 
-  // Classify location text into area region
-  function getArea(loc) {
+  // Company HQ mapping (researched) for "Remote" jobs without region in location
+  const COMPANY_HQ = {
+    // APAC
+    'Agoda':'apac','Makro PRO':'apac','Seven Peaks':'apac','BukuWarung':'apac','MoMo (M_Service)':'apac',
+    'BJAK':'apac','M TELECOMMUNICATIONS SDN BHD':'apac','mx51':'apac','Okendo':'apac','ecoPortal':'apac',
+    'InnoCraft (Matomo)':'apac','TOKEN2049':'apac','Linktree':'apac','Who Gives A Crap':'apac',
+    'Heidi':'apac','Vivo':'apac','Crossing Hurdles':'apac','PickFans':'apac','Dijitally':'apac',
+    'HelloConnect':'apac','Orius Digital':'apac','UNICEF Bangladesh':'apac','Nimble':'apac',
+    'Wiraa':'apac','9D Technologies':'apac','Celer Network':'apac','Crestbrick':'apac',
+    'Great Value Hiring':'apac','Uplers':'apac','Samsung Food':'apac',
+    // EMEA
+    'Canonical':'emea','TryHackMe':'emea','Accurx':'emea','vivenu':'emea','Tabby':'emea',
+    'The Citco Group Limited':'emea','Nagarro':'emea','Nezt':'emea','AppliedAI':'emea',
+    'Digipal':'emea','Quadcode':'emea','Planner 5D':'emea','Renmoney':'emea','Scoutit':'emea',
+    'Oogwai Analytics':'emea','AMBERSTAR':'emea','Social Discovery Group':'emea','Cloudinary':'emea',
+    'BeInCrypto':'emea','Jobgether':'emea','Hyphen Connect':'emea','Beyond':'emea',
+    'Vaultforte':'emea','Jibstar Business':'emea','Algrano':'emea','BetterMe':'emea',
+    'UX Labs':'emea','Rareloop':'emea','Makaseb (MindHux)':'emea','Remote Recruitment (Hummingbird)':'emea',
+    'Xapo':'emea','Back Market':'emea','Solidroad':'emea','Li.fi':'emea','Fabulous':'emea',
+    'Contentsquare':'emea','Hoxton Wealth':'emea','Gravitas Recruitment':'emea','Roc Search':'emea',
+    'Referment':'emea','CyberWissen':'emea','Impala Search':'emea','Minute Media':'emea',
+    '90min':'emea','Feazer':'emea','Arabot':'emea','Revolut':'emea','Feeld':'emea','Cosuno':'emea',
+    'Douro Labs':'emea','Aligned':'emea','Calqulate':'emea','Fasset':'emea','Anima':'emea',
+    'Partisia Blockchain':'emea','edenity (Duna)':'emea','Triad Group':'emea','Monks':'emea',
+    'Ingeni Solutions':'emea','Contentful':'emea','FW.D':'emea','FW.D (Foundry Works Design)':'emea',
+    'Influencity':'emea','SteelSeries':'emea','Sport Alliance':'emea','YouGov':'emea','Proxify':'emea',
+    'Futureheads':'emea','Centrica':'emea','emagine':'emea','TECHOHANA':'emea','Twenix':'emea',
+    'CoW DAO':'emea','CoW Protocol (CoW DAO)':'emea','Amaris Consulting':'emea','Tomorrow Recruitment':'emea',
+    'Photoroom':'emea','Artificial Labs':'emea','Morson Edge':'emea','tem':'emea','Bolt':'emea',
+    'Patrianna':'emea','FYST':'emea','Sporty Group':'emea','Twine':'emea','Smarter Technologies':'emea',
+    'EverAI':'emea','n8n':'emea','Codekeeper':'emea','Search Dates':'emea','Gravitas':'emea',
+    'Nourish Care':'emea','AutoDS':'emea',
+    // AMERICAS
+    'Xsolla':'americas','Fundraise Up':'americas','VRChat':'americas','Puffy':'americas',
+    'Get Offers':'americas','Get Offers / Mercor':'americas','Braintrust':'americas','Deel':'americas',
+    'PadSplit':'americas','Decile Group':'americas','Facet':'americas','Constructor':'americas',
+    'Stack Influence':'americas','Remote.com':'americas','LTK':'americas','Jerry.ai':'americas',
+    'Jerry':'americas','XXIX / garden3d':'americas','XXIX / Sanctuary Computer':'americas',
+    'XXIX (garden3d)':'americas','Chess.com':'americas','Agility Consulting':'americas',
+    'Zipline':'americas','HubSpot':'americas','Figma':'americas','Figma (Growth)':'americas',
+    'Figma (AI Models)':'americas','Kraken':'americas','Instacart':'americas','Superhuman':'americas',
+    'Lightspeed Commerce':'americas','Commit':'americas','Designity':'americas','BitMart':'americas',
+    'Bitget Wallet':'americas','Deloitte':'americas','Supermicro':'americas','Binance':'americas',
+    'TrendAI':'americas','Crossover':'americas','Careerminds':'americas','Prime Insights':'americas',
+    'Intetics':'americas','X-Team':'americas','Icon':'americas','Smartsheet':'americas',
+    'Infogain':'americas','Netomi':'americas','Seismic':'americas','Brightly Software':'americas',
+    'Optimizely':'americas','OPSWAT':'americas','Lawfty':'americas','Peregrine Technologies':'americas',
+    'Authority Wit':'americas','Nuvemshop':'americas','Huge Inc':'americas','Hightouch':'americas',
+    'PetDesk':'americas','Keep Company':'americas','TrapWire Inc':'americas','TrapWire Inc.':'americas',
+    'Valital Technologies':'americas','Onit':'americas','GoFan':'americas','YipitData':'americas',
+    'First Vulcan Inc':'americas','First Vulcan Inc.':'americas','BayOne Solutions':'americas',
+    'RemoteHunter':'americas','Zeta Global':'americas','Five9':'americas',
+    'Stellar Consulting Solutions':'americas','HighLevel':'americas','Hive':'americas',
+    'Samba TV':'americas','WISEcode':'americas','Coupa Software':'americas','Valence':'americas',
+    'doola':'americas','Huckleberry Labs':'americas','HappyCo':'americas','CSC Generation':'americas',
+    'US Mobile':'americas','Bumble':'americas','Anchorage Digital':'americas','Veeva Systems':'americas',
+    'Superside':'americas','Lumin Digital':'americas','Artera':'americas','Human Intelligence':'americas',
+    'Bask Health':'americas','Metabase':'americas','CourtAvenue':'americas','Inclusion Cloud':'americas',
+    'Erbis':'americas','Spreetail':'americas','All Cares':'americas','FreeUp':'americas',
+    'ResultStack':'americas','Biztree':'americas','Global Channel Management':'americas',
+    'Artax Advisors':'americas','Owner.com':'americas','Nearshore Business Solutions':'americas',
+    'Circle':'americas','Circle.so':'americas','Articulate':'americas','onX':'americas',
+    'Splice':'americas','HeartFlow':'americas','ID.me':'americas','BenchPrep':'americas',
+    'Runwise':'americas','Rackner':'americas','Rula':'americas','Close':'americas','Solace':'americas',
+    'Empower Finance':'americas','Drata':'americas','Snowflake':'americas','Replit':'americas',
+    'Redis':'americas','Ramp':'americas','Relay':'americas','Second Dinner':'americas',
+    'Rare Days':'americas','Scenic West Design':'americas','Visit.org':'americas','Mesh':'americas',
+    'Compound':'americas','TimeZest':'americas','Metajive':'americas','Mindbody':'americas',
+    'WSP':'americas','IntePros':'americas','Vendry':'americas','Bazaarvoice':'americas',
+    'Sciometrix':'americas','Addepar':'americas','Speridian Technologies':'americas',
+    'Upshop':'americas','Vantage Search':'americas','HOS247':'americas','NetRise':'americas',
+    'ElectronX':'americas','Gusto':'americas','Triple Whale':'americas','Whatnot':'americas',
+    'AITHER':'americas','Pinterest':'americas','New Era Technology':'americas','Spoke':'americas',
+    'ClickUp':'americas','Hostaway':'americas','Uscreen':'americas','Upstart 13':'americas',
+    'Seed Health':'americas','Zapier':'americas','MetaLab':'americas','Buyers Edge Platform':'americas',
+    'CrowdRiff':'americas','Cleric':'americas','Vetcove':'americas','Hungryroot':'americas',
+    'Stable':'americas','DailyPay':'americas','Mark43':'americas','Pvotal Technologies':'americas',
+    'Omie':'americas','TeamSnap':'americas','AXS':'americas','MagicSchool AI':'americas',
+    'ALT':'americas','Sidecar Health':'americas','Alderson Loop':'americas','Coinbase':'americas',
+    'Terminal':'americas','Aras Corporation':'americas','Fairmarkit':'americas','Venngage':'americas',
+    'Mural':'americas','Stealth iT':'americas','Optomi':'americas','DataAnnotation':'americas',
+    'Webflow':'americas','Calendly':'americas','ServiceTitan':'americas','Ziff Davis':'americas',
+    'Confluent':'americas','NinjaOne':'americas','Lilo Social':'americas','Hibrids':'americas',
+    'Yieldmo':'americas','Achieve':'americas','Zenara Health':'americas','Learneo':'americas',
+    'Palo Alto Networks':'americas','Genea':'americas','Vanta':'americas','Burtch Works':'americas',
+    'Aspire Software':'americas','Rallyware':'americas','BlinkRx':'americas','Apexon':'americas',
+    'Brello':'americas','Horizon3.ai':'americas','Forward Financing':'americas','Lattice':'americas',
+    'Milliman':'americas','Origin':'americas','UN/COMMON':'americas','Hugging Face':'americas',
+    'Thrivent':'americas','Multimedia Solutions':'americas','Linda Werner & Associates':'americas',
+    'TalentNeuron':'americas','Salsify':'americas','FlutterFlow':'americas','NEXTI':'americas',
+    'Dice':'americas','PTR Global':'americas','Motion Recruitment':'americas','REVANCE':'americas',
+    'Haystack':'americas','Dandy':'americas','Marketers by Adlatina':'americas','Darkroom':'americas',
+    'Ashby':'americas','Nextdoor':'americas','Pax8':'americas','Lensa':'americas',
+    'Insight Global':'americas','Ladder':'americas','Fanatics':'americas','Somewhere':'americas',
+    'One North (TEKsystems)':'americas','MojoTech':'americas','Passion.io':'americas',
+    'Passion.io / Hospitable / n8n / Keeper / Modash / CloudTalk / 383':'americas',
+    'Monarch Money':'americas','DoorDash':'americas','Mode Mobile':'americas','Vitally':'americas',
+    'Pearl Talent':'americas','Forbes':'americas','TEEMA':'americas','Artisan':'americas',
+    'Remote':'americas'
+  };
+
+  // Classify location text into area region, with company HQ fallback
+  function getArea(loc, company) {
     const l = (loc || '').toLowerCase();
     // APAC keywords
     const apac = ['apac','thailand','bangkok','singapore','philippines','indonesia','vietnam',
@@ -9719,8 +9819,8 @@
     if (apac.some(k => l.includes(k))) return 'apac';
     if (emea.some(k => l.includes(k))) return 'emea';
     if (amer.some(k => l.includes(k))) return 'americas';
-    // Pure remote without region qualifier
-    if (l.includes('remote') || l.includes('worldwide') || l.includes('global') || l.includes('everywhere')) return 'remote';
+    // Fallback: company HQ lookup
+    if (company && COMPANY_HQ[company]) return COMPANY_HQ[company];
     return '';
   }
   let sortCol = -1;
@@ -9931,7 +10031,8 @@
       // Area filter
       if (match && currentArea) {
         const loc = (r.querySelector('.col-location') || r.cells[4])?.textContent?.trim() || '';
-        match = getArea(loc) === currentArea;
+        const comp2 = (r.querySelector('.col-company') || r.cells[3])?.textContent?.trim() || '';
+        match = getArea(loc, comp2) === currentArea;
       }
       r.classList.toggle('hidden', !match);
     });
