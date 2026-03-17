@@ -11381,25 +11381,64 @@ class SubmittedVillagerNPC {
   _die() {
     this.isDead = true;
     this.state = 'DEAD';
-    // Lay flat on ground — rotate X 90deg
+    const pos = this.group.position;
+    const gx = Math.floor(pos.x), gz = Math.floor(pos.z);
+    const groundY = getHeight(gx, gz);
+
+    // Remove old body meshes
+    while (this.group.children.length) this.group.remove(this.group.children[0]);
+
+    // Build skeleton model
+    const bone = '#E8E0D0';
+    const boneMat = new THREE.MeshStandardMaterial({ color: bone, roughness: 0.7 });
+    const darkMat = new THREE.MeshStandardMaterial({ color: '#1a1a1a', roughness: 0.9 });
+    const _b = (w, h, d, mat, x, y, z) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+      m.position.set(x, y, z); m.castShadow = true;
+      m.userData.submittedVillager = this;
+      this.group.add(m);
+      return m;
+    };
+    // Skull
+    _b(0.30, 0.30, 0.28, boneMat, 0, 1.28, 0);
+    // Eye sockets (dark holes)
+    _b(0.08, 0.07, 0.05, darkMat, -0.07, 1.32, 0.13);
+    _b(0.08, 0.07, 0.05, darkMat, 0.07, 1.32, 0.13);
+    // Nose hole
+    _b(0.04, 0.05, 0.04, darkMat, 0, 1.24, 0.13);
+    // Jaw
+    _b(0.22, 0.06, 0.18, boneMat, 0, 1.12, 0.02);
+    // Ribcage (3 horizontal ribs)
+    _b(0.30, 0.05, 0.16, boneMat, 0, 0.98, 0);
+    _b(0.26, 0.04, 0.14, boneMat, 0, 0.88, 0);
+    _b(0.22, 0.04, 0.12, boneMat, 0, 0.78, 0);
+    // Spine
+    _b(0.06, 0.35, 0.06, boneMat, 0, 0.75, 0);
+    // Pelvis
+    _b(0.24, 0.06, 0.12, boneMat, 0, 0.55, 0);
+    // Arms (bones)
+    _b(0.06, 0.35, 0.06, boneMat, -0.22, 0.82, 0);
+    _b(0.06, 0.35, 0.06, boneMat, 0.22, 0.82, 0);
+    // Hands (small)
+    _b(0.08, 0.08, 0.04, boneMat, -0.22, 0.62, 0);
+    _b(0.08, 0.08, 0.04, boneMat, 0.22, 0.62, 0);
+    // Legs (bones)
+    _b(0.06, 0.38, 0.06, boneMat, -0.08, 0.28, 0);
+    _b(0.06, 0.38, 0.06, boneMat, 0.08, 0.28, 0);
+    // Feet
+    _b(0.08, 0.04, 0.12, boneMat, -0.08, 0.06, 0.03);
+    _b(0.08, 0.04, 0.12, boneMat, 0.08, 0.06, 0.03);
+
+    // Lay flat on ground
     this.group.rotation.x = -Math.PI / 2;
-    const groundY = getHeight(Math.floor(this.group.position.x), Math.floor(this.group.position.z));
-    this.group.position.y = groundY + 0.3;
-    // Grey out all materials
-    this.group.traverse(child => {
-      if (child.isMesh && child.material) {
-        const c = child.material.color;
-        const grey = c.r * 0.3 + c.g * 0.3 + c.b * 0.3;
-        child.material = child.material.clone();
-        child.material.color.setRGB(grey * 0.6, grey * 0.6, grey * 0.65);
-      }
-    });
-    // Add small cross tombstone
+    pos.y = groundY + 0.3;
+
+    // Small wooden cross tombstone
     const cross1 = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.6, 0.08), new THREE.MeshStandardMaterial({ color: '#5C3A1A' }));
-    cross1.position.set(this.group.position.x, getHeight(Math.floor(this.group.position.x), Math.floor(this.group.position.z)) + 0.5, this.group.position.z - 0.5);
+    cross1.position.set(pos.x, groundY + 0.5, pos.z - 0.5);
     this._scene.add(cross1);
     const cross2 = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.08, 0.08), new THREE.MeshStandardMaterial({ color: '#5C3A1A' }));
-    cross2.position.set(cross1.position.x, cross1.position.y + 0.15, cross1.position.z);
+    cross2.position.set(pos.x, groundY + 0.65, pos.z - 0.5);
     this._scene.add(cross2);
   }
 
