@@ -11435,11 +11435,13 @@ class SubmittedVillagerNPC {
 
     // Remove old body meshes
     while (this.group.children.length) this.group.remove(this.group.children[0]);
+    this.group.rotation.set(0, 0, 0);
+    this.group.scale.set(0.7, 0.7, 0.7);
 
-    // Build skeleton model
-    const bone = '#E8E0D0';
-    const boneMat = new THREE.MeshStandardMaterial({ color: bone, roughness: 0.7 });
-    const darkMat = new THREE.MeshStandardMaterial({ color: '#1a1a1a', roughness: 0.9 });
+    // Minecraft-style skeleton: same humanoid shape but gray + thinner limbs
+    const gray = new THREE.MeshStandardMaterial({ color: '#C0C0C0', roughness: 0.7, emissive: '#222222' });
+    const darkGray = new THREE.MeshStandardMaterial({ color: '#808080', roughness: 0.7, emissive: '#111111' });
+    const eyeMat = new THREE.MeshStandardMaterial({ color: '#1a1a1a', roughness: 0.9 });
     const _b = (w, h, d, mat, x, y, z) => {
       const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
       m.position.set(x, y, z); m.castShadow = true;
@@ -11447,47 +11449,36 @@ class SubmittedVillagerNPC {
       this.group.add(m);
       return m;
     };
-    // Skull
-    _b(0.30, 0.30, 0.28, boneMat, 0, 1.28, 0);
-    // Eye sockets (dark holes)
-    _b(0.08, 0.07, 0.05, darkMat, -0.07, 1.32, 0.13);
-    _b(0.08, 0.07, 0.05, darkMat, 0.07, 1.32, 0.13);
-    // Nose hole
-    _b(0.04, 0.05, 0.04, darkMat, 0, 1.24, 0.13);
-    // Jaw
-    _b(0.22, 0.06, 0.18, boneMat, 0, 1.12, 0.02);
-    // Ribcage (3 horizontal ribs)
-    _b(0.30, 0.05, 0.16, boneMat, 0, 0.98, 0);
-    _b(0.26, 0.04, 0.14, boneMat, 0, 0.88, 0);
-    _b(0.22, 0.04, 0.12, boneMat, 0, 0.78, 0);
-    // Spine
-    _b(0.06, 0.35, 0.06, boneMat, 0, 0.75, 0);
-    // Pelvis
-    _b(0.24, 0.06, 0.12, boneMat, 0, 0.55, 0);
-    // Arms (bones)
-    _b(0.06, 0.35, 0.06, boneMat, -0.22, 0.82, 0);
-    _b(0.06, 0.35, 0.06, boneMat, 0.22, 0.82, 0);
-    // Hands (small)
-    _b(0.08, 0.08, 0.04, boneMat, -0.22, 0.62, 0);
-    _b(0.08, 0.08, 0.04, boneMat, 0.22, 0.62, 0);
-    // Legs (bones)
-    _b(0.06, 0.38, 0.06, boneMat, -0.08, 0.28, 0);
-    _b(0.06, 0.38, 0.06, boneMat, 0.08, 0.28, 0);
-    // Feet
-    _b(0.08, 0.04, 0.12, boneMat, -0.08, 0.06, 0.03);
-    _b(0.08, 0.04, 0.12, boneMat, 0.08, 0.06, 0.03);
 
-    // Lay flat on ground — rotate so Y-axis body lies along Z-axis world
+    // Head — big cube like Minecraft skeleton
+    _b(0.34, 0.34, 0.34, gray, 0, 1.32, 0);
+    // Eye band (dark horizontal strip across face)
+    _b(0.35, 0.08, 0.06, eyeMat, 0, 1.34, 0.16);
+    // Nose shadow
+    _b(0.06, 0.06, 0.04, eyeMat, 0, 1.26, 0.16);
+
+    // Thin torso (narrower than living villager)
+    _b(0.28, 0.44, 0.14, darkGray, 0, 0.88, 0);
+
+    // Thin arms (skeleton stick arms)
+    const lArm = _b(0.08, 0.40, 0.08, gray, -0.22, 0.88, 0);
+    const rArm = _b(0.08, 0.40, 0.08, gray, 0.22, 0.88, 0);
+
+    // Thin legs
+    _b(0.08, 0.44, 0.08, gray, -0.08, 0.22, 0);
+    _b(0.08, 0.44, 0.08, gray, 0.08, 0.22, 0);
+
+    // Lay flat on back (rotate -90° around X)
     this.group.rotation.x = -Math.PI / 2;
-    this.group.scale.set(0.9, 0.9, 0.9);
-    pos.y = groundY + 0.7;
+    // Position: after rotation, local Y becomes -Z world. Group pivot at ground level.
+    pos.y = groundY + 1.05;
 
-    // Small wooden cross tombstone
-    const cross1 = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.6, 0.08), new THREE.MeshStandardMaterial({ color: '#5C3A1A' }));
-    cross1.position.set(pos.x, groundY + 0.5, pos.z - 0.5);
+    // Wooden cross tombstone (in world space, next to the head)
+    const cross1 = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.8, 0.1), new THREE.MeshStandardMaterial({ color: '#5C3A1A' }));
+    cross1.position.set(pos.x + 0.6, groundY + 1.4, pos.z);
     this._scene.add(cross1);
-    const cross2 = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.08, 0.08), new THREE.MeshStandardMaterial({ color: '#5C3A1A' }));
-    cross2.position.set(pos.x, groundY + 0.65, pos.z - 0.5);
+    const cross2 = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.1, 0.1), new THREE.MeshStandardMaterial({ color: '#5C3A1A' }));
+    cross2.position.set(pos.x + 0.6, groundY + 1.6, pos.z);
     this._scene.add(cross2);
   }
 
@@ -12040,7 +12031,7 @@ if (container) {
 
   // Public API
   window.voxelVillage = {
-    submittedVillagers,
+    submittedVillagers, camera, player,
     start() {
       if (running) return;
       running = true; lastTime = performance.now();
