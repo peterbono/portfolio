@@ -441,6 +441,13 @@
   <div class="search-input-wrap">
     <input type="text" id="search-input" placeholder="Search by company, role, ATS, location...">
   </div>
+  <select id="area-filter">
+    <option value="">All areas</option>
+    <option value="apac">🌏 APAC</option>
+    <option value="emea">🌍 EMEA</option>
+    <option value="americas">🌎 Americas</option>
+    <option value="remote">🌐 Remote (Global)</option>
+  </select>
   <select id="company-filter">
     <option value="">All companies</option>
   </select>
@@ -9628,11 +9635,41 @@
   const rows = () => Array.from(tbody.querySelectorAll('tr.data-row'));
   const searchInput = document.getElementById('search-input');
   const companyFilter = document.getElementById('company-filter');
+  const areaFilter = document.getElementById('area-filter');
   const searchClear = document.getElementById('search-clear');
   let currentFilter = 'all';
   let currentSubFilter = 'all';
   let currentSearch = '';
   let currentCompany = '';
+  let currentArea = '';
+
+  // Classify location text into area region
+  function getArea(loc) {
+    const l = (loc || '').toLowerCase();
+    // APAC keywords
+    const apac = ['apac','thailand','bangkok','singapore','philippines','indonesia','vietnam',
+      'australia','sydney','melbourne','new zealand','india','pakistan','japan','tokyo','korea',
+      'seoul','hong kong','malaysia','kuala lumpur','jakarta','manila','makati','taguig',
+      'ho chi minh','hcmc','taiwan','china','shanghai','beijing','asia','cambodia','myanmar',
+      'laos','nepal','sri lanka','bangladesh','utc+7','utc+8','gmt+7','gmt+8','+7)','+8)'];
+    const emea = ['emea','europe','uk','united kingdom','london','berlin','paris','ireland',
+      'portugal','lisbon','spain','madrid','barcelona','italy','milan','germany','france',
+      'belgium','netherlands','norway','sweden','denmark','finland','poland','prague','czechia',
+      'cyprus','israel','istanbul','turkey','dubai','uae','united arab emirates','africa',
+      'south africa','cairo','egypt','eu remote','eu)','remote eu','remote emea','home based',
+      'belgrade','remote (uk','uk remote','de/nl/no/se'];
+    const amer = ['americas','us','usa','united states','canada','new york','nyc','san francisco',
+      'austin','atlanta','chicago','los angeles','seattle','boston','denver','miami','texas',
+      'california','remote us','us remote','us/canada','latin america','latam','brazil',
+      'mexico','colombia','argentina','chile','pst hours','est required','north chicago',
+      'birmingham, al','remote (canada','remote (us','us-only','us/canada only'];
+    if (apac.some(k => l.includes(k))) return 'apac';
+    if (emea.some(k => l.includes(k))) return 'emea';
+    if (amer.some(k => l.includes(k))) return 'americas';
+    // Pure remote without region qualifier
+    if (l.includes('remote') || l.includes('worldwide') || l.includes('global') || l.includes('everywhere')) return 'remote';
+    return '';
+  }
   let sortCol = -1;
   let sortDir = 'asc';
   let submittedPct = 0;
@@ -9818,6 +9855,11 @@
         const company = (r.querySelector('.col-company') || r.cells[3])?.textContent?.trim() || '';
         match = company === comp;
       }
+      // Area filter
+      if (match && currentArea) {
+        const loc = (r.querySelector('.col-location') || r.cells[4])?.textContent?.trim() || '';
+        match = getArea(loc) === currentArea;
+      }
       r.classList.toggle('hidden', !match);
     });
     updateVisibleCount();
@@ -9958,11 +10000,17 @@
     currentCompany = companyFilter.value;
     applyFilter();
   });
+  areaFilter.addEventListener('change', () => {
+    currentArea = areaFilter.value;
+    applyFilter();
+  });
   searchClear.addEventListener('click', () => {
     searchInput.value = '';
     companyFilter.value = '';
+    areaFilter.value = '';
     currentSearch = '';
     currentCompany = '';
+    currentArea = '';
     applyFilter('all');
   });
 
