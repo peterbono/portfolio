@@ -11127,6 +11127,10 @@ function setupLighting(scene) {
     clouds.push(cGroup);
   }
 
+  // Hemisphere light — soft global fill (sky color top, ground color bottom)
+  const hemi = new THREE.HemisphereLight('#7799cc', '#443322', 0.35);
+  scene.add(hemi);
+
   // Torches — placed at key village locations, light up at dusk/night
   const torches = [];
   const torchPositions = [
@@ -11159,13 +11163,13 @@ function setupLighting(scene) {
     top.position.set(tp.x + 0.5, th + 2.2, tp.z + 0.5);
     scene.add(top);
     // Point light
-    const light = new THREE.PointLight('#FF9933', 0, 12, 2);
+    const light = new THREE.PointLight('#FF9933', 0, 18, 1.5);
     light.position.set(tp.x + 0.5, th + 2.5, tp.z + 0.5);
     scene.add(light);
     torches.push({ top, light, baseY: th + 2.2 });
   });
 
-  return { ambient, sun, sunOrb, moonOrb, clouds, torches };
+  return { ambient, sun, sunOrb, moonOrb, clouds, torches, hemi };
 }
 
 function updateDayNight(time, lights, skyMat, scene) {
@@ -11183,10 +11187,15 @@ function updateDayNight(time, lights, skyMat, scene) {
   // Moon orb (opposite side)
   lights.moonOrb.position.set(-Math.cos(angle) * 80 + cx, -Math.sin(angle) * 80, 30 + cz);
   lights.moonOrb.visible = dayFactor < 0.5;
-  // Ambient
-  const aR = 0.12 + dayFactor * 0.88, aG = 0.10 + dayFactor * 0.82, aB = 0.18 + dayFactor * 0.58;
+  // Ambient — boosted night floor so village stays visible
+  const aR = 0.20 + dayFactor * 0.80, aG = 0.18 + dayFactor * 0.72, aB = 0.28 + dayFactor * 0.48;
   lights.ambient.color.setRGB(aR, aG, aB);
-  lights.ambient.intensity = 0.15 + dayFactor * 0.45;
+  lights.ambient.intensity = 0.25 + dayFactor * 0.45;
+  // Hemisphere — warm at day, cool blue moonlight at night
+  const nightFill = Math.max(0, 1 - dayFactor * 2);
+  lights.hemi.color.setRGB(0.4 + dayFactor * 0.4, 0.5 + dayFactor * 0.3, 0.65 + dayFactor * 0.15); // sky
+  lights.hemi.groundColor.setRGB(0.2 + dayFactor * 0.3, 0.15 + dayFactor * 0.2, 0.1 + dayFactor * 0.15); // ground
+  lights.hemi.intensity = 0.2 + dayFactor * 0.25 + nightFill * 0.1;
   // Sun color & intensity
   const sunsetFactor = Math.max(0, 1 - Math.abs(dayFactor - 0.3) * 3);
   lights.sun.intensity = dayFactor * 0.9;
