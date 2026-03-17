@@ -9935,6 +9935,36 @@
   saveCachedRejections(cachedRej);
   villageState.rejectedCompanies = cachedRej;
 
+  // ── Google Apps Script sync (auto-fetch rejections from Gmail via Sheet) ──
+  // Replace this URL with your deployed Apps Script Web App URL
+  const GMAIL_SYNC_URL = ''; // e.g. 'https://script.google.com/macros/s/XXXXX/exec'
+  function syncFromGmail() {
+    if (!GMAIL_SYNC_URL) return;
+    fetch(GMAIL_SYNC_URL)
+      .then(r => r.json())
+      .then(data => {
+        if (!data.rejections) return;
+        let changed = false;
+        data.rejections.forEach(rej => {
+          if (!villageState.rejectedCompanies.has(rej.company)) {
+            villageState.rejectedCompanies.add(rej.company);
+            changed = true;
+          }
+        });
+        if (changed) {
+          saveCachedRejections(villageState.rejectedCompanies);
+          applyRejections();
+          updateCounts();
+          if (window.voxelVillage) window.voxelVillage.updateState(villageState);
+          console.log('[Gmail Sync] New rejections synced:', data.rejections.length);
+        }
+        localStorage.setItem('gmail_last_sync', data.lastScan || new Date().toISOString());
+      })
+      .catch(e => console.warn('[Gmail Sync] Failed:', e.message));
+  }
+  // Sync on page load (non-blocking)
+  setTimeout(syncFromGmail, 2000);
+
   function startVillage() {
     if (window.voxelVillage) {
       window.voxelVillage.start();
