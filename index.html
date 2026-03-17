@@ -4,6 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Florian Gouloubi - Job Application Tracker</title>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.162.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.162.0/examples/jsm/"
+}}
+</script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
@@ -227,15 +233,34 @@
   .village-metrics { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11px; color: #d4d4d8; }
   .village-metrics strong { color: #34d399; }
   .forge { color: #fb923c !important; }
-  #village-canvas {
+  #village-3d-container {
     width: 100%;
     height: clamp(480px, 68vh, 860px);
-    image-rendering: pixelated;
-    image-rendering: crisp-edges;
     border-radius: 10px;
     border: 1px solid #22222a;
-    background: #1a2334;
+    background: #0a0a12;
     display: block;
+    position: relative;
+    overflow: hidden;
+    cursor: pointer;
+  }
+  #village-3d-container canvas {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
+    border-radius: 10px;
+    outline: none;
+  }
+  #village-crosshair {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    color: rgba(255,255,255,0.7); font-size: 20px; pointer-events: none; z-index: 10; opacity: 0;
+    text-shadow: 0 0 4px rgba(0,0,0,0.8);
+  }
+  #village-controls-hint {
+    position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+    color: rgba(161,161,170,0.8); font-size: 11px; z-index: 10; pointer-events: none;
+    background: rgba(10,10,18,0.7); padding: 4px 12px; border-radius: 6px;
+    letter-spacing: 0.5px;
   }
   .village-tip { margin-top: 10px; color: #71717a; font-size: 11px; }
 
@@ -390,7 +415,7 @@
 
 <div class="village-panel hidden-view" id="village-view">
   <div class="village-head">
-    <div class="village-title">Mini Pixel MMORPG · Medieval Build Village</div>
+    <div class="village-title">Voxel World &middot; Build Village</div>
     <span class="village-tag" id="village-status-tag">Chantier actif</span>
     <div class="village-metrics">
       <span>Maisons terminées: <strong id="village-houses-complete">0</strong></span>
@@ -398,8 +423,11 @@
       <span class="forge">Forge: <strong id="village-forge-power">0%</strong></span>
     </div>
   </div>
-  <canvas id="village-canvas" width="960" height="420" aria-label="Village médiéval pixel animé"></canvas>
-  <p class="village-tip">1 maison complète tous les 100 candidatures envoyées. Le forgeron chauffe selon le % submitted, les maisons se bâtissent par paliers et les PNJ animent la place du village.</p>
+  <div id="village-3d-container">
+    <div id="village-crosshair">+</div>
+    <div id="village-controls-hint">Click to enter &middot; WASD move &middot; Space jump &middot; ESC exit</div>
+  </div>
+  <p class="village-tip">1 maison complète tous les 100 candidatures envoyées. Explorez le monde en 3D !</p>
 </div>
 
 <div id="table-view">
@@ -9611,23 +9639,8 @@
   let villageFrame = null;
 
   const mainEl = document.querySelector('.main');
-  const villageCanvas = document.getElementById('village-canvas');
-  const villageCtx = villageCanvas.getContext('2d');
-  // External decor overlay removed — using fully custom layered rendering
-
-  function resizeVillageCanvas() {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const cssW = villageCanvas.clientWidth || 960;
-    const cssH = villageCanvas.clientHeight || 560;
-    const baseW = 960;
-    const baseH = 420;
-    villageCanvas.width = Math.round(cssW * dpr);
-    villageCanvas.height = Math.round(cssH * dpr);
-    const sx = cssW / baseW;
-    const sy = cssH / baseH;
-    villageCtx.setTransform(dpr * sx, 0, 0, dpr * sy, 0, 0);
-    villageCtx.imageSmoothingEnabled = false;
-  }
+  // --- 3D Village Bridge API ---
+  const villageState = { completeHouses: 0, buildPct: 0, forge: 0 };
 
   function updateVillageMetrics(submitted) {
     const completeHouses = Math.floor(submitted / 100);
@@ -9640,597 +9653,19 @@
     villageState.forge = submittedPct / 100;
     const tag = document.getElementById('village-status-tag');
     tag.textContent = buildPct === 0 ? 'Maison terminée' : 'Chantier actif';
-  }
-  // --- Seeded random for deterministic scenery ---
-  function seededRand(seed) { let s = seed; return () => { s = (s * 16807 + 0) % 2147483647; return (s - 1) / 2147483646; }; }
-  const srand = seededRand(42);
-
-  // --- Pre-computed static scenery (alkito-style layered world) ---
-  const stars = Array.from({ length: 60 }, () => ({ x: srand() * 960, y: srand() * 90, size: srand() > 0.8 ? 2 : 1, twinkleSpeed: 0.02 + srand() * 0.04 }));
-  const grassTufts = Array.from({ length: 120 }, () => ({ x: srand() * 960, y: 252 + srand() * 160, h: 3 + Math.floor(srand() * 5), color: srand() > 0.5 ? '#4d7c3a' : '#5a9a42' }));
-  const smokeParticles = [];
-  const fireflies = Array.from({ length: 18 }, () => ({ x: 100 + srand() * 760, y: 200 + srand() * 200, phase: srand() * Math.PI * 2, speed: 0.3 + srand() * 0.5, radius: 60 + srand() * 80, baseX: 0, baseY: 0 }));
-  fireflies.forEach(f => { f.baseX = f.x; f.baseY = f.y; });
-
-  const villageState = {
-    hero: { x: 56, y: 236, dir: 1, target: 560, speed: 0.45, carrying: true, step: 0 },
-    npcs: Array.from({ length: 7 }, (_, i) => ({
-      x: 80 + i * 104,
-      y: 226 + (i % 3) * 10,
-      dir: Math.random() > 0.5 ? 1 : -1,
-      speed: 0.12 + Math.random() * 0.2,
-      roamMin: 40 + i * 10,
-      roamMax: 920 - i * 12,
-      step: Math.random() * 7,
-      tone: ['#fca5a5', '#93c5fd', '#c4b5fd', '#fdba74', '#86efac', '#fbbf24', '#f472b6'][i]
-    })),
-    clouds: [
-      { x: 20, y: 38, speed: 0.12, w: 28 },
-      { x: 260, y: 18, speed: 0.06, w: 40 },
-      { x: 480, y: 44, speed: 0.1, w: 22 },
-      { x: 700, y: 28, speed: 0.08, w: 34 },
-      { x: 140, y: 56, speed: 0.05, w: 20 }
-    ],
-    completeHouses: 0,
-    buildPct: 0,
-    forge: 0
-  };
-
-  function drawPixelRect(x, y, w, h, color) {
-    villageCtx.fillStyle = color;
-    villageCtx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
-  }
-
-  // --- SKY: gradient + stars + moon (alkito layered background) ---
-  function drawSky(t) {
-    const grad = villageCtx.createLinearGradient(0, 0, 0, 120);
-    grad.addColorStop(0, '#0f172a');
-    grad.addColorStop(0.4, '#1e293b');
-    grad.addColorStop(0.7, '#334155');
-    grad.addColorStop(1, '#475569');
-    villageCtx.fillStyle = grad;
-    villageCtx.fillRect(0, 0, 960, 120);
-
-    // Stars with twinkling
-    stars.forEach(s => {
-      const alpha = 0.4 + 0.6 * Math.abs(Math.sin(t * s.twinkleSpeed + s.x));
-      villageCtx.globalAlpha = alpha;
-      drawPixelRect(s.x, s.y, s.size, s.size, '#f1f5f9');
-    });
-    villageCtx.globalAlpha = 1;
-
-    // Moon
-    drawPixelRect(820, 18, 20, 20, '#fef3c7');
-    drawPixelRect(824, 14, 14, 14, '#fde68a');
-    drawPixelRect(828, 18, 6, 6, '#fcd34d');
-    // Moon glow
-    villageCtx.globalAlpha = 0.08;
-    villageCtx.beginPath();
-    villageCtx.arc(830, 28, 36, 0, Math.PI * 2);
-    villageCtx.fillStyle = '#fef3c7';
-    villageCtx.fill();
-    villageCtx.globalAlpha = 1;
-  }
-
-  // --- CLOUDS: multi-layered with varying sizes ---
-  function drawCloud(x, y, w) {
-    const cw = w || 20;
-    villageCtx.globalAlpha = 0.35;
-    drawPixelRect(x, y, cw, 8, '#94a3b8');
-    drawPixelRect(x + 4, y - 4, cw - 8, 6, '#cbd5e1');
-    drawPixelRect(x + 2, y + 6, cw - 4, 4, '#64748b');
-    villageCtx.globalAlpha = 1;
-  }
-
-  // --- CHARACTERS: improved with shadow + hair + bobbing ---
-  function drawCharacter(x, y, mainColor, step, isHero) {
-    // Shadow
-    villageCtx.globalAlpha = 0.2;
-    drawPixelRect(x, y + 6, 10, 3, '#000');
-    villageCtx.globalAlpha = 1;
-
-    const bob = Math.sin(step * 2) * 0.8;
-    const oy = y + bob;
-
-    // Hair
-    drawPixelRect(x + 1, oy - 16, 8, 3, isHero ? '#166534' : '#78350f');
-    // Head
-    drawPixelRect(x + 2, oy - 14, 6, 6, '#fde68a');
-    // Eyes
-    drawPixelRect(x + 3, oy - 12, 1, 1, '#1e293b');
-    drawPixelRect(x + 6, oy - 12, 1, 1, '#1e293b');
-    // Body
-    drawPixelRect(x + 1, oy - 8, 8, 8, mainColor);
-    // Belt
-    drawPixelRect(x + 1, oy - 2, 8, 2, '#78350f');
-    // Legs with walk animation
-    const swing = Math.sin(step) * 2;
-    drawPixelRect(x + 1, oy, 3, 6 + swing, '#3f3f46');
-    drawPixelRect(x + 6, oy, 3, 6 - swing, '#3f3f46');
-    // Boots
-    drawPixelRect(x, oy + 4 + swing, 4, 2, '#451a03');
-    drawPixelRect(x + 6, oy + 4 - swing, 4, 2, '#451a03');
-    // Arms
-    drawPixelRect(x - 1, oy - 6, 2, 5 + Math.round(swing * 0.5), '#f5d0a9');
-    drawPixelRect(x + 9, oy - 6 - Math.round(swing * 0.5), 2, 5, '#f5d0a9');
-  }
-
-  // --- HOUSE LOTS: improved with shadow + chimney smoke ---
-  function drawHouseLot(x, baseY, buildProgress, done) {
-    // Foundation shadow
-    villageCtx.globalAlpha = 0.15;
-    drawPixelRect(x + 4, baseY + 2, 62, 6, '#000');
-    villageCtx.globalAlpha = 1;
-
-    drawPixelRect(x - 2, baseY, 66, 4, '#5b4636');
-    if (done || buildProgress > 0.08) {
-      drawPixelRect(x + 8, baseY - 26, 46, 24, '#d4a373');
-      // Wall texture lines
-      drawPixelRect(x + 8, baseY - 18, 46, 1, '#c09666');
-      drawPixelRect(x + 8, baseY - 10, 46, 1, '#c09666');
-    }
-    if (done || buildProgress > 0.3) drawPixelRect(x + 26, baseY - 12, 10, 10, '#111827');
-    if (done || buildProgress > 0.5) {
-      drawPixelRect(x + 3, baseY - 36, 56, 10, '#7f1d1d');
-      drawPixelRect(x + 3, baseY - 36, 56, 2, '#991b1b');
-    }
-    if (done || buildProgress > 0.68) {
-      // Window glow
-      villageCtx.globalAlpha = 0.25;
-      drawPixelRect(x + 11, baseY - 27, 14, 14, '#fef3c7');
-      drawPixelRect(x + 37, baseY - 27, 14, 14, '#fef3c7');
-      villageCtx.globalAlpha = 1;
-      drawPixelRect(x + 14, baseY - 24, 8, 8, '#fef3c7');
-      drawPixelRect(x + 40, baseY - 24, 8, 8, '#fef3c7');
-      // Window cross
-      drawPixelRect(x + 17, baseY - 24, 2, 8, '#92400e');
-      drawPixelRect(x + 14, baseY - 21, 8, 2, '#92400e');
-      drawPixelRect(x + 43, baseY - 24, 2, 8, '#92400e');
-      drawPixelRect(x + 40, baseY - 21, 8, 2, '#92400e');
-    }
-    if (done || buildProgress > 0.82) {
-      drawPixelRect(x + 26, baseY - 44, 8, 8, '#9ca3af');
-      drawPixelRect(x + 28, baseY - 46, 4, 2, '#6b7280');
-    }
-    if (!done && buildProgress > 0 && buildProgress < 0.95) {
-      drawPixelRect(x + 15, baseY - 38, 4, 12, '#92400e');
-      drawPixelRect(x + 34, baseY - 46, 4, 20, '#92400e');
-      // Scaffold cross-beam
-      drawPixelRect(x + 15, baseY - 32, 23, 2, '#a16207');
-    }
-  }
-
-  // --- TOWN SQUARE: cobblestone with worn edges ---
-  function drawBrickTile(x, y, c1, c2) {
-    drawPixelRect(x, y, 16, 8, c1);
-    drawPixelRect(x, y + 8, 16, 8, c2);
-    drawPixelRect(x, y, 16, 1, '#7c6f5f');
-    drawPixelRect(x, y + 8, 16, 1, '#7c6f5f');
-    drawPixelRect(x + 7, y, 1, 8, '#7c6f5f');
-    drawPixelRect(x + 3, y + 8, 1, 8, '#7c6f5f');
-    drawPixelRect(x + 11, y + 8, 1, 8, '#7c6f5f');
-  }
-
-  function drawTownSquare() {
-    for (let y = 246; y < 420; y += 16) {
-      for (let x = 0; x < 960; x += 16) {
-        const odd = ((x / 16) + (y / 16)) % 2;
-        drawBrickTile(x, y, odd ? '#c9baa0' : '#d5c7ae', odd ? '#beaf93' : '#c9b99f');
-      }
-    }
-    // Grass tufts scattered on cobblestone
-    grassTufts.forEach(g => {
-      drawPixelRect(g.x, g.y, 2, g.h, g.color);
-    });
-  }
-
-  // --- MAIN BUILDING: enhanced with shadow, sign, light glow ---
-  function drawMainBuilding(t) {
-    // Building shadow
-    villageCtx.globalAlpha = 0.12;
-    drawPixelRect(186, 246, 600, 10, '#000');
-    villageCtx.globalAlpha = 1;
-
-    // Walls with stone texture
-    drawPixelRect(180, 80, 600, 180, '#5f6a6a');
-    for (let sy = 84; sy < 260; sy += 12) {
-      villageCtx.globalAlpha = 0.06;
-      drawPixelRect(180, sy, 600, 1, '#000');
-      villageCtx.globalAlpha = 1;
-    }
-
-    // Roof
-    drawPixelRect(200, 60, 560, 36, '#8f5a4a');
-    drawPixelRect(270, 70, 420, 26, '#9b6654');
-    // Roof edge highlight
-    drawPixelRect(200, 60, 560, 2, '#a16b5a');
-
-    // Roof tiles detail
-    for (let x = 190; x < 770; x += 16) {
-      drawPixelRect(x, 98, 10, 6, '#6f7a7a');
-    }
-
-    // Main door
-    drawPixelRect(430, 112, 120, 148, '#4b3f39');
-    drawPixelRect(444, 128, 92, 122, '#1f2937');
-    // Door arch
-    drawPixelRect(430, 108, 120, 6, '#3b2f2a');
-    drawPixelRect(472, 88, 34, 26, '#3b2f2a');
-    drawPixelRect(478, 94, 22, 14, '#0f172a');
-
-    // Sign above door
-    drawPixelRect(456, 100, 68, 12, '#7c2d12');
-    drawPixelRect(460, 102, 60, 8, '#92400e');
-    // Sign text dots
-    for (let sx = 464; sx < 516; sx += 6) drawPixelRect(sx, 104, 3, 3, '#fef3c7');
-
-    // Windows with warm glow
-    const windows = [240, 320, 610, 690];
-    windows.forEach(x => {
-      // Window glow aura
-      const flicker = 0.15 + Math.sin(t * 0.03 + x) * 0.05;
-      villageCtx.globalAlpha = flicker;
-      drawPixelRect(x - 6, 126, 56, 44, '#fef3c7');
-      villageCtx.globalAlpha = 1;
-
-      drawPixelRect(x, 130, 44, 32, '#243447');
-      drawPixelRect(x + 4, 134, 16, 12, '#f59e0b');
-      drawPixelRect(x + 24, 134, 16, 12, '#fde68a');
-      // Window frame
-      drawPixelRect(x + 20, 130, 4, 32, '#1e293b');
-      drawPixelRect(x, 144, 44, 3, '#1e293b');
-      // Flower boxes
-      drawPixelRect(x - 4, 160, 52, 8, '#7c2d12');
-      drawPixelRect(x - 6, 168, 56, 6, '#4b5563');
-      drawPixelRect(x + 6, 170, 12, 6, '#22c55e');
-      drawPixelRect(x + 28, 170, 12, 6, '#16a34a');
-      // Flowers
-      drawPixelRect(x + 8, 167, 3, 3, '#fb923c');
-      drawPixelRect(x + 32, 167, 3, 3, '#f472b6');
-    });
-
-    // Pillars
-    for (let i = 0; i < 2; i++) {
-      const bx = i === 0 ? 150 : 760;
-      drawPixelRect(bx, 78, 18, 142, '#d6c5aa');
-      drawPixelRect(bx + 4, 74, 10, 8, '#8f5a4a');
-      // Pillar shading
-      drawPixelRect(bx + 14, 78, 4, 142, '#bfb09a');
-    }
-
-    // Shop awnings with stripes
-    [180, 620].forEach(ax => {
-      drawPixelRect(ax, 196, 160, 22, '#f4d9b6');
-      for (let sx = 0; sx < 160; sx += 20) {
-        drawPixelRect(ax + sx, 196, 10, 22, '#d97757');
-      }
-      // Awning shadow
-      villageCtx.globalAlpha = 0.08;
-      drawPixelRect(ax, 218, 160, 6, '#000');
-      villageCtx.globalAlpha = 1;
-    });
-  }
-
-  // --- FORGE: with smoke particles ---
-  function drawForge(t) {
-    // Shadow
-    villageCtx.globalAlpha = 0.12;
-    drawPixelRect(90, 248, 118, 8, '#000');
-    villageCtx.globalAlpha = 1;
-
-    drawPixelRect(86, 182, 118, 68, '#4b5563');
-    // Stone texture
-    for (let sy = 186; sy < 250; sy += 8) {
-      villageCtx.globalAlpha = 0.05;
-      drawPixelRect(86, sy, 118, 1, '#000');
-      villageCtx.globalAlpha = 1;
-    }
-    drawPixelRect(72, 170, 136, 14, '#7c2d12');
-    drawPixelRect(72, 170, 136, 2, '#92400e');
-
-    // Furnace
-    drawPixelRect(118, 196, 54, 44, '#111827');
-    drawPixelRect(120, 198, 50, 40, '#1e1e24');
-
-    // Flame
-    const flame = Math.max(6, Math.round((villageState.forge || 0) * 34));
-    drawPixelRect(140, 226 - flame, 10, flame, '#fb923c');
-    drawPixelRect(136, 228 - Math.round(flame * 0.65), 18, Math.round(flame * 0.52), '#facc15');
-    if (villageState.forge > 0.6) drawPixelRect(132, 214 - Math.round(flame * 0.75), 26, 4, '#fde047');
-
-    // Flame glow
-    if (villageState.forge > 0.2) {
-      villageCtx.globalAlpha = 0.12 * villageState.forge;
-      villageCtx.beginPath();
-      villageCtx.arc(145, 216, 30 + flame, 0, Math.PI * 2);
-      villageCtx.fillStyle = '#fb923c';
-      villageCtx.fill();
-      villageCtx.globalAlpha = 1;
-    }
-
-    // Anvil
-    drawPixelRect(98, 206, 10, 22, '#6b7280');
-    drawPixelRect(94, 204, 18, 4, '#9ca3af');
-    drawPixelRect(96, 200, 14, 4, '#a1a1aa');
-
-    // Chimney
-    drawPixelRect(160, 148, 18, 24, '#4b5563');
-    drawPixelRect(158, 146, 22, 4, '#6b7280');
-
-    // Smoke from chimney
-    if (villageState.forge > 0.1) {
-      for (let i = 0; i < 4; i++) {
-        const age = (t * 0.8 + i * 40) % 160;
-        const sx = 168 + Math.sin(age * 0.04) * 8;
-        const sy = 146 - age * 0.5;
-        const size = 4 + age * 0.04;
-        villageCtx.globalAlpha = Math.max(0, 0.25 - age * 0.0016) * villageState.forge;
-        drawPixelRect(sx, sy, size, size, '#94a3b8');
-      }
-      villageCtx.globalAlpha = 1;
-    }
-  }
-
-  // --- FOUNTAIN: sparkle + reflection ---
-  function drawFountain(tick) {
-    // Shadow
-    villageCtx.globalAlpha = 0.1;
-    drawPixelRect(418, 366, 132, 8, '#000');
-    villageCtx.globalAlpha = 1;
-
-    drawPixelRect(414, 292, 132, 76, '#6b7280');
-    drawPixelRect(416, 294, 128, 72, '#5a6472');
-    drawPixelRect(430, 308, 100, 46, '#64748b');
-    drawPixelRect(468, 286, 24, 36, '#9ca3af');
-    drawPixelRect(474, 278, 12, 12, '#cbd5e1');
-
-    const wave = Math.sin(tick / 12) * 2;
-    // Water
-    drawPixelRect(436, 314 + wave, 88, 34, '#7dd3fc');
-    drawPixelRect(438, 316 + wave, 84, 30, '#67c8f5');
-    // Water jet
-    drawPixelRect(474, 244 + wave, 10, 52, '#bae6fd');
-    drawPixelRect(476, 246 + wave, 6, 48, '#93d9f8');
-    drawPixelRect(472, 242 + wave, 14, 6, '#e0f2fe');
-
-    // Water sparkles
-    for (let i = 0; i < 5; i++) {
-      const sparkle = Math.sin(tick / 6 + i * 1.2) > 0.6;
-      if (sparkle) {
-        drawPixelRect(440 + i * 16, 320 + wave + Math.sin(i) * 4, 3, 3, '#f0f9ff');
-      }
-    }
-  }
-
-  // --- MARKET STALLS: with cloth roofs and more items ---
-  function drawStallsAndProps() {
-    // Left stall
-    drawPixelRect(274, 246, 88, 44, '#8b5a3c');
-    drawPixelRect(274, 240, 88, 8, '#dc2626'); // Red cloth roof
-    drawPixelRect(274, 240, 44, 8, '#b91c1c');
-    // Items
-    drawPixelRect(278, 256, 16, 8, '#22c55e');
-    drawPixelRect(298, 256, 16, 8, '#ef4444');
-    drawPixelRect(318, 256, 16, 8, '#eab308');
-    drawPixelRect(338, 256, 16, 8, '#f97316');
-    // Sign
-    drawPixelRect(306, 230, 24, 10, '#92400e');
-
-    // Right stall
-    drawPixelRect(612, 248, 92, 42, '#8b5a3c');
-    drawPixelRect(612, 242, 92, 8, '#2563eb'); // Blue cloth roof
-    drawPixelRect(612, 242, 46, 8, '#1d4ed8');
-    drawPixelRect(620, 258, 14, 10, '#f472b6');
-    drawPixelRect(640, 258, 14, 10, '#fbbf24');
-    drawPixelRect(660, 258, 14, 10, '#34d399');
-    drawPixelRect(680, 258, 14, 10, '#a78bfa');
-
-    // Barrels
-    drawPixelRect(210, 320, 18, 26, '#92400e');
-    drawPixelRect(212, 326, 14, 2, '#a16207');
-    drawPixelRect(232, 328, 18, 22, '#78350f');
-    drawPixelRect(234, 334, 14, 2, '#92400e');
-    // Crate
-    drawPixelRect(710, 334, 20, 22, '#a16207');
-    drawPixelRect(712, 336, 16, 18, '#b45309');
-    drawPixelRect(719, 336, 2, 18, '#92400e');
-    drawPixelRect(730, 326, 18, 26, '#78350f');
-    drawPixelRect(732, 332, 14, 2, '#92400e');
-  }
-
-  // --- TREES: multi-layer canopy with trunk detail ---
-  function drawTree(x, y, size) {
-    const s = size || 1;
-    // Shadow
-    villageCtx.globalAlpha = 0.1;
-    drawPixelRect(x + 4, y + 58 * s, 26 * s, 6, '#000');
-    villageCtx.globalAlpha = 1;
-
-    // Trunk
-    drawPixelRect(x + 12 * s, y + 36 * s, 10 * s, 24 * s, '#7c2d12');
-    drawPixelRect(x + 14 * s, y + 36 * s, 6 * s, 24 * s, '#92400e');
-    // Root bumps
-    drawPixelRect(x + 8 * s, y + 56 * s, 6 * s, 4 * s, '#7c2d12');
-    drawPixelRect(x + 20 * s, y + 56 * s, 6 * s, 4 * s, '#7c2d12');
-
-    // Canopy layers (back to front for depth)
-    drawPixelRect(x - 2 * s, y + 18 * s, 38 * s, 22 * s, '#14532d');
-    drawPixelRect(x + 2 * s, y + 8 * s, 30 * s, 20 * s, '#166534');
-    drawPixelRect(x + 6 * s, y, 22 * s, 18 * s, '#22c55e');
-    // Canopy highlights
-    drawPixelRect(x + 8 * s, y + 2 * s, 8 * s, 6 * s, '#4ade80');
-    drawPixelRect(x + 4 * s, y + 14 * s, 6 * s, 4 * s, '#4ade80');
-  }
-
-  function drawTrees() {
-    drawTree(34, 260, 1.1);
-    drawTree(850, 262, 1);
-    drawTree(12, 100, 1.3);
-    drawTree(895, 108, 1.2);
-    // Extra small bushes
-    drawPixelRect(60, 310, 16, 12, '#166534');
-    drawPixelRect(64, 304, 10, 8, '#22c55e');
-    drawPixelRect(870, 316, 14, 10, '#166534');
-    drawPixelRect(873, 310, 8, 8, '#22c55e');
-  }
-
-  // --- LANTERNS: hanging from building ---
-  function drawLanterns(t) {
-    const lanternX = [200, 360, 580, 740];
-    lanternX.forEach((lx, i) => {
-      const swing = Math.sin(t * 0.015 + i) * 1.5;
-      drawPixelRect(lx + swing, 218, 2, 12, '#6b7280');
-      drawPixelRect(lx - 3 + swing, 228, 8, 10, '#fef3c7');
-      drawPixelRect(lx - 1 + swing, 230, 4, 6, '#fbbf24');
-      // Lantern glow
-      villageCtx.globalAlpha = 0.08 + Math.sin(t * 0.02 + i) * 0.03;
-      villageCtx.beginPath();
-      villageCtx.arc(lx + 1 + swing, 234, 18, 0, Math.PI * 2);
-      villageCtx.fillStyle = '#fef3c7';
-      villageCtx.fill();
-      villageCtx.globalAlpha = 1;
-    });
-  }
-
-  // --- FIREFLIES: ambient particles ---
-  function drawFireflies(t) {
-    fireflies.forEach(f => {
-      f.x = f.baseX + Math.sin(t * 0.008 + f.phase) * 30;
-      f.y = f.baseY + Math.cos(t * 0.006 + f.phase * 1.3) * 15;
-      const alpha = 0.15 + 0.35 * Math.abs(Math.sin(t * 0.02 + f.phase));
-      villageCtx.globalAlpha = alpha;
-      drawPixelRect(f.x, f.y, 2, 2, '#fef3c7');
-      // Glow
-      villageCtx.globalAlpha = alpha * 0.3;
-      villageCtx.beginPath();
-      villageCtx.arc(f.x + 1, f.y + 1, 5, 0, Math.PI * 2);
-      villageCtx.fillStyle = '#fde68a';
-      villageCtx.fill();
-    });
-    villageCtx.globalAlpha = 1;
-  }
-
-  // --- WELL ---
-  function drawWell() {
-    drawPixelRect(544, 298, 36, 34, '#6b7280');
-    drawPixelRect(548, 302, 28, 26, '#1e293b');
-    drawPixelRect(550, 304, 24, 22, '#7dd3fc');
-    // Roof
-    drawPixelRect(540, 284, 44, 6, '#7c2d12');
-    drawPixelRect(556, 268, 12, 18, '#92400e');
-    // Supports
-    drawPixelRect(546, 284, 4, 14, '#92400e');
-    drawPixelRect(574, 284, 4, 14, '#92400e');
-  }
-
-  // --- TICK: main render loop (alkito-inspired layered compositing) ---
-  function tickVillage() {
-    const w = 960;
-    const h = 420;
-    const t = Date.now() / 55;
-
-    // Layer 0: Sky gradient + stars + moon
-    drawSky(t);
-
-    // Layer 1: Distant mountains / hills
-    const hillGrad = villageCtx.createLinearGradient(0, 90, 0, 150);
-    hillGrad.addColorStop(0, '#374151');
-    hillGrad.addColorStop(1, '#4b5563');
-    villageCtx.fillStyle = hillGrad;
-    villageCtx.beginPath();
-    villageCtx.moveTo(0, 150);
-    for (let x = 0; x <= w; x += 20) {
-      villageCtx.lineTo(x, 100 + Math.sin(x * 0.008) * 18 + Math.sin(x * 0.02) * 8);
-    }
-    villageCtx.lineTo(w, 150);
-    villageCtx.closePath();
-    villageCtx.fill();
-
-    // Layer 2: Clouds
-    villageState.clouds.forEach(cloud => {
-      cloud.x += cloud.speed;
-      if (cloud.x > 980) cloud.x = -50;
-      drawCloud(cloud.x, cloud.y, cloud.w);
-    });
-
-    // Layer 3: Mid-ground (wall/cliff)
-    const wallGrad = villageCtx.createLinearGradient(0, 120, 0, 246);
-    wallGrad.addColorStop(0, '#4b5563');
-    wallGrad.addColorStop(0.5, '#5b4636');
-    wallGrad.addColorStop(1, '#6b5a48');
-    villageCtx.fillStyle = wallGrad;
-    villageCtx.fillRect(0, 120, w, 126);
-
-    // Layer 4: Main building + forge
-    drawMainBuilding(t);
-    drawForge(t);
-
-    // Layer 5: Ground / town square
-    drawTownSquare();
-
-    // Layer 6: Decorations (trees, stalls, fountain, well, lanterns)
-    drawTrees();
-    drawStallsAndProps();
-    drawFountain(t);
-    drawWell();
-    drawLanterns(t);
-
-    // Layer 7: Construction lots on lower edge
-    for (let i = 0; i < 5; i++) {
-      const x = 44 + i * 176;
-      const done = i < villageState.completeHouses;
-      const progress = i === villageState.completeHouses ? villageState.buildPct : 0;
-      drawHouseLot(x, 414, progress, done);
-    }
-
-    // Layer 8: NPCs + Hero (depth-sorted by Y)
-    villageState.hero.step += 0.14;
-    if (Math.abs(villageState.hero.x - villageState.hero.target) < 2) {
-      villageState.hero.target = villageState.hero.target < 480 ? 850 : 80;
-      villageState.hero.dir *= -1;
-      villageState.hero.carrying = !villageState.hero.carrying;
-    }
-    villageState.hero.x += villageState.hero.dir * villageState.hero.speed;
-    villageState.hero.y = 362;
-    drawCharacter(villageState.hero.x, villageState.hero.y, '#34d399', villageState.hero.step, true);
-    if (villageState.hero.carrying) drawPixelRect(villageState.hero.x + 9, villageState.hero.y - 10, 5, 5, '#a16207');
-
-    // Sort NPCs by Y for proper overlap
-    const sortedNpcs = villageState.npcs.map((npc, idx) => {
-      npc.step += 0.12;
-      npc.y = 338 + (idx % 3) * 24;
-      npc.x += npc.dir * npc.speed;
-      if (npc.x < 40 || npc.x > 920 || Math.random() < 0.004) npc.dir *= -1;
-      return npc;
-    }).sort((a, b) => a.y - b.y);
-    sortedNpcs.forEach(npc => drawCharacter(npc.x, npc.y, npc.tone, npc.step, false));
-
-    // Layer 9: Ambient effects (fireflies overlay)
-    drawFireflies(t);
-
-    // Layer 10: Vignette overlay for depth
-    villageCtx.globalAlpha = 0.15;
-    const vignette = villageCtx.createRadialGradient(480, 210, 200, 480, 210, 520);
-    vignette.addColorStop(0, 'transparent');
-    vignette.addColorStop(1, '#0f172a');
-    villageCtx.fillStyle = vignette;
-    villageCtx.fillRect(0, 0, w, h);
-    villageCtx.globalAlpha = 1;
-
-    villageFrame = requestAnimationFrame(tickVillage);
+    if (window.voxelVillage) window.voxelVillage.updateState(villageState);
   }
 
   function startVillage() {
-    resizeVillageCanvas();
-    if (villageFrame) return;
-    villageFrame = requestAnimationFrame(tickVillage);
+    if (window.voxelVillage) {
+      window.voxelVillage.start();
+      window.voxelVillage.updateState(villageState);
+    }
+  }
+  function stopVillage() {
+    if (window.voxelVillage) window.voxelVillage.stop();
   }
 
-  function stopVillage() {
-    if (!villageFrame) return;
-    cancelAnimationFrame(villageFrame);
-    villageFrame = null;
-  }
 
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
@@ -10508,7 +9943,7 @@
     tab.addEventListener('click', () => applyView(tab.dataset.view));
   });
 
-  window.addEventListener('resize', resizeVillageCanvas);
+  // 3D village handles its own resize via ResizeObserver
 
   // --- Search & company filter ---
   let searchTimeout;
@@ -10565,7 +10000,6 @@
   };
 
   // --- Init ---
-  resizeVillageCanvas();
   applyView('table');
   loadManualSubmissions();
   injectCTAButtons();
@@ -10574,6 +10008,1418 @@
   updateCounts();
   applyFilter('all');
 })();
+</script>
+
+<!-- ============================================================ -->
+<!-- 3D VOXEL VILLAGE MODULE                                      -->
+<!-- ============================================================ -->
+<script type="module">
+import * as THREE from 'three';
+import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+
+// ============================================================
+// A. PERLIN NOISE (2D)
+// ============================================================
+const P = new Uint8Array(512);
+(function initPerlin() {
+  const p = new Uint8Array(256);
+  for (let i = 0; i < 256; i++) p[i] = i;
+  for (let i = 255; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [p[i], p[j]] = [p[j], p[i]]; }
+  for (let i = 0; i < 512; i++) P[i] = p[i & 255];
+})();
+
+function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+function lerp(a, b, t) { return a + t * (b - a); }
+function grad(hash, x, y) {
+  const h = hash & 3;
+  const u = h < 2 ? x : y;
+  const v = h < 2 ? y : x;
+  return ((h & 1) ? -u : u) + ((h & 2) ? -v : v);
+}
+function perlin2(x, y) {
+  const xi = Math.floor(x) & 255, yi = Math.floor(y) & 255;
+  const xf = x - Math.floor(x), yf = y - Math.floor(y);
+  const u = fade(xf), v = fade(yf);
+  const aa = P[P[xi] + yi], ab = P[P[xi] + yi + 1];
+  const ba = P[P[xi + 1] + yi], bb = P[P[xi + 1] + yi + 1];
+  return lerp(lerp(grad(aa, xf, yf), grad(ba, xf - 1, yf), u),
+              lerp(grad(ab, xf, yf - 1), grad(bb, xf - 1, yf - 1), u), v);
+}
+function fbm(x, y, octaves = 4) {
+  let val = 0, amp = 0.5, freq = 1;
+  for (let i = 0; i < octaves; i++) { val += amp * perlin2(x * freq, y * freq); amp *= 0.5; freq *= 2; }
+  return val;
+}
+
+// ============================================================
+// B. PROCEDURAL TEXTURES
+// ============================================================
+function hexToRgb(hex) {
+  const v = parseInt(hex.slice(1), 16);
+  return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+}
+function clampByte(v) { return Math.max(0, Math.min(255, Math.round(v))); }
+
+function makeTexture(size, drawFn) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  drawFn(ctx, size);
+  const tex = new THREE.CanvasTexture(c);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+
+function noisePixels(ctx, s, baseColor, scale, strength, seed = 0) {
+  const [r, g, b] = hexToRgb(baseColor);
+  const id = ctx.createImageData(s, s);
+  for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) {
+    const n = perlin2((x + seed) * scale, (y + seed) * scale) * strength;
+    const i = (y * s + x) * 4;
+    id.data[i] = clampByte(r + n); id.data[i + 1] = clampByte(g + n); id.data[i + 2] = clampByte(b + n); id.data[i + 3] = 255;
+  }
+  ctx.putImageData(id, 0, 0);
+}
+
+function createAllTextures() {
+  const T = {};
+  const S = 16;
+
+  // Grass top
+  T.grass_top = makeTexture(S, (ctx, s) => {
+    noisePixels(ctx, s, '#5a9a42', 0.35, 30, 0);
+    ctx.fillStyle = 'rgba(80,160,60,0.15)';
+    for (let i = 0; i < 6; i++) {
+      const px = Math.floor(perlin2(i * 3.1, 0.5) * 0.5 * s + s / 2) % s;
+      const py = Math.floor(perlin2(0.5, i * 2.7) * 0.5 * s + s / 2) % s;
+      ctx.fillRect(px, py, 1, 1);
+    }
+  });
+
+  // Grass side
+  T.grass_side = makeTexture(S, (ctx, s) => {
+    noisePixels(ctx, s, '#8B6914', 0.3, 20, 10);
+    const id = ctx.getImageData(0, 0, s, s);
+    for (let x = 0; x < s; x++) {
+      const edge = 3 + Math.floor(perlin2(x * 0.5, 7) * 1.5);
+      for (let y = 0; y < edge; y++) {
+        const i = (y * s + x) * 4;
+        const n = perlin2(x * 0.4, y * 0.4) * 15;
+        id.data[i] = clampByte(90 + n); id.data[i + 1] = clampByte(154 + n); id.data[i + 2] = clampByte(66 + n);
+      }
+    }
+    ctx.putImageData(id, 0, 0);
+  });
+
+  // Dirt
+  T.dirt = makeTexture(S, (ctx, s) => {
+    noisePixels(ctx, s, '#8B6914', 0.28, 25, 20);
+    ctx.fillStyle = 'rgba(60,40,10,0.2)';
+    for (let i = 0; i < 4; i++) ctx.fillRect(Math.floor(Math.random() * s), Math.floor(Math.random() * s), 2, 1);
+  });
+
+  // Stone
+  T.stone = makeTexture(S, (ctx, s) => {
+    noisePixels(ctx, s, '#808080', 0.22, 30, 30);
+    ctx.strokeStyle = 'rgba(50,50,50,0.2)'; ctx.lineWidth = 1;
+    for (let i = 0; i < 3; i++) {
+      const y = 4 + i * 5 + Math.floor(perlin2(i, 5) * 2);
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(s, y + Math.floor(perlin2(i * 2, 3))); ctx.stroke();
+    }
+  });
+
+  // Wood planks
+  T.wood_planks = makeTexture(S, (ctx, s) => {
+    noisePixels(ctx, s, '#C4913A', 0.25, 20, 40);
+    ctx.strokeStyle = 'rgba(80,50,15,0.35)'; ctx.lineWidth = 1;
+    for (let i = 1; i < 4; i++) { ctx.beginPath(); ctx.moveTo(0, i * 4); ctx.lineTo(s, i * 4); ctx.stroke(); }
+  });
+
+  // Wood log side
+  T.wood_log_side = makeTexture(S, (ctx, s) => {
+    noisePixels(ctx, s, '#6B4226', 0.3, 18, 50);
+    ctx.strokeStyle = 'rgba(40,25,10,0.25)'; ctx.lineWidth = 1;
+    for (let i = 0; i < 5; i++) {
+      const x = 3 + i * 3 + Math.floor(perlin2(i, 8) * 1.5);
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x + Math.floor(perlin2(i, 9)), s); ctx.stroke();
+    }
+  });
+
+  // Wood log top
+  T.wood_log_top = makeTexture(S, (ctx, s) => {
+    noisePixels(ctx, s, '#8B5A2B', 0.2, 15, 60);
+    const cx = s / 2, cy = s / 2;
+    for (let r = 2; r < 7; r += 2) {
+      ctx.strokeStyle = `rgba(60,35,15,${0.15 + r * 0.02})`; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+    }
+  });
+
+  // Glass
+  T.glass = makeTexture(S, (ctx, s) => {
+    ctx.fillStyle = '#B0D0E8'; ctx.globalAlpha = 0.35; ctx.fillRect(0, 0, s, s);
+    ctx.globalAlpha = 0.5; ctx.strokeStyle = '#8ABDE0'; ctx.lineWidth = 1;
+    ctx.strokeRect(1, 1, s - 2, s - 2);
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.beginPath();
+    ctx.moveTo(2, 2); ctx.lineTo(5, 2); ctx.lineTo(2, 5); ctx.fill();
+    ctx.globalAlpha = 1;
+  });
+
+  // Roof
+  T.roof = makeTexture(S, (ctx, s) => {
+    noisePixels(ctx, s, '#B85C38', 0.3, 18, 70);
+    ctx.strokeStyle = 'rgba(80,30,15,0.3)'; ctx.lineWidth = 1;
+    for (let i = 0; i < 4; i++) { const y = i * 4 + 2; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(s, y); ctx.stroke(); }
+    for (let i = 0; i < 4; i++) {
+      const x = (i * 4 + ((Math.floor(i / 1) % 2) * 2)) % s;
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, s); ctx.stroke();
+    }
+  });
+
+  // Door
+  T.door = makeTexture(S, (ctx, s) => {
+    noisePixels(ctx, s, '#5C3A1A', 0.25, 12, 80);
+    ctx.strokeStyle = 'rgba(30,15,5,0.4)'; ctx.lineWidth = 1;
+    ctx.strokeRect(2, 1, 5, 7); ctx.strokeRect(9, 1, 5, 7);
+    ctx.strokeRect(2, 9, 12, 6);
+    ctx.fillStyle = '#C4913A'; ctx.fillRect(12, 8, 2, 2);
+  });
+
+  // Cobblestone
+  T.cobble = makeTexture(S, (ctx, s) => {
+    noisePixels(ctx, s, '#707070', 0.2, 25, 90);
+    ctx.strokeStyle = 'rgba(40,40,40,0.3)'; ctx.lineWidth = 1;
+    for (let i = 0; i < 6; i++) {
+      const cx = (perlin2(i * 2.3, 1) + 1) * s / 2;
+      const cy = (perlin2(1, i * 2.3) + 1) * s / 2;
+      ctx.beginPath(); ctx.arc(cx, cy, 2 + perlin2(i, i) * 1.5, 0, Math.PI * 2); ctx.stroke();
+    }
+  });
+
+  // Leaf
+  T.leaf = makeTexture(S, (ctx, s) => {
+    const id = ctx.createImageData(s, s);
+    for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) {
+      const n = perlin2(x * 0.4 + 100, y * 0.4 + 100);
+      const i = (y * s + x) * 4;
+      id.data[i] = clampByte(50 + n * 25); id.data[i + 1] = clampByte(110 + n * 30); id.data[i + 2] = clampByte(35 + n * 15);
+      id.data[i + 3] = n > 0.3 ? 200 : 255;
+    }
+    ctx.putImageData(id, 0, 0);
+  });
+
+  // Water
+  T.water = makeTexture(S, (ctx, s) => {
+    const id = ctx.createImageData(s, s);
+    for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) {
+      const n = perlin2(x * 0.3 + 200, y * 0.3 + 200);
+      const i = (y * s + x) * 4;
+      id.data[i] = clampByte(40 + n * 15); id.data[i + 1] = clampByte(100 + n * 30); id.data[i + 2] = clampByte(200 + n * 30);
+      id.data[i + 3] = 160;
+    }
+    ctx.putImageData(id, 0, 0);
+  });
+
+  return T;
+}
+
+// ============================================================
+// C. BLOCK REGISTRY & CONSTANTS
+// ============================================================
+const BLOCK = { GRASS: 0, DIRT: 1, STONE: 2, WOOD_PLANKS: 3, WOOD_LOG: 4, GLASS: 5, ROOF: 6, DOOR: 7, COBBLE: 8, LEAF: 9, WATER: 10 };
+const BLOCK_NAMES = ['GRASS','DIRT','STONE','WOOD_PLANKS','WOOD_LOG','GLASS','ROOF','DOOR','COBBLE','LEAF','WATER'];
+const BLOCK_COLORS = { 0:'#5a9a42', 1:'#8B6914', 2:'#808080', 3:'#C4913A', 4:'#6B4226', 5:'#B0D0E8', 6:'#B85C38', 7:'#5C3A1A', 8:'#707070', 9:'#3D7A28', 10:'#3B82F6' };
+const WORLD_W = 48, WORLD_D = 48;
+const HOUSE_SITES = [{x:8,z:10},{x:20,z:10},{x:32,z:10},{x:8,z:24},{x:20,z:24}];
+
+// Collision grid — stores max solid block height at each (x,z) above terrain
+// NPCs check this before moving: if solidHeight > groundHeight, it's blocked
+const collisionGrid = new Int8Array(WORLD_W * WORLD_D);
+function markSolid(x, z, h) {
+  if (x >= 0 && x < WORLD_W && z >= 0 && z < WORLD_D) {
+    const idx = z * WORLD_W + x;
+    collisionGrid[idx] = Math.max(collisionGrid[idx], h);
+  }
+}
+function isSolidAt(x, z, ignoreHouses) {
+  const ix = Math.floor(x), iz = Math.floor(z);
+  if (ix < 0 || ix >= WORLD_W || iz < 0 || iz >= WORLD_D) return true;
+  if (ignoreHouses && HOUSE_SITES.some(s => ix >= s.x && ix < s.x + 5 && iz >= s.z && iz < s.z + 5)) return false;
+  const ground = getHeight(ix, iz);
+  return collisionGrid[iz * WORLD_W + ix] > ground + 1;
+}
+
+// ============================================================
+// D. INSTANCED MESH MANAGER
+// ============================================================
+class BlockMeshManager {
+  constructor(scene, textures) {
+    this.scene = scene;
+    this.meshes = {};
+    this.counts = {};
+    this.maxInstances = { 0:6000, 1:14000, 2:4000, 3:1000, 4:500, 5:200, 6:500, 7:50, 8:500, 9:2000, 10:300 };
+
+    const texMap = {
+      0: ['grass_side','grass_side','grass_top','dirt','grass_side','grass_side'],
+      1: 'dirt', 2: 'stone', 3: 'wood_planks', 4: 'wood_log_side',
+      5: 'glass', 6: 'roof', 7: 'door', 8: 'cobble', 9: 'leaf', 10: 'water'
+    };
+
+    const geo = new THREE.BoxGeometry(1, 1, 1);
+
+    for (const [typeStr, max] of Object.entries(this.maxInstances)) {
+      const type = parseInt(typeStr);
+      const tKey = texMap[type];
+      let mat;
+      if (Array.isArray(tKey)) {
+        mat = tKey.map(k => new THREE.MeshStandardMaterial({ map: textures[k], roughness: 0.9, metalness: 0 }));
+      } else {
+        const props = { map: textures[tKey], roughness: 0.9, metalness: 0 };
+        if (type === BLOCK.GLASS) { props.transparent = true; props.opacity = 0.4; props.side = THREE.DoubleSide; }
+        if (type === BLOCK.WATER) { props.transparent = true; props.opacity = 0.55; props.side = THREE.DoubleSide; }
+        if (type === BLOCK.LEAF) { props.transparent = true; props.opacity = 0.85; props.alphaTest = 0.3; }
+        mat = new THREE.MeshStandardMaterial(props);
+      }
+
+      const mesh = new THREE.InstancedMesh(geo, mat, max);
+      mesh.count = 0;
+      mesh.castShadow = type !== BLOCK.WATER && type !== BLOCK.GLASS;
+      mesh.receiveShadow = true;
+      mesh.frustumCulled = false;
+      scene.add(mesh);
+      this.meshes[type] = mesh;
+      this.counts[type] = 0;
+    }
+    this._dummy = new THREE.Object3D();
+    this._color = new THREE.Color();
+  }
+
+  addBlock(type, x, y, z, ao = 1.0) {
+    const mesh = this.meshes[type];
+    const idx = this.counts[type];
+    if (idx >= this.maxInstances[type]) return -1;
+    this._dummy.position.set(x + 0.5, y + 0.5, z + 0.5);
+    this._dummy.updateMatrix();
+    mesh.setMatrixAt(idx, this._dummy.matrix);
+    if (ao < 1.0) {
+      this._color.setRGB(ao, ao, ao);
+      mesh.setColorAt(idx, this._color);
+      if (!mesh.instanceColor) mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(this.maxInstances[type] * 3).fill(1), 3);
+    }
+    this.counts[type]++;
+    mesh.count = this.counts[type];
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    return idx;
+  }
+
+  flush() {
+    for (const type in this.meshes) {
+      this.meshes[type].instanceMatrix.needsUpdate = true;
+      if (this.meshes[type].instanceColor) this.meshes[type].instanceColor.needsUpdate = true;
+    }
+  }
+}
+
+// ============================================================
+// E. HOUSE PREFAB
+// ============================================================
+function getHousePrefab() {
+  const B = BLOCK, blocks = [];
+  // Floor 5x1x5
+  for (let x = 0; x < 5; x++) for (let z = 0; z < 5; z++) blocks.push({ dx: x, dy: 0, dz: z, type: B.WOOD_PLANKS });
+  // Walls 3 high
+  for (let y = 1; y <= 3; y++) for (let x = 0; x < 5; x++) {
+    // Front (z=0)
+    if (x === 2 && y <= 2) { if (y === 1) blocks.push({ dx: x, dy: y, dz: 0, type: B.DOOR }); }
+    else blocks.push({ dx: x, dy: y, dz: 0, type: B.WOOD_PLANKS });
+    // Back (z=4)
+    if (y === 2 && (x === 1 || x === 3)) blocks.push({ dx: x, dy: y, dz: 4, type: B.GLASS });
+    else blocks.push({ dx: x, dy: y, dz: 4, type: B.WOOD_PLANKS });
+  }
+  for (let y = 1; y <= 3; y++) for (let z = 1; z < 4; z++) {
+    // Left (x=0)
+    if (y === 2 && z === 2) blocks.push({ dx: 0, dy: y, dz: z, type: B.GLASS });
+    else blocks.push({ dx: 0, dy: y, dz: z, type: B.WOOD_PLANKS });
+    // Right (x=4)
+    if (y === 2 && z === 2) blocks.push({ dx: 4, dy: y, dz: z, type: B.GLASS });
+    else blocks.push({ dx: 4, dy: y, dz: z, type: B.WOOD_PLANKS });
+  }
+  // Roof pyramid
+  for (let x = -1; x <= 5; x++) for (let z = -1; z <= 5; z++) blocks.push({ dx: x, dy: 4, dz: z, type: B.ROOF });
+  for (let x = 0; x <= 4; x++) for (let z = 0; z <= 4; z++) blocks.push({ dx: x, dy: 5, dz: z, type: B.ROOF });
+  for (let x = 1; x <= 3; x++) for (let z = 1; z <= 3; z++) blocks.push({ dx: x, dy: 6, dz: z, type: B.ROOF });
+  blocks.push({ dx: 2, dy: 7, dz: 2, type: B.ROOF });
+  // Chimney
+  for (let y = 4; y <= 8; y++) blocks.push({ dx: 4, dy: y, dz: 4, type: B.STONE });
+  return blocks;
+}
+const housePrefab = getHousePrefab();
+
+// ============================================================
+// F. WORLD GENERATION
+// ============================================================
+// Heightmap function — hills with flat areas for houses/roads
+function getHeight(x, z) {
+  const roadZ = Math.floor(WORLD_D / 2);
+  // Flatten near road and house sites
+  let flat = 0;
+  if (Math.abs(z - roadZ) < 3) flat = 1;
+  for (const s of HOUSE_SITES) {
+    const dx = x - (s.x + 2), dz = z - (s.z + 2);
+    const d = Math.sqrt(dx * dx + dz * dz);
+    if (d < 5) flat = Math.max(flat, 1 - d / 5);
+  }
+  // Flatten around forge (center village)
+  const fdx = x - 32, fdz = z - 22;
+  const fd = Math.sqrt(fdx * fdx + fdz * fdz);
+  if (fd < 6) flat = Math.max(flat, 1 - fd / 6);
+  const noise = fbm(x * 0.04, z * 0.04, 3) * 3.5 + fbm(x * 0.12, z * 0.12, 2) * 1.0;
+  const height = Math.max(0, noise * (1 - flat));
+  return Math.floor(height);
+}
+
+function generateWorld(scene, bm) {
+  // Terrain with hills
+  for (let x = 0; x < WORLD_W; x++) for (let z = 0; z < WORLD_D; z++) {
+    const h = getHeight(x, z);
+    bm.addBlock(BLOCK.GRASS, x, h, z);
+    for (let y = h - 1; y >= -1; y--) bm.addBlock(BLOCK.DIRT, x, y, z);
+  }
+  // Infinite ground plane (extends to horizon)
+  const planeGeo = new THREE.PlaneGeometry(500, 500);
+  planeGeo.rotateX(-Math.PI / 2);
+  const planeMat = new THREE.MeshStandardMaterial({ color: '#4a8a38', roughness: 1.0 });
+  const plane = new THREE.Mesh(planeGeo, planeMat);
+  plane.position.set(WORLD_W / 2, -0.5, WORLD_D / 2);
+  plane.receiveShadow = true;
+  scene.add(plane);
+
+  // Mountains around edges
+  const mtnMargin = 3; // blocks inside the world edge where mountains start
+  for (let x = -6; x < WORLD_W + 6; x++) {
+    for (let z = -6; z < WORLD_D + 6; z++) {
+      // Only place mountains near edges
+      const distToEdge = Math.min(
+        x + 6, z + 6, (WORLD_W + 5) - x, (WORLD_D + 5) - z
+      );
+      if (distToEdge > 8) continue; // skip interior
+      // Mountain height: taller at edges, fades inward
+      const edgeFactor = Math.max(0, 1 - distToEdge / 8);
+      const noise = (fbm(x * 0.08, z * 0.08, 3) + 1) * 0.5;
+      const mtnH = Math.floor(edgeFactor * (5 + noise * 10));
+      if (mtnH <= 0) continue;
+      // Skip if inside world and would overlap structures
+      if (x >= 0 && x < WORLD_W && z >= 0 && z < WORLD_D && distToEdge > mtnMargin) continue;
+      for (let y = 0; y <= mtnH; y++) {
+        if (y >= mtnH - 1) {
+          // Snow cap on tallest peaks
+          if (mtnH > 8 && y === mtnH) bm.addBlock(BLOCK.DIRT, x, y, z); // will look like snow-ish
+          else bm.addBlock(BLOCK.STONE, x, y, z);
+        } else if (y > mtnH * 0.6) {
+          bm.addBlock(BLOCK.STONE, x, y, z);
+        } else {
+          bm.addBlock(BLOCK.DIRT, x, y, z);
+        }
+      }
+      // Add trees on lower mountain slopes
+      if (mtnH >= 3 && mtnH <= 6 && noise > 0.6 && Math.random() < 0.15) {
+        for (let ty = mtnH + 1; ty <= mtnH + 3; ty++) bm.addBlock(BLOCK.WOOD_LOG, x, ty, z);
+        for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+          bm.addBlock(BLOCK.LEAF, x + dx, mtnH + 3, z + dz);
+          if (dx === 0 || dz === 0) bm.addBlock(BLOCK.LEAF, x + dx, mtnH + 4, z + dz);
+        }
+      }
+    }
+  }
+  // Paths (cobblestone main road + branches)
+  const roadZ = Math.floor(WORLD_D / 2);
+  for (let x = 0; x < WORLD_W; x++) { const h = getHeight(x, roadZ); bm.addBlock(BLOCK.COBBLE, x, h + 0.01, roadZ); }
+  for (let x = 0; x < WORLD_W; x++) { const h = getHeight(x, roadZ - 1); bm.addBlock(BLOCK.COBBLE, x, h + 0.01, roadZ - 1); }
+  HOUSE_SITES.forEach(site => {
+    const dir = site.z < roadZ ? -1 : 1;
+    const endZ = site.z + (dir > 0 ? -2 : 2);
+    for (let z = roadZ; z !== endZ; z += dir) {
+      if (Math.abs(z - roadZ) > WORLD_D) break;
+      const h = getHeight(site.x + 2, z);
+      bm.addBlock(BLOCK.COBBLE, site.x + 2, h + 0.01, z);
+    }
+  });
+  // Trees
+  const treePositions = [];
+  for (let i = 0; i < 22; i++) {
+    const tx = Math.floor(3 + perlin2(i * 7.3, 1.5) * 0.5 * WORLD_W + WORLD_W * 0.25) % WORLD_W;
+    const tz = Math.floor(3 + perlin2(1.5, i * 5.1) * 0.5 * WORLD_D + WORLD_D * 0.25) % WORLD_D;
+    if (HOUSE_SITES.some(s => Math.abs(tx - s.x) < 10 && Math.abs(tz - s.z) < 10)) continue;
+    if (treePositions.some(p => Math.abs(p[0] - tx) < 4 && Math.abs(p[1] - tz) < 4)) continue;
+    treePositions.push([tx, tz]);
+    const th = getHeight(tx, tz);
+    // Trunk
+    for (let y = th + 1; y <= th + 4; y++) bm.addBlock(BLOCK.WOOD_LOG, tx, y, tz);
+    markSolid(tx, tz, th + 4);
+    // Canopy
+    for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) for (let dy = th + 3; dy <= th + 5; dy++) {
+      if (dx === 0 && dz === 0 && dy <= th + 4) continue;
+      if (Math.abs(dx) === 2 && Math.abs(dz) === 2 && dy === th + 5) continue;
+      bm.addBlock(BLOCK.LEAF, tx + dx, dy, tz + dz);
+    }
+  }
+  // Water pond
+  for (let x = WORLD_W - 8; x < WORLD_W - 2; x++) for (let z = WORLD_D - 8; z < WORLD_D - 3; z++) {
+    bm.addBlock(BLOCK.WATER, x, 0.3, z);
+  }
+  // Stockpile (material pile for bot)
+  for (let x = 2; x <= 4; x++) for (let z = WORLD_D - 4; z <= WORLD_D - 2; z++) {
+    bm.addBlock(BLOCK.WOOD_PLANKS, x, 1, z);
+    bm.addBlock(BLOCK.STONE, x, 2, z);
+  }
+  bm.flush();
+}
+
+// ============================================================
+// G. BOT NPC
+// ============================================================
+class BotNPC {
+  constructor(scene) {
+    this.group = new THREE.Group();
+    const skin = '#D2B48C', shirt = '#4A90D9', pants = '#5C3A1A', helmet = '#6B8E23';
+    this.head = this._box(0.5, 0.5, 0.5, helmet, 0, 1.75, 0);
+    this.torso = this._box(0.5, 0.6, 0.3, shirt, 0, 1.15, 0);
+    this.lArm = this._box(0.2, 0.55, 0.2, skin, -0.36, 1.15, 0);
+    this.rArm = this._box(0.2, 0.55, 0.2, skin, 0.36, 1.15, 0);
+    this.lLeg = this._box(0.22, 0.55, 0.22, pants, -0.14, 0.3, 0);
+    this.rLeg = this._box(0.22, 0.55, 0.22, pants, 0.14, 0.3, 0);
+    this.lArm.geometry.translate(0, -0.275, 0); this.lArm.position.y += 0.275;
+    this.rArm.geometry.translate(0, -0.275, 0); this.rArm.position.y += 0.275;
+    this.lLeg.geometry.translate(0, -0.275, 0); this.lLeg.position.y += 0.275;
+    this.rLeg.geometry.translate(0, -0.275, 0); this.rLeg.position.y += 0.275;
+    // Carried block (hidden initially)
+    this.carriedBlock = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.45, 0.45), new THREE.MeshStandardMaterial({ color: '#C4913A', roughness: 0.8 }));
+    this.carriedBlock.position.set(0, 2.2, 0);
+    this.carriedBlock.visible = false;
+    this.carriedBlock.castShadow = true;
+    this.group.add(this.carriedBlock);
+    this.group.position.set(3, getHeight(3, WORLD_D - 3) + 1, WORLD_D - 3);
+    this.group.scale.set(0.75, 0.75, 0.75);
+    scene.add(this.group);
+    // State
+    this.state = 'IDLE';
+    this.buildQueue = [];
+    this.placedBlocks = new Set();
+    this.totalPlaced = 0;
+    this._firstSync = true;
+    this.walkTarget = new THREE.Vector3();
+    this.walkSpeed = 3.5;
+    this.placeTimer = 0;
+    this._blockManager = null;
+    this._particles = null;
+    this._scene = scene;
+  }
+
+  _box(w, h, d, color, x, y, z) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({ color, roughness: 0.85 }));
+    m.position.set(x, y, z); m.castShadow = true;
+    this.group.add(m);
+    return m;
+  }
+
+  init(bm, particles) { this._blockManager = bm; this._particles = particles; }
+
+  syncWithState(state) {
+    const needed = state.completeHouses * housePrefab.length + Math.floor(state.buildPct * housePrefab.length);
+    if (needed <= this.totalPlaced) return;
+    this.buildQueue = [];
+    for (let h = 0; h <= Math.min(state.completeHouses, HOUSE_SITES.length - 1); h++) {
+      const max = (h < state.completeHouses) ? housePrefab.length : Math.floor(state.buildPct * housePrefab.length);
+      for (let b = 0; b < max; b++) {
+        const key = `${h}-${b}`;
+        if (!this.placedBlocks.has(key)) this.buildQueue.push({ h, b });
+      }
+    }
+    // On first sync, instantly place ALL existing progress (no animation)
+    // On subsequent syncs, only new blocks go to build queue for bot animation
+    if (this._firstSync) {
+      while (this.buildQueue.length > 0) {
+        const task = this.buildQueue.shift();
+        this._placeInstant(task.h, task.b);
+      }
+      this._blockManager.flush();
+      this._firstSync = false;
+    } else {
+      // Animate only genuinely new blocks
+      if (this.buildQueue.length > 0 && this.state === 'IDLE') this._startWalkToStockpile();
+    }
+  }
+
+  _placeInstant(hIdx, bIdx) {
+    const site = HOUSE_SITES[hIdx];
+    const bl = housePrefab[bIdx];
+    const hBase = getHeight(site.x, site.z);
+    this._blockManager.addBlock(bl.type, site.x + bl.dx, hBase + bl.dy + 1, site.z + bl.dz);
+    this.placedBlocks.add(`${hIdx}-${bIdx}`);
+    this.totalPlaced++;
+  }
+
+  _startWalkToStockpile() {
+    this.state = 'WALK_TO_STOCKPILE';
+    this.walkTarget.set(3, getHeight(3, WORLD_D - 3) + 1, WORLD_D - 3);
+    this.carriedBlock.visible = false;
+  }
+
+  _startCarryToSite() {
+    const task = this.buildQueue[0];
+    const site = HOUSE_SITES[task.h];
+    const bl = housePrefab[task.b];
+    this.state = 'CARRY_TO_SITE';
+    this.walkTarget.set(site.x + bl.dx + 0.5, getHeight(site.x + bl.dx, site.z + bl.dz) + 1, site.z + bl.dz + 0.5);
+    this.carriedBlock.visible = true;
+    const c = BLOCK_COLORS[bl.type] || '#C4913A';
+    this.carriedBlock.material.color.set(c);
+  }
+
+  update(dt) {
+    const t = performance.now() * 0.001;
+    switch (this.state) {
+      case 'IDLE':
+        this.head.rotation.y = Math.sin(t * 0.8) * 0.4;
+        this.group.position.y = 1 + Math.sin(t * 1.5) * 0.03;
+        this.lArm.rotation.x = 0; this.rArm.rotation.x = 0;
+        this.lLeg.rotation.x = 0; this.rLeg.rotation.x = 0;
+        break;
+      case 'WALK_TO_STOCKPILE':
+      case 'CARRY_TO_SITE':
+        this._walkToward(dt);
+        this._animWalk(t);
+        if (this.carriedBlock.visible) this.carriedBlock.position.y = 2.2 + Math.sin(t * 3) * 0.05;
+        break;
+      case 'PICK_BLOCK':
+        this.placeTimer -= dt;
+        this.rArm.rotation.x = -1.2 + Math.sin(t * 8) * 0.3;
+        if (this.placeTimer <= 0) this._startCarryToSite();
+        break;
+      case 'PLACE_BLOCK':
+        this.placeTimer -= dt;
+        this.rArm.rotation.x = -1.5 + Math.sin(t * 10) * 0.2;
+        if (this.placeTimer <= 0) this._finishPlace();
+        break;
+    }
+  }
+
+  _walkToward(dt) {
+    const pos = this.group.position;
+    const dx = this.walkTarget.x - pos.x, dz = this.walkTarget.z - pos.z;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+    if (dist < 0.3) {
+      if (this.state === 'WALK_TO_STOCKPILE') { this.state = 'PICK_BLOCK'; this.placeTimer = 0.5; }
+      else if (this.state === 'CARRY_TO_SITE') { this.state = 'PLACE_BLOCK'; this.placeTimer = 0.4; }
+      return;
+    }
+    const speed = this.walkSpeed * dt;
+    let mx = (dx / dist) * Math.min(speed, dist);
+    let mz = (dz / dist) * Math.min(speed, dist);
+    const nx = pos.x + mx, nz = pos.z + mz;
+    // Collision avoidance — steer around obstacles
+    if (isSolidAt(nx, nz, true)) {
+      // Try perpendicular directions (left then right)
+      const px = -mz, pz = mx; // perpendicular
+      if (!isSolidAt(pos.x + px * 2, pos.z + pz * 2, true)) {
+        mx = px; mz = pz;
+      } else if (!isSolidAt(pos.x - px * 2, pos.z - pz * 2, true)) {
+        mx = -px; mz = -pz;
+      } else {
+        return; // completely blocked, wait
+      }
+    }
+    pos.x += mx; pos.z += mz;
+    // Follow terrain height
+    const bx = Math.max(0, Math.min(WORLD_W - 1, Math.floor(pos.x)));
+    const bz = Math.max(0, Math.min(WORLD_D - 1, Math.floor(pos.z)));
+    pos.y = getHeight(bx, bz) + 1;
+    this.group.rotation.y = Math.atan2(mx, mz);
+  }
+
+  _animWalk(t) {
+    const s = Math.sin(t * 8);
+    this.lLeg.rotation.x = s * 0.6; this.rLeg.rotation.x = -s * 0.6;
+    this.lArm.rotation.x = -s * 0.4; this.rArm.rotation.x = s * 0.4;
+  }
+
+  _finishPlace() {
+    if (this.buildQueue.length === 0) { this.state = 'IDLE'; this.carriedBlock.visible = false; return; }
+    const task = this.buildQueue.shift();
+    const site = HOUSE_SITES[task.h];
+    const bl = housePrefab[task.b];
+    const hBase = getHeight(site.x, site.z);
+    const wx = site.x + bl.dx, wy = hBase + bl.dy + 1, wz = site.z + bl.dz;
+    this._blockManager.addBlock(bl.type, wx, wy, wz);
+    this._blockManager.flush();
+    this.placedBlocks.add(`${task.h}-${task.b}`);
+    this.totalPlaced++;
+    if (this._particles) this._particles.burst(wx + 0.5, wy + 0.5, wz + 0.5, bl.type);
+    this.carriedBlock.visible = false;
+    if (this.buildQueue.length > 0) this._startWalkToStockpile();
+    else this.state = 'IDLE';
+  }
+}
+
+// ============================================================
+// G2. COW NPCs
+// ============================================================
+class CowNPC {
+  constructor(scene, x, z) {
+    this.group = new THREE.Group();
+    const white = '#e8e0d4', brown = '#6B4226', black = '#222';
+    // Body
+    this._box(1.0, 0.65, 0.55, white, 0, 0.7, 0);
+    // Head
+    this.head = this._box(0.45, 0.45, 0.45, white, 0.55, 0.95, 0);
+    // Snout
+    this._box(0.2, 0.15, 0.25, '#d4b8a0', 0.8, 0.85, 0);
+    // Spots (brown patches) — offset outward to avoid z-fighting with body
+    this._spot(0.3, 0.2, 0.01, brown, -0.15, 0.85, 0.281);
+    this._spot(0.25, 0.15, 0.01, brown, 0.1, 0.9, -0.281);
+    // Legs
+    this.legs = [
+      this._box(0.18, 0.45, 0.18, white, 0.3, 0.25, 0.18),
+      this._box(0.18, 0.45, 0.18, white, 0.3, 0.25, -0.18),
+      this._box(0.18, 0.45, 0.18, white, -0.3, 0.25, 0.18),
+      this._box(0.18, 0.45, 0.18, white, -0.3, 0.25, -0.18)
+    ];
+    this.legs.forEach(l => { l.geometry.translate(0, -0.225, 0); l.position.y += 0.225; });
+    // Tail
+    this._box(0.05, 0.35, 0.05, brown, -0.55, 0.85, 0);
+    // Horns
+    this._box(0.04, 0.15, 0.04, '#ddd', 0.55, 1.25, 0.15);
+    this._box(0.04, 0.15, 0.04, '#ddd', 0.55, 1.25, -0.15);
+
+    this.group.position.set(x, getHeight(Math.floor(x), Math.floor(z)) + 1, z);
+    this.group.scale.set(0.95, 0.95, 0.95);
+    scene.add(this.group);
+
+    // State — cows mostly graze, rarely move
+    this.state = 'GRAZE';
+    this.timer = 5 + Math.random() * 10;
+    this.walkTarget = new THREE.Vector3(x, this.group.position.y, z);
+    this.walkSpeed = 0.6 + Math.random() * 0.3;
+    this._grazeAngle = 0;
+  }
+
+  _box(w, h, d, color, x, y, z) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({ color, roughness: 0.9 }));
+    m.position.set(x, y, z); m.castShadow = true;
+    this.group.add(m);
+    return m;
+  }
+
+  _spot(w, h, d, color, x, y, z) {
+    const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    m.position.set(x, y, z);
+    this.group.add(m);
+    return m;
+  }
+
+  update(dt) {
+    const t = performance.now() * 0.001;
+    this.timer -= dt;
+
+    switch (this.state) {
+      case 'GRAZE':
+        // Head dips down rhythmically
+        this.head.rotation.x = 0.3 + Math.sin(t * 2 + this._grazeAngle) * 0.15;
+        this.legs.forEach(l => l.rotation.x = 0);
+        if (this.timer <= 0) {
+          // 70% chance to keep grazing, 20% short walk, 10% idle
+          const r = Math.random();
+          if (r < 0.7) {
+            this.timer = 4 + Math.random() * 8;
+            this._grazeAngle = Math.random() * 10;
+            break;
+          }
+          this.state = r < 0.9 ? 'WALK' : 'IDLE';
+          this.timer = 2 + Math.random() * 3;
+          const angle = Math.random() * Math.PI * 2;
+          const dist = 2 + Math.random() * 4;
+          this.walkTarget.set(
+            Math.max(2, Math.min(WORLD_W - 2, this.group.position.x + Math.cos(angle) * dist)),
+            1,
+            Math.max(2, Math.min(WORLD_D - 2, this.group.position.z + Math.sin(angle) * dist))
+          );
+        }
+        break;
+      case 'WALK':
+        const pos = this.group.position;
+        const dx = this.walkTarget.x - pos.x, dz = this.walkTarget.z - pos.z;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        if (dist < 0.5 || this.timer <= 0) {
+          this.state = Math.random() < 0.7 ? 'GRAZE' : 'IDLE';
+          this.timer = 2 + Math.random() * 5;
+          this._grazeAngle = Math.random() * 10;
+          this.head.rotation.x = 0;
+          this.legs.forEach(l => l.rotation.x = 0);
+        } else {
+          const spd = this.walkSpeed * dt;
+          const nx = pos.x + (dx / dist) * Math.min(spd, dist);
+          const nz = pos.z + (dz / dist) * Math.min(spd, dist);
+          // Collision check — stop and pick new target if blocked
+          if (isSolidAt(nx, nz)) {
+            this.state = 'IDLE'; this.timer = 1 + Math.random() * 2; break;
+          }
+          pos.x = nx; pos.z = nz;
+          // Follow terrain
+          const cx = Math.max(0, Math.min(WORLD_W - 1, Math.floor(pos.x)));
+          const cz = Math.max(0, Math.min(WORLD_D - 1, Math.floor(pos.z)));
+          pos.y = getHeight(cx, cz) + 1;
+          this.group.rotation.y = Math.atan2(dx, dz);
+          // Walk animation
+          const s = Math.sin(t * 5);
+          this.legs[0].rotation.x = s * 0.35;
+          this.legs[1].rotation.x = -s * 0.35;
+          this.legs[2].rotation.x = -s * 0.35;
+          this.legs[3].rotation.x = s * 0.35;
+          // Subtle head bob
+          this.head.rotation.x = Math.sin(t * 5) * 0.05;
+        }
+        break;
+      case 'IDLE':
+        // Just standing, occasionally looking around
+        this.head.rotation.y = Math.sin(t * 0.5 + this._grazeAngle) * 0.3;
+        this.legs.forEach(l => l.rotation.x = 0);
+        if (this.timer <= 0) {
+          this.state = 'WALK';
+          this.timer = 3 + Math.random() * 4;
+          const a = Math.random() * Math.PI * 2;
+          const d = 3 + Math.random() * 6;
+          this.walkTarget.set(
+            Math.max(2, Math.min(WORLD_W - 2, this.group.position.x + Math.cos(a) * d)),
+            1,
+            Math.max(2, Math.min(WORLD_D - 2, this.group.position.z + Math.sin(a) * d))
+          );
+        }
+        break;
+    }
+  }
+}
+
+// ============================================================
+// G2. VILLAGER NPC — family members (3 per completed house)
+// ============================================================
+class VillagerNPC {
+  constructor(scene, homeX, homeZ, role) {
+    this.group = new THREE.Group();
+    this.role = role; // 'gardener', 'herder', 'helper'
+    const skinTones = ['#D2A06C', '#C49A6C', '#E0BF98', '#B87A4B'];
+    const skin = skinTones[Math.floor(Math.random() * skinTones.length)];
+    const shirtColors = ['#E06040', '#4A90D9', '#65B847', '#D4A843', '#B05EC5', '#48B8D0'];
+    const shirt = shirtColors[Math.floor(Math.random() * shirtColors.length)];
+    const pantsColors = ['#4A3728', '#3A4A5A', '#5A3A3A'];
+    const pants = pantsColors[Math.floor(Math.random() * pantsColors.length)];
+    // Smaller than builder bot
+    this.head = this._box(0.35, 0.35, 0.35, skin, 0, 1.35, 0);
+    this._box(0.4, 0.45, 0.25, shirt, 0, 0.9, 0); // torso
+    this.lArm = this._box(0.15, 0.4, 0.15, skin, -0.28, 0.9, 0);
+    this.rArm = this._box(0.15, 0.4, 0.15, skin, 0.28, 0.9, 0);
+    this.lLeg = this._box(0.16, 0.4, 0.16, pants, -0.1, 0.25, 0);
+    this.rLeg = this._box(0.16, 0.4, 0.16, pants, 0.1, 0.25, 0);
+    this.lArm.geometry.translate(0, -0.2, 0); this.lArm.position.y += 0.2;
+    this.rArm.geometry.translate(0, -0.2, 0); this.rArm.position.y += 0.2;
+    this.lLeg.geometry.translate(0, -0.2, 0); this.lLeg.position.y += 0.2;
+    this.rLeg.geometry.translate(0, -0.2, 0); this.rLeg.position.y += 0.2;
+    // Role-specific accessory
+    if (role === 'gardener') {
+      // Small watering can (blue cube in hand)
+      this.tool = this._box(0.12, 0.1, 0.08, '#4488CC', 0.32, 0.65, 0.1);
+    } else if (role === 'herder') {
+      // Stick
+      this.tool = this._box(0.04, 0.5, 0.04, '#8B6914', 0.3, 0.65, 0.12);
+    }
+    this.homeX = homeX; this.homeZ = homeZ;
+    // Spawn outside house footprint (offset 6-10 blocks away)
+    const spawnAngle = Math.random() * Math.PI * 2;
+    const spawnDist = 6 + Math.random() * 4;
+    let startX = homeX + Math.cos(spawnAngle) * spawnDist;
+    let startZ = homeZ + Math.sin(spawnAngle) * spawnDist;
+    startX = Math.max(2, Math.min(WORLD_W - 2, startX));
+    startZ = Math.max(2, Math.min(WORLD_D - 2, startZ));
+    // Avoid spawning on solid blocks
+    if (isSolidAt(startX, startZ)) { startX = homeX + 7; startZ = homeZ + 7; }
+    this.group.position.set(startX, getHeight(Math.floor(startX), Math.floor(startZ)) + 1, startZ);
+    this.group.scale.set(0.75, 0.75, 0.75);
+    scene.add(this.group);
+
+    this.state = 'IDLE';
+    this.timer = 2 + Math.random() * 4;
+    this.walkTarget = new THREE.Vector3();
+    this.walkSpeed = 1.0 + Math.random() * 0.4;
+    this._phase = Math.random() * 10;
+    this._scene = scene;
+  }
+
+  _box(w, h, d, color, x, y, z) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({ color, roughness: 0.85 }));
+    m.position.set(x, y, z); m.castShadow = true;
+    this.group.add(m);
+    return m;
+  }
+
+  _resetPose() {
+    this.head.rotation.set(0, 0, 0);
+    this.lArm.rotation.set(0, 0, 0); this.rArm.rotation.set(0, 0, 0);
+    this.lLeg.rotation.set(0, 0, 0); this.rLeg.rotation.set(0, 0, 0);
+  }
+
+  _pickWalkTarget(cows) {
+    let tx, tz;
+    if (this.state === 'TEND_COW' && cows && cows.length > 0) {
+      const cow = cows[Math.floor(Math.random() * cows.length)];
+      tx = cow.group.position.x + (Math.random() - 0.5) * 3;
+      tz = cow.group.position.z + (Math.random() - 0.5) * 3;
+    } else {
+      const a = Math.random() * Math.PI * 2;
+      const d = 4 + Math.random() * 6;
+      tx = this.group.position.x + Math.cos(a) * d;
+      tz = this.group.position.z + Math.sin(a) * d;
+    }
+    // Clamp and avoid solid blocks
+    tx = Math.max(3, Math.min(WORLD_W - 3, tx));
+    tz = Math.max(3, Math.min(WORLD_D - 3, tz));
+    if (isSolidAt(tx, tz)) {
+      // Try nearby offset
+      tx += (Math.random() - 0.5) * 4;
+      tz += (Math.random() - 0.5) * 4;
+      tx = Math.max(3, Math.min(WORLD_W - 3, tx));
+      tz = Math.max(3, Math.min(WORLD_D - 3, tz));
+    }
+    this.walkTarget.set(tx, 1, tz);
+  }
+
+  update(dt, cows) {
+    const t = performance.now() * 0.001;
+    this.timer -= dt;
+
+    switch (this.state) {
+      case 'IDLE':
+        // Gently look around
+        this.head.rotation.y = Math.sin(t * 0.5 + this._phase) * 0.25;
+        if (this.timer <= 0) {
+          this._resetPose();
+          const r = Math.random();
+          if (this.role === 'gardener') {
+            this.state = r < 0.4 ? 'WATER' : r < 0.7 ? 'WALK' : 'NAP';
+          } else if (this.role === 'herder') {
+            this.state = r < 0.4 ? 'TEND_COW' : r < 0.7 ? 'WALK' : 'IDLE';
+          } else {
+            this.state = r < 0.4 ? 'WALK' : r < 0.7 ? 'NAP' : 'IDLE';
+          }
+          this.timer = 4 + Math.random() * 6;
+          if (this.state === 'WALK' || this.state === 'WATER' || this.state === 'TEND_COW') {
+            this._pickWalkTarget(cows);
+          }
+          if (this.state === 'IDLE') this.timer = 3 + Math.random() * 4;
+        }
+        break;
+
+      case 'WALK':
+      case 'WATER':
+      case 'TEND_COW': {
+        const pos = this.group.position;
+        const dx = this.walkTarget.x - pos.x, dz = this.walkTarget.z - pos.z;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        if (dist < 0.5 || this.timer <= 0) {
+          this._resetPose();
+          if (this.state === 'WATER') { this.state = 'WATERING'; this.timer = 3 + Math.random() * 3; }
+          else if (this.state === 'TEND_COW') { this.state = 'TENDING'; this.timer = 4 + Math.random() * 3; }
+          else { this.state = 'IDLE'; this.timer = 3 + Math.random() * 4; }
+        } else {
+          const spd = this.walkSpeed * dt;
+          const nx = pos.x + (dx / dist) * Math.min(spd, dist);
+          const nz = pos.z + (dz / dist) * Math.min(spd, dist);
+          if (isSolidAt(nx, nz)) {
+            this._resetPose();
+            this.state = 'IDLE'; this.timer = 2 + Math.random() * 3;
+            break;
+          }
+          pos.x = nx; pos.z = nz;
+          const cx = Math.max(0, Math.min(WORLD_W - 1, Math.floor(pos.x)));
+          const cz = Math.max(0, Math.min(WORLD_D - 1, Math.floor(pos.z)));
+          pos.y = getHeight(cx, cz) + 1;
+          // Smoothly rotate toward direction
+          const targetRot = Math.atan2(dx, dz);
+          let diff = targetRot - this.group.rotation.y;
+          while (diff > Math.PI) diff -= Math.PI * 2;
+          while (diff < -Math.PI) diff += Math.PI * 2;
+          this.group.rotation.y += diff * Math.min(1, dt * 5);
+          // Walk animation
+          const s = Math.sin(t * 5);
+          this.lLeg.rotation.x = s * 0.3; this.rLeg.rotation.x = -s * 0.3;
+          this.lArm.rotation.x = -s * 0.15; this.rArm.rotation.x = s * 0.15;
+          this.head.rotation.x = Math.sin(t * 5) * 0.03;
+        }
+        break;
+      }
+
+      case 'WATERING':
+        // Bend arm down with watering motion
+        this.rArm.rotation.x = -0.7 + Math.sin(t * 2.5) * 0.15;
+        this.head.rotation.x = 0.15;
+        this.lArm.rotation.x = 0;
+        if (this.timer <= 0) { this._resetPose(); this.state = 'IDLE'; this.timer = 3 + Math.random() * 4; }
+        break;
+
+      case 'TENDING':
+        // Gently wave stick
+        this.rArm.rotation.x = -0.2 + Math.sin(t * 1.5) * 0.25;
+        this.rArm.rotation.z = Math.sin(t * 1.2) * 0.15;
+        this.head.rotation.y = Math.sin(t * 0.8) * 0.2;
+        if (this.timer <= 0) { this._resetPose(); this.state = 'IDLE'; this.timer = 3 + Math.random() * 4; }
+        break;
+
+      case 'NAP':
+        // Sit down, head nods
+        this.head.rotation.x = 0.25 + Math.sin(t * 0.4) * 0.08;
+        this.lLeg.rotation.x = -1.0; this.rLeg.rotation.x = -1.0;
+        this.lArm.rotation.x = -0.3; this.rArm.rotation.x = -0.3;
+        if (this.timer <= 0) { this._resetPose(); this.state = 'IDLE'; this.timer = 3 + Math.random() * 4; }
+        break;
+    }
+  }
+
+  dispose() { this._scene.remove(this.group); }
+}
+
+// ============================================================
+// H. PLAYER CONTROLS + PHYSICS
+// ============================================================
+class PlayerController {
+  constructor(camera, domEl) {
+    this.controls = new PointerLockControls(camera, domEl);
+    this.velocity = new THREE.Vector3();
+    this.onGround = true;
+    this.move = { f: false, b: false, l: false, r: false };
+    const hint = document.getElementById('village-controls-hint');
+    const cross = document.getElementById('village-crosshair');
+    domEl.addEventListener('click', () => this.controls.lock());
+    this.controls.addEventListener('lock', () => { if (cross) cross.style.opacity = '1'; if (hint) hint.style.opacity = '0'; });
+    this.controls.addEventListener('unlock', () => { if (cross) cross.style.opacity = '0'; if (hint) hint.style.opacity = '1'; });
+    this._onKey = (e, v) => {
+      switch (e.code) {
+        case 'KeyW': case 'ArrowUp': this.move.f = v; break;
+        case 'KeyS': case 'ArrowDown': this.move.b = v; break;
+        case 'KeyA': case 'ArrowLeft': this.move.l = v; break;
+        case 'KeyD': case 'ArrowRight': this.move.r = v; break;
+        case 'Space': if (v && this.onGround) this.velocity.y = 7; break;
+      }
+    };
+    document.addEventListener('keydown', e => this._onKey(e, true));
+    document.addEventListener('keyup', e => this._onKey(e, false));
+  }
+
+  update(dt) {
+    if (!this.controls.isLocked) return;
+    this.velocity.y -= 18 * dt;
+    const speed = 7, dir = new THREE.Vector3();
+    if (this.move.f) dir.z -= 1;
+    if (this.move.b) dir.z += 1;
+    if (this.move.l) dir.x -= 1;
+    if (this.move.r) dir.x += 1;
+    if (dir.lengthSq() > 0) dir.normalize();
+    this.controls.moveRight(dir.x * speed * dt);
+    this.controls.moveForward(-dir.z * speed * dt);
+    const cam = this.controls.getObject();
+    cam.position.y += this.velocity.y * dt;
+    // Dynamic floor based on terrain heightmap
+    const px = Math.max(0, Math.min(WORLD_W - 1, Math.floor(cam.position.x)));
+    const pz = Math.max(0, Math.min(WORLD_D - 1, Math.floor(cam.position.z)));
+    const floor = getHeight(px, pz) + 2.7;
+    if (cam.position.y < floor) { cam.position.y = floor; this.velocity.y = 0; this.onGround = true; }
+    else this.onGround = false;
+    cam.position.x = Math.max(-10, Math.min(WORLD_W + 10, cam.position.x));
+    cam.position.z = Math.max(-10, Math.min(WORLD_D + 10, cam.position.z));
+  }
+}
+
+// ============================================================
+// I. LIGHTING, SKY, DAY/NIGHT CYCLE
+// ============================================================
+const DAY_CYCLE = 120; // seconds per full cycle (fallback)
+
+// Bangkok timezone sun position (GMT+7)
+function getBangkokSunPhase() {
+  const now = new Date();
+  const bangkokOffset = 7 * 60; // GMT+7 in minutes
+  const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+  const bangkokMinutes = (utcMinutes + bangkokOffset) % 1440;
+  // Map 0-1440 minutes to 0-1 phase: 0=midnight, 0.25=sunrise(6h), 0.5=noon, 0.75=sunset(18h)
+  return bangkokMinutes / 1440;
+}
+
+function createSky(scene) {
+  const geo = new THREE.SphereGeometry(200, 16, 16);
+  const mat = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    uniforms: {
+      topColor: { value: new THREE.Color('#1a1a2e') },
+      bottomColor: { value: new THREE.Color('#e8a87c') },
+      offset: { value: 20 }, exponent: { value: 0.4 }
+    },
+    vertexShader: `varying vec3 vPos;void main(){vec4 wp=modelMatrix*vec4(position,1.);vPos=wp.xyz;gl_Position=projectionMatrix*viewMatrix*wp;}`,
+    fragmentShader: `uniform vec3 topColor;uniform vec3 bottomColor;uniform float offset;uniform float exponent;varying vec3 vPos;void main(){float h=normalize(vPos+offset).y;gl_FragColor=vec4(mix(bottomColor,topColor,max(pow(max(h,0.),exponent),0.)),1.);}`
+  });
+  const sky = new THREE.Mesh(geo, mat);
+  scene.add(sky);
+  return mat;
+}
+
+function setupLighting(scene) {
+  const ambient = new THREE.AmbientLight('#ffecd2', 0.5);
+  scene.add(ambient);
+  const sun = new THREE.DirectionalLight('#ffb347', 0.9);
+  sun.position.set(-30, 40, -20);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(1024, 1024);
+  sun.shadow.camera.near = 0.5; sun.shadow.camera.far = 120;
+  sun.shadow.camera.left = -35; sun.shadow.camera.right = 35;
+  sun.shadow.camera.top = 35; sun.shadow.camera.bottom = -35;
+  sun.shadow.bias = -0.001;
+  scene.add(sun);
+  scene.fog = new THREE.FogExp2('#2d1b2e', 0.008);
+
+  // Sun orb (glowing sphere in the sky)
+  const sunOrb = new THREE.Mesh(
+    new THREE.SphereGeometry(4, 12, 12),
+    new THREE.MeshBasicMaterial({ color: '#FFE066', fog: false })
+  );
+  scene.add(sunOrb);
+
+  // Moon orb
+  const moonOrb = new THREE.Mesh(
+    new THREE.SphereGeometry(2.5, 12, 12),
+    new THREE.MeshBasicMaterial({ color: '#C8D8F0', fog: false })
+  );
+  scene.add(moonOrb);
+
+  // Clouds — flat boxes at varying heights
+  const clouds = [];
+  for (let i = 0; i < 12; i++) {
+    const cGroup = new THREE.Group();
+    const cloudMat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 1, transparent: true, opacity: 0.75 });
+    // Each cloud is 3-5 overlapping flat boxes
+    const n = 3 + Math.floor(Math.random() * 3);
+    for (let j = 0; j < n; j++) {
+      const w = 3 + Math.random() * 5;
+      const h = 0.8 + Math.random() * 0.5;
+      const d = 2 + Math.random() * 3;
+      const box = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), cloudMat);
+      box.position.set((Math.random() - 0.5) * 3, Math.random() * 0.5, (Math.random() - 0.5) * 2);
+      cGroup.add(box);
+    }
+    cGroup.position.set(
+      (Math.random() - 0.5) * 120 + WORLD_W / 2,
+      30 + Math.random() * 15,
+      (Math.random() - 0.5) * 120 + WORLD_D / 2
+    );
+    cGroup._speed = 0.3 + Math.random() * 0.5;
+    cGroup._baseX = cGroup.position.x;
+    scene.add(cGroup);
+    clouds.push(cGroup);
+  }
+
+  return { ambient, sun, sunOrb, moonOrb, clouds };
+}
+
+function updateDayNight(time, lights, skyMat, scene) {
+  const phase = getBangkokSunPhase();
+  // Offset so noon (phase=0.5) → peak sun, midnight (phase=0) → darkest
+  const angle = (phase - 0.25) * Math.PI * 2;
+  const cx = WORLD_W / 2, cz = WORLD_D / 2;
+  // Sun light position
+  lights.sun.position.set(Math.cos(angle) * 50 + cx, Math.sin(angle) * 50, -20 + cz);
+  const dayFactor = Math.max(0, Math.sin(angle)); // 0 at night, 1 at noon
+  // Sun orb position (visible sphere)
+  lights.sunOrb.position.set(Math.cos(angle) * 80 + cx, Math.sin(angle) * 80, -30 + cz);
+  lights.sunOrb.material.opacity = dayFactor;
+  lights.sunOrb.visible = dayFactor > 0.05;
+  // Moon orb (opposite side)
+  lights.moonOrb.position.set(-Math.cos(angle) * 80 + cx, -Math.sin(angle) * 80, 30 + cz);
+  lights.moonOrb.visible = dayFactor < 0.5;
+  // Ambient
+  const aR = 0.12 + dayFactor * 0.88, aG = 0.10 + dayFactor * 0.82, aB = 0.18 + dayFactor * 0.58;
+  lights.ambient.color.setRGB(aR, aG, aB);
+  lights.ambient.intensity = 0.15 + dayFactor * 0.45;
+  // Sun color & intensity
+  const sunsetFactor = Math.max(0, 1 - Math.abs(dayFactor - 0.3) * 3);
+  lights.sun.intensity = dayFactor * 0.9;
+  lights.sun.color.setRGB(1, 0.7 + dayFactor * 0.15 - sunsetFactor * 0.2, 0.3 + dayFactor * 0.4);
+  // Sky colors
+  const topR = 0.1 + dayFactor * 0.2, topG = 0.1 + dayFactor * 0.35, topB = 0.18 + dayFactor * 0.55;
+  const botR = 0.35 + sunsetFactor * 0.55, botG = 0.25 + dayFactor * 0.45, botB = 0.2 + dayFactor * 0.35;
+  skyMat.uniforms.topColor.value.setRGB(topR, topG, topB);
+  skyMat.uniforms.bottomColor.value.setRGB(botR, botG, botB);
+  // Cloud animation — drift slowly + change opacity with day/night
+  const cloudAlpha = 0.3 + dayFactor * 0.5;
+  lights.clouds.forEach(c => {
+    c.position.x = c._baseX + Math.sin(time * 0.01 * c._speed) * 15;
+    c.children.forEach(m => { m.material.opacity = cloudAlpha; });
+  });
+  // Fog
+  const fogR = 0.15 + dayFactor * 0.4, fogG = 0.10 + dayFactor * 0.35, fogB = 0.18 + dayFactor * 0.3;
+  scene.fog.color.setRGB(fogR, fogG, fogB);
+}
+
+// ============================================================
+// J. PARTICLES + FIRE
+// ============================================================
+class ParticleSystem {
+  constructor(scene) {
+    this.particles = [];
+    this.maxP = 300;
+    this.geo = new THREE.BufferGeometry();
+    this.positions = new Float32Array(this.maxP * 3);
+    this.colors = new Float32Array(this.maxP * 3);
+    this.sizes = new Float32Array(this.maxP);
+    this.geo.setAttribute('position', new THREE.BufferAttribute(this.positions, 3));
+    this.geo.setAttribute('color', new THREE.BufferAttribute(this.colors, 3));
+    this.geo.setAttribute('size', new THREE.BufferAttribute(this.sizes, 1));
+    this.mat = new THREE.PointsMaterial({ size: 0.15, vertexColors: true, transparent: true, opacity: 0.85, sizeAttenuation: true, blending: THREE.AdditiveBlending, depthWrite: false });
+    this.mesh = new THREE.Points(this.geo, this.mat);
+    scene.add(this.mesh);
+    this.fireChimneys = [];
+  }
+
+  burst(x, y, z, blockType) {
+    const [r, g, b] = hexToRgb(BLOCK_COLORS[blockType] || '#C4913A').map(v => v / 255);
+    for (let i = 0; i < 8; i++) {
+      this.particles.push({ x, y, z, vx: (Math.random() - 0.5) * 3, vy: 1 + Math.random() * 3, vz: (Math.random() - 0.5) * 3, life: 1, r, g, b, size: 0.12 + Math.random() * 0.1 });
+    }
+  }
+
+  addFireSource(x, y, z) {
+    this.fireChimneys.push({ x, y, z });
+  }
+
+  update(dt) {
+    // Spawn fire particles — more intense and varied
+    for (const ch of this.fireChimneys) {
+      const spawnCount = this.particles.length < this.maxP - 10 ? (Math.random() < 0.7 ? 2 : 1) : 0;
+      for (let s = 0; s < spawnCount; s++) {
+        const life = 0.8 + Math.random() * 0.8;
+        const isEmber = Math.random() < 0.3;
+        this.particles.push({
+          x: ch.x + (Math.random() - 0.5) * 0.6,
+          y: ch.y + Math.random() * 0.2,
+          z: ch.z + (Math.random() - 0.5) * 0.6,
+          vx: (Math.random() - 0.5) * 0.8,
+          vy: isEmber ? (2.5 + Math.random() * 3) : (1.0 + Math.random() * 1.5),
+          vz: (Math.random() - 0.5) * 0.8,
+          life,
+          r: 1,
+          g: isEmber ? 0.4 + Math.random() * 0.2 : 0.7 + Math.random() * 0.3,
+          b: isEmber ? 0 : 0.1,
+          size: isEmber ? 0.08 + Math.random() * 0.06 : 0.25 + Math.random() * 0.2,
+          isFire: true
+        });
+      }
+    }
+    // Update
+    for (let i = this.particles.length - 1; i >= 0; i--) {
+      const p = this.particles[i];
+      p.life -= dt * (p.isFire ? 1.2 : 1.5);
+      if (p.life <= 0) { this.particles.splice(i, 1); continue; }
+      p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
+      p.vy -= (p.isFire ? -0.5 : 5) * dt;
+      if (p.isFire) { p.vx += (Math.random() - 0.5) * dt * 3; p.vz += (Math.random() - 0.5) * dt * 3; p.g = Math.max(0.1, p.g - dt * 0.8); p.b = Math.max(0, p.b - dt * 0.5); }
+    }
+    // Rebuild buffers
+    const n = Math.min(this.particles.length, this.maxP);
+    for (let i = 0; i < n; i++) {
+      const p = this.particles[i];
+      this.positions[i * 3] = p.x; this.positions[i * 3 + 1] = p.y; this.positions[i * 3 + 2] = p.z;
+      this.colors[i * 3] = p.r * p.life; this.colors[i * 3 + 1] = p.g * p.life; this.colors[i * 3 + 2] = p.b * p.life;
+      this.sizes[i] = p.size * p.life;
+    }
+    this.geo.attributes.position.needsUpdate = true;
+    this.geo.attributes.color.needsUpdate = true;
+    this.geo.attributes.size.needsUpdate = true;
+    this.geo.setDrawRange(0, n);
+  }
+}
+
+// ============================================================
+// K. MAIN LOOP & PUBLIC API
+// ============================================================
+const container = document.getElementById('village-3d-container');
+if (container) {
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(70, container.clientWidth / Math.max(container.clientHeight, 1), 0.1, 300);
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
+  renderer.setSize(container.clientWidth, container.clientHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.1;
+  container.prepend(renderer.domElement);
+
+  // Init subsystems
+  const textures = createAllTextures();
+  const blockManager = new BlockMeshManager(scene, textures);
+  const particles = new ParticleSystem(scene);
+  const player = new PlayerController(camera, container);
+  const bot = new BotNPC(scene);
+  bot.init(blockManager, particles);
+  const skyMat = createSky(scene);
+  const lights = setupLighting(scene);
+  generateWorld(scene, blockManager);
+
+  // Cows
+  const cows = [];
+  const cowSpawns = [[6,38],[14,6],[35,40],[40,14],[28,36],[10,18],[38,30]];
+  cowSpawns.forEach(([cx,cz]) => {
+    if (!HOUSE_SITES.some(s => Math.abs(cx-s.x)<6 && Math.abs(cz-s.z)<6)) {
+      cows.push(new CowNPC(scene, cx, cz));
+    }
+  });
+
+  // Forge — grand stone forge at village center
+  const forgePos = { x: 30, z: 20 };
+  const fh = getHeight(forgePos.x, forgePos.z);
+  // Flatten area around forge
+  for (let dx = -1; dx <= 5; dx++) for (let dz = -1; dz <= 5; dz++) {
+    blockManager.addBlock(BLOCK.COBBLE, forgePos.x + dx, fh, forgePos.z + dz);
+  }
+  // Stone platform (5x5 base)
+  for (let dx = 0; dx <= 4; dx++) for (let dz = 0; dz <= 4; dz++) {
+    blockManager.addBlock(BLOCK.STONE, forgePos.x + dx, fh + 1, forgePos.z + dz);
+  }
+  // Walls — open front faces road (dz=4 side), back wall faces houses (dz=0)
+  for (let dx = 0; dx <= 4; dx++) { // back wall (faces z=10 houses)
+    blockManager.addBlock(BLOCK.STONE, forgePos.x + dx, fh + 2, forgePos.z);
+    blockManager.addBlock(BLOCK.STONE, forgePos.x + dx, fh + 3, forgePos.z);
+  }
+  for (let dz = 0; dz <= 3; dz++) { // left wall
+    blockManager.addBlock(BLOCK.STONE, forgePos.x, fh + 2, forgePos.z + dz);
+    blockManager.addBlock(BLOCK.STONE, forgePos.x, fh + 3, forgePos.z + dz);
+  }
+  for (let dz = 0; dz <= 3; dz++) { // right wall
+    blockManager.addBlock(BLOCK.STONE, forgePos.x + 4, fh + 2, forgePos.z + dz);
+    blockManager.addBlock(BLOCK.STONE, forgePos.x + 4, fh + 3, forgePos.z + dz);
+  }
+  // Roof — wood planks
+  for (let dx = 0; dx <= 4; dx++) for (let dz = 0; dz <= 4; dz++) {
+    blockManager.addBlock(BLOCK.WOOD_PLANKS, forgePos.x + dx, fh + 4, forgePos.z + dz);
+  }
+  // Chimney — tall stone column rising from center fire pit
+  for (let y = fh + 4; y <= fh + 8; y++) {
+    blockManager.addBlock(BLOCK.STONE, forgePos.x + 2, y, forgePos.z + 1);
+    blockManager.addBlock(BLOCK.STONE, forgePos.x + 2, y, forgePos.z + 2);
+  }
+  // Anvil (dark stone block inside, near front)
+  blockManager.addBlock(BLOCK.STONE, forgePos.x + 1, fh + 2, forgePos.z + 3);
+  // Fire pit in center — cobble ring with wood logs burning
+  blockManager.addBlock(BLOCK.COBBLE, forgePos.x + 1, fh + 2, forgePos.z + 1);
+  blockManager.addBlock(BLOCK.COBBLE, forgePos.x + 3, fh + 2, forgePos.z + 1);
+  blockManager.addBlock(BLOCK.COBBLE, forgePos.x + 1, fh + 2, forgePos.z + 2);
+  blockManager.addBlock(BLOCK.COBBLE, forgePos.x + 3, fh + 2, forgePos.z + 2);
+  // Wood logs in the fire pit (fuel)
+  blockManager.addBlock(BLOCK.WOOD_LOG, forgePos.x + 2, fh + 2, forgePos.z + 1);
+  blockManager.addBlock(BLOCK.WOOD_LOG, forgePos.x + 2, fh + 2, forgePos.z + 2);
+  blockManager.flush();
+  // Mark house sites as solid in collision grid (full 5x5 footprint)
+  HOUSE_SITES.forEach(s => {
+    for (let dx = 0; dx < 5; dx++) for (let dz = 0; dz < 5; dz++) {
+      markSolid(s.x + dx, s.z + dz, getHeight(s.x + dx, s.z + dz) + 6);
+    }
+  });
+  // Mark forge as solid
+  for (let dx = 0; dx <= 4; dx++) for (let dz = 0; dz <= 4; dz++) {
+    markSolid(forgePos.x + dx, forgePos.z + dz, fh + 4);
+  }
+  // Forge fire source — always on, intensity controlled by forge power
+  let forgeFireIntensity = 0;
+
+  // Villagers — 3 per completed house
+  const villagers = [];
+  let villagerHouseCount = 0;
+
+  // Camera start position — overlooking the village from a good angle
+  const camX = WORLD_W * 0.6, camZ = WORLD_D * 0.7;
+  const camH = getHeight(Math.floor(camX), Math.floor(camZ));
+  camera.position.set(camX, camH + 6, camZ);
+  camera.lookAt(WORLD_W * 0.3, camH, WORLD_D * 0.35);
+
+  let running = false, lastTime = 0, elapsed = 0;
+
+  function tick(time) {
+    if (!running) return;
+    const dt = Math.min((time - lastTime) / 1000, 0.05);
+    lastTime = time;
+    elapsed += dt;
+    player.update(dt);
+    bot.update(dt);
+    cows.forEach(c => c.update(dt));
+    villagers.forEach(v => v.update(dt, cows));
+    particles.update(dt);
+    updateDayNight(elapsed, lights, skyMat, scene);
+    renderer.render(scene, camera);
+    requestAnimationFrame(tick);
+  }
+
+  // Resize
+  const ro = new ResizeObserver(() => {
+    const w = container.clientWidth, h = container.clientHeight;
+    if (w > 0 && h > 0) { camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h); }
+  });
+  ro.observe(container);
+
+  // Public API
+  window.voxelVillage = {
+    start() {
+      if (running) return;
+      running = true; lastTime = performance.now();
+      // Fix canvas size when container becomes visible
+      const w = container.clientWidth, h = container.clientHeight;
+      if (w > 0 && h > 0) { camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h); }
+      requestAnimationFrame(tick);
+    },
+    stop() {
+      running = false;
+      if (player.controls.isLocked) player.controls.unlock();
+    },
+    updateState(state) {
+      bot.syncWithState(state);
+      // Add fire to chimneys of complete houses
+      particles.fireChimneys = [];
+      for (let i = 0; i < state.completeHouses && i < HOUSE_SITES.length; i++) {
+        const s = HOUSE_SITES[i];
+        const hh = getHeight(s.x + 4, s.z + 4);
+        particles.addFireSource(s.x + 4.5, hh + 10, s.z + 4.5);
+      }
+      // Spawn villager families for new completed houses (3 per house)
+      while (villagerHouseCount < state.completeHouses && villagerHouseCount < HOUSE_SITES.length) {
+        const s = HOUSE_SITES[villagerHouseCount];
+        const roles = ['gardener', 'herder', 'helper'];
+        roles.forEach(role => {
+          villagers.push(new VillagerNPC(scene, s.x + 2, s.z + 2, role));
+        });
+        villagerHouseCount++;
+      }
+      // Forge fire — intensity scales with submitted percentage
+      forgeFireIntensity = state.forge || 0;
+      const forgeFh = getHeight(forgePos.x, forgePos.z);
+      if (forgeFireIntensity > 0.05) {
+        // Fire above wood logs in fire pit (center of forge)
+        particles.addFireSource(forgePos.x + 2.5, forgeFh + 2.8, forgePos.z + 1.5);
+        particles.addFireSource(forgePos.x + 2.5, forgeFh + 2.8, forgePos.z + 2.5);
+        // Smoke from chimney top
+        particles.addFireSource(forgePos.x + 2.5, forgeFh + 9, forgePos.z + 1);
+      }
+    }
+  };
+}
 </script>
 </body>
 </html>
