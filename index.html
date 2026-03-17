@@ -228,16 +228,58 @@
     margin-bottom: 20px;
     width: 100%;
   }
-  .village-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
-  .village-title { font-size: 12px; text-transform: uppercase; letter-spacing: 1.3px; color: #a1a1aa; font-weight: 700; }
-  .village-metrics { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11px; color: #d4d4d8; }
+  /* Floating village window */
+  .village-panel {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 480px;
+    height: 380px;
+    z-index: 1000;
+    background: #0f0f17;
+    border: 1px solid #2a2a35;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    resize: both;
+    min-width: 320px;
+    min-height: 200px;
+    transition: width 0.25s ease, height 0.25s ease, bottom 0.2s ease, right 0.2s ease;
+  }
+  .village-panel.minimized {
+    width: 240px !important;
+    height: 38px !important;
+    resize: none;
+    min-height: 38px;
+  }
+  .village-panel.hidden-view { display: none !important; }
+  .village-titlebar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: #18181f;
+    border-bottom: 1px solid #2a2a35;
+    cursor: grab;
+    flex-shrink: 0;
+    user-select: none;
+  }
+  .village-titlebar:active { cursor: grabbing; }
+  .village-title { font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px; color: #a1a1aa; font-weight: 700; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .village-metrics { display: flex; gap: 10px; flex-wrap: nowrap; font-size: 10px; color: #d4d4d8; flex-shrink: 0; }
   .village-metrics strong { color: #34d399; }
   .forge { color: #fb923c !important; }
+  .village-btn { background: none; border: none; color: #71717a; cursor: pointer; font-size: 14px; padding: 2px 5px; line-height: 1; border-radius: 4px; }
+  .village-btn:hover { color: #e0e0e0; background: rgba(255,255,255,0.08); }
+  .village-body { flex: 1; overflow: hidden; position: relative; }
+  .village-panel.minimized .village-body,
+  .village-panel.minimized .village-metrics,
+  .village-panel.minimized .village-tag { display: none; }
   #village-3d-container {
     width: 100%;
-    height: clamp(480px, 68vh, 860px);
-    border-radius: 10px;
-    border: 1px solid #22222a;
+    height: 100%;
     background: #0a0a12;
     display: block;
     position: relative;
@@ -248,7 +290,6 @@
     display: block;
     width: 100% !important;
     height: 100% !important;
-    border-radius: 10px;
     outline: none;
   }
   #village-crosshair {
@@ -262,7 +303,29 @@
     background: rgba(10,10,18,0.7); padding: 4px 12px; border-radius: 6px;
     letter-spacing: 0.5px;
   }
-  .village-tip { margin-top: 10px; color: #71717a; font-size: 11px; }
+  .village-tip { display: none; }
+
+  .village-toggle-fab {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 999;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #34d399, #22c55e);
+    border: none;
+    color: #fff;
+    font-size: 22px;
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(34,197,94,0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .village-toggle-fab:hover { transform: scale(1.1); box-shadow: 0 6px 24px rgba(34,197,94,0.5); }
+  .village-toggle-fab.hidden { display: none; }
 
   .view-nav {
     display: inline-flex;
@@ -289,17 +352,6 @@
     color: #fff;
   }
   .hidden-view { display: none !important; }
-  .main.village-mode #stats,
-  .main.village-mode #objectives,
-  .main.village-mode .view-nav {
-    position: sticky;
-    top: 10px;
-    z-index: 5;
-    backdrop-filter: blur(4px);
-  }
-  .main.village-mode #village-view {
-    min-height: calc(100vh - 210px);
-  }
   .village-tag {
     padding: 4px 8px;
     border: 1px solid #3f3f46;
@@ -307,6 +359,7 @@
     font-size: 10px;
     color: #d4d4d8;
     background: #18181b;
+    flex-shrink: 0;
   }
 
   /* === MOBILE === */
@@ -408,27 +461,27 @@
 </div>
 
 
-<div class="view-nav" role="tablist" aria-label="Vue globale">
-  <button class="view-tab active" id="tab-table" data-view="table" role="tab" aria-selected="true">Vue tableau</button>
-  <button class="view-tab" id="tab-village" data-view="village" role="tab" aria-selected="false">Vue village</button>
-</div>
-
+<!-- Floating village window -->
 <div class="village-panel hidden-view" id="village-view">
-  <div class="village-head">
-    <div class="village-title">Voxel World &middot; Build Village</div>
+  <div class="village-titlebar" id="village-titlebar">
+    <div class="village-title">Voxel Village</div>
     <span class="village-tag" id="village-status-tag">Chantier actif</span>
     <div class="village-metrics">
-      <span>Maisons terminées: <strong id="village-houses-complete">0</strong></span>
-      <span>Maison en cours: <strong id="village-house-progress">0%</strong></span>
-      <span class="forge">Forge: <strong id="village-forge-power">0%</strong></span>
+      <span><strong id="village-houses-complete">0</strong> maisons</span>
+      <span><strong id="village-house-progress">0%</strong> en cours</span>
+      <span class="forge"><strong id="village-forge-power">0%</strong> forge</span>
+    </div>
+    <button class="village-btn" id="village-minimize" title="Réduire">&#8211;</button>
+    <button class="village-btn" id="village-close" title="Fermer">&times;</button>
+  </div>
+  <div class="village-body">
+    <div id="village-3d-container">
+      <div id="village-crosshair">+</div>
+      <div id="village-controls-hint">Click to enter &middot; WASD move &middot; Space jump &middot; ESC exit</div>
     </div>
   </div>
-  <div id="village-3d-container">
-    <div id="village-crosshair">+</div>
-    <div id="village-controls-hint">Click to enter &middot; WASD move &middot; Space jump &middot; ESC exit</div>
-  </div>
-  <p class="village-tip">1 maison complète tous les 100 candidatures envoyées. Explorez le monde en 3D !</p>
 </div>
+<button class="village-toggle-fab" id="village-fab" title="Ouvrir le village 3D">&#9871;</button>
 
 <div id="table-view">
 <div class="sub-filter" id="sub-filter-submitted">
@@ -9631,7 +9684,7 @@
   const subFilterEl = document.getElementById('sub-filter-submitted');
   const tableView = document.getElementById('table-view');
   const villageView = document.getElementById('village-view');
-  const viewTabs = Array.from(document.querySelectorAll('.view-tab'));
+  const villageFab = document.getElementById('village-fab');
   const rows = () => Array.from(tbody.querySelectorAll('tr.data-row'));
   const searchInput = document.getElementById('search-input');
   const companyFilter = document.getElementById('company-filter');
@@ -9675,7 +9728,6 @@
   let submittedPct = 0;
   let villageFrame = null;
 
-  const mainEl = document.querySelector('.main');
   // --- 3D Village Bridge API ---
   const villageState = { completeHouses: 0, buildPct: 0, forge: 0 };
 
@@ -9712,19 +9764,40 @@
     if (!villageView.classList.contains('hidden-view')) startVillage();
   });
 
-  function applyView(view) {
-    const showVillage = view === 'village';
-    mainEl.classList.toggle('village-mode', showVillage);
-    villageView.classList.toggle('hidden-view', !showVillage);
-    tableView.classList.toggle('hidden-view', showVillage);
-    viewTabs.forEach(tab => {
-      const active = tab.dataset.view === view;
-      tab.classList.toggle('active', active);
-      tab.setAttribute('aria-selected', active ? 'true' : 'false');
-    });
-    if (showVillage) startVillage();
+  // --- Floating village window ---
+  let villageOpen = false;
+  function toggleVillage(show) {
+    villageOpen = show !== undefined ? show : !villageOpen;
+    villageView.classList.toggle('hidden-view', !villageOpen);
+    villageFab.classList.toggle('hidden', villageOpen);
+    if (villageOpen) { villageView.classList.remove('minimized'); startVillage(); }
     else stopVillage();
   }
+  villageFab.addEventListener('click', () => toggleVillage(true));
+  document.getElementById('village-close').addEventListener('click', () => toggleVillage(false));
+  document.getElementById('village-minimize').addEventListener('click', () => {
+    villageView.classList.toggle('minimized');
+    if (villageView.classList.contains('minimized')) stopVillage();
+    else startVillage();
+  });
+  // Drag titlebar
+  (() => {
+    const bar = document.getElementById('village-titlebar');
+    let dragging = false, ox, oy;
+    bar.addEventListener('mousedown', e => {
+      if (e.target.closest('.village-btn')) return;
+      dragging = true; ox = e.clientX - villageView.offsetLeft; oy = e.clientY - villageView.offsetTop;
+      villageView.style.transition = 'none';
+    });
+    document.addEventListener('mousemove', e => {
+      if (!dragging) return;
+      villageView.style.left = (e.clientX - ox) + 'px';
+      villageView.style.top = (e.clientY - oy) + 'px';
+      villageView.style.right = 'auto';
+      villageView.style.bottom = 'auto';
+    });
+    document.addEventListener('mouseup', () => { dragging = false; villageView.style.transition = ''; });
+  })();
 
   // --- Row key for localStorage ---
   function getRowKey(row) {
@@ -9981,10 +10054,6 @@
     });
   });
 
-  viewTabs.forEach(tab => {
-    tab.addEventListener('click', () => applyView(tab.dataset.view));
-  });
-
   // 3D village handles its own resize via ResizeObserver
 
   // --- Search & company filter ---
@@ -10048,7 +10117,6 @@
   };
 
   // --- Init ---
-  applyView('table');
   loadManualSubmissions();
   injectCTAButtons();
   populateCompanyDropdown();
