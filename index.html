@@ -11127,7 +11127,45 @@ function setupLighting(scene) {
     clouds.push(cGroup);
   }
 
-  return { ambient, sun, sunOrb, moonOrb, clouds };
+  // Torches — placed at key village locations, light up at dusk/night
+  const torches = [];
+  const torchPositions = [
+    // Along the road
+    { x: 5, z: Math.floor(WORLD_D / 2) - 2 },
+    { x: 15, z: Math.floor(WORLD_D / 2) - 2 },
+    { x: 25, z: Math.floor(WORLD_D / 2) - 2 },
+    { x: 35, z: Math.floor(WORLD_D / 2) - 2 },
+    { x: 44, z: Math.floor(WORLD_D / 2) - 2 },
+    // Near house entrances
+    ...HOUSE_SITES.map(s => ({ x: s.x + 5, z: s.z + 2 })),
+    // Around forge
+    { x: 29, z: 20 },
+    { x: 35, z: 20 },
+  ];
+  const torchGeo = new THREE.BoxGeometry(0.15, 1.0, 0.15);
+  const torchMat = new THREE.MeshStandardMaterial({ color: '#5C3A1A', roughness: 0.9 });
+  const torchTopGeo = new THREE.BoxGeometry(0.25, 0.25, 0.25);
+  const torchGlowMat = new THREE.MeshBasicMaterial({ color: '#FF8C00' });
+
+  torchPositions.forEach(tp => {
+    const th = getHeight(tp.x, tp.z);
+    // Wooden stick
+    const stick = new THREE.Mesh(torchGeo, torchMat);
+    stick.position.set(tp.x + 0.5, th + 1.5, tp.z + 0.5);
+    stick.castShadow = true;
+    scene.add(stick);
+    // Glowing top
+    const top = new THREE.Mesh(torchTopGeo, torchGlowMat.clone());
+    top.position.set(tp.x + 0.5, th + 2.2, tp.z + 0.5);
+    scene.add(top);
+    // Point light
+    const light = new THREE.PointLight('#FF9933', 0, 12, 2);
+    light.position.set(tp.x + 0.5, th + 2.5, tp.z + 0.5);
+    scene.add(light);
+    torches.push({ top, light, baseY: th + 2.2 });
+  });
+
+  return { ambient, sun, sunOrb, moonOrb, clouds, torches };
 }
 
 function updateDayNight(time, lights, skyMat, scene) {
@@ -11163,6 +11201,19 @@ function updateDayNight(time, lights, skyMat, scene) {
   lights.clouds.forEach(c => {
     c.position.x = c._baseX + Math.sin(time * 0.01 * c._speed) * 15;
     c.children.forEach(m => { m.material.opacity = cloudAlpha; });
+  });
+  // Torches — glow when dark, flicker animation
+  const torchIntensity = Math.max(0, 1 - dayFactor * 2.5); // starts glowing below dayFactor 0.4
+  const t = time * 0.001;
+  lights.torches.forEach((torch, i) => {
+    const flicker = 0.85 + Math.sin(t * 8 + i * 2.3) * 0.1 + Math.sin(t * 13 + i * 5.1) * 0.05;
+    torch.light.intensity = torchIntensity * 1.2 * flicker;
+    // Glow material
+    const glow = torchIntensity * flicker;
+    torch.top.material.color.setRGB(1, 0.55 + glow * 0.2, glow * 0.15);
+    torch.top.material.opacity = 0.3 + torchIntensity * 0.7;
+    // Slight bob
+    torch.top.position.y = torch.baseY + Math.sin(t * 4 + i) * 0.02;
   });
   // Fog
   const fogR = 0.15 + dayFactor * 0.4, fogG = 0.10 + dayFactor * 0.35, fogB = 0.18 + dayFactor * 0.3;
