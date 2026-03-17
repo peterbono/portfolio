@@ -9885,7 +9885,8 @@
   function collectSubmittedJobs() {
     const jobs = [];
     rows().forEach(r => {
-      if (r.dataset.status === 'submitted') {
+      const st = r.dataset.status;
+      if (st === 'submitted' || st === 'manual' || st === 'rejected') {
         const company = (r.querySelector('.col-company') || r.cells[3])?.textContent?.trim() || '';
         const role = (r.querySelector('.col-role') || r.cells[2])?.textContent?.trim() || '';
         if (company) jobs.push({ company, role });
@@ -9937,7 +9938,11 @@
   function startVillage() {
     if (window.voxelVillage) {
       window.voxelVillage.start();
+      villageState.submittedJobs = collectSubmittedJobs();
       window.voxelVillage.updateState(villageState);
+    } else {
+      // Module not loaded yet — retry
+      setTimeout(startVillage, 300);
     }
   }
   function stopVillage() {
@@ -11472,9 +11477,10 @@ class SubmittedVillagerNPC {
     _b(0.08, 0.04, 0.12, boneMat, -0.08, 0.06, 0.03);
     _b(0.08, 0.04, 0.12, boneMat, 0.08, 0.06, 0.03);
 
-    // Lay flat on ground
+    // Lay flat on ground — rotate so Y-axis body lies along Z-axis world
     this.group.rotation.x = -Math.PI / 2;
-    pos.y = groundY + 0.3;
+    this.group.scale.set(0.9, 0.9, 0.9);
+    pos.y = groundY + 0.7;
 
     // Small wooden cross tombstone
     const cross1 = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.6, 0.08), new THREE.MeshStandardMaterial({ color: '#5C3A1A' }));
@@ -12034,6 +12040,7 @@ if (container) {
 
   // Public API
   window.voxelVillage = {
+    submittedVillagers,
     start() {
       if (running) return;
       running = true; lastTime = performance.now();
