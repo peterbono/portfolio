@@ -10072,7 +10072,8 @@
 
   // --- Progress ring ---
   function updateProgress(submitted, total) {
-    const actionable = total - document.querySelectorAll('tr[data-status="skipped"]').length;
+    const nonActionable = document.querySelectorAll('tr[data-status="skipped"], tr[data-status="already"], tr[data-status="failed"]').length;
+    const actionable = total - nonActionable;
     const pct = actionable > 0 ? Math.round((submitted / actionable) * 100) : 0;
     submittedPct = pct;
     const circle = document.getElementById('progress-circle');
@@ -10095,7 +10096,7 @@
     document.getElementById('count-failed').textContent = counts.failed;
     document.getElementById('count-skipped').textContent = counts.skipped;
     document.getElementById('count-rejected').textContent = counts.rejected;
-    updateProgress(counts.submitted, all.length);
+    updateProgress(counts.submitted + counts.rejected + counts.manual, all.length);
     updateVillageMetrics(counts.submitted);
   }
 
