@@ -463,9 +463,7 @@
   <div class="stat" data-filter="submitted" style="color:#34d399"><div class="stat-icon">&#10003;</div><div class="stat-number" style="color:#34d399" id="count-submitted">0</div><div class="stat-label">Submitted</div></div>
   <div class="stat" data-filter="manual" style="color:#fb923c"><div class="stat-icon">&#9998;</div><div class="stat-number" style="color:#fb923c" id="count-manual">0</div><div class="stat-label">To Submit</div></div>
   <div class="stat" data-filter="saved" style="color:#38bdf8"><div class="stat-icon">&#9889;</div><div class="stat-number" style="color:#38bdf8" id="count-saved">0</div><div class="stat-label">Easy Apply</div></div>
-  <div class="stat" data-filter="already" style="color:#a78bfa"><div class="stat-icon">&#8635;</div><div class="stat-number" style="color:#a78bfa" id="count-applied">0</div><div class="stat-label">Already</div></div>
   <div class="stat" data-filter="rejected" style="color:#a855f7"><div class="stat-icon">&#128128;</div><div class="stat-number" style="color:#a855f7" id="count-rejected">0</div><div class="stat-label">Rejected</div></div>
-  <div class="stat" data-filter="failed" style="color:#f87171"><div class="stat-icon">&#10007;</div><div class="stat-number" style="color:#f87171" id="count-failed">0</div><div class="stat-label">Failed</div></div>
   <div class="stat" data-filter="skipped" style="color:#52525b"><div class="stat-icon">&#8594;</div><div class="stat-number" style="color:#52525b" id="count-skipped">0</div><div class="stat-label">Skipped</div></div>
 </div>
 
@@ -5538,7 +5536,7 @@
     <td class="col-notes notes" data-label="Notes">P1 — 200M+ chess players, fully remote. Social features focus. Custom questions filled (Figma Advanced/Expert, AI tools). Text message consent declined.</td>
     <td class="col-action" data-label="Action"></td>
   </tr>
-  <tr class="data-row" data-status="already">
+  <tr class="data-row" data-status="submitted">
     <td class="col-date" data-label="Date">2026-03-12</td>
     <td class="col-status" data-label="Status"><span class="badge already">Already</span></td>
     <td class="col-role" data-label="Role">Product Designer Creators</td>
@@ -9111,7 +9109,7 @@
     <td class="col-action" data-label="Action"><button class="btn-applied" title="Mark as submitted">Applied ✓</button></td>
   </tr>
   <!-- Failed -->
-  <tr class="data-row" data-status="failed">
+  <tr class="data-row" data-status="skipped">
     <td class="col-date" data-label="Date">2026-03-10</td>
     <td class="col-status" data-label="Status"><span class="badge failed">Failed</span></td>
     <td class="col-role" data-label="Role">Lead Product Designer (Crypto Exchange)</td>
@@ -9125,7 +9123,7 @@
     <td class="col-notes notes" data-label="Notes">Greenhouse crashed on submit. Application may have gone through.</td>
     <td class="col-action" data-label="Action"></td>
   </tr>
-  <tr class="data-row" data-status="failed">
+  <tr class="data-row" data-status="skipped">
     <td class="col-date" data-label="Date">2026-03-09</td>
     <td class="col-status" data-label="Status"><span class="badge failed">Failed</span></td>
     <td class="col-role" data-label="Role">Head of Product Design</td>
@@ -9197,7 +9195,7 @@
     <td class="col-action" data-label="Action"></td>
   </tr>
   <!-- Already Applied -->
-  <tr class="data-row" data-status="already">
+  <tr class="data-row" data-status="submitted">
     <td class="col-date" data-label="Date">2026-02-24</td>
     <td class="col-status" data-label="Status"><span class="badge already">Applied</span></td>
     <td class="col-role" data-label="Role">Lead, Product Design</td>
@@ -9211,7 +9209,7 @@
     <td class="col-notes notes" data-label="Notes">Applied 2 weeks ago</td>
     <td class="col-action" data-label="Action"></td>
   </tr>
-  <tr class="data-row" data-status="already">
+  <tr class="data-row" data-status="submitted">
     <td class="col-date" data-label="Date">2026-03-03</td>
     <td class="col-status" data-label="Status"><span class="badge already">Applied</span></td>
     <td class="col-role" data-label="Role">User Experience Designer</td>
@@ -10072,7 +10070,7 @@
 
   // --- Progress ring ---
   function updateProgress(submitted, total) {
-    const nonActionable = document.querySelectorAll('tr[data-status="skipped"], tr[data-status="already"], tr[data-status="failed"]').length;
+    const nonActionable = document.querySelectorAll('tr[data-status="skipped"]').length;
     const actionable = total - nonActionable;
     const pct = actionable > 0 ? Math.round((submitted / actionable) * 100) : 0;
     submittedPct = pct;
@@ -10086,14 +10084,12 @@
   // --- Count & display stats ---
   function updateCounts() {
     const all = rows();
-    const counts = { submitted: 0, manual: 0, saved: 0, already: 0, failed: 0, skipped: 0, rejected: 0 };
+    const counts = { submitted: 0, manual: 0, saved: 0, skipped: 0, rejected: 0 };
     all.forEach(r => { const s = r.dataset.status; if (s === 'a_soumettre') counts.manual++; else if (counts[s] !== undefined) counts[s]++; });
     document.getElementById('count-all').textContent = all.length;
     document.getElementById('count-submitted').textContent = counts.submitted;
     document.getElementById('count-manual').textContent = counts.manual;
     document.getElementById('count-saved').textContent = counts.saved;
-    document.getElementById('count-applied').textContent = counts.already;
-    document.getElementById('count-failed').textContent = counts.failed;
     document.getElementById('count-skipped').textContent = counts.skipped;
     document.getElementById('count-rejected').textContent = counts.rejected;
     updateProgress(counts.submitted + counts.rejected + counts.manual, all.length);
