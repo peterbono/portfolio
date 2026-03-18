@@ -11805,7 +11805,7 @@ function updateDayNight(time, lights, skyMat, scene) {
 class ParticleSystem {
   constructor(scene) {
     this.particles = [];
-    this.maxP = 300;
+    this.maxP = 600;
     this.geo = new THREE.BufferGeometry();
     this.positions = new Float32Array(this.maxP * 3);
     this.colors = new Float32Array(this.maxP * 3);
@@ -11817,6 +11817,7 @@ class ParticleSystem {
     this.mesh = new THREE.Points(this.geo, this.mat);
     scene.add(this.mesh);
     this.fireChimneys = [];
+    this.fireIntensity = 0; // 0-1, controlled by forge power
   }
 
   burst(x, y, z, blockType) {
@@ -11831,24 +11832,35 @@ class ParticleSystem {
   }
 
   update(dt) {
-    // Spawn fire particles — more intense and varied
+    // Spawn fire particles — intensity scales with forge power (0→1)
+    const fi = Math.max(0, Math.min(1, this.fireIntensity));
+    // Spawn probability: 10% at fi=0.05, 100% at fi=1.0
+    const spawnProb = Math.min(1, fi * 1.1);
+    // Particles per source: 1 at low, up to 4 at max
+    const maxPerSource = Math.ceil(1 + fi * 3);
+    // Spread: tighter at low, wider at high
+    const spread = 0.3 + fi * 0.8;
+    // Size scale: small flames at low, big at high
+    const sizeScale = 0.5 + fi * 0.5;
+
     for (const ch of this.fireChimneys) {
-      const spawnCount = this.particles.length < this.maxP - 10 ? (Math.random() < 0.7 ? 2 : 1) : 0;
+      if (Math.random() > spawnProb) continue;
+      const spawnCount = this.particles.length < this.maxP - 10 ? (Math.random() < 0.7 ? maxPerSource : Math.ceil(maxPerSource * 0.6)) : 0;
       for (let s = 0; s < spawnCount; s++) {
-        const life = 0.8 + Math.random() * 0.8;
-        const isEmber = Math.random() < 0.3;
+        const life = (0.6 + Math.random() * 0.6) * (0.7 + fi * 0.3);
+        const isEmber = Math.random() < (0.15 + fi * 0.25);
         this.particles.push({
-          x: ch.x + (Math.random() - 0.5) * 0.6,
+          x: ch.x + (Math.random() - 0.5) * spread,
           y: ch.y + Math.random() * 0.2,
-          z: ch.z + (Math.random() - 0.5) * 0.6,
-          vx: (Math.random() - 0.5) * 0.8,
-          vy: isEmber ? (2.5 + Math.random() * 3) : (1.0 + Math.random() * 1.5),
-          vz: (Math.random() - 0.5) * 0.8,
+          z: ch.z + (Math.random() - 0.5) * spread,
+          vx: (Math.random() - 0.5) * (0.4 + fi * 0.8),
+          vy: isEmber ? (2 + Math.random() * 2 + fi * 2) : (0.8 + Math.random() * 1 + fi * 1),
+          vz: (Math.random() - 0.5) * (0.4 + fi * 0.8),
           life,
           r: 1,
           g: isEmber ? 0.4 + Math.random() * 0.2 : 0.7 + Math.random() * 0.3,
           b: isEmber ? 0 : 0.1,
-          size: isEmber ? 0.08 + Math.random() * 0.06 : 0.25 + Math.random() * 0.2,
+          size: (isEmber ? 0.08 + Math.random() * 0.06 : 0.25 + Math.random() * 0.2) * sizeScale,
           isFire: true
         });
       }
@@ -12111,13 +12123,26 @@ if (container) {
       }
       // Forge fire — intensity scales with submitted percentage
       forgeFireIntensity = state.forge || 0;
+      particles.fireIntensity = forgeFireIntensity;
       const forgeFh = getHeight(forgePos.x, forgePos.z);
       if (forgeFireIntensity > 0.05) {
-        // Fire above wood logs in fire pit (center of forge)
+        // Fire pit sources — more sources at higher intensity
         particles.addFireSource(forgePos.x + 2.5, forgeFh + 2.8, forgePos.z + 1.5);
         particles.addFireSource(forgePos.x + 2.5, forgeFh + 2.8, forgePos.z + 2.5);
-        // Smoke from chimney top
+        if (forgeFireIntensity > 0.3) {
+          particles.addFireSource(forgePos.x + 2, forgeFh + 2.8, forgePos.z + 2);
+          particles.addFireSource(forgePos.x + 3, forgeFh + 2.8, forgePos.z + 2);
+        }
+        if (forgeFireIntensity > 0.6) {
+          particles.addFireSource(forgePos.x + 1.5, forgeFh + 3, forgePos.z + 2);
+          particles.addFireSource(forgePos.x + 3.5, forgeFh + 3, forgePos.z + 2);
+        }
+        // Smoke from chimney — always
         particles.addFireSource(forgePos.x + 2.5, forgeFh + 9, forgePos.z + 1);
+        // Extra chimney smoke at high intensity
+        if (forgeFireIntensity > 0.5) {
+          particles.addFireSource(forgePos.x + 2.5, forgeFh + 9.5, forgePos.z + 1.5);
+        }
       }
     }
   };
