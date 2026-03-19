@@ -23,7 +23,6 @@ const CARD_ORDER: Array<{ key: StatusFilterValue; label?: string; icon?: string;
   { key: 'all', label: 'All', icon: '◉', color: '#e0e0e0', bg: '#1a1a1f', border: '#2a2a35' },
   { key: 'submitted' },
   { key: 'manual' },
-  { key: 'a_soumettre' },
   { key: 'screening' },
   { key: 'interviewing' },
   { key: 'challenge' },

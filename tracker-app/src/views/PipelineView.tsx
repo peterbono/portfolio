@@ -3,13 +3,19 @@ import { useJobs } from '../context/JobsContext'
 import { useUI } from '../context/UIContext'
 import { StatusBadge } from '../components/StatusBadge'
 import type { Job, JobStatus } from '../types/job'
-import { STATUS_CONFIG, ACTIVE_STATUSES, PENDING_STATUSES, INACTIVE_STATUSES } from '../types/job'
+import { STATUS_CONFIG } from '../types/job'
 
-/** Column ordering for the pipeline view */
+/** Fixed columns for the pipeline view -- no saved, skipped, ghosted, a_soumettre */
 const PIPELINE_COLUMNS: JobStatus[] = [
-  ...PENDING_STATUSES,
-  ...ACTIVE_STATUSES,
-  ...INACTIVE_STATUSES,
+  'manual',
+  'submitted',
+  'screening',
+  'interviewing',
+  'challenge',
+  'offer',
+  'negotiation',
+  'rejected',
+  'withdrawn',
 ]
 
 export function PipelineView() {
@@ -17,7 +23,7 @@ export function PipelineView() {
   const { selectJob } = useUI()
 
   const grouped = useMemo(() => {
-    const map: Record<JobStatus, Job[]> = {} as Record<JobStatus, Job[]>
+    const map: Record<string, Job[]> = {}
     for (const status of PIPELINE_COLUMNS) {
       map[status] = []
     }
@@ -34,11 +40,6 @@ export function PipelineView() {
     }
     return map
   }, [jobs])
-
-  // Only show columns that have at least 1 job
-  const visibleColumns = PIPELINE_COLUMNS.filter(
-    (status) => grouped[status].length > 0
-  )
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -74,12 +75,12 @@ export function PipelineView() {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: `repeat(${visibleColumns.length}, minmax(220px, 1fr))`,
+            gridTemplateColumns: `repeat(${PIPELINE_COLUMNS.length}, minmax(220px, 1fr))`,
             gap: 12,
-            minWidth: visibleColumns.length * 232,
+            minWidth: PIPELINE_COLUMNS.length * 232,
           }}
         >
-          {visibleColumns.map((status) => (
+          {PIPELINE_COLUMNS.map((status) => (
             <PipelineColumn
               key={status}
               status={status}
@@ -164,9 +165,23 @@ function PipelineColumn({
           gap: 6,
         }}
       >
-        {jobs.map((job) => (
-          <PipelineCard key={job.id} job={job} onClick={() => onCardClick(job.id)} />
-        ))}
+        {jobs.length === 0 ? (
+          <div
+            style={{
+              padding: '20px 12px',
+              fontSize: 12,
+              color: 'var(--text-tertiary)',
+              fontStyle: 'italic',
+              textAlign: 'center',
+            }}
+          >
+            No jobs in this stage
+          </div>
+        ) : (
+          jobs.map((job) => (
+            <PipelineCard key={job.id} job={job} onClick={() => onCardClick(job.id)} />
+          ))
+        )}
       </div>
     </div>
   )

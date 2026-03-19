@@ -9,6 +9,7 @@ import {
 } from 'react'
 import type { Job, JobStatus, JobEvent } from '../types/job'
 import seedData from '../data/jobs.json'
+import knownRejections from '../data/known-rejections.json'
 
 const seedJobs: Job[] = seedData as Job[]
 
@@ -31,10 +32,17 @@ function saveOverrides(overrides: Overrides) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(overrides))
 }
 
+const rejectedSet = new Set((knownRejections as string[]).map(c => c.toLowerCase()))
+
 function mergeJobs(seed: Job[], overrides: Overrides): Job[] {
   const merged = seed.map((job) => {
     const override = overrides[job.id]
-    return override ? { ...job, ...override } : job
+    let result = override ? { ...job, ...override } : { ...job }
+    // Apply known rejections to submitted jobs
+    if (rejectedSet.has(result.company.toLowerCase()) && (result.status === 'submitted' || result.status === 'manual')) {
+      result = { ...result, status: 'rejected' as JobStatus }
+    }
+    return result
   })
 
   // Include any jobs that exist only in overrides (manually added)
@@ -53,6 +61,7 @@ interface JobsContextValue {
   updateJobStatus: (id: string, status: JobStatus) => void
   addJobEvent: (id: string, event: JobEvent) => void
   addJob: (job: Job) => void
+  markRejected: (companies: string[]) => void
   counts: Record<JobStatus, number>
 }
 
@@ -92,10 +101,32 @@ export function JobsProvider({ children }: { children: ReactNode }) {
     }))
   }, [])
 
+  const markRejected = useCallback((companies: string[]) => {
+    const companySet = new Set(companies.map(c => c.toLowerCase()))
+    setOverrides((prev) => {
+      const next = { ...prev }
+      for (const job of seedJobs) {
+        if (companySet.has(job.company.toLowerCase()) && job.status === 'submitted') {
+          next[job.id] = { ...next[job.id], status: 'rejected' as JobStatus }
+        }
+      }
+      // Also check overridden jobs
+      for (const [id, override] of Object.entries(prev)) {
+        const job = seedJobs.find(j => j.id === id)
+        const company = override.company || job?.company || ''
+        const status = override.status || job?.status
+        if (companySet.has(company.toLowerCase()) && (status === 'submitted' || status === 'manual')) {
+          next[id] = { ...next[id], status: 'rejected' as JobStatus }
+        }
+      }
+      return next
+    })
+  }, [])
+
   const counts = useMemo(() => {
     const c = {} as Record<JobStatus, number>
     const allStatuses: JobStatus[] = [
-      'submitted', 'manual', 'a_soumettre', 'skipped', 'saved',
+      'submitted', 'manual', 'skipped', 'saved',
       'rejected', 'screening', 'interviewing', 'challenge',
       'offer', 'negotiation', 'withdrawn', 'ghosted',
     ]
@@ -107,7 +138,7 @@ export function JobsProvider({ children }: { children: ReactNode }) {
   }, [jobs])
 
   return (
-    <JobsContext.Provider value={{ jobs, updateJobStatus, addJobEvent, addJob, counts }}>
+    <JobsContext.Provider value={{ jobs, updateJobStatus, addJobEvent, addJob, markRejected, counts }}>
       {children}
     </JobsContext.Provider>
   )

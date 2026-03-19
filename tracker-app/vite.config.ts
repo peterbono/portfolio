@@ -3,9 +3,9 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  base: '/portfolio/tracker/',
+  base: '/',
   build: {
-    outDir: '../tracker',
+    outDir: 'dist',
     emptyOutDir: true,
   },
   resolve: {

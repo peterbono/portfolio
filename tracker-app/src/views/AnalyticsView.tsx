@@ -178,10 +178,61 @@ function TopATSPlatforms() {
   const { jobs } = useJobs()
 
   const data = useMemo(() => {
+    // Normalize ATS names and exclude non-ATS values
+    const EXCLUDE = new Set([
+      'unknown', 'soumise', 'à soumettre', 'a soumettre', 'manual', 'custom',
+      'email', 'direct', '—', '', 'recruiter', 'aggregator', 'various',
+      'skip (us only)', 'trop long', 'external', 'custom (remote.com)',
+      'wwr (paywall)', 'buscojobs',
+    ])
+    const NORMALIZE: Record<string, string> = {
+      'linkedin ea': 'Easy Apply',
+      'easy apply': 'Easy Apply',
+      'linkedin easy apply': 'Easy Apply',
+      'linkedin easy apply (workable)': 'Workable',
+      'linkedin': 'LinkedIn',
+      'greenhouse': 'Greenhouse',
+      'greenhouse (embedded)': 'Greenhouse',
+      'custom (greenhouse)': 'Greenhouse',
+      'lever': 'Lever',
+      'lever eu': 'Lever',
+      'ashby': 'Ashby',
+      'ashby hq': 'Ashby',
+      'workable': 'Workable',
+      'teamtailor': 'Teamtailor',
+      'breezy hr': 'Breezy HR',
+      'breezy': 'Breezy HR',
+      'smartrecruiters': 'SmartRecruiters',
+      'smartrecruiters (own)': 'SmartRecruiters',
+      'recruitee': 'Recruitee',
+      'careers-page.com': 'Manatal',
+      'manatal': 'Manatal',
+      'workday': 'Workday',
+      'indeed': 'Indeed',
+      'glassdoor': 'Indeed',
+      'dribbble': 'Dribbble',
+      'netflix custom': 'Netflix',
+      'jazzhr': 'JazzHR',
+      'authenticjobs': 'AuthenticJobs',
+      'deel_careers': 'Deel Careers',
+      'wellfound': 'Wellfound',
+      'jobvite': 'Jobvite',
+      'oracle hcm': 'Oracle HCM',
+      'rippling': 'Rippling',
+      'gupy': 'Gupy',
+      'bamboohr': 'BambooHR',
+      'notion form': 'Notion Form',
+      'notion forms': 'Notion Form',
+      'canonical ats': 'Canonical',
+      'pinpoint hq': 'Pinpoint',
+      'gem': 'Gem',
+    }
     const atsMap = new Map<string, number>()
     for (const job of jobs) {
       if (!job.ats) continue
-      const name = job.ats.trim() || 'Unknown'
+      const raw = job.ats.trim().toLowerCase()
+      if (EXCLUDE.has(raw)) continue
+      const name = NORMALIZE[raw] || job.ats.trim()
       atsMap.set(name, (atsMap.get(name) ?? 0) + 1)
     }
     return [...atsMap.entries()]

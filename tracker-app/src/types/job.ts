@@ -1,7 +1,6 @@
 export type JobStatus =
   | 'submitted'
   | 'manual'
-  | 'a_soumettre'
   | 'skipped'
   | 'saved'
   | 'rejected'
@@ -59,7 +58,6 @@ export interface Job {
 export const STATUS_CONFIG: Record<JobStatus, { label: string; color: string; bg: string; border: string; icon: string }> = {
   submitted:    { label: 'Submitted',    color: '#34d399', bg: '#052e1f', border: '#064e3b', icon: '✓' },
   manual:       { label: 'To Submit',    color: '#fb923c', bg: '#2a1505', border: '#422006', icon: '✎' },
-  a_soumettre:  { label: 'A Soumettre',  color: '#fb923c', bg: '#2a1505', border: '#422006', icon: '✎' },
   skipped:      { label: 'Skipped',      color: '#52525b', bg: '#131316', border: '#1e1e24', icon: '→' },
   saved:        { label: 'Easy Apply',   color: '#38bdf8', bg: '#0c2844', border: '#1e3a5f', icon: '⚡' },
   rejected:     { label: 'Rejected',     color: '#a855f7', bg: '#1a0a2e', border: '#3b0764', icon: '💀' },
@@ -74,4 +72,4 @@ export const STATUS_CONFIG: Record<JobStatus, { label: string; color: string; bg
 
 export const ACTIVE_STATUSES: JobStatus[] = ['submitted', 'screening', 'interviewing', 'challenge', 'offer', 'negotiation']
 export const INACTIVE_STATUSES: JobStatus[] = ['rejected', 'withdrawn', 'ghosted', 'skipped']
-export const PENDING_STATUSES: JobStatus[] = ['manual', 'a_soumettre', 'saved']
+export const PENDING_STATUSES: JobStatus[] = ['manual', 'saved']

@@ -1,3 +1,4 @@
+import { useState, useEffect, useRef } from 'react'
 import { Search, ChevronDown } from 'lucide-react'
 
 interface SearchBarProps {
@@ -19,6 +20,15 @@ export function SearchBar({
   onCompanyChange,
   companies,
 }: SearchBarProps) {
+  const [localSearch, setLocalSearch] = useState(searchQuery)
+  const timerRef = useRef<number | undefined>(undefined)
+
+  useEffect(() => {
+    clearTimeout(timerRef.current)
+    timerRef.current = window.setTimeout(() => onSearchChange(localSearch), 300)
+    return () => clearTimeout(timerRef.current)
+  }, [localSearch]) // eslint-disable-line
+
   return (
     <div style={styles.row}>
       {/* Search input */}
@@ -26,8 +36,8 @@ export function SearchBar({
         <Search size={14} color="var(--text-tertiary)" style={styles.searchIcon} />
         <input
           type="text"
-          value={searchQuery}
-          onChange={(e) => onSearchChange(e.target.value)}
+          value={localSearch}
+          onChange={(e) => setLocalSearch(e.target.value)}
           placeholder="Search by company, role, ATS..."
           style={styles.searchInput}
         />
