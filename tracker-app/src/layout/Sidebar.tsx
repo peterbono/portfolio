@@ -3,11 +3,11 @@ import {
   LayoutList,
   Kanban,
   BarChart3,
-  Gamepad2,
   Settings,
   PanelLeftClose,
   PanelLeft,
   Briefcase,
+  Flame,
 } from 'lucide-react'
 import { useUI, type ActiveView } from '../context/UIContext'
 import { useJobs } from '../context/JobsContext'
@@ -16,7 +16,7 @@ const NAV_ITEMS: { view: ActiveView; label: string; icon: typeof LayoutList }[] 
   { view: 'table', label: 'Table', icon: LayoutList },
   { view: 'pipeline', label: 'Pipeline', icon: Kanban },
   { view: 'analytics', label: 'Analytics', icon: BarChart3 },
-  { view: 'village', label: 'Village', icon: Gamepad2 },
+  { view: 'coach', label: 'Coach', icon: Flame },
   { view: 'settings', label: 'Settings', icon: Settings },
 ]
 

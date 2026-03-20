@@ -8,6 +8,9 @@ import {
   type ReactNode,
 } from 'react'
 import type { Job, JobStatus, JobEvent } from '../types/job'
+import { useUI, type TimeRange, type AreaFilter, type WorkMode } from './UIContext'
+import companyHQ from '../data/company-hq.json'
+const HQ_MAP: Record<string, string> = companyHQ as Record<string, string>
 import seedData from '../data/jobs.json'
 import knownRejections from '../data/known-rejections.json'
 
@@ -35,20 +38,28 @@ function saveOverrides(overrides: Overrides) {
 const rejectedSet = new Set((knownRejections as string[]).map(c => c.toLowerCase()))
 
 function mergeJobs(seed: Job[], overrides: Overrides): Job[] {
-  const merged = seed.map((job) => {
-    const override = overrides[job.id]
-    let result = override ? { ...job, ...override } : { ...job }
-    // Apply known rejections to submitted jobs
-    if (rejectedSet.has(result.company.toLowerCase()) && (result.status === 'submitted' || result.status === 'manual')) {
-      result = { ...result, status: 'rejected' as JobStatus }
-    }
-    return result
-  })
+  const deletedIds = new Set<string>()
+  for (const [id, ov] of Object.entries(overrides)) {
+    if ((ov as Record<string, unknown>)._deleted) deletedIds.add(id)
+  }
 
-  // Include any jobs that exist only in overrides (manually added)
+  const merged = seed
+    .filter(job => !deletedIds.has(job.id))
+    .map((job) => {
+      const override = overrides[job.id]
+      let result = override ? { ...job, ...override } : { ...job }
+      // Apply known rejections ONLY if user hasn't manually set a different status
+      const userSetStatus = override?.status
+      if (!userSetStatus && rejectedSet.has(result.company.toLowerCase()) && (result.status === 'submitted' || result.status === 'manual')) {
+        result = { ...result, status: 'rejected' as JobStatus }
+      }
+      return result
+    })
+
+  // Include any jobs that exist only in overrides (manually added, not deleted)
   const seedIds = new Set(seed.map((j) => j.id))
   for (const [id, override] of Object.entries(overrides)) {
-    if (!seedIds.has(id) && override.company && override.role) {
+    if (!seedIds.has(id) && !deletedIds.has(id) && override.company && override.role) {
       merged.push({ ...override, id } as Job)
     }
   }
@@ -56,12 +67,30 @@ function mergeJobs(seed: Job[], overrides: Overrides): Job[] {
   return merged
 }
 
+function getTimeThreshold(range: TimeRange): string | null {
+  if (range === 'all') return null
+  const now = new Date()
+  let d: Date
+  switch (range) {
+    case 'today': d = new Date(now); d.setHours(0,0,0,0); break
+    case 'week': d = new Date(now); d.setDate(d.getDate() - d.getDay()); d.setHours(0,0,0,0); break
+    case 'month': d = new Date(now.getFullYear(), now.getMonth(), 1); break
+    case '3months': d = new Date(now.getFullYear(), now.getMonth() - 3, 1); break
+    default: return null
+  }
+  return d.toISOString().split('T')[0]
+}
+
 interface JobsContextValue {
   jobs: Job[]
+  allJobs: Job[]
   updateJobStatus: (id: string, status: JobStatus) => void
+  updateJobField: (id: string, field: string, value: string) => void
   addJobEvent: (id: string, event: JobEvent) => void
+  removeJobEvent: (id: string, eventId: string) => void
+  deleteJob: (id: string) => void
   addJob: (job: Job) => void
-  markRejected: (companies: string[]) => void
+  markRejected: (rejections: { company: string; date?: string }[]) => void
   counts: Record<JobStatus, number>
 }
 
@@ -69,8 +98,47 @@ const JobsContext = createContext<JobsContextValue | null>(null)
 
 export function JobsProvider({ children }: { children: ReactNode }) {
   const [overrides, setOverrides] = useState<Overrides>(loadOverrides)
+  const { timeRange, areaFilter, workMode } = useUI()
 
-  const jobs = useMemo(() => mergeJobs(seedJobs, overrides), [overrides])
+  const allJobs = useMemo(() => mergeJobs(seedJobs, overrides), [overrides])
+
+  const jobs = useMemo(() => {
+    let filtered = allJobs
+
+    // Time filter
+    const threshold = getTimeThreshold(timeRange)
+    if (threshold) filtered = filtered.filter(j => j.date >= threshold)
+
+    // Area filter
+    if (areaFilter !== 'all') {
+      filtered = filtered.filter(j => {
+        const area = (j as unknown as Record<string, string>).area
+        if (area) return area === areaFilter
+        const loc = (j.location || '').toLowerCase()
+        const apac = ['bangkok','singapore','india','tokyo','japan','korea','seoul','hong kong','manila','philippines','thailand','vietnam','indonesia','malaysia','australia','china','taiwan','apac']
+        const emea = ['london','berlin','paris','amsterdam','dublin','europe','germany','france','uk','spain','portugal','ireland','netherlands','sweden','switzerland','israel','dubai','emea']
+        const americas = ['new york','san francisco','usa','united states','canada','toronto','los angeles','chicago','seattle','boston','brazil','mexico','americas']
+        if (areaFilter === 'apac' && apac.some(k => loc.includes(k))) return true
+        if (areaFilter === 'emea' && emea.some(k => loc.includes(k))) return true
+        if (areaFilter === 'americas' && americas.some(k => loc.includes(k))) return true
+        // Company HQ fallback
+        return HQ_MAP[j.company] === areaFilter
+      })
+    }
+
+    // Work mode filter
+    if (workMode !== 'all') {
+      filtered = filtered.filter(j => {
+        const loc = (j.location || '').toLowerCase()
+        if (workMode === 'remote') return loc.includes('remote')
+        if (workMode === 'hybrid') return loc.includes('hybrid')
+        if (workMode === 'onsite') return !loc.includes('remote') && !loc.includes('hybrid')
+        return true
+      })
+    }
+
+    return filtered
+  }, [allJobs, timeRange, areaFilter, workMode])
 
   useEffect(() => {
     saveOverrides(overrides)
@@ -80,6 +148,13 @@ export function JobsProvider({ children }: { children: ReactNode }) {
     setOverrides((prev) => ({
       ...prev,
       [id]: { ...prev[id], status },
+    }))
+  }, [])
+
+  const updateJobField = useCallback((id: string, field: string, value: string) => {
+    setOverrides((prev) => ({
+      ...prev,
+      [id]: { ...prev[id], [field]: value },
     }))
   }, [])
 
@@ -94,6 +169,17 @@ export function JobsProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  const removeJobEvent = useCallback((id: string, eventId: string) => {
+    setOverrides((prev) => {
+      const existing = prev[id] ?? {}
+      const events = (existing.events ?? []).filter(e => e.id !== eventId)
+      return {
+        ...prev,
+        [id]: { ...existing, events },
+      }
+    })
+  }, [])
+
   const addJob = useCallback((job: Job) => {
     setOverrides((prev) => ({
       ...prev,
@@ -101,13 +187,32 @@ export function JobsProvider({ children }: { children: ReactNode }) {
     }))
   }, [])
 
-  const markRejected = useCallback((companies: string[]) => {
-    const companySet = new Set(companies.map(c => c.toLowerCase()))
+  const deleteJob = useCallback((id: string) => {
+    setOverrides((prev) => ({
+      ...prev,
+      [id]: { ...prev[id], _deleted: true } as unknown as Partial<Job>,
+    }))
+  }, [])
+
+  const markRejected = useCallback((rejections: { company: string; date?: string }[]) => {
+    const rejMap = new Map<string, string | undefined>()
+    for (const r of rejections) rejMap.set(r.company.toLowerCase(), r.date)
     setOverrides((prev) => {
       const next = { ...prev }
       for (const job of seedJobs) {
-        if (companySet.has(job.company.toLowerCase()) && job.status === 'submitted') {
-          next[job.id] = { ...next[job.id], status: 'rejected' as JobStatus }
+        const companyLower = job.company.toLowerCase()
+        if (!rejMap.has(companyLower)) continue
+        const rejDate = rejMap.get(companyLower)
+        if (job.status === 'submitted' || job.status === 'manual') {
+          // Mark as rejected + store date
+          next[job.id] = {
+            ...next[job.id],
+            status: 'rejected' as JobStatus,
+            ...(rejDate && !next[job.id]?.lastContactDate ? { lastContactDate: rejDate } : {}),
+          }
+        } else if (job.status === 'rejected' && rejDate && !next[job.id]?.lastContactDate) {
+          // Already rejected in seed — backfill the rejection date
+          next[job.id] = { ...next[job.id], lastContactDate: rejDate }
         }
       }
       // Also check overridden jobs
@@ -115,8 +220,17 @@ export function JobsProvider({ children }: { children: ReactNode }) {
         const job = seedJobs.find(j => j.id === id)
         const company = override.company || job?.company || ''
         const status = override.status || job?.status
-        if (companySet.has(company.toLowerCase()) && (status === 'submitted' || status === 'manual')) {
-          next[id] = { ...next[id], status: 'rejected' as JobStatus }
+        const companyLower = company.toLowerCase()
+        if (!rejMap.has(companyLower)) continue
+        const rejDate = rejMap.get(companyLower)
+        if (status === 'submitted' || status === 'manual') {
+          next[id] = {
+            ...next[id],
+            status: 'rejected' as JobStatus,
+            ...(rejDate && !next[id]?.lastContactDate ? { lastContactDate: rejDate } : {}),
+          }
+        } else if (status === 'rejected' && rejDate && !next[id]?.lastContactDate) {
+          next[id] = { ...next[id], lastContactDate: rejDate }
         }
       }
       return next
@@ -138,7 +252,7 @@ export function JobsProvider({ children }: { children: ReactNode }) {
   }, [jobs])
 
   return (
-    <JobsContext.Provider value={{ jobs, updateJobStatus, addJobEvent, addJob, markRejected, counts }}>
+    <JobsContext.Provider value={{ jobs, allJobs, updateJobStatus, updateJobField, addJobEvent, removeJobEvent, deleteJob, addJob, markRejected, counts }}>
       {children}
     </JobsContext.Provider>
   )

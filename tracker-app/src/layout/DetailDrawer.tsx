@@ -1,5 +1,5 @@
-import { useEffect, useRef, useMemo } from 'react'
-import { X } from 'lucide-react'
+import { useEffect, useRef, useMemo, useState } from 'react'
+import { X, ExternalLink } from 'lucide-react'
 import { useUI } from '../context/UIContext'
 import { useJobs } from '../context/JobsContext'
 import { StatusBadge } from '../components/StatusBadge'
@@ -9,13 +9,32 @@ import { useJobEvents } from '../hooks/useJobEvents'
 import type { JobStatus, JobEvent } from '../types/job'
 import { STATUS_CONFIG } from '../types/job'
 
+// Only statuses that appear in the pipeline — no Easy Apply, no saved
+const ALLOWED_STATUSES: JobStatus[] = [
+  'manual', 'submitted', 'screening', 'interviewing', 'challenge',
+  'offer', 'negotiation', 'rejected', 'withdrawn', 'ghosted', 'skipped',
+]
+
 export function DetailDrawer() {
   const { selectedJobId, closeDrawer } = useUI()
-  const { jobs, updateJobStatus, addJobEvent } = useJobs()
-  const { events: localEvents, addEvent: addLocalEvent, deleteEvent } = useJobEvents(selectedJobId)
+  const { jobs, updateJobStatus, updateJobField, addJobEvent, removeJobEvent, deleteJob } = useJobs()
+  const { events: localEvents, addEvent: addLocalEvent, deleteEvent: deleteLocalEvent } = useJobEvents(selectedJobId)
   const drawerRef = useRef<HTMLDivElement>(null)
 
   const job = jobs.find((j) => j.id === selectedJobId)
+
+  // Unique ATS and location values for autocomplete
+  const atsSuggestions = useMemo(() => {
+    const set = new Set<string>()
+    for (const j of jobs) if (j.ats) set.add(j.ats)
+    return Array.from(set).sort()
+  }, [jobs])
+
+  const locationSuggestions = useMemo(() => {
+    const set = new Set<string>()
+    for (const j of jobs) if (j.location) set.add(j.location)
+    return Array.from(set).sort()
+  }, [jobs])
 
   // Escape key handler
   useEffect(() => {
@@ -26,7 +45,7 @@ export function DetailDrawer() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [closeDrawer])
 
-  // Merge events from JobsContext (overrides) + local hook store, deduplicate by id
+  // Merge events from JobsContext + localStorage, deduplicate by id
   const allEvents = useMemo(() => {
     const contextEvents = job?.events ?? []
     const map = new Map<string, JobEvent>()
@@ -39,17 +58,22 @@ export function DetailDrawer() {
 
   if (!job) return null
 
-  const allStatuses = Object.keys(STATUS_CONFIG) as JobStatus[]
-
   function handleAddEvent(jobId: string, event: JobEvent) {
-    // Persist in both stores for resilience
     addJobEvent(jobId, event)
     addLocalEvent(jobId, event)
   }
 
   function handleDeleteEvent(eventId: string) {
     if (!selectedJobId) return
-    deleteEvent(selectedJobId, eventId)
+    deleteLocalEvent(selectedJobId, eventId)
+    removeJobEvent(selectedJobId, eventId)
+  }
+
+  function handleEditEvent(eventId: string, updated: JobEvent) {
+    if (!selectedJobId) return
+    // Delete old, add updated
+    deleteLocalEvent(selectedJobId, eventId)
+    addLocalEvent(selectedJobId, updated)
   }
 
   return (
@@ -97,31 +121,18 @@ export function DetailDrawer() {
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <h2
-                style={{
-                  fontSize: 18,
-                  fontWeight: 600,
-                  color: 'var(--text-primary)',
-                  lineHeight: 1.3,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {job.company}
-              </h2>
-              <p
-                style={{
-                  fontSize: 14,
-                  color: 'var(--text-secondary)',
-                  marginTop: 2,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {job.role}
-              </p>
+              <EditableField
+                value={job.company}
+                onSave={(v) => updateJobField(job.id, 'company', v)}
+                style={{ fontSize: 18, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.3 }}
+                placeholder="Company name"
+              />
+              <EditableField
+                value={job.role}
+                onSave={(v) => updateJobField(job.id, 'role', v)}
+                style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 2 }}
+                placeholder="Role title"
+              />
             </div>
             <button
               onClick={closeDrawer}
@@ -131,6 +142,9 @@ export function DetailDrawer() {
                 color: 'var(--text-tertiary)',
                 transition: 'all var(--transition-fast)',
                 flexShrink: 0,
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.background = 'var(--bg-elevated)'
@@ -182,9 +196,9 @@ export function DetailDrawer() {
               flex: 1,
             }}
           >
-            {allStatuses.map((s) => (
+            {ALLOWED_STATUSES.map((s) => (
               <option key={s} value={s}>
-                {STATUS_CONFIG[s].label}
+                {STATUS_CONFIG[s].icon} {STATUS_CONFIG[s].label}
               </option>
             ))}
           </select>
@@ -199,27 +213,40 @@ export function DetailDrawer() {
             color="#a855f7"
             onClick={() => updateJobStatus(job.id, 'rejected')}
           />
+          <ActionButton
+            label="Delete"
+            color="#71717a"
+            onClick={() => { if (confirm('Delete this job permanently?')) { deleteJob(job.id); closeDrawer() } }}
+          />
         </div>
 
         {/* ── Scrollable Body ── */}
         <div style={{ flex: 1, overflow: 'auto', padding: '24px' }}>
-          {/* Details section */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginBottom: 32 }}>
-            {job.salary && <DetailRow label="Salary" value={job.salary} />}
-            {job.ats && <DetailRow label="ATS" value={job.ats} />}
-            {job.link && (
-              <DetailRow label="Link">
-                <a
-                  href={job.link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{ fontSize: 13, color: 'var(--accent)' }}
-                >
-                  Open listing
-                </a>
-              </DetailRow>
-            )}
-            {job.notes && <DetailRow label="Notes" value={job.notes} />}
+          {/* Details section — all editable */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 32 }}>
+            <AutocompleteDetailRow label="Location" value={job.location} onSave={(v) => updateJobField(job.id, 'location', v)} suggestions={locationSuggestions} placeholder="e.g. Remote, EMEA" />
+            <EditableDetailRow label="Salary" value={job.salary} onSave={(v) => updateJobField(job.id, 'salary', v)} placeholder="e.g. 80-100k EUR" />
+            <AutocompleteDetailRow label="ATS" value={job.ats} onSave={(v) => updateJobField(job.id, 'ats', v)} suggestions={atsSuggestions} placeholder="e.g. Greenhouse" />
+            <DateDetailRow label="Date" value={job.date} onSave={(v) => updateJobField(job.id, 'date', v)} />
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+              <span style={detailLabelStyle}>Link</span>
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <EditableField
+                  value={job.link}
+                  onSave={(v) => updateJobField(job.id, 'link', v)}
+                  style={{ fontSize: 13, color: 'var(--accent)', flex: 1 }}
+                  placeholder="https://..."
+                />
+                {job.link && (
+                  <a href={job.link} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', flexShrink: 0 }}>
+                    <ExternalLink size={12} />
+                  </a>
+                )}
+              </div>
+            </div>
+            <EditableDetailRow label="Notes" value={job.notes} onSave={(v) => updateJobField(job.id, 'notes', v)} placeholder="Any notes..." />
+            <ToggleDetailRow label="CV" value={job.cv === '✓' || job.cv === 'Yes' || job.cv === 'yes'} onToggle={(v) => updateJobField(job.id, 'cv', v ? '✓' : '')} />
+            <ToggleDetailRow label="Folio" value={job.portfolio === '✓' || job.portfolio === 'Yes' || job.portfolio === 'yes'} onToggle={(v) => updateJobField(job.id, 'portfolio', v ? '✓' : '')} />
           </div>
 
           {/* ── Event Timeline ── */}
@@ -248,7 +275,11 @@ export function DetailDrawer() {
                 </span>
               )}
             </h3>
-            <EventTimeline events={allEvents} onDelete={handleDeleteEvent} />
+            <EventTimeline
+              events={allEvents}
+              onDelete={handleDeleteEvent}
+              onEdit={handleEditEvent}
+            />
           </div>
 
           {/* ── Event Form ── */}
@@ -294,6 +325,7 @@ function ActionButton({
         background: 'transparent',
         transition: 'all var(--transition-fast)',
         whiteSpace: 'nowrap',
+        cursor: 'pointer',
       }}
       onMouseEnter={(e) => {
         e.currentTarget.style.background = `${color}18`
@@ -309,32 +341,288 @@ function ActionButton({
   )
 }
 
-function DetailRow({
+const detailLabelStyle: React.CSSProperties = {
+  fontSize: 12,
+  color: 'var(--text-tertiary)',
+  minWidth: 60,
+  paddingTop: 1,
+  textTransform: 'uppercase',
+  letterSpacing: '0.03em',
+  flexShrink: 0,
+}
+
+function EditableField({
+  value,
+  onSave,
+  style: customStyle,
+  placeholder,
+}: {
+  value: string
+  onSave: (val: string) => void
+  style?: React.CSSProperties
+  placeholder?: string
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(value)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus()
+      inputRef.current.select()
+    }
+  }, [editing])
+
+  const commit = () => {
+    if (draft !== value) onSave(draft)
+    setEditing(false)
+  }
+
+  if (!editing) {
+    return (
+      <div
+        onClick={() => { setDraft(value); setEditing(true) }}
+        style={{
+          cursor: 'pointer',
+          minHeight: 20,
+          borderRadius: 4,
+          padding: '1px 4px',
+          margin: '-1px -4px',
+          transition: 'background 0.1s',
+          ...customStyle,
+        }}
+        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)' }}
+        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+        title="Click to edit"
+      >
+        {value || <span style={{ color: 'var(--text-tertiary)', fontStyle: 'italic', fontSize: 12 }}>{placeholder || 'Empty — click to add'}</span>}
+      </div>
+    )
+  }
+
+  return (
+    <input
+      ref={inputRef}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') commit()
+        if (e.key === 'Escape') { setDraft(value); setEditing(false) }
+      }}
+      placeholder={placeholder}
+      style={{
+        width: '100%',
+        background: 'var(--bg-elevated)',
+        border: '1px solid var(--accent)',
+        borderRadius: 4,
+        padding: '3px 6px',
+        fontSize: (customStyle?.fontSize as number) || 13,
+        fontWeight: (customStyle?.fontWeight as number) || 400,
+        color: 'var(--text-primary)',
+        outline: 'none',
+      }}
+    />
+  )
+}
+
+function EditableDetailRow({
   label,
   value,
-  children,
+  onSave,
+  placeholder,
 }: {
   label: string
-  value?: string
-  children?: React.ReactNode
+  value: string
+  onSave: (val: string) => void
+  placeholder?: string
 }) {
   return (
-    <div style={{ display: 'flex', gap: 12 }}>
-      <span
+    <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+      <span style={detailLabelStyle}>{label}</span>
+      <EditableField
+        value={value}
+        onSave={onSave}
+        style={{ fontSize: 13, color: 'var(--text-secondary)', flex: 1 }}
+        placeholder={placeholder}
+      />
+    </div>
+  )
+}
+
+/* ── Toggle Row (CV / Folio) ── */
+function ToggleDetailRow({ label, value, onToggle }: { label: string; value: boolean; onToggle: (v: boolean) => void }) {
+  return (
+    <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+      <span style={detailLabelStyle}>{label}</span>
+      <button
+        onClick={() => onToggle(!value)}
         style={{
-          fontSize: 12,
-          color: 'var(--text-tertiary)',
-          minWidth: 60,
-          paddingTop: 1,
-          textTransform: 'uppercase',
-          letterSpacing: '0.03em',
+          width: 40, height: 22, borderRadius: 11, border: 'none', cursor: 'pointer',
+          background: value ? '#34d399' : 'rgba(255,255,255,0.1)',
+          position: 'relative', transition: 'background 0.2s',
+          flexShrink: 0,
         }}
       >
-        {label}
+        <span style={{
+          position: 'absolute', top: 2, left: value ? 20 : 2,
+          width: 18, height: 18, borderRadius: '50%',
+          background: '#fff', transition: 'left 0.2s',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+        }} />
+      </button>
+      <span style={{ fontSize: 12, color: value ? '#34d399' : 'var(--text-tertiary)' }}>
+        {value ? 'Yes' : 'No'}
       </span>
-      <span style={{ fontSize: 13, color: 'var(--text-secondary)', flex: 1 }}>
-        {children ?? value}
-      </span>
+    </div>
+  )
+}
+
+/* ── Date Picker Row ── */
+function DateDetailRow({ label, value, onSave }: { label: string; value: string; onSave: (v: string) => void }) {
+  return (
+    <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+      <span style={detailLabelStyle}>{label}</span>
+      <input
+        type="date"
+        value={value}
+        onChange={(e) => onSave(e.target.value)}
+        style={{
+          background: 'var(--bg-elevated)',
+          border: '1px solid var(--border)',
+          borderRadius: 4,
+          padding: '3px 8px',
+          fontSize: 13,
+          color: 'var(--text-secondary)',
+          cursor: 'pointer',
+          outline: 'none',
+          colorScheme: 'dark',
+        }}
+        onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--accent)' }}
+        onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border)' }}
+      />
+    </div>
+  )
+}
+
+/* ── Autocomplete Row (ATS / Location) ── */
+function AutocompleteDetailRow({
+  label, value, onSave, suggestions, placeholder,
+}: {
+  label: string; value: string; onSave: (v: string) => void
+  suggestions: string[]; placeholder?: string
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(value)
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const wrapRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus()
+      inputRef.current.select()
+    }
+  }, [editing])
+
+  useEffect(() => {
+    if (!showSuggestions) return
+    function handleClickOutside(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showSuggestions])
+
+  const filtered = useMemo(() => {
+    if (!draft) return suggestions.slice(0, 8)
+    const lower = draft.toLowerCase()
+    return suggestions.filter(s => s.toLowerCase().includes(lower)).slice(0, 8)
+  }, [draft, suggestions])
+
+  const commit = (val?: string) => {
+    const final = val ?? draft
+    if (final !== value) onSave(final)
+    setEditing(false)
+    setShowSuggestions(false)
+  }
+
+  if (!editing) {
+    return (
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+        <span style={detailLabelStyle}>{label}</span>
+        <div
+          onClick={() => { setDraft(value); setEditing(true); setShowSuggestions(true) }}
+          style={{
+            fontSize: 13, color: value ? 'var(--text-secondary)' : 'var(--text-tertiary)',
+            cursor: 'pointer', padding: '1px 4px', margin: '-1px -4px',
+            borderRadius: 4, transition: 'background 0.1s', flex: 1,
+            fontStyle: value ? 'normal' : 'italic',
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)' }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+          title="Click to edit"
+        >
+          {value || placeholder || 'Empty — click to add'}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+      <span style={detailLabelStyle}>{label}</span>
+      <div ref={wrapRef} style={{ position: 'relative', flex: 1 }}>
+        <input
+          ref={inputRef}
+          value={draft}
+          onChange={(e) => { setDraft(e.target.value); setShowSuggestions(true) }}
+          onBlur={() => setTimeout(() => commit(), 150)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commit()
+            if (e.key === 'Escape') { setDraft(value); setEditing(false); setShowSuggestions(false) }
+          }}
+          placeholder={placeholder}
+          style={{
+            width: '100%',
+            background: 'var(--bg-elevated)',
+            border: '1px solid var(--accent)',
+            borderRadius: 4,
+            padding: '3px 6px',
+            fontSize: 13,
+            color: 'var(--text-primary)',
+            outline: 'none',
+          }}
+        />
+        {showSuggestions && filtered.length > 0 && (
+          <div style={{
+            position: 'absolute', top: '100%', left: 0, right: 0,
+            marginTop: 2, background: 'var(--bg-elevated)',
+            border: '1px solid var(--border)', borderRadius: 6,
+            maxHeight: 180, overflow: 'auto', zIndex: 60,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+          }}>
+            {filtered.map(s => (
+              <button
+                key={s}
+                onMouseDown={(e) => { e.preventDefault(); setDraft(s); commit(s) }}
+                style={{
+                  display: 'block', width: '100%', padding: '6px 10px',
+                  background: 'transparent', border: 'none',
+                  fontSize: 12, color: 'var(--text-secondary)',
+                  textAlign: 'left', cursor: 'pointer',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

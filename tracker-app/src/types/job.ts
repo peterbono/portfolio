@@ -15,6 +15,7 @@ export type JobStatus =
 export type EventType =
   | 'email'
   | 'call'
+  | 'linkedin_dm'
   | 'portfolio_review'
   | 'design_challenge'
   | 'interview'

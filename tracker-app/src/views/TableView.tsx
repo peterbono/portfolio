@@ -8,7 +8,7 @@ import {
 } from '@tanstack/react-table'
 
 const PAGE_SIZE = 50
-import { ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, MoreHorizontal } from 'lucide-react'
+import { ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, MoreHorizontal, Plus } from 'lucide-react'
 import { format, parseISO, isValid } from 'date-fns'
 
 import { useJobs } from '../context/JobsContext'
@@ -56,6 +56,143 @@ function CellCheck({ value }: { value: string }) {
     return <span style={{ color: '#ef4444' }}>✗</span>
   }
   return <span style={{ color: 'var(--text-tertiary)' }}>{value || '—'}</span>
+}
+
+// ─── Editable Cell ──────────────────────────────────────────────────
+function EditableCell({ value, field, jobId, display }: {
+  value: string
+  field: string
+  jobId: string
+  display?: React.ReactNode
+}) {
+  const { updateJobField } = useJobs()
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(value)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus()
+      inputRef.current.select()
+    }
+  }, [editing])
+
+  const commit = () => {
+    if (draft !== value) {
+      updateJobField(jobId, field, draft)
+    }
+    setEditing(false)
+  }
+
+  if (!editing) {
+    return (
+      <div
+        onDoubleClick={(e) => {
+          e.stopPropagation()
+          setDraft(value)
+          setEditing(true)
+        }}
+        style={{ cursor: 'default', minHeight: 20 }}
+        title="Double-click to edit"
+      >
+        {display ?? <span style={{ color: value ? 'var(--text-secondary)' : 'var(--text-tertiary)', fontSize: 12 }}>{value || '—'}</span>}
+      </div>
+    )
+  }
+
+  return (
+    <input
+      ref={inputRef}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') commit()
+        if (e.key === 'Escape') { setDraft(value); setEditing(false) }
+      }}
+      onClick={(e) => e.stopPropagation()}
+      style={{
+        width: '100%',
+        background: 'var(--bg-elevated)',
+        border: '1px solid var(--accent)',
+        borderRadius: 4,
+        padding: '2px 6px',
+        fontSize: 12,
+        color: 'var(--text-primary)',
+        outline: 'none',
+      }}
+    />
+  )
+}
+
+// ─── Status Cell (editable via dropdown) ────────────────────────────
+function EditableStatusCell({ job }: { job: Job }) {
+  const { updateJobStatus } = useJobs()
+  const [editing, setEditing] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!editing) return
+    function handleClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setEditing(false)
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [editing])
+
+  if (!editing) {
+    return (
+      <div
+        onDoubleClick={(e) => { e.stopPropagation(); setEditing(true) }}
+        title="Double-click to change status"
+        style={{ cursor: 'default' }}
+      >
+        <StatusBadge status={job.status} size="sm" />
+      </div>
+    )
+  }
+
+  const allStatuses: JobStatus[] = [
+    'submitted', 'manual', 'screening', 'interviewing', 'challenge',
+    'offer', 'negotiation', 'rejected', 'withdrawn', 'ghosted', 'skipped',
+  ]
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <div style={{
+        position: 'absolute', top: -4, left: 0, zIndex: 50,
+        background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+        borderRadius: 8, padding: '4px 0', minWidth: 160,
+        boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+      }}>
+        {allStatuses.map(s => {
+          const cfg = STATUS_CONFIG[s]
+          return (
+            <button
+              key={s}
+              onClick={(e) => {
+                e.stopPropagation()
+                updateJobStatus(job.id, s)
+                setEditing(false)
+              }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                width: '100%', padding: '5px 10px',
+                background: job.status === s ? 'rgba(255,255,255,0.05)' : 'transparent',
+                border: 'none', cursor: 'pointer', fontSize: 12, color: cfg.color,
+                textAlign: 'left',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = job.status === s ? 'rgba(255,255,255,0.05)' : 'transparent' }}
+            >
+              <span style={{ width: 16, textAlign: 'center' }}>{cfg.icon}</span>
+              {cfg.label}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
 }
 
 // ─── Action menu status options ─────────────────────────────────────
@@ -196,87 +333,76 @@ const columns: ColumnDef<Job, unknown>[] = [
     accessorKey: 'date',
     header: 'Date',
     size: 75,
-    cell: ({ getValue }) => (
-      <span style={{ color: 'var(--text-secondary)', fontSize: 12, whiteSpace: 'nowrap' }}>
-        {formatDate(getValue<string>())}
-      </span>
+    cell: ({ row }) => (
+      <EditableCell
+        value={row.original.date}
+        field="date"
+        jobId={row.original.id}
+        display={
+          <span style={{ color: 'var(--text-secondary)', fontSize: 12, whiteSpace: 'nowrap' }}>
+            {formatDate(row.original.date)}
+          </span>
+        }
+      />
     ),
   },
   {
     accessorKey: 'status',
     header: 'Status',
     size: 120,
-    cell: ({ getValue }) => <StatusBadge status={getValue<JobStatus>()} size="sm" />,
+    cell: ({ row }) => <EditableStatusCell job={row.original} />,
   },
   {
     accessorKey: 'role',
     header: 'Role',
     size: 220,
-    cell: ({ getValue }) => (
-      <span
-        style={{
-          fontWeight: 500,
-          color: 'var(--text-primary)',
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          display: 'block',
-          maxWidth: 220,
-        }}
-      >
-        {getValue<string>() || '—'}
-      </span>
+    cell: ({ row }) => (
+      <EditableCell
+        value={row.original.role}
+        field="role"
+        jobId={row.original.id}
+        display={
+          <span style={{ fontWeight: 500, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', maxWidth: 220 }}>
+            {row.original.role || '—'}
+          </span>
+        }
+      />
     ),
   },
   {
     accessorKey: 'company',
     header: 'Company',
     size: 160,
-    cell: ({ getValue }) => (
-      <span
-        style={{
-          fontWeight: 500,
-          color: 'var(--text-primary)',
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          display: 'block',
-          maxWidth: 160,
-        }}
-      >
-        {getValue<string>() || '—'}
-      </span>
+    cell: ({ row }) => (
+      <EditableCell
+        value={row.original.company}
+        field="company"
+        jobId={row.original.id}
+        display={
+          <span style={{ fontWeight: 500, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', maxWidth: 160 }}>
+            {row.original.company || '—'}
+          </span>
+        }
+      />
     ),
   },
   {
     accessorKey: 'location',
     header: 'Location',
     size: 130,
-    cell: ({ getValue }) => (
-      <span style={{ color: 'var(--text-secondary)', fontSize: 12, whiteSpace: 'nowrap' }}>
-        {getValue<string>() || '—'}
-      </span>
-    ),
+    cell: ({ row }) => <EditableCell value={row.original.location} field="location" jobId={row.original.id} />,
   },
   {
     accessorKey: 'salary',
     header: 'Salary',
     size: 100,
-    cell: ({ getValue }) => (
-      <span style={{ color: 'var(--text-secondary)', fontSize: 12, whiteSpace: 'nowrap' }}>
-        {getValue<string>() || '—'}
-      </span>
-    ),
+    cell: ({ row }) => <EditableCell value={row.original.salary} field="salary" jobId={row.original.id} />,
   },
   {
     accessorKey: 'ats',
     header: 'ATS',
     size: 90,
-    cell: ({ getValue }) => (
-      <span style={{ color: 'var(--text-tertiary)', fontSize: 12, whiteSpace: 'nowrap' }}>
-        {getValue<string>() || '—'}
-      </span>
-    ),
+    cell: ({ row }) => <EditableCell value={row.original.ats} field="ats" jobId={row.original.id} />,
   },
   {
     accessorKey: 'cv',
@@ -294,27 +420,13 @@ const columns: ColumnDef<Job, unknown>[] = [
     accessorKey: 'link',
     header: 'Link',
     size: 40,
-    cell: ({ getValue }) => <CellLink href={getValue<string>()} />,
+    cell: ({ row }) => <CellLink href={row.original.link} />,
   },
   {
     accessorKey: 'notes',
     header: 'Notes',
     size: 180,
-    cell: ({ getValue }) => (
-      <span
-        style={{
-          color: 'var(--text-tertiary)',
-          fontSize: 12,
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          display: 'block',
-          maxWidth: 180,
-        }}
-      >
-        {getValue<string>() || '—'}
-      </span>
-    ),
+    cell: ({ row }) => <EditableCell value={row.original.notes} field="notes" jobId={row.original.id} />,
   },
   {
     id: 'actions',
@@ -338,17 +450,118 @@ function SortIcon({ column, sortColumn, sortDirection }: {
     : <ArrowDown size={11} color="var(--accent)" />
 }
 
+// ─── Add Job Modal ──────────────────────────────────────────────────
+function AddJobModal({ onClose }: { onClose: () => void }) {
+  const { addJob } = useJobs()
+  const [form, setForm] = useState({
+    role: '', company: '', location: '', salary: '', ats: '', link: '', notes: '',
+  })
+
+  const set = (field: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm(prev => ({ ...prev, [field]: e.target.value }))
+
+  const handleSubmit = () => {
+    if (!form.company && !form.role) return
+    const id = `manual-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+    addJob({
+      id,
+      date: new Date().toISOString().split('T')[0],
+      status: 'manual',
+      role: form.role,
+      company: form.company,
+      location: form.location,
+      salary: form.salary,
+      ats: form.ats,
+      cv: '',
+      portfolio: '',
+      link: form.link,
+      notes: form.notes,
+      source: 'manual',
+    })
+    onClose()
+  }
+
+  const fields = [
+    { key: 'company', label: 'Company', placeholder: 'e.g. Spotify' },
+    { key: 'role', label: 'Role', placeholder: 'e.g. Senior Product Designer' },
+    { key: 'location', label: 'Location', placeholder: 'e.g. Remote, EMEA' },
+    { key: 'salary', label: 'Salary', placeholder: 'e.g. 80-100k EUR' },
+    { key: 'ats', label: 'ATS', placeholder: 'e.g. Greenhouse' },
+    { key: 'link', label: 'Job URL', placeholder: 'https://...' },
+    { key: 'notes', label: 'Notes', placeholder: 'Any notes...' },
+  ]
+
+  const inputStyle: React.CSSProperties = {
+    width: '100%',
+    padding: '8px 10px',
+    background: 'var(--bg-elevated)',
+    border: '1px solid var(--border)',
+    borderRadius: 6,
+    fontSize: 13,
+    color: 'var(--text-primary)',
+    outline: 'none',
+  }
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 200,
+        background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: 'var(--bg-surface)', border: '1px solid var(--border)',
+          borderRadius: 12, padding: 24, width: 400, maxWidth: '90vw',
+          boxShadow: '0 16px 48px rgba(0,0,0,0.4)',
+        }}
+      >
+        <h3 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 600, color: 'var(--text-primary)' }}>Add Job</h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {fields.map(f => (
+            <div key={f.key}>
+              <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{f.label}</label>
+              <input
+                value={(form as Record<string, string>)[f.key]}
+                onChange={set(f.key)}
+                placeholder={f.placeholder}
+                style={inputStyle}
+                onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--accent)' }}
+                onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border)' }}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleSubmit() }}
+                autoFocus={f.key === 'company'}
+              />
+            </div>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+          <button onClick={onClose} style={{ padding: '8px 16px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 6, fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer' }}>
+            Cancel
+          </button>
+          <button onClick={handleSubmit} style={{ padding: '8px 16px', background: 'var(--accent)', border: 'none', borderRadius: 6, fontSize: 13, color: '#000', fontWeight: 600, cursor: 'pointer', opacity: form.company || form.role ? 1 : 0.4 }}>
+            Add Job
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main TableView ─────────────────────────────────────────────────
 export function TableView() {
   const { jobs, counts } = useJobs()
   const { selectJob } = useUI()
   const filters = useFilters()
+  const [showAddModal, setShowAddModal] = useState(false)
 
-  const { statusFilter, searchQuery, areaFilter, companyFilter, sortColumn, sortDirection } = filters
+  const { statusFilter, searchQuery, companyFilter, sortColumn, sortDirection } = filters
   const allFiltered = useMemo(
     () => filters.filteredJobs(jobs),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [jobs, statusFilter, searchQuery, areaFilter, companyFilter, sortColumn, sortDirection]
+    [jobs, statusFilter, searchQuery, companyFilter, sortColumn, sortDirection]
   )
   const companies = useMemo(() => {
     const set = new Set(jobs.map(j => j.company).filter(Boolean))
@@ -357,16 +570,21 @@ export function TableView() {
   const [page, setPage] = useState(0)
 
   // Reset page when filters change
-  const filterKey = `${statusFilter}|${searchQuery}|${areaFilter}|${companyFilter}`
+  const filterKey = `${statusFilter}|${searchQuery}|${companyFilter}`
   useMemo(() => { setPage(0) }, [filterKey]) // eslint-disable-line
 
   const totalPages = Math.ceil(allFiltered.length / PAGE_SIZE)
   const filteredData = useMemo(() => allFiltered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [allFiltered, page])
 
   const submittedPct = useMemo(() => {
-    if (jobs.length === 0) return 0
-    return (counts.submitted / jobs.length) * 100
-  }, [counts.submitted, jobs.length])
+    const excluded = (counts.skipped ?? 0) + (counts.saved ?? 0)
+    const actionable = jobs.length - excluded
+    if (actionable <= 0) return 0
+    const applied = (counts.submitted ?? 0) + (counts.screening ?? 0) + (counts.interviewing ?? 0)
+      + (counts.challenge ?? 0) + (counts.offer ?? 0) + (counts.negotiation ?? 0)
+      + (counts.rejected ?? 0) + (counts.withdrawn ?? 0) + (counts.ghosted ?? 0)
+    return Math.min(100, Math.round((applied / actionable) * 100))
+  }, [counts, jobs.length])
 
   // tanstack table requires sorting state even though we handle sorting ourselves
   const sorting: SortingState = []
@@ -387,8 +605,23 @@ export function TableView() {
           <h1 style={styles.title}>Applications</h1>
           <span style={styles.jobCount}>{allFiltered.length} of {jobs.length}</span>
         </div>
-        <ProgressRing percentage={submittedPct} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button
+            onClick={() => setShowAddModal(true)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '6px 14px', borderRadius: 8,
+              background: 'var(--accent)', border: 'none',
+              fontSize: 12, fontWeight: 600, color: '#000',
+              cursor: 'pointer',
+            }}
+          >
+            <Plus size={14} /> Add Job
+          </button>
+          <ProgressRing percentage={submittedPct} />
+        </div>
       </div>
+      {showAddModal && <AddJobModal onClose={() => setShowAddModal(false)} />}
 
       {/* Stat cards */}
       <StatCards
@@ -403,8 +636,6 @@ export function TableView() {
         <SearchBar
           searchQuery={filters.searchQuery}
           onSearchChange={filters.setSearch}
-          areaFilter={filters.areaFilter}
-          onAreaChange={filters.setArea}
           companyFilter={filters.companyFilter}
           onCompanyChange={filters.setCompany}
           companies={companies}
@@ -454,10 +685,17 @@ export function TableView() {
                 </td>
               </tr>
             ) : (
-              table.getRowModel().rows.map((row) => (
+              table.getRowModel().rows.map((row) => {
+                let clickTimer: ReturnType<typeof setTimeout> | null = null
+                return (
                 <tr
                   key={row.id}
-                  onClick={() => selectJob(row.original.id)}
+                  onClick={() => {
+                    clickTimer = setTimeout(() => selectJob(row.original.id), 250)
+                  }}
+                  onDoubleClick={() => {
+                    if (clickTimer) { clearTimeout(clickTimer); clickTimer = null }
+                  }}
                   style={styles.tr}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.background = 'var(--bg-elevated)'
@@ -479,7 +717,7 @@ export function TableView() {
                     </td>
                   ))}
                 </tr>
-              ))
+              )})
             )}
           </tbody>
         </table>

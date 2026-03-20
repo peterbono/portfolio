@@ -7,7 +7,6 @@ export type SortDirection = 'asc' | 'desc'
 export interface FilterState {
   statusFilter: StatusFilterValue
   searchQuery: string
-  areaFilter: string
   companyFilter: string
   sortColumn: string
   sortDirection: SortDirection
@@ -16,7 +15,6 @@ export interface FilterState {
 export interface FilterActions {
   setStatusFilter: (status: StatusFilterValue) => void
   setSearch: (query: string) => void
-  setArea: (area: string) => void
   setCompany: (company: string) => void
   toggleSort: (column: string) => void
   resetFilters: () => void
@@ -27,35 +25,10 @@ export interface UseFiltersReturn extends FilterState, FilterActions {
   uniqueCompanies: (jobs: Job[]) => string[]
 }
 
-function getJobArea(job: Job): string {
-  if (job.area) return job.area
-
-  const loc = (job.location ?? '').toLowerCase()
-
-  const apacKeywords = [
-    'bangkok', 'singapore', 'tokyo', 'sydney', 'melbourne', 'manila',
-    'hong kong', 'seoul', 'mumbai', 'delhi', 'india', 'thailand',
-    'vietnam', 'indonesia', 'malaysia', 'philippines', 'australia',
-    'new zealand', 'japan', 'china', 'taiwan', 'apac', 'asia',
-  ]
-  const americasKeywords = [
-    'new york', 'san francisco', 'los angeles', 'chicago', 'austin',
-    'seattle', 'boston', 'toronto', 'vancouver', 'usa', 'us ', 'canada',
-    'brazil', 'mexico', 'americas', 'united states',
-  ]
-
-  if (apacKeywords.some((k) => loc.includes(k))) return 'apac'
-  if (americasKeywords.some((k) => loc.includes(k))) return 'americas'
-  if (loc === 'remote' || loc === '') return ''
-
-  return 'emea'
-}
-
 function compareValues(a: unknown, b: unknown, direction: SortDirection): number {
   const aStr = String(a ?? '').toLowerCase()
   const bStr = String(b ?? '').toLowerCase()
 
-  // Try numeric comparison for dates
   if (!isNaN(Date.parse(aStr)) && !isNaN(Date.parse(bStr))) {
     const diff = new Date(aStr).getTime() - new Date(bStr).getTime()
     return direction === 'asc' ? diff : -diff
@@ -68,13 +41,11 @@ function compareValues(a: unknown, b: unknown, direction: SortDirection): number
 export function useFilters(): UseFiltersReturn {
   const [statusFilter, setStatusFilter] = useState<StatusFilterValue>('all')
   const [searchQuery, setSearchQuery] = useState('')
-  const [areaFilter, setAreaFilter] = useState('')
   const [companyFilter, setCompanyFilter] = useState('')
   const [sortColumn, setSortColumn] = useState('date')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
 
   const setSearch = useCallback((query: string) => setSearchQuery(query), [])
-  const setArea = useCallback((area: string) => setAreaFilter(area), [])
   const setCompany = useCallback((company: string) => setCompanyFilter(company), [])
 
   const toggleSort = useCallback((column: string) => {
@@ -91,7 +62,6 @@ export function useFilters(): UseFiltersReturn {
   const resetFilters = useCallback(() => {
     setStatusFilter('all')
     setSearchQuery('')
-    setAreaFilter('')
     setCompanyFilter('')
     setSortColumn('date')
     setSortDirection('desc')
@@ -101,12 +71,10 @@ export function useFilters(): UseFiltersReturn {
     (jobs: Job[]): Job[] => {
       let result = [...jobs]
 
-      // Status filter
       if (statusFilter !== 'all') {
         result = result.filter((j) => j.status === statusFilter)
       }
 
-      // Search filter
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim()
         result = result.filter(
@@ -119,17 +87,10 @@ export function useFilters(): UseFiltersReturn {
         )
       }
 
-      // Area filter
-      if (areaFilter) {
-        result = result.filter((j) => getJobArea(j) === areaFilter)
-      }
-
-      // Company filter
       if (companyFilter) {
         result = result.filter((j) => j.company === companyFilter)
       }
 
-      // Sort
       if (sortColumn) {
         result.sort((a, b) => {
           const aVal = a[sortColumn as keyof Job]
@@ -140,7 +101,7 @@ export function useFilters(): UseFiltersReturn {
 
       return result
     },
-    [statusFilter, searchQuery, areaFilter, companyFilter, sortColumn, sortDirection]
+    [statusFilter, searchQuery, companyFilter, sortColumn, sortDirection]
   )
 
   const uniqueCompanies = useMemo(
@@ -154,13 +115,11 @@ export function useFilters(): UseFiltersReturn {
   return {
     statusFilter,
     searchQuery,
-    areaFilter,
     companyFilter,
     sortColumn,
     sortDirection,
     setStatusFilter,
     setSearch,
-    setArea,
     setCompany,
     toggleSort,
     resetFilters,

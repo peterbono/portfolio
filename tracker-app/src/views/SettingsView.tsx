@@ -4,8 +4,7 @@ import { useGmailSync } from '../hooks/useGmailSync'
 import { STATUS_CONFIG, type JobStatus, type Job } from '../types/job'
 
 const GMAIL_URL_KEY = 'tracker_v2_gmail_url'
-const DEFAULT_GMAIL_URL =
-  'https://script.google.com/macros/s/AKfycbyRcWe4dYYniDGQBK5omu_k6dBWyxZxD1KwNOlGB3yfzqzGf1uvlbz3JRcteulNwvt0Bw/exec'
+const DEFAULT_GMAIL_URL = ''
 
 export function SettingsView() {
   const { jobs, counts, addJob } = useJobs()
@@ -20,6 +19,21 @@ export function SettingsView() {
   })
   const [urlSaved, setUrlSaved] = useState(false)
   const [importStatus, setImportStatus] = useState<string | null>(null)
+
+  const [apiKey, setApiKey] = useState(() => {
+    try { return localStorage.getItem('tracker_anthropic_key') || '' }
+    catch { return '' }
+  })
+  const [apiKeySaved, setApiKeySaved] = useState(false)
+
+  const handleSaveApiKey = useCallback(() => {
+    try {
+      if (apiKey) localStorage.setItem('tracker_anthropic_key', apiKey)
+      else localStorage.removeItem('tracker_anthropic_key')
+      setApiKeySaved(true)
+      setTimeout(() => setApiKeySaved(false), 2000)
+    } catch { /* ignore */ }
+  }, [apiKey])
 
   const { lastSync, rejections, isLoading, error, syncNow } = useGmailSync()
 
@@ -139,6 +153,27 @@ export function SettingsView() {
         )}
       </section>
 
+      {/* AI Coach */}
+      <section style={styles.section}>
+        <h2 style={styles.sectionTitle}>AI Coach</h2>
+        <div style={styles.fieldGroup}>
+          <label style={styles.label}>Anthropic API Key</label>
+          <p style={styles.hint}>Required for AI-powered coaching. Uses Claude Sonnet (~$0.03/briefing).</p>
+          <div style={styles.inputRow}>
+            <input
+              style={styles.input}
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="sk-ant-api03-..."
+            />
+            <button style={styles.btnPrimary} onClick={handleSaveApiKey}>
+              {apiKeySaved ? 'Saved!' : 'Save'}
+            </button>
+          </div>
+        </div>
+      </section>
+
       {/* Data Management */}
       <section style={styles.section}>
         <h2 style={styles.sectionTitle}>Data Management</h2>
@@ -207,7 +242,8 @@ const styles: Record<string, React.CSSProperties> = {
     height: '100%',
     overflow: 'auto',
     padding: 24,
-    maxWidth: 680,
+    maxWidth: 720,
+    margin: '0 auto',
   },
   header: {
     marginBottom: 24,

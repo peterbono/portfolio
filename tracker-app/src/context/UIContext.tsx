@@ -6,17 +6,26 @@ import {
   type ReactNode,
 } from 'react'
 
-export type ActiveView = 'table' | 'pipeline' | 'analytics' | 'village' | 'settings'
+export type ActiveView = 'table' | 'pipeline' | 'analytics' | 'coach' | 'settings'
+export type TimeRange = 'all' | 'today' | 'week' | 'month' | '3months'
+export type AreaFilter = 'all' | 'apac' | 'emea' | 'americas'
+export type WorkMode = 'all' | 'remote' | 'onsite' | 'hybrid'
 
 interface UIContextValue {
   activeView: ActiveView
   sidebarCollapsed: boolean
   selectedJobId: string | null
   drawerOpen: boolean
+  timeRange: TimeRange
+  areaFilter: AreaFilter
+  workMode: WorkMode
   setActiveView: (view: ActiveView) => void
   toggleSidebar: () => void
   selectJob: (id: string) => void
   closeDrawer: () => void
+  setTimeRange: (range: TimeRange) => void
+  setAreaFilter: (area: AreaFilter) => void
+  setWorkMode: (mode: WorkMode) => void
 }
 
 const UIContext = createContext<UIContextValue | null>(null)
@@ -26,6 +35,9 @@ export function UIProvider({ children }: { children: ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [timeRange, setTimeRange] = useState<TimeRange>('all')
+  const [areaFilter, setAreaFilter] = useState<AreaFilter>('all')
+  const [workMode, setWorkMode] = useState<WorkMode>('all')
 
   const toggleSidebar = useCallback(() => {
     setSidebarCollapsed((prev) => !prev)
@@ -48,10 +60,16 @@ export function UIProvider({ children }: { children: ReactNode }) {
         sidebarCollapsed,
         selectedJobId,
         drawerOpen,
+        timeRange,
+        areaFilter,
+        workMode,
         setActiveView,
         toggleSidebar,
         selectJob,
         closeDrawer,
+        setTimeRange,
+        setAreaFilter,
+        setWorkMode,
       }}
     >
       {children}

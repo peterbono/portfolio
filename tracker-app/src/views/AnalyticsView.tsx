@@ -1,4 +1,4 @@
-import { useMemo, lazy, Suspense } from 'react'
+import { useMemo, useState, lazy, Suspense } from 'react'
 import { useJobs } from '../context/JobsContext'
 import { STATUS_CONFIG, type JobStatus } from '../types/job'
 
@@ -186,11 +186,11 @@ function TopATSPlatforms() {
       'wwr (paywall)', 'buscojobs',
     ])
     const NORMALIZE: Record<string, string> = {
-      'linkedin ea': 'Easy Apply',
-      'easy apply': 'Easy Apply',
-      'linkedin easy apply': 'Easy Apply',
+      'linkedin ea': 'Easy Apply LinkedIn',
+      'easy apply': 'Easy Apply LinkedIn',
+      'linkedin easy apply': 'Easy Apply LinkedIn',
       'linkedin easy apply (workable)': 'Workable',
-      'linkedin': 'LinkedIn',
+      'linkedin': 'Easy Apply LinkedIn',
       'greenhouse': 'Greenhouse',
       'greenhouse (embedded)': 'Greenhouse',
       'custom (greenhouse)': 'Greenhouse',
@@ -283,31 +283,27 @@ function ResponseRate() {
   const { jobs } = useJobs()
 
   const stats = useMemo(() => {
-    const totalApplied = jobs.filter(
-      (j) => j.status === 'submitted' || j.status === 'screening' || j.status === 'interviewing' ||
-        j.status === 'challenge' || j.status === 'offer' || j.status === 'negotiation' ||
-        j.status === 'rejected' || j.status === 'withdrawn' || j.status === 'ghosted'
-    ).length
+    const applied = ['submitted','screening','interviewing','challenge','offer','negotiation','rejected','withdrawn','ghosted']
+    const totalApplied = jobs.filter(j => applied.includes(j.status)).length
 
     const gotResponse = jobs.filter(
-      (j) => j.status === 'screening' || j.status === 'interviewing' ||
-        j.status === 'offer' || j.status === 'rejected' || j.status === 'challenge' ||
-        j.status === 'negotiation'
+      j => ['screening','interviewing','offer','rejected','challenge','negotiation','withdrawn'].includes(j.status)
     ).length
 
-    // No response = submitted, no events, and submitted > 7 days ago
+    const rejected = jobs.filter(j => j.status === 'rejected').length
+
     const sevenDaysAgo = new Date()
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-    const noResponse = jobs.filter((j) => {
+    const noResponse = jobs.filter(j => {
       if (j.status !== 'submitted') return false
       if (j.events && j.events.length > 0) return false
-      const submitted = new Date(j.date)
-      return submitted < sevenDaysAgo
+      return new Date(j.date) < sevenDaysAgo
     }).length
 
-    const rate = totalApplied > 0 ? ((gotResponse / totalApplied) * 100).toFixed(1) : '0.0'
+    const responseRate = totalApplied > 0 ? ((gotResponse / totalApplied) * 100).toFixed(1) : '0.0'
+    const rejectionRate = totalApplied > 0 ? ((rejected / totalApplied) * 100).toFixed(1) : '0.0'
 
-    return { totalApplied, gotResponse, noResponse, rate }
+    return { totalApplied, gotResponse, noResponse, rejected, responseRate, rejectionRate }
   }, [jobs])
 
   return (
@@ -316,8 +312,10 @@ function ResponseRate() {
       <div style={styles.statsGrid}>
         <StatCard label="Total Applied" value={stats.totalApplied} color="#34d399" />
         <StatCard label="Got Response" value={stats.gotResponse} color="#60a5fa" />
+        <StatCard label="Rejected" value={stats.rejected} color="#a855f7" />
         <StatCard label="No Response (7d+)" value={stats.noResponse} color="#52525b" />
-        <StatCard label="Response Rate" value={`${stats.rate}%`} color="#fbbf24" />
+        <StatCard label="Response Rate" value={`${stats.responseRate}%`} color="#fbbf24" />
+        <StatCard label="Rejection Rate" value={`${stats.rejectionRate}%`} color="#ef4444" />
       </div>
     </div>
   )
@@ -340,9 +338,211 @@ function ChartLoader() {
   )
 }
 
+function WorkModeDistribution() {
+  const { jobs } = useJobs()
+  const [view, setView] = useState<'mode' | 'country'>('mode')
+  const [expandedMode, setExpandedMode] = useState<string | null>(null)
+
+  const data = useMemo(() => {
+    const applied = jobs.filter(j => ['submitted','screening','interviewing','challenge','offer','negotiation','rejected','withdrawn','ghosted'].includes(j.status))
+
+    type ModeKey = 'remote' | 'onsite' | 'hybrid'
+    const modeJobs: Record<ModeKey, { company: string; location: string; area: string }[]> = { remote: [], onsite: [], hybrid: [] }
+    const countries: Record<string, number> = {}
+
+    for (const j of applied) {
+      const loc = (j.location || '').toLowerCase()
+      let mode: ModeKey = 'onsite'
+      if (loc.includes('remote') || loc.includes('à distance')) mode = 'remote'
+      else if (loc.includes('hybrid') || loc.includes('hybride')) mode = 'hybrid'
+
+      const area = (j as unknown as Record<string, string>).area || ''
+      modeJobs[mode].push({ company: j.company, location: j.location || '', area: area || '—' })
+
+      const parts = (j.location || '').split(/[·,()]/).map(s => s.trim()).filter(Boolean)
+      const country = parts[parts.length - 1]?.replace(/remote|hybrid|on-site|à distance/gi, '').trim() || 'Unknown'
+      if (country && country.length > 1) countries[country] = (countries[country] || 0) + 1
+    }
+
+    const total = applied.length
+    const modeData = [
+      { key: 'remote' as ModeKey, label: 'Remote', count: modeJobs.remote.length, pct: total ? Math.round(modeJobs.remote.length / total * 100) : 0, color: '#34d399' },
+      { key: 'onsite' as ModeKey, label: 'On-site', count: modeJobs.onsite.length, pct: total ? Math.round(modeJobs.onsite.length / total * 100) : 0, color: '#fb923c' },
+      { key: 'hybrid' as ModeKey, label: 'Hybrid', count: modeJobs.hybrid.length, pct: total ? Math.round(modeJobs.hybrid.length / total * 100) : 0, color: '#60a5fa' },
+    ]
+    const countryData = Object.entries(countries).sort((a, b) => b[1] - a[1])
+
+    return { modeData, modeJobs, countryData, total }
+  }, [jobs])
+
+  return (
+    <div style={styles.card}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <h3 style={{ ...styles.cardTitle, margin: 0 }}>Work Mode Distribution</h3>
+        <button
+          onClick={() => { setView(view === 'mode' ? 'country' : 'mode'); setExpandedMode(null) }}
+          style={{ background: 'transparent', border: '1px solid #2a2a35', borderRadius: 6, color: '#a1a1aa', fontSize: 10, padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit' }}
+        >
+          {view === 'mode' ? 'By Country' : 'By Mode'}
+        </button>
+      </div>
+
+      {view === 'mode' ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {data.modeData.map(m => {
+            const isExpanded = expandedMode === m.key
+            const companyList = data.modeJobs[m.key]
+            return (
+              <div key={m.label}>
+                <div
+                  onClick={() => setExpandedMode(isExpanded ? null : m.key)}
+                  style={{ cursor: 'pointer', padding: '6px 0' }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <span style={{ fontSize: 13, color: '#e0e0e0', fontWeight: 500 }}>
+                      {isExpanded ? '▾' : '▸'} {m.label}
+                    </span>
+                    <span style={{ fontSize: 13, color: m.color, fontWeight: 700 }}>{m.count} <span style={{ fontSize: 10, fontWeight: 400, color: '#71717a' }}>({m.pct}%)</span></span>
+                  </div>
+                  <div style={{ height: 8, background: '#1a1a1f', borderRadius: 4, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${m.pct}%`, background: m.color, borderRadius: 4, transition: 'width 0.5s' }} />
+                  </div>
+                </div>
+                {isExpanded && (
+                  <div style={{ maxHeight: 250, overflowY: 'auto', marginTop: 6, background: '#0f0f14', borderRadius: 6, border: `1px solid ${m.color}22`, padding: 8 }}>
+                    {companyList.map((c, i) => (
+                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', borderBottom: '1px solid #1a1a1f', gap: 8 }}>
+                        <span style={{ fontSize: 11, color: '#e0e0e0' }}>{c.company}</span>
+                        <span style={{ fontSize: 10, color: '#71717a', flexShrink: 0 }}>{c.area !== '—' ? c.area.toUpperCase() : c.location.substring(0, 20)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+          {data.countryData.map(([country, count]) => (
+            <div key={country} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #1a1a1f' }}>
+              <span style={{ fontSize: 12, color: '#e0e0e0' }}>{country}</span>
+              <span style={{ fontSize: 12, color: '#34d399', fontWeight: 600 }}>{count}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function TopRejectors() {
+  const { jobs } = useJobs()
+  const [showAllAts, setShowAllAts] = useState(false)
+  const [showAllCompanies, setShowAllCompanies] = useState(false)
+
+  const data = useMemo(() => {
+    const rejected = jobs.filter(j => j.status === 'rejected')
+    const atsCount: Record<string, number> = {}
+    const roleCount: Record<string, number> = {}
+    const companyList: { company: string; role: string; ats: string }[] = []
+
+    const ATS_NORMALIZE: Record<string, string> = {
+      'linkedin': 'Easy Apply LinkedIn', 'linkedin ea': 'Easy Apply LinkedIn', 'easy apply': 'Easy Apply LinkedIn',
+      'greenhouse (embedded)': 'Greenhouse', 'custom (greenhouse)': 'Greenhouse',
+      'lever eu': 'Lever', 'ashby hq': 'Ashby', 'breezy hr': 'Breezy HR', 'breezy': 'Breezy HR',
+      'careers-page.com': 'Manatal', 'smartrecruiters (own)': 'SmartRecruiters',
+    }
+    const ATS_SKIP = new Set(['soumise', 'à soumettre', 'a soumettre', 'unknown', 'manual', 'custom', 'email', 'direct', '—', '', 'trop long', 'skip (us only)', 'pending', 'manual submit', 'no ats'])
+    for (const j of rejected) {
+      const raw = (j.ats || '').trim().toLowerCase()
+      if (ATS_SKIP.has(raw)) continue
+      const ats = ATS_NORMALIZE[raw] || j.ats?.trim()
+      if (!ats) continue
+      atsCount[ats] = (atsCount[ats] || 0) + 1
+      const r = j.role.toLowerCase()
+      const cat = r.includes('senior') ? 'Senior' : r.includes('lead') || r.includes('staff') || r.includes('principal') ? 'Lead+' : r.includes('junior') || r.includes('intern') ? 'Junior' : 'Mid-level'
+      roleCount[cat] = (roleCount[cat] || 0) + 1
+      companyList.push({ company: j.company, role: j.role, ats })
+    }
+
+    const allAts = Object.entries(atsCount).sort((a, b) => b[1] - a[1])
+    const roles = Object.entries(roleCount).sort((a, b) => b[1] - a[1])
+
+    return { total: rejected.length, allAts, roles, companyList }
+  }, [jobs])
+
+  const visibleAts = showAllAts ? data.allAts : data.allAts.slice(0, 5)
+  const visibleCompanies = showAllCompanies ? data.companyList : data.companyList.slice(0, 8)
+
+  return (
+    <div style={styles.card}>
+      <h3 style={styles.cardTitle}>Rejection Breakdown</h3>
+      <p style={{ color: '#a1a1aa', fontSize: 12, margin: '0 0 16px' }}>{data.total} total rejections</p>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        {/* By ATS */}
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <h4 style={{ fontSize: 11, color: '#71717a', margin: 0, textTransform: 'uppercase', letterSpacing: 1 }}>By ATS</h4>
+            {data.allAts.length > 5 && (
+              <button onClick={() => setShowAllAts(!showAllAts)} style={{ background: 'none', border: 'none', color: '#a1a1aa', fontSize: 10, cursor: 'pointer', fontFamily: 'inherit' }}>
+                {showAllAts ? 'Top 5' : `All ${data.allAts.length}`}
+              </button>
+            )}
+          </div>
+          <div style={{ maxHeight: showAllAts ? 300 : undefined, overflowY: showAllAts ? 'auto' : undefined }}>
+            {visibleAts.map(([ats, count]) => (
+              <div key={ats} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #1a1a1f' }}>
+                <span style={{ fontSize: 12, color: '#e0e0e0' }}>{ats}</span>
+                <span style={{ fontSize: 12, color: '#a855f7', fontWeight: 600 }}>{count}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* By seniority */}
+        <div>
+          <h4 style={{ fontSize: 11, color: '#71717a', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 }}>By Seniority</h4>
+          {data.roles.map(([role, count]) => (
+            <div key={role} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #1a1a1f' }}>
+              <span style={{ fontSize: 12, color: '#e0e0e0' }}>{role}</span>
+              <span style={{ fontSize: 12, color: '#a855f7', fontWeight: 600 }}>{count}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Company list */}
+      <div style={{ marginTop: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <h4 style={{ fontSize: 11, color: '#71717a', margin: 0, textTransform: 'uppercase', letterSpacing: 1 }}>Rejected Companies</h4>
+          {data.companyList.length > 8 && (
+            <button onClick={() => setShowAllCompanies(!showAllCompanies)} style={{ background: 'none', border: 'none', color: '#a1a1aa', fontSize: 10, cursor: 'pointer', fontFamily: 'inherit' }}>
+              {showAllCompanies ? 'Show less' : `All ${data.companyList.length}`}
+            </button>
+          )}
+        </div>
+        <div style={{ maxHeight: showAllCompanies ? 300 : undefined, overflowY: showAllCompanies ? 'auto' : undefined }}>
+          {visibleCompanies.map((j, i) => (
+            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #1a1a1f', gap: 8 }}>
+              <span style={{ fontSize: 12, color: '#e0e0e0', fontWeight: 500 }}>{j.company}</span>
+              <span style={{ fontSize: 10, color: '#71717a', flexShrink: 0 }}>{j.ats}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /* ------------------------------------------------------------------ */
 /*  AnalyticsView                                                      */
 /* ------------------------------------------------------------------ */
+// Import new chart components
+import { ManualVsBotFunnel, ATSConversionComparison, TimeToResponse, PipelineHealth, VelocityVsQuality } from './AnalyticsCharts'
+import { WeeklyCadenceHeatmap, RoleCategoryPerformance, GeographicPerformance } from './AnalyticsCharts2'
+
 export function AnalyticsView() {
   return (
     <div style={styles.container}>
@@ -352,9 +552,21 @@ export function AnalyticsView() {
       </div>
       <div style={styles.grid}>
         <ResponseRate />
+        <ManualVsBotFunnel />
         <StatusDistribution />
+        <ATSConversionComparison />
         <ApplicationsOverTime />
+        <VelocityVsQuality />
         <TopATSPlatforms />
+        <TimeToResponse />
+        <PipelineHealth />
+        <TopRejectors />
+        <WeeklyCadenceHeatmap />
+        <RoleCategoryPerformance />
+        <div style={{ gridColumn: '1 / -1' }}>
+          <GeographicPerformance />
+        </div>
+        {/* Work Mode Distribution moved to global filters */}
       </div>
     </div>
   )

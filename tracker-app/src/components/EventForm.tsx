@@ -5,6 +5,7 @@ import { Plus } from 'lucide-react'
 const EVENT_TYPES: { value: EventType; label: string }[] = [
   { value: 'email', label: 'Email' },
   { value: 'call', label: 'Call' },
+  { value: 'linkedin_dm', label: 'LinkedIn DM' },
   { value: 'portfolio_review', label: 'Portfolio Review' },
   { value: 'design_challenge', label: 'Design Challenge' },
   { value: 'interview', label: 'Interview' },
