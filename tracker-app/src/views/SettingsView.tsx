@@ -242,8 +242,6 @@ const styles: Record<string, React.CSSProperties> = {
     height: '100%',
     overflow: 'auto',
     padding: 24,
-    maxWidth: 720,
-    margin: '0 auto',
   },
   header: {
     marginBottom: 24,
