@@ -38,9 +38,9 @@ const MOOD_EMOJIS = [
   { value: 5, emoji: '🔥', label: 'On fire' },
 ]
 
-class CoachErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
-  state = { hasError: false }
-  static getDerivedStateFromError() { return { hasError: true } }
+class CoachErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; errorMsg: string }> {
+  state = { hasError: false, errorMsg: '' }
+  static getDerivedStateFromError(error: Error) { return { hasError: true, errorMsg: error?.message || String(error) } }
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('Coach crash:', error, info)
   }
@@ -51,10 +51,14 @@ class CoachErrorBoundary extends Component<{ children: ReactNode }, { hasError: 
           <p style={{ color: 'var(--text-secondary)', fontSize: 14, marginBottom: 12 }}>
             Something went wrong in the Coach view.
           </p>
+          <p style={{ color: '#f87171', fontSize: 11, marginBottom: 12, fontFamily: 'monospace', maxWidth: 500, margin: '0 auto 12px', wordBreak: 'break-all' }}>
+            {this.state.errorMsg}
+          </p>
           <button
             onClick={() => {
               localStorage.removeItem('tracker_v2_ai_briefing')
-              this.setState({ hasError: false })
+              localStorage.removeItem('tracker_v2_coach')
+              this.setState({ hasError: false, errorMsg: '' })
             }}
             style={{
               padding: '8px 16px', borderRadius: 8,
