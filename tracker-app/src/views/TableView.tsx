@@ -603,7 +603,6 @@ export function TableView() {
       <div style={styles.header}>
         <div style={styles.headerLeft}>
           <h1 style={styles.title}>Applications</h1>
-          <span style={styles.jobCount}>{allFiltered.length} of {jobs.length}</span>
         </div>
         <ProgressRing percentage={submittedPct} />
       </div>
