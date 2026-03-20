@@ -605,21 +605,7 @@ export function TableView() {
           <h1 style={styles.title}>Applications</h1>
           <span style={styles.jobCount}>{allFiltered.length} of {jobs.length}</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button
-            onClick={() => setShowAddModal(true)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '6px 14px', borderRadius: 8,
-              background: 'var(--accent)', border: 'none',
-              fontSize: 12, fontWeight: 600, color: '#000',
-              cursor: 'pointer',
-            }}
-          >
-            <Plus size={14} /> Add Job
-          </button>
-          <ProgressRing percentage={submittedPct} />
-        </div>
+        <ProgressRing percentage={submittedPct} />
       </div>
       {showAddModal && <AddJobModal onClose={() => setShowAddModal(false)} />}
 
@@ -631,15 +617,29 @@ export function TableView() {
         onFilterChange={filters.setStatusFilter}
       />
 
-      {/* Search bar */}
-      <div style={{ marginTop: 12 }}>
-        <SearchBar
-          searchQuery={filters.searchQuery}
-          onSearchChange={filters.setSearch}
-          companyFilter={filters.companyFilter}
-          onCompanyChange={filters.setCompany}
-          companies={companies}
-        />
+      {/* Search bar + Add Job */}
+      <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ flex: 1 }}>
+          <SearchBar
+            searchQuery={filters.searchQuery}
+            onSearchChange={filters.setSearch}
+            companyFilter={filters.companyFilter}
+            onCompanyChange={filters.setCompany}
+            companies={companies}
+          />
+        </div>
+        <button
+          onClick={() => setShowAddModal(true)}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: '7px 14px', borderRadius: 8,
+            background: 'var(--accent)', border: 'none',
+            fontSize: 12, fontWeight: 600, color: '#000',
+            cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+          }}
+        >
+          <Plus size={14} /> Add Job
+        </button>
       </div>
 
       {/* Table */}

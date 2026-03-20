@@ -64,6 +64,8 @@ function GlobalFilters() {
   )
 }
 
+const VIEWS_WITH_FILTERS = new Set(['table', 'pipeline', 'analytics'])
+
 export function AppShell() {
   const { activeView, drawerOpen, selectedJobId } = useUI()
 
@@ -71,7 +73,7 @@ export function AppShell() {
     <div style={styles.container}>
       <Sidebar />
       <main style={styles.main}>
-        <GlobalFilters />
+        {VIEWS_WITH_FILTERS.has(activeView) && <GlobalFilters />}
         <ActiveViewContent view={activeView} />
       </main>
       {drawerOpen && selectedJobId && <DetailDrawer />}
