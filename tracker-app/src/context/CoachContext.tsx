@@ -257,12 +257,48 @@ function generateInsights(allJobs: Job[]): string[] {
   return insights.slice(0, 3) // max 3 insights
 }
 
+/* ── ATS response rate analysis ── */
+function getAtsStats(allJobs: Job[]): { bestAts: string; bestRate: number; worstAts: string; worstRate: number } | null {
+  const atsCounts: Record<string, { total: number; responded: number }> = {}
+  const nonAts = ['soumise', 'à soumettre', 'submitted', 'manual', 'easy apply', 'email', 'direct', 'referral', 'unknown', 'custom', 'recruiter', '-', 'n/a', 'skip', 'trop long', 'external', 'various', 'aggregator', '—']
+  for (const j of allJobs) {
+    if (!j.ats || j.status === 'skipped' || j.status === 'saved') continue
+    const ats = j.ats.toLowerCase().trim()
+    if (nonAts.includes(ats) || ats.length < 3 || ats.length > 30) continue
+    if (!atsCounts[ats]) atsCounts[ats] = { total: 0, responded: 0 }
+    atsCounts[ats].total++
+    if (['screening', 'interviewing', 'challenge', 'offer', 'negotiation', 'rejected'].includes(j.status)) {
+      atsCounts[ats].responded++
+    }
+  }
+  const entries = Object.entries(atsCounts).filter(([, v]) => v.total >= 5).sort((a, b) => (b[1].responded / b[1].total) - (a[1].responded / a[1].total))
+  if (entries.length < 2) return null
+  const best = entries[0]
+  const worst = entries[entries.length - 1]
+  return {
+    bestAts: best[0].charAt(0).toUpperCase() + best[0].slice(1),
+    bestRate: Math.round((best[1].responded / best[1].total) * 100),
+    worstAts: worst[0].charAt(0).toUpperCase() + worst[0].slice(1),
+    worstRate: Math.round((worst[1].responded / worst[1].total) * 100),
+  }
+}
+
+/* ── Ghost detection for follow-ups ── */
+function isLikelyGhoster(company: string, allJobs: Job[]): boolean {
+  // If this company has ghosted before (submitted > 21 days, no events, no rejection), skip follow-up
+  const companyJobs = allJobs.filter(j => j.company.toLowerCase() === company.toLowerCase() && j.id !== company)
+  return companyJobs.some(j =>
+    j.status === 'submitted' && j.date && daysAgo(j.date) > 21 && (!j.events || j.events.length === 0)
+  )
+}
+
 /* ── Generate focus tasks ── */
 function generateFocusTasks(allJobs: Job[], dismissedIds: Set<string> = new Set()): FocusTask[] {
   const pool: FocusTask[] = []
   const todayStr = today()
+  const atsStats = getAtsStats(allJobs)
 
-  // 1. Upcoming interviews/screenings
+  // 1. Upcoming interviews/screenings (highest priority)
   const upcoming = allJobs.filter(j =>
     j.events?.some(e => e.date >= todayStr && e.date <= new Date(Date.now() + 2 * 86400000).toISOString().split('T')[0])
   )
@@ -278,25 +314,47 @@ function generateFocusTasks(allJobs: Job[], dismissedIds: Set<string> = new Set(
     }
   }
 
-  // 2. Follow-ups (7-14 days no response)
+  // 2. Smart follow-ups: prioritize by ATS response rate, skip likely ghosters
   const followUps = allJobs
     .filter(j => j.status === 'submitted' && j.date && daysAgo(j.date) >= 7 && daysAgo(j.date) <= 14)
+    .filter(j => !isLikelyGhoster(j.company, allJobs))
+    .sort((a, b) => {
+      // Sort by ATS response rate (jobs on better ATS platforms first)
+      if (!atsStats) return 0
+      const aAts = (a.ats || '').toLowerCase()
+      const bAts = (b.ats || '').toLowerCase()
+      const bestAtsLower = atsStats.bestAts.toLowerCase()
+      if (aAts === bestAtsLower && bAts !== bestAtsLower) return -1
+      if (bAts === bestAtsLower && aAts !== bestAtsLower) return 1
+      return 0
+    })
     .slice(0, 5)
-  if (followUps.length > 0) {
-    // Split into individual tasks so dismissing one doesn't kill all follow-ups
-    for (const j of followUps) {
-      pool.push({
-        id: `followup-${j.id}`,
-        label: `Follow up on ${j.company}`,
-        type: 'follow-up',
-        done: false,
-      })
-    }
+  for (const j of followUps) {
+    const atsNote = atsStats && (j.ats || '').toLowerCase() === atsStats.bestAts.toLowerCase()
+      ? ` (${atsStats.bestAts} — ${atsStats.bestRate}% response rate)`
+      : ''
+    pool.push({
+      id: `followup-${j.id}`,
+      label: `Follow up on ${j.company}${atsNote}`,
+      type: 'follow-up',
+      done: false,
+    })
   }
 
-  // 3. To Submit jobs
+  // 3. To Submit jobs — prioritize by best ATS
   const toSubmit = allJobs.filter(j => j.status === 'manual' || j.status === 'saved')
   if (toSubmit.length > 0) {
+    if (atsStats) {
+      const bestAtsJobs = toSubmit.filter(j => (j.ats || '').toLowerCase() === atsStats.bestAts.toLowerCase())
+      if (bestAtsJobs.length > 0) {
+        pool.push({
+          id: 'apply-priority',
+          label: `Submit ${Math.min(bestAtsJobs.length, 3)} ${atsStats.bestAts} apps first (${atsStats.bestRate}% response rate)`,
+          type: 'apply',
+          done: false,
+        })
+      }
+    }
     pool.push({
       id: 'apply-batch',
       label: `Submit ${Math.min(toSubmit.length, 3)} pending application${toSubmit.length > 1 ? 's' : ''}`,
@@ -305,10 +363,20 @@ function generateFocusTasks(allJobs: Job[], dismissedIds: Set<string> = new Set(
     })
   }
 
-  // 4. General apply tasks as filler
+  // 4. Data-driven apply suggestions
+  if (atsStats) {
+    pool.push({
+      id: 'apply-best-ats',
+      label: `Target ${atsStats.bestAts} jobs today (${atsStats.bestRate}% response vs ${atsStats.worstAts} ${atsStats.worstRate}%)`,
+      type: 'apply',
+      done: false,
+    })
+  }
+
+  // 5. General tasks as filler
   pool.push({
     id: 'apply-new',
-    label: 'Apply to 2 new quality positions (EMEA or APAC)',
+    label: 'Apply to 2 new quality positions (APAC timezone)',
     type: 'apply',
     done: false,
   })
