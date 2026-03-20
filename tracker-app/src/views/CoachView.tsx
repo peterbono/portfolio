@@ -126,14 +126,18 @@ function StreakCard() {
 function DailyGoalCard() {
   const { goalMode, setGoalMode, dailyTarget, todayActions, dailyProgress, isDailyGoalMet } = useCoach()
   const [showModeSelect, setShowModeSelect] = useState(false)
-  const celebratedRef = useRef(false)
+  const prevActionsRef = useRef(todayActions)
+  const celebratedRef = useRef(isDailyGoalMet) // skip if already met on mount
 
   useEffect(() => {
-    if (isDailyGoalMet && !celebratedRef.current) {
+    // Only celebrate when goal transitions from not-met to met during this session
+    // (i.e., todayActions increased since last render AND goal is now met)
+    if (isDailyGoalMet && !celebratedRef.current && prevActionsRef.current < dailyTarget) {
       celebratedRef.current = true
       celebrate('medium')
     }
-  }, [isDailyGoalMet])
+    prevActionsRef.current = todayActions
+  }, [isDailyGoalMet, todayActions, dailyTarget])
 
   return (
     <Card>
