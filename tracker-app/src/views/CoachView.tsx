@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, Component, type ErrorInfo, type ReactNode } from 'react'
 import { useCoach, type GoalMode, type PersonalRank } from '../context/CoachContext'
 import { celebrate } from '../hooks/useCelebration'
 import {
@@ -38,7 +38,48 @@ const MOOD_EMOJIS = [
   { value: 5, emoji: '🔥', label: 'On fire' },
 ]
 
+class CoachErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+  state = { hasError: false }
+  static getDerivedStateFromError() { return { hasError: true } }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('Coach crash:', error, info)
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: 40, textAlign: 'center' }}>
+          <p style={{ color: 'var(--text-secondary)', fontSize: 14, marginBottom: 12 }}>
+            Something went wrong in the Coach view.
+          </p>
+          <button
+            onClick={() => {
+              localStorage.removeItem('tracker_v2_ai_briefing')
+              this.setState({ hasError: false })
+            }}
+            style={{
+              padding: '8px 16px', borderRadius: 8,
+              background: 'var(--accent)', border: 'none',
+              fontSize: 13, fontWeight: 600, color: '#000', cursor: 'pointer',
+            }}
+          >
+            Reset & Retry
+          </button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
 export function CoachView() {
+  return (
+    <CoachErrorBoundary>
+      <CoachViewContent />
+    </CoachErrorBoundary>
+  )
+}
+
+function CoachViewContent() {
   return (
     <div style={styles.container}>
       {/* AI Coach Banner */}
@@ -774,8 +815,13 @@ function loadCachedBriefing(): AIBriefing | null {
     const data = JSON.parse(raw) as AIBriefing
     // Cache valid for same day only
     const today = new Date().toISOString().split('T')[0]
-    if (data.generatedAt?.startsWith(today)) return data
-    return null
+    if (!data.generatedAt?.startsWith(today)) return null
+    // Sanitize cached data to prevent render crashes
+    return {
+      message: typeof data.message === 'string' ? data.message : String(data.message ?? ''),
+      tasks: Array.isArray(data.tasks) ? data.tasks.map(String) : [],
+      generatedAt: data.generatedAt,
+    }
   } catch { return null }
 }
 
@@ -878,8 +924,8 @@ Respond in this exact JSON format:
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0])
         const newBriefing: AIBriefing = {
-          message: parsed.message,
-          tasks: parsed.tasks || [],
+          message: typeof parsed.message === 'string' ? parsed.message : JSON.stringify(parsed.message),
+          tasks: Array.isArray(parsed.tasks) ? parsed.tasks.map(String) : [],
           generatedAt: new Date().toISOString(),
         }
         setBriefing(newBriefing)
