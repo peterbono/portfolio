@@ -7,6 +7,7 @@ import { AnalyticsView } from '../views/AnalyticsView'
 import { SettingsView } from '../views/SettingsView'
 import { CoachView } from '../views/CoachView'
 import { AutopilotView } from '../views/AutopilotView'
+import { PricingViewWithResponsive } from '../views/PricingView'
 
 const TIME_OPTIONS: { value: TimeRange; label: string }[] = [
   { value: 'all', label: 'All time' },
@@ -96,6 +97,8 @@ function ActiveViewContent({ view }: { view: string }) {
       return <AutopilotView />
     case 'settings':
       return <SettingsView />
+    case 'pricing':
+      return <PricingViewWithResponsive />
     default:
       return null
   }

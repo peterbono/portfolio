@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
-import type { SupabaseClient, Session } from '@supabase/supabase-js'
+import type { SupabaseClient, Session, User } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import type { Database } from '../types/database'
 
@@ -8,15 +8,19 @@ type SyncStatus = 'idle' | 'syncing' | 'synced' | 'error'
 interface SupabaseContextValue {
   supabase: SupabaseClient<Database>
   session: Session | null
+  user: User | null
+  authLoading: boolean
   isOnline: boolean
   syncStatus: SyncStatus
   setSyncStatus: (status: SyncStatus) => void
+  signOut: () => Promise<void>
 }
 
 const SupabaseContext = createContext<SupabaseContextValue | undefined>(undefined)
 
 export function SupabaseProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
+  const [authLoading, setAuthLoading] = useState(true)
   const [isOnline, setIsOnline] = useState(true)
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle')
 
@@ -52,17 +56,19 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     }
   }, [checkConnection])
 
-  // Listen for auth state changes (for future auth integration)
+  // Listen for auth state changes
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event, newSession) => {
         setSession(newSession)
+        setAuthLoading(false)
       }
     )
 
     // Get initial session
     supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
       setSession(initialSession)
+      setAuthLoading(false)
     })
 
     return () => {
@@ -70,14 +76,21 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const signOut = useCallback(async () => {
+    await supabase.auth.signOut()
+  }, [])
+
   return (
     <SupabaseContext.Provider
       value={{
         supabase,
         session,
+        user: session?.user ?? null,
+        authLoading,
         isOnline,
         syncStatus,
         setSyncStatus,
+        signOut,
       }}
     >
       {children}

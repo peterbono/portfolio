@@ -9,9 +9,21 @@ import {
   Briefcase,
   Flame,
   Bot,
+  LogOut,
+  CreditCard,
 } from 'lucide-react'
 import { useUI, type ActiveView } from '../context/UIContext'
 import { useJobs } from '../context/JobsContext'
+import { useSupabase } from '../context/SupabaseContext'
+import { usePlan } from '../hooks/usePlan'
+import type { PlanTier } from '../lib/billing'
+
+const PLAN_BADGE_COLORS: Record<PlanTier, { bg: string; color: string }> = {
+  free: { bg: 'rgba(113, 113, 122, 0.15)', color: '#71717a' },
+  starter: { bg: 'rgba(96, 165, 250, 0.15)', color: '#60a5fa' },
+  pro: { bg: 'rgba(52, 211, 153, 0.15)', color: '#34d399' },
+  premium: { bg: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b' },
+}
 
 const NAV_ITEMS: { view: ActiveView; label: string; icon: typeof LayoutList }[] = [
   { view: 'table', label: 'Table', icon: LayoutList },
@@ -20,11 +32,18 @@ const NAV_ITEMS: { view: ActiveView; label: string; icon: typeof LayoutList }[] 
   { view: 'coach', label: 'Coach', icon: Flame },
   { view: 'autopilot', label: 'Autopilot', icon: Bot },
   { view: 'settings', label: 'Settings', icon: Settings },
+  { view: 'pricing', label: 'Pricing', icon: CreditCard },
 ]
 
 export function Sidebar() {
   const { activeView, setActiveView, sidebarCollapsed, toggleSidebar } = useUI()
   const { jobs } = useJobs()
+  const { user, signOut } = useSupabase()
+  const { plan } = usePlan()
+
+  const userEmail = user?.email ?? ''
+  const userName = user?.user_metadata?.full_name ?? userEmail
+  const userInitial = (userName || '?')[0].toUpperCase()
 
   // Cmd+B keyboard shortcut
   useEffect(() => {
@@ -136,6 +155,93 @@ export function Sidebar() {
           }}
         >
           {jobs.length} jobs tracked
+        </div>
+      )}
+
+      {/* User section */}
+      {user && (
+        <div
+          style={{
+            padding: sidebarCollapsed ? '10px 0' : '10px 16px',
+            borderTop: '1px solid var(--border)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
+          }}
+        >
+          <div
+            style={{
+              width: 28,
+              height: 28,
+              borderRadius: '50%',
+              background: 'rgba(52, 211, 153, 0.15)',
+              color: 'var(--accent)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 12,
+              fontWeight: 600,
+              flexShrink: 0,
+            }}
+            title={sidebarCollapsed ? userEmail : undefined}
+          >
+            {userInitial}
+          </div>
+          {!sidebarCollapsed && (
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div
+                style={{
+                  fontSize: 12,
+                  color: 'var(--text-primary)',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                {userEmail}
+              </div>
+              <span
+                style={{
+                  display: 'inline-block',
+                  marginTop: 2,
+                  fontSize: 9,
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                  padding: '1px 6px',
+                  borderRadius: 4,
+                  background: PLAN_BADGE_COLORS[plan].bg,
+                  color: PLAN_BADGE_COLORS[plan].color,
+                }}
+              >
+                {plan}
+              </span>
+            </div>
+          )}
+          {!sidebarCollapsed && (
+            <button
+              onClick={signOut}
+              title="Sign out"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 4,
+                color: 'var(--text-tertiary)',
+                transition: 'color 150ms ease',
+                flexShrink: 0,
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = '#f87171'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = 'var(--text-tertiary)'
+              }}
+            >
+              <LogOut size={14} />
+            </button>
+          )}
         </div>
       )}
 
