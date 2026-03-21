@@ -97,7 +97,7 @@ interface JobsContextValue {
   removeJobEvent: (id: string, eventId: string) => void
   deleteJob: (id: string) => void
   addJob: (job: Job) => void
-  markRejected: (rejections: { company: string; date?: string }[]) => void
+  markRejected: (rejections: { company: string; date?: string; role?: string }[]) => void
   counts: Record<JobStatus, number>
 }
 
@@ -210,13 +210,14 @@ export function JobsProvider({ children }: { children: ReactNode }) {
     }))
   }, [])
 
-  const markRejected = useCallback((rejections: { company: string; date?: string }[]) => {
-    const rejMap = new Map<string, string | undefined>()
-    for (const r of rejections) {
-      // Normalize date to YYYY-MM-DD (strip ISO timestamp)
-      const d = r.date ? r.date.split('T')[0] : undefined
-      rejMap.set(r.company.toLowerCase(), d)
-    }
+  const markRejected = useCallback((rejections: { company: string; date?: string; role?: string }[]) => {
+    const rejList = rejections.map(r => ({
+      company: r.company,
+      role: r.role || '',
+      date: r.date ? r.date.split('T')[0] : undefined,
+    }))
+    const rejMap = new Map<string, { date?: string; role: string }>()
+    for (const r of rejList) rejMap.set(r.company.toLowerCase(), { date: r.date, role: r.role })
 
     function addRejectionEvent(existing: Partial<Job>, rejDate: string): Partial<Job> {
       const events = existing.events ?? []
@@ -236,10 +237,13 @@ export function JobsProvider({ children }: { children: ReactNode }) {
 
     setOverrides((prev) => {
       const next = { ...prev }
+      const matchedCompanies = new Set<string>()
+
       for (const job of seedJobs) {
         const companyLower = job.company.toLowerCase()
         if (!rejMap.has(companyLower)) continue
-        const rejDate = rejMap.get(companyLower)
+        matchedCompanies.add(companyLower)
+        const { date: rejDate } = rejMap.get(companyLower)!
         if (job.status === 'submitted' || job.status === 'manual') {
           next[job.id] = {
             ...next[job.id],
@@ -247,7 +251,6 @@ export function JobsProvider({ children }: { children: ReactNode }) {
             ...(rejDate ? addRejectionEvent(next[job.id] ?? {}, rejDate) : {}),
           }
         } else if (job.status === 'rejected' && rejDate) {
-          // Already rejected — backfill rejection event + date if missing
           next[job.id] = {
             ...next[job.id],
             ...addRejectionEvent(next[job.id] ?? {}, rejDate),
@@ -261,7 +264,8 @@ export function JobsProvider({ children }: { children: ReactNode }) {
         const status = override.status || job?.status
         const companyLower = company.toLowerCase()
         if (!rejMap.has(companyLower)) continue
-        const rejDate = rejMap.get(companyLower)
+        matchedCompanies.add(companyLower)
+        const { date: rejDate } = rejMap.get(companyLower)!
         if (status === 'submitted' || status === 'manual') {
           next[id] = {
             ...next[id],
@@ -275,6 +279,35 @@ export function JobsProvider({ children }: { children: ReactNode }) {
           }
         }
       }
+
+      // Auto-create jobs for rejections with no matching job
+      for (const [companyLower, { date: rejDate, role }] of rejMap.entries()) {
+        if (matchedCompanies.has(companyLower)) continue
+        // Check if already created in a previous sync
+        const alreadyExists = Object.values(next).some(ov =>
+          ov.company && ov.company.toLowerCase() === companyLower && ov.status === 'rejected'
+        )
+        if (alreadyExists) continue
+        const id = `auto-rej-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+        const company = rejList.find(r => r.company.toLowerCase() === companyLower)?.company || companyLower
+        const newJob: Partial<Job> = {
+          company,
+          role: role || 'Unknown Role',
+          status: 'rejected' as JobStatus,
+          date: rejDate || toLocalDateStr(new Date()),
+          location: '',
+          salary: '',
+          ats: 'LinkedIn',
+          cv: '',
+          portfolio: '',
+          link: '',
+          notes: 'Auto-created from Gmail rejection (no prior application tracked)',
+          source: 'auto' as const,
+          ...(rejDate ? addRejectionEvent({}, rejDate) : {}),
+        }
+        next[id] = newJob
+      }
+
       return next
     })
   }, [])
