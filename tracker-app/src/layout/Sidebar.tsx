@@ -12,6 +12,7 @@ import {
   Bot,
   LogOut,
   CreditCard,
+  Lock,
 } from 'lucide-react'
 import { useUI, type ActiveView } from '../context/UIContext'
 import { useJobs } from '../context/JobsContext'
@@ -36,6 +37,9 @@ const NAV_ITEMS: { view: ActiveView; label: string; icon: typeof LayoutList }[] 
   { view: 'settings', label: 'Settings', icon: Settings },
   { view: 'pricing', label: 'Pricing', icon: CreditCard },
 ]
+
+/** Views that require auth — show lock icon for anonymous users */
+const LOCKED_VIEWS = new Set<ActiveView>(['table', 'pipeline', 'analytics', 'coach', 'insights'])
 
 export function Sidebar() {
   const { activeView, setActiveView, sidebarCollapsed, toggleSidebar } = useUI()
@@ -107,11 +111,12 @@ export function Sidebar() {
         {NAV_ITEMS.map(({ view, label, icon: Icon }) => {
           const isActive = activeView === view
           const isAutopilotHighlight = view === 'autopilot' && !user
+          const isLocked = !user && LOCKED_VIEWS.has(view)
           return (
             <button
               key={view}
               onClick={() => setActiveView(view)}
-              title={sidebarCollapsed ? label : undefined}
+              title={sidebarCollapsed ? (isLocked ? `${label} (Sign up to unlock)` : label) : undefined}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -156,7 +161,7 @@ export function Sidebar() {
                 style={isAutopilotHighlight && !isActive ? { color: 'var(--accent)' } : undefined}
               />
               {!sidebarCollapsed && (
-                <span style={{ whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
                   {label}
                   {isAutopilotHighlight && (
                     <span
@@ -175,7 +180,28 @@ export function Sidebar() {
                       NEW
                     </span>
                   )}
+                  {isLocked && (
+                    <Lock
+                      size={11}
+                      style={{
+                        opacity: 0.35,
+                        marginLeft: 'auto',
+                        flexShrink: 0,
+                      }}
+                    />
+                  )}
                 </span>
+              )}
+              {sidebarCollapsed && isLocked && (
+                <Lock
+                  size={8}
+                  style={{
+                    position: 'absolute',
+                    top: 8,
+                    right: 12,
+                    opacity: 0.3,
+                  }}
+                />
               )}
             </button>
           )

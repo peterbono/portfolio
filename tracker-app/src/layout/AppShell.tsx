@@ -2,6 +2,7 @@ import { Sidebar } from './Sidebar'
 import { DetailDrawer } from './DetailDrawer'
 import { useUI, type TimeRange, type AreaFilter, type WorkMode } from '../context/UIContext'
 import { useJobs } from '../context/JobsContext'
+import { useSupabase } from '../context/SupabaseContext'
 import { TableView } from '../views/TableView'
 import { PipelineView } from '../views/PipelineView'
 import { AnalyticsView } from '../views/AnalyticsView'
@@ -13,6 +14,7 @@ import { PricingViewWithResponsive } from '../views/PricingView'
 import { TrustIndicator } from '../components/TrustIndicator'
 import { DemoBanner } from '../components/DemoBanner'
 import { SunkCostNudge } from '../components/SunkCostNudge'
+import { BlurredOverlay } from '../components/BlurredOverlay'
 
 const TIME_OPTIONS: { value: TimeRange; label: string }[] = [
   { value: 'all', label: 'All time' },
@@ -96,27 +98,56 @@ export function AppShell() {
   )
 }
 
+/** Views that are blurred for anonymous users (no session) */
+const BLURRED_VIEWS: Record<string, { feature: string; previewRows: number }> = {
+  table: { feature: 'table', previewRows: 3 },
+  pipeline: { feature: 'pipeline', previewRows: 2 },
+  analytics: { feature: 'analytics', previewRows: 1 },
+  coach: { feature: 'coach', previewRows: 2 },
+  insights: { feature: 'insights', previewRows: 1 },
+}
+
 function ActiveViewContent({ view }: { view: string }) {
-  switch (view) {
-    case 'table':
-      return <TableView />
-    case 'pipeline':
-      return <PipelineView />
-    case 'analytics':
-      return <AnalyticsView />
-    case 'coach':
-      return <CoachView />
-    case 'insights':
-      return <InsightsView />
-    case 'autopilot':
-      return <AutopilotView />
-    case 'settings':
-      return <SettingsView />
-    case 'pricing':
-      return <PricingViewWithResponsive />
-    default:
-      return null
+  const { session } = useSupabase()
+  const isAnonymous = !session
+
+  const viewElement = (() => {
+    switch (view) {
+      case 'table':
+        return <TableView />
+      case 'pipeline':
+        return <PipelineView />
+      case 'analytics':
+        return <AnalyticsView />
+      case 'coach':
+        return <CoachView />
+      case 'insights':
+        return <InsightsView />
+      case 'autopilot':
+        return <AutopilotView />
+      case 'settings':
+        return <SettingsView />
+      case 'pricing':
+        return <PricingViewWithResponsive />
+      default:
+        return null
+    }
+  })()
+
+  // Wrap locked views in BlurredOverlay for anonymous users
+  const blurConfig = BLURRED_VIEWS[view]
+  if (isAnonymous && blurConfig) {
+    return (
+      <BlurredOverlay
+        feature={blurConfig.feature}
+        previewRows={blurConfig.previewRows}
+      >
+        {viewElement}
+      </BlurredOverlay>
+    )
   }
+
+  return viewElement
 }
 
 function ViewPlaceholder({ name, description }: { name: string; description: string }) {
