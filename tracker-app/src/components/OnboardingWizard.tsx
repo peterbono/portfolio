@@ -17,16 +17,26 @@ import confetti from 'canvas-confetti'
 const ONBOARDING_KEY = 'tracker_v2_onboarding_done'
 
 const ROLE_OPTIONS = [
+  'Software Engineer',
+  'Frontend Developer',
+  'Backend Developer',
+  'Full Stack Developer',
   'Product Designer',
   'UX Designer',
   'UI Designer',
-  'UX Researcher',
-  'Design Lead',
-  'Staff Designer',
-  'Visual Designer',
-  'Interaction Designer',
-  'Design Engineer',
-  'Creative Director',
+  'Product Manager',
+  'Data Scientist',
+  'Data Analyst',
+  'DevOps Engineer',
+  'QA Engineer',
+  'Marketing Manager',
+  'Sales Representative',
+  'Project Manager',
+  'Business Analyst',
+  'Customer Success',
+  'HR / Recruiter',
+  'Finance / Accounting',
+  'Operations Manager',
 ]
 
 const EXPERIENCE_LEVELS = ['Junior', 'Mid', 'Senior', 'Lead', 'Principal']
