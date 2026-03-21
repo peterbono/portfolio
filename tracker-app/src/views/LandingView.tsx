@@ -17,6 +17,10 @@ import {
   TrendingUp,
   Target,
   ChevronDown,
+  ShieldCheck,
+  Eye,
+  HandHelping,
+  Crosshair,
 } from 'lucide-react'
 
 /* ------------------------------------------------------------------ */
@@ -382,6 +386,14 @@ export function LandingView({ onGetStarted, onSignIn }: LandingViewProps) {
           />
         </div>
       </section>
+
+      {/* Divider */}
+      <div data-landing-section-divider="" />
+
+      {/* ============================================================ */}
+      {/*  OUR PROMISE — honest coverage section                        */}
+      {/* ============================================================ */}
+      <PromiseSection />
 
       {/* Divider */}
       <div data-landing-section-divider="" />
@@ -1047,6 +1059,384 @@ function HowItWorksSteps() {
       ))}
     </div>
   )
+}
+
+/* ---------- Promise / Honest Coverage Section ---------- */
+
+function PromiseSection() {
+  const { ref, isVisible } = useScrollReveal()
+  const barRef = useRef<HTMLDivElement>(null)
+  const [barAnimated, setBarAnimated] = useState(false)
+
+  useEffect(() => {
+    if (isVisible && !barAnimated) {
+      // Small delay so the section fades in first, then the bar fills
+      const t = setTimeout(() => setBarAnimated(true), 400)
+      return () => clearTimeout(t)
+    }
+  }, [isVisible, barAnimated])
+
+  return (
+    <section id="our-promise" style={s.sectionAlt}>
+      <div style={s.container}>
+        <div
+          ref={ref}
+          style={{
+            opacity: isVisible ? 1 : 0,
+            transform: isVisible ? 'translateY(0)' : 'translateY(24px)',
+            transition: 'opacity 0.6s ease, transform 0.6s ease',
+          }}
+        >
+          {/* Section Header */}
+          <div style={{ textAlign: 'center', marginBottom: 64 }}>
+            <div style={s.sectionLabel}>
+              <span>Our Promise</span>
+            </div>
+            <h2 style={s.sectionTitle}>Nothing slips through</h2>
+            <p style={s.sectionSubtitle}>
+              Other tools auto-apply everywhere and fail silently.
+              We apply where we can, and prep you where we can't.
+              Every job gets handled.
+            </p>
+          </div>
+
+          {/* Coverage Bar Visual */}
+          <div style={ps.coverageCard}>
+            {/* Subtle glow behind card */}
+            <div style={ps.coverageGlow} />
+
+            {/* The bar */}
+            <div style={ps.barLabel}>
+              <span style={ps.barLabelText}>Application coverage</span>
+              <span style={ps.barLabelValue}>100%</span>
+            </div>
+            <div ref={barRef} style={ps.barTrack}>
+              <div
+                style={{
+                  ...ps.barFillAuto,
+                  width: barAnimated ? '78%' : '0%',
+                }}
+              />
+              <div
+                style={{
+                  ...ps.barFillAssisted,
+                  width: barAnimated ? '22%' : '0%',
+                }}
+              />
+            </div>
+            <div data-landing-promise-legend="" style={ps.barLegend}>
+              <div style={ps.legendItem}>
+                <div style={{ ...ps.legendDot, background: '#34d399' }} />
+                <span style={ps.legendLabel}>Bot auto-applied</span>
+                <span style={ps.legendPercent}>~80%</span>
+              </div>
+              <div style={ps.legendItem}>
+                <div style={{ ...ps.legendDot, background: '#60a5fa' }} />
+                <span style={ps.legendLabel}>You, assisted by bot</span>
+                <span style={ps.legendPercent}>~20%</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Three pillars */}
+          <div data-landing-promise-grid="" style={ps.pillarsGrid}>
+            <div style={ps.pillar}>
+              <div style={{ ...ps.pillarIcon, background: 'rgba(52, 211, 153, 0.08)', border: '1px solid rgba(52, 211, 153, 0.12)' }}>
+                <Zap size={20} color="#34d399" />
+              </div>
+              <h3 style={ps.pillarTitle}>Auto-applied</h3>
+              <p style={ps.pillarDesc}>
+                Standard ATS forms (Greenhouse, Lever, Workable) get filled and submitted automatically. You wake up to confirmations.
+              </p>
+            </div>
+
+            <div style={ps.pillar}>
+              <div style={{ ...ps.pillarIcon, background: 'rgba(96, 165, 250, 0.08)', border: '1px solid rgba(96, 165, 250, 0.12)' }}>
+                <HandHelping size={20} color="#60a5fa" />
+              </div>
+              <h3 style={ps.pillarTitle}>Assisted apply</h3>
+              <p style={ps.pillarDesc}>
+                CAPTCHAs, custom portals, or tricky forms? The bot preps everything -- your answers, your CV, your cover letter. You just hit submit.
+              </p>
+            </div>
+
+            <div style={ps.pillar}>
+              <div style={{ ...ps.pillarIcon, background: 'rgba(167, 139, 250, 0.08)', border: '1px solid rgba(167, 139, 250, 0.12)' }}>
+                <Eye size={20} color="#a78bfa" />
+              </div>
+              <h3 style={ps.pillarTitle}>Nothing missed</h3>
+              <p style={ps.pillarDesc}>
+                Every matched job is accounted for. No silent failures, no black holes. Your tracker shows exactly what happened with each one.
+              </p>
+            </div>
+          </div>
+
+          {/* Competitor contrast */}
+          <div data-landing-promise-compare="" style={ps.compareRow}>
+            <div style={ps.compareCard}>
+              <div style={ps.compareHeader}>
+                <Crosshair size={16} color="var(--text-tertiary)" />
+                <span style={ps.compareLabel}>Other tools</span>
+              </div>
+              <div style={ps.compareMetric}>
+                <span style={ps.compareNum}>Spray & pray</span>
+              </div>
+              <p style={ps.compareDesc}>
+                Mass-apply everywhere, fail silently on half, get flagged as spam. 2% response rate.
+              </p>
+              <div style={ps.compareStar}>
+                <Star size={12} color="#f59e0b" />
+                <Star size={12} color="#f59e0b" />
+                <Star size={12} color="rgba(255,255,255,0.15)" />
+                <Star size={12} color="rgba(255,255,255,0.15)" />
+                <Star size={12} color="rgba(255,255,255,0.15)" />
+                <span style={ps.compareStarText}>1.9 avg rating</span>
+              </div>
+            </div>
+            <div style={{ ...ps.compareCard, ...ps.compareCardUs }}>
+              <div style={ps.compareHeader}>
+                <ShieldCheck size={16} color="#34d399" />
+                <span style={{ ...ps.compareLabel, color: '#34d399' }}>JobTracker</span>
+              </div>
+              <div style={ps.compareMetric}>
+                <span style={{ ...ps.compareNum, color: '#fff' }}>Smart & complete</span>
+              </div>
+              <p style={ps.compareDesc}>
+                Targeted applications with full coverage. Nothing lost, nothing spammed. Real results.
+              </p>
+              <div style={ps.compareStar}>
+                <Star size={12} color="#34d399" />
+                <Star size={12} color="#34d399" />
+                <Star size={12} color="#34d399" />
+                <Star size={12} color="#34d399" />
+                <Star size={12} color="#34d399" />
+                <span style={{ ...ps.compareStarText, color: 'var(--text-secondary)' }}>Honest by design</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Trust micro-copy */}
+          <p style={ps.trustLine}>
+            <ShieldCheck size={14} color="#34d399" />
+            We never let a good job slip through. That's the promise.
+          </p>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+/* ---------- Promise section styles ---------- */
+
+const ps: Record<string, React.CSSProperties> = {
+  coverageCard: {
+    position: 'relative',
+    background: 'rgba(255,255,255,0.02)',
+    border: '1px solid rgba(255,255,255,0.06)',
+    borderRadius: 16,
+    padding: '32px 36px',
+    marginBottom: 64,
+    overflow: 'hidden',
+  },
+  coverageGlow: {
+    position: 'absolute',
+    top: '-50%',
+    left: '10%',
+    width: '80%',
+    height: '200%',
+    background: 'radial-gradient(ellipse at center, rgba(52,211,153,0.06) 0%, transparent 60%)',
+    pointerEvents: 'none',
+  },
+  barLabel: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+    position: 'relative',
+    zIndex: 1,
+  },
+  barLabelText: {
+    fontSize: 13,
+    fontWeight: 500,
+    color: 'var(--text-secondary)',
+    letterSpacing: '0.01em',
+  },
+  barLabelValue: {
+    fontSize: 22,
+    fontWeight: 700,
+    color: '#fff',
+    letterSpacing: '-0.02em',
+  },
+  barTrack: {
+    display: 'flex',
+    width: '100%',
+    height: 32,
+    borderRadius: 8,
+    background: 'rgba(255,255,255,0.04)',
+    overflow: 'hidden',
+    position: 'relative',
+    zIndex: 1,
+  },
+  barFillAuto: {
+    height: '100%',
+    background: 'linear-gradient(90deg, #34d399 0%, #2dd4a8 100%)',
+    borderRadius: '8px 0 0 8px',
+    transition: 'width 1.2s cubic-bezier(0.23, 1, 0.32, 1)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: 11,
+    fontWeight: 700,
+    color: '#000',
+    letterSpacing: '0.02em',
+  },
+  barFillAssisted: {
+    height: '100%',
+    background: 'linear-gradient(90deg, #3b82f6 0%, #60a5fa 100%)',
+    borderRadius: '0 8px 8px 0',
+    transition: 'width 1s cubic-bezier(0.23, 1, 0.32, 1) 0.3s',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: 11,
+    fontWeight: 700,
+    color: '#000',
+    letterSpacing: '0.02em',
+  },
+  barLegend: {
+    display: 'flex',
+    gap: 32,
+    marginTop: 16,
+    position: 'relative',
+    zIndex: 1,
+  },
+  legendItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+  },
+  legendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 2,
+    flexShrink: 0,
+  },
+  legendLabel: {
+    fontSize: 13,
+    color: 'var(--text-secondary)',
+  },
+  legendPercent: {
+    fontSize: 13,
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+  },
+
+  /* Pillars grid */
+  pillarsGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, 1fr)',
+    gap: 24,
+    marginBottom: 64,
+  },
+  pillar: {
+    background: 'rgba(255,255,255,0.02)',
+    border: '1px solid rgba(255,255,255,0.06)',
+    borderRadius: 14,
+    padding: '28px 24px',
+    transition: 'border-color 200ms ease, box-shadow 200ms ease',
+  },
+  pillarIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 10,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  pillarTitle: {
+    fontSize: 16,
+    fontWeight: 650,
+    color: '#fff',
+    marginBottom: 8,
+    letterSpacing: '-0.01em',
+  },
+  pillarDesc: {
+    fontSize: 14,
+    color: 'var(--text-secondary)',
+    lineHeight: 1.6,
+    margin: 0,
+  },
+
+  /* Competitor comparison */
+  compareRow: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: 20,
+    marginBottom: 48,
+  },
+  compareCard: {
+    background: 'rgba(255,255,255,0.02)',
+    border: '1px solid rgba(255,255,255,0.06)',
+    borderRadius: 14,
+    padding: '24px 28px',
+  },
+  compareCardUs: {
+    background: 'rgba(52, 211, 153, 0.03)',
+    border: '1px solid rgba(52, 211, 153, 0.12)',
+  },
+  compareHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  compareLabel: {
+    fontSize: 13,
+    fontWeight: 600,
+    color: 'var(--text-tertiary)',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.04em',
+  },
+  compareMetric: {
+    marginBottom: 8,
+  },
+  compareNum: {
+    fontSize: 20,
+    fontWeight: 700,
+    color: 'var(--text-secondary)',
+    letterSpacing: '-0.02em',
+  },
+  compareDesc: {
+    fontSize: 13,
+    color: 'var(--text-tertiary)',
+    lineHeight: 1.55,
+    margin: 0,
+    marginBottom: 12,
+  },
+  compareStar: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 3,
+  },
+  compareStarText: {
+    fontSize: 12,
+    color: 'var(--text-tertiary)',
+    marginLeft: 6,
+  },
+
+  /* Trust line */
+  trustLine: {
+    textAlign: 'center' as const,
+    fontSize: 14,
+    fontWeight: 500,
+    color: 'var(--text-secondary)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    margin: 0,
+  },
 }
 
 /* ---------- Stats Section ---------- */
@@ -2485,6 +2875,22 @@ if (typeof document !== 'undefined' && !document.getElementById(RESPONSIVE_ID)) 
       [data-landing-footer-columns] {
         flex-direction: row !important;
         gap: 40px !important;
+      }
+      [data-landing-promise-grid] {
+        grid-template-columns: 1fr !important;
+        max-width: 400px !important;
+        margin-left: auto !important;
+        margin-right: auto !important;
+      }
+      [data-landing-promise-compare] {
+        grid-template-columns: 1fr !important;
+        max-width: 400px !important;
+        margin-left: auto !important;
+        margin-right: auto !important;
+      }
+      [data-landing-promise-legend] {
+        flex-direction: column !important;
+        gap: 12px !important;
       }
     }
     @media (max-width: 480px) {
