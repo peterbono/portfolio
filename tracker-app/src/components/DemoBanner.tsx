@@ -17,7 +17,7 @@ export function DemoBanner({ onClearDemo }: DemoBannerProps) {
       <div style={styles.left}>
         <Bot size={16} color="var(--accent)" style={{ flexShrink: 0 }} />
         <span style={styles.text}>
-          This is what the bot does for you — Ready to start?
+          Sample data — 3 days of bot activity, 4 auto-applies, 1 recruiter reply
         </span>
       </div>
       <div style={styles.actions}>

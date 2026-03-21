@@ -1,100 +1,34 @@
 import type { Job } from '../types/job'
 
 /**
- * Curated demo data for anonymous users.
- * Showcases the AUTO-APPLY bot's capabilities with realistic results.
- * Goal: make the user think "I want this bot working for ME."
+ * Demo data: "Day 3" scenario.
+ *
+ * A new user launched the bot 3 days ago. This minimal dataset tells a
+ * clear story in 6 jobs:
+ *   - Bot found 6 opportunities
+ *   - Applied to 4 automatically
+ *   - Got 1 recruiter response already (proves it works)
+ *   - 1 quick rejection (honest tracking)
+ *   - 2 still waiting
+ *   - Skipped 1 for a smart reason (timezone)
+ *   - 1 queued and ready to go
+ *
+ * Rules:
+ *   - All company names are fictional
+ *   - Dates are relative to today
+ *   - Max 1-2 events per job
+ *   - Bot-generated note style throughout
  */
 export const DEMO_JOBS: Job[] = [
-  // --- BOT APPLIED + GOT RESPONSE (proves the bot works) ---
+  // 1. Applied + got a recruiter response (the "aha" moment)
   {
     id: 'demo-001',
-    date: daysAgo(1),
+    date: daysAgo(3),
     status: 'screening',
     role: 'Senior Product Designer',
     company: 'TechFlow',
     location: 'Remote (Singapore)',
-    salary: '$95k–$120k',
-    ats: 'Greenhouse',
-    cv: 'uploaded',
-    portfolio: 'uploaded',
-    link: '',
-    notes: 'Auto-applied via Greenhouse — recruiter replied within 24h',
-    source: 'auto',
-    events: [
-      {
-        id: 'demo-evt-001',
-        date: daysAgo(1),
-        type: 'email',
-        person: 'Sarah (Recruiter)',
-        notes: 'Loved your portfolio! Scheduling phone screen for next week.',
-        outcome: 'aligned',
-        createdAt: daysAgo(1),
-      },
-    ],
-    lastContactDate: daysAgo(1),
-  },
-  {
-    id: 'demo-002',
-    date: daysAgo(1),
-    status: 'submitted',
-    role: 'UX/UI Designer',
-    company: 'DesignCraft',
-    location: 'Remote (APAC)',
-    salary: '$80k–$100k',
-    ats: 'Lever',
-    cv: 'uploaded',
-    portfolio: 'uploaded',
-    link: '',
-    notes: 'Bot applied — Easy Apply via Lever',
-    source: 'auto',
-  },
-  {
-    id: 'demo-003',
-    date: daysAgo(2),
-    status: 'interviewing',
-    role: 'Product Designer',
-    company: 'DataPulse',
-    location: 'Bangkok, Thailand',
-    salary: '$70k–$90k',
-    ats: 'Workable',
-    cv: 'uploaded',
-    portfolio: 'uploaded',
-    link: '',
-    notes: 'Auto-applied via Workable — passed to design lead',
-    source: 'auto',
-    events: [
-      {
-        id: 'demo-evt-002a',
-        date: daysAgo(3),
-        type: 'email',
-        person: 'Bot',
-        notes: 'Application submitted automatically via Workable',
-        outcome: 'aligned',
-        createdAt: daysAgo(3),
-      },
-      {
-        id: 'demo-evt-002b',
-        date: daysAgo(2),
-        type: 'interview',
-        person: 'Mark (Design Lead)',
-        notes: 'Portfolio review went well. Loved the design system case study.',
-        outcome: 'aligned',
-        createdAt: daysAgo(2),
-      },
-    ],
-    lastContactDate: daysAgo(2),
-  },
-
-  // --- BOT APPLIED, GOT REJECTED (realistic outcomes) ---
-  {
-    id: 'demo-004',
-    date: daysAgo(3),
-    status: 'rejected',
-    role: 'Staff Product Designer',
-    company: 'CloudNova',
-    location: 'Remote (Dubai)',
-    salary: '$140k–$170k',
+    salary: '$95k-$120k',
     ats: 'Greenhouse',
     cv: 'uploaded',
     portfolio: 'uploaded',
@@ -103,20 +37,40 @@ export const DEMO_JOBS: Job[] = [
     source: 'auto',
     events: [
       {
-        id: 'demo-evt-003a',
-        date: daysAgo(3),
+        id: 'demo-evt-001',
+        date: daysAgo(1),
         type: 'email',
-        person: 'Bot',
-        notes: 'Application submitted automatically via Greenhouse',
+        person: 'Sarah (Recruiter)',
+        notes: 'Loved your portfolio. Scheduling a phone screen for next week.',
         outcome: 'aligned',
-        createdAt: daysAgo(3),
+        createdAt: daysAgo(1),
       },
+    ],
+    lastContactDate: daysAgo(1),
+  },
+
+  // 2. Applied + rejected quickly (shows honest tracking)
+  {
+    id: 'demo-002',
+    date: daysAgo(3),
+    status: 'rejected',
+    role: 'UX Designer',
+    company: 'DataPulse',
+    location: 'Remote (Dubai)',
+    salary: '$80k-$100k',
+    ats: 'Lever',
+    cv: 'uploaded',
+    portfolio: 'uploaded',
+    link: '',
+    notes: 'Auto-applied via Lever',
+    source: 'auto',
+    events: [
       {
-        id: 'demo-evt-003b',
+        id: 'demo-evt-002',
         date: daysAgo(1),
         type: 'rejection',
         person: '',
-        notes: 'Position filled internally — rejection received 2 days after auto-apply',
+        notes: 'Position filled internally',
         outcome: 'misaligned',
         createdAt: daysAgo(1),
       },
@@ -124,217 +78,76 @@ export const DEMO_JOBS: Job[] = [
     lastContactDate: daysAgo(1),
   },
 
-  // --- BOT APPLIED, WAITING ---
+  // 3. Applied + waiting (2 days ago)
   {
-    id: 'demo-005',
+    id: 'demo-003',
     date: daysAgo(2),
     status: 'submitted',
-    role: 'Design Systems Lead',
-    company: 'PixelBridge',
+    role: 'Product Designer',
+    company: 'CloudNine',
     location: 'Remote (APAC)',
-    salary: '$100k–$130k',
-    ats: 'Lever',
+    salary: '$85k-$110k',
+    ats: 'LinkedIn',
     cv: 'uploaded',
     portfolio: 'uploaded',
     link: '',
-    notes: 'Auto-applied via Lever — strong DS focus matches profile',
+    notes: 'Bot applied via Easy Apply',
     source: 'auto',
   },
+
+  // 4. Applied + waiting (yesterday)
   {
-    id: 'demo-006',
-    date: daysAgo(2),
+    id: 'demo-004',
+    date: daysAgo(1),
     status: 'submitted',
     role: 'Senior UX Designer',
-    company: 'AppForge',
-    location: 'Remote (India)',
-    salary: '$75k–$95k',
-    ats: 'LinkedIn',
-    cv: 'uploaded',
-    portfolio: 'uploaded',
-    link: '',
-    notes: 'Bot applied — Easy Apply on LinkedIn',
-    source: 'auto',
-  },
-  {
-    id: 'demo-007',
-    date: daysAgo(3),
-    status: 'submitted',
-    role: 'Lead Designer',
-    company: 'RapidScale',
-    location: 'Remote (APAC)',
-    salary: '$110k–$140k',
+    company: 'Mosaic',
+    location: 'Bangkok, Thailand',
+    salary: '$70k-$90k',
     ats: 'Greenhouse',
     cv: 'uploaded',
     portfolio: 'uploaded',
     link: '',
-    notes: 'Auto-applied via Greenhouse — B2B SaaS, Series C',
+    notes: 'Auto-applied via Greenhouse',
     source: 'auto',
   },
 
-  // --- BOT SKIPPED (shows intelligent filtering) ---
+  // 5. Skipped by bot (timezone filter)
   {
-    id: 'demo-008',
+    id: 'demo-005',
     date: daysAgo(1),
     status: 'skipped',
-    role: 'UX Designer',
-    company: 'CoreShift',
+    role: 'UI Lead',
+    company: 'NovaTech',
     location: 'San Francisco, CA (Onsite)',
-    salary: '$130k–$160k',
+    salary: '$130k-$160k',
     ats: 'Greenhouse',
     cv: '',
     portfolio: '',
     link: '',
-    notes: 'Skipped — timezone incompatible (PST, 15h diff from GMT+7)',
+    notes: 'Bot skipped \u2014 PST timezone, 14h difference from GMT+7',
     source: 'auto',
   },
+
+  // 6. Found by bot, not yet applied (queued)
   {
-    id: 'demo-009',
-    date: daysAgo(1),
-    status: 'skipped',
-    role: 'Product Designer',
-    company: 'VaultPay',
-    location: 'Remote (US)',
-    salary: '$55k–$70k',
+    id: 'demo-006',
+    date: daysAgo(0),
+    status: 'saved',
+    role: 'Design Systems Lead',
+    company: 'Pixel Labs',
+    location: 'Remote (APAC)',
+    salary: '$100k-$130k',
     ats: 'Lever',
     cv: '',
     portfolio: '',
     link: '',
-    notes: 'Skipped — salary below threshold ($80k min)',
-    source: 'auto',
-  },
-  {
-    id: 'demo-010',
-    date: daysAgo(2),
-    status: 'skipped',
-    role: 'Junior Visual Designer',
-    company: 'PokerStars',
-    location: 'Remote (EU)',
-    salary: '$45k–$60k',
-    ats: 'Workday',
-    cv: '',
-    portfolio: '',
-    link: '',
-    notes: 'Skipped — blacklisted industry (poker) + seniority mismatch',
-    source: 'auto',
-  },
-  {
-    id: 'demo-011',
-    date: daysAgo(3),
-    status: 'skipped',
-    role: 'Senior Designer',
-    company: 'NeonStack',
-    location: 'New York, NY (Hybrid)',
-    salary: '$120k–$150k',
-    ats: 'Greenhouse',
-    cv: '',
-    portfolio: '',
-    link: '',
-    notes: 'Skipped — requires onsite (hybrid NYC), profile set to remote only',
-    source: 'auto',
-  },
-
-  // --- GHOST DETECTION (bot detects no response) ---
-  {
-    id: 'demo-012',
-    date: daysAgo(14),
-    status: 'ghosted',
-    role: 'Product Designer',
-    company: 'OmniPlatform',
-    location: 'Remote (EMEA)',
-    salary: '$85k–$110k',
-    ats: 'Lever',
-    cv: 'uploaded',
-    portfolio: 'uploaded',
-    link: '',
-    notes: 'Auto-applied via Lever — ghost detected: no response after 14 days',
-    source: 'auto',
-    events: [
-      {
-        id: 'demo-evt-ghost',
-        date: daysAgo(14),
-        type: 'email',
-        person: 'Bot',
-        notes: 'Application submitted automatically via Lever',
-        outcome: 'aligned',
-        createdAt: daysAgo(14),
-      },
-    ],
-    lastContactDate: daysAgo(14),
-  },
-
-  // --- MORE BOT SUCCESSES (volume demonstrates value) ---
-  {
-    id: 'demo-013',
-    date: daysAgo(4),
-    status: 'screening',
-    role: 'Senior UX/UI Designer',
-    company: 'QuantumDash',
-    location: 'Remote (Singapore)',
-    salary: '$90k–$120k',
-    ats: 'Workable',
-    cv: 'uploaded',
-    portfolio: 'uploaded',
-    link: '',
-    notes: 'Auto-applied via Workable — HR scheduling intro call',
-    source: 'auto',
-    events: [
-      {
-        id: 'demo-evt-007',
-        date: daysAgo(2),
-        type: 'email',
-        person: 'Lena (HR)',
-        notes: 'Scheduling intro call for Thursday',
-        outcome: 'waiting',
-        createdAt: daysAgo(2),
-      },
-    ],
-    lastContactDate: daysAgo(2),
-  },
-  {
-    id: 'demo-014',
-    date: daysAgo(5),
-    status: 'challenge',
-    role: 'Senior Product Designer',
-    company: 'VeloTech',
-    location: 'Remote (Dubai)',
-    salary: '$100k–$125k',
-    ats: 'Greenhouse',
-    cv: 'uploaded',
-    portfolio: 'uploaded',
-    link: '',
-    notes: 'Auto-applied via Greenhouse — advanced to design challenge',
-    source: 'auto',
-    events: [
-      {
-        id: 'demo-evt-006',
-        date: daysAgo(3),
-        type: 'design_challenge',
-        person: 'Raj (Head of Design)',
-        notes: '3-day take-home challenge received. Redesign onboarding flow.',
-        outcome: 'waiting',
-        createdAt: daysAgo(3),
-      },
-    ],
-    lastContactDate: daysAgo(3),
-  },
-  {
-    id: 'demo-015',
-    date: daysAgo(3),
-    status: 'submitted',
-    role: 'Interaction Designer',
-    company: 'SyncWave',
-    location: 'Remote (Korea)',
-    salary: '$80k–$100k',
-    ats: 'LinkedIn',
-    cv: 'uploaded',
-    portfolio: 'uploaded',
-    link: '',
-    notes: 'Bot applied — Easy Apply on LinkedIn',
+    notes: 'Queued \u2014 bot will apply next',
     source: 'auto',
   },
 ]
 
-/* Helper: generate a date string N days ago from today */
+/** Generate a YYYY-MM-DD date string N days before today. */
 function daysAgo(n: number): string {
   const d = new Date()
   d.setDate(d.getDate() - n)
