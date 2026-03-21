@@ -1233,39 +1233,13 @@ function FinalCTAContent({ onGetStarted }: { onGetStarted: () => void }) {
 function AmbientBackground() {
   return (
     <div style={s.ambientWrap} aria-hidden="true">
-      {/* Gradient orbs */}
+      {/* Three gradient orbs: green, cyan, purple */}
       <div style={s.orb1} />
       <div style={s.orb2} />
       <div style={s.orb3} />
 
-      {/* Dot grid pattern */}
+      {/* Subtle dot grid — faded, centered */}
       <div style={s.gridPattern} />
-
-      {/* Noise texture overlay */}
-      <div style={s.noiseOverlay} />
-
-      {/* Floating particles */}
-      {Array.from({ length: 20 }).map((_, i) => (
-        <div
-          key={i}
-          style={{
-            position: 'absolute' as const,
-            width: Math.random() > 0.5 ? 2 : 1,
-            height: Math.random() > 0.5 ? 2 : 1,
-            borderRadius: '50%',
-            background: i % 3 === 0
-              ? 'rgba(52, 211, 153, 0.6)'
-              : i % 3 === 1
-              ? 'rgba(96, 165, 250, 0.5)'
-              : 'rgba(167, 139, 250, 0.4)',
-            left: `${5 + (i * 4.7) % 90}%`,
-            top: `${60 + (i * 13) % 40}%`,
-            animation: `landing-particle-rise ${12 + (i % 8) * 2}s linear ${(i * 1.3) % 10}s infinite`,
-            pointerEvents: 'none' as const,
-            willChange: 'transform, opacity',
-          }}
-        />
-      ))}
     </div>
   )
 }
@@ -1294,61 +1268,52 @@ const s: Record<string, React.CSSProperties> = {
   },
   orb1: {
     position: 'absolute',
-    top: '-10%',
-    left: '-5%',
-    width: 600,
-    height: 600,
-    borderRadius: '50%',
-    background: 'radial-gradient(circle, rgba(52, 211, 153, 0.07) 0%, transparent 70%)',
-    filter: 'blur(80px)',
-    animation: 'landing-orb1 25s ease-in-out infinite',
-    willChange: 'transform',
-  },
-  orb2: {
-    position: 'absolute',
-    top: '30%',
-    right: '-10%',
+    top: '-15%',
+    left: '-10%',
     width: 500,
     height: 500,
     borderRadius: '50%',
-    background: 'radial-gradient(circle, rgba(96, 165, 250, 0.05) 0%, transparent 70%)',
-    filter: 'blur(80px)',
-    animation: 'landing-orb2 30s ease-in-out infinite',
+    background: 'radial-gradient(circle, rgba(52, 211, 153, 0.18) 0%, transparent 70%)',
+    filter: 'blur(120px)',
+    animation: 'landing-orb1 35s cubic-bezier(0.4, 0, 0.2, 1) infinite',
     willChange: 'transform',
+    opacity: 0.9,
   },
-  orb3: {
+  orb2: {
     position: 'absolute',
-    bottom: '10%',
-    left: '20%',
+    top: '25%',
+    right: '-8%',
     width: 450,
     height: 450,
     borderRadius: '50%',
-    background: 'radial-gradient(circle, rgba(167, 139, 250, 0.05) 0%, transparent 70%)',
-    filter: 'blur(80px)',
-    animation: 'landing-orb3 20s ease-in-out infinite',
+    background: 'radial-gradient(circle, rgba(6, 182, 212, 0.15) 0%, transparent 70%)',
+    filter: 'blur(130px)',
+    animation: 'landing-orb2 40s cubic-bezier(0.4, 0, 0.2, 1) infinite',
     willChange: 'transform',
+    opacity: 0.85,
+  },
+  orb3: {
+    position: 'absolute',
+    bottom: '5%',
+    left: '25%',
+    width: 400,
+    height: 400,
+    borderRadius: '50%',
+    background: 'radial-gradient(circle, rgba(139, 92, 246, 0.14) 0%, transparent 70%)',
+    filter: 'blur(120px)',
+    animation: 'landing-orb3 30s cubic-bezier(0.4, 0, 0.2, 1) infinite',
+    willChange: 'transform',
+    opacity: 0.8,
   },
   gridPattern: {
     position: 'absolute',
     inset: 0,
-    backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.03) 1px, transparent 1px)',
+    backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.025) 1px, transparent 1px)',
     backgroundSize: '32px 32px',
-    maskImage: 'radial-gradient(ellipse 80% 60% at 50% 30%, black 20%, transparent 70%)',
-    WebkitMaskImage: 'radial-gradient(ellipse 80% 60% at 50% 30%, black 20%, transparent 70%)',
-    opacity: 0.5,
-    animation: 'landing-grid-fade 1.5s ease both',
-  },
-  noiseOverlay: {
-    position: 'absolute',
-    inset: '-50%',
-    width: '200%',
-    height: '200%',
-    backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E")`,
-    backgroundRepeat: 'repeat',
-    backgroundSize: '128px 128px',
-    opacity: 0.4,
-    animation: 'landing-noise 8s steps(10) infinite',
-    mixBlendMode: 'overlay',
+    maskImage: 'radial-gradient(ellipse 70% 50% at 50% 30%, black 10%, transparent 65%)',
+    WebkitMaskImage: 'radial-gradient(ellipse 70% 50% at 50% 30%, black 10%, transparent 65%)',
+    opacity: 0.35,
+    animation: 'landing-grid-fade 2s ease both',
   },
 
   container: {

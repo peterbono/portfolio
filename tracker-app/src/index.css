@@ -145,32 +145,30 @@ textarea:focus {
 
 /* ===== Landing page premium animations ===== */
 
-/* Floating gradient orbs */
+/* Floating gradient orbs — slow, organic, breathing light */
 @keyframes landing-orb1 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  25% { transform: translate(80px, -60px) scale(1.1); }
-  50% { transform: translate(-40px, 40px) scale(0.95); }
-  75% { transform: translate(60px, 80px) scale(1.05); }
+  0%   { transform: translate(0, 0) scale(1); }
+  25%  { transform: translate(40px, -30px) scale(1.08); }
+  50%  { transform: translate(-20px, 20px) scale(0.95); }
+  75%  { transform: translate(30px, 40px) scale(1.05); }
+  100% { transform: translate(0, 0) scale(1); }
 }
 @keyframes landing-orb2 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  25% { transform: translate(-70px, 50px) scale(0.9); }
-  50% { transform: translate(50px, -80px) scale(1.15); }
-  75% { transform: translate(-90px, -20px) scale(1); }
+  0%   { transform: translate(0, 0) scale(1); }
+  20%  { transform: translate(-30px, 25px) scale(1.1); }
+  40%  { transform: translate(20px, -40px) scale(0.92); }
+  60%  { transform: translate(-50px, -10px) scale(1.05); }
+  80%  { transform: translate(15px, 30px) scale(0.98); }
+  100% { transform: translate(0, 0) scale(1); }
 }
 @keyframes landing-orb3 {
-  0%, 100% { transform: translate(0, 0) scale(1.05); }
-  33% { transform: translate(60px, 70px) scale(0.9); }
-  66% { transform: translate(-80px, -40px) scale(1.1); }
+  0%   { transform: translate(0, 0) scale(1); }
+  30%  { transform: translate(35px, 35px) scale(0.9); }
+  60%  { transform: translate(-40px, -20px) scale(1.12); }
+  100% { transform: translate(0, 0) scale(1); }
 }
 
-/* Floating particles */
-@keyframes landing-particle-rise {
-  0% { transform: translateY(0) translateX(0); opacity: 0; }
-  10% { opacity: 1; }
-  90% { opacity: 1; }
-  100% { transform: translateY(-100vh) translateX(20px); opacity: 0; }
-}
+/* (particle-rise removed — particles were too busy) */
 
 /* Scroll indicator bounce */
 @keyframes landing-scroll-bounce {
@@ -193,22 +191,15 @@ textarea:focus {
 /* Grid fade-in */
 @keyframes landing-grid-fade {
   from { opacity: 0; }
-  to { opacity: 0.4; }
+  to { opacity: 0.35; }
 }
 
-/* Noise flicker */
-@keyframes landing-noise {
-  0% { transform: translate(0, 0); }
-  10% { transform: translate(-5%, -5%); }
-  20% { transform: translate(-10%, 5%); }
-  30% { transform: translate(5%, -10%); }
-  40% { transform: translate(-5%, 15%); }
-  50% { transform: translate(-10%, 5%); }
-  60% { transform: translate(15%, 0); }
-  70% { transform: translate(0, 10%); }
-  80% { transform: translate(-15%, 0); }
-  90% { transform: translate(10%, 5%); }
-  100% { transform: translate(5%, 0); }
+/* Reduced motion: kill all ambient movement */
+@media (prefers-reduced-motion: reduce) {
+  [aria-hidden="true"] > * {
+    animation-duration: 0s !important;
+    animation-play-state: paused !important;
+  }
 }
 
 /* Status dot blink for mockup */
