@@ -16,9 +16,16 @@ import {
   SkipForward,
   Eye,
   ThumbsDown,
+  Play,
+  FlaskConical,
+  Square,
+  History,
+  Loader2,
 } from 'lucide-react'
 import { useBotActivity } from '../hooks/useBotActivity'
 import type { BotActivityItem, BotRunStatus } from '../hooks/useBotActivity'
+import { triggerBotRun, triggerDryRun } from '../lib/bot-api'
+import { supabase } from '../lib/supabase'
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -51,6 +58,49 @@ function saveProfiles(profiles: SearchProfile[]) {
   } catch {
     /* ignore */
   }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Run History types                                                   */
+/* ------------------------------------------------------------------ */
+interface BotRunHistoryItem {
+  id: string
+  status: string
+  startedAt: string | null
+  completedAt: string | null
+  jobsFound: number
+  jobsApplied: number
+  jobsSkipped: number
+  jobsFailed: number
+  errorMessage: string | null
+}
+
+function formatDuration(startedAt: string | null, completedAt: string | null): string {
+  if (!startedAt || !completedAt) return '--'
+  const ms = new Date(completedAt).getTime() - new Date(startedAt).getTime()
+  if (ms < 60_000) return `${Math.round(ms / 1000)}s`
+  const mins = Math.floor(ms / 60_000)
+  const secs = Math.round((ms % 60_000) / 1000)
+  return `${mins}m ${secs}s`
+}
+
+function formatRunDate(iso: string | null): string {
+  if (!iso) return '--'
+  try {
+    const d = new Date(iso)
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) +
+      ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+  } catch {
+    return '--'
+  }
+}
+
+const RUN_STATUS_COLORS: Record<string, string> = {
+  completed: '#34d399',
+  running: '#60a5fa',
+  pending: '#fbbf24',
+  failed: '#f43f5e',
+  cancelled: '#6b7280',
 }
 
 /* ------------------------------------------------------------------ */
@@ -231,6 +281,76 @@ export function AutopilotView() {
   const { activities, currentRun, isLive } = useBotActivity()
   const hasRealData = activities.length > 0 || currentRun !== null
 
+  // Bot triggering state
+  const [isTriggering, setIsTriggering] = useState(false)
+  const [triggerError, setTriggerError] = useState<string | null>(null)
+
+  // Run history
+  const [runHistory, setRunHistory] = useState<BotRunHistoryItem[]>([])
+  const [historyLoading, setHistoryLoading] = useState(true)
+
+  // Computed: is the bot currently active
+  const isBotActive = currentRun?.status === 'running' || currentRun?.status === 'pending'
+
+  // Load run history on mount
+  useEffect(() => {
+    async function loadHistory() {
+      try {
+        const { data } = await supabase
+          .from('bot_runs')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(20)
+
+        if (data) {
+          setRunHistory((data as Record<string, unknown>[]).map((row) => ({
+            id: row.id as string,
+            status: row.status as string,
+            startedAt: (row.started_at as string) ?? null,
+            completedAt: (row.completed_at as string) ?? null,
+            jobsFound: (row.jobs_found as number) ?? 0,
+            jobsApplied: (row.jobs_applied as number) ?? 0,
+            jobsSkipped: (row.jobs_skipped as number) ?? 0,
+            jobsFailed: (row.jobs_failed as number) ?? 0,
+            errorMessage: (row.error_message as string) ?? null,
+          })))
+        }
+      } catch {
+        // Ignore — offline
+      } finally {
+        setHistoryLoading(false)
+      }
+    }
+    loadHistory()
+  }, [])
+
+  // Handlers for bot control
+  const handleStartBot = useCallback(async () => {
+    if (profiles.length === 0) return
+    setIsTriggering(true)
+    setTriggerError(null)
+    try {
+      await triggerBotRun(profiles[0].id)
+    } catch (err) {
+      setTriggerError((err as Error).message)
+    } finally {
+      setIsTriggering(false)
+    }
+  }, [profiles])
+
+  const handleDryRun = useCallback(async () => {
+    if (profiles.length === 0) return
+    setIsTriggering(true)
+    setTriggerError(null)
+    try {
+      await triggerDryRun(profiles[0].id)
+    } catch (err) {
+      setTriggerError((err as Error).message)
+    } finally {
+      setIsTriggering(false)
+    }
+  }, [profiles])
+
   // Form state
   const [formName, setFormName] = useState('')
   const [formKeywords, setFormKeywords] = useState('')
@@ -323,18 +443,71 @@ export function AutopilotView() {
               <p style={styles.statusDesc}>{statusCfg.description}</p>
             </div>
           </div>
-          {statusCfg.badgeLabel && (
-            <span
-              style={{
-                ...styles.comingSoonBadge,
-                color: statusCfg.badgeColor,
-                background: statusCfg.badgeBg,
-              }}
-            >
-              {statusCfg.badgeLabel}
-            </span>
-          )}
+          <div style={styles.statusActions}>
+            {/* Show bot controls when profiles exist and bot is not running */}
+            {profiles.length > 0 && !isBotActive && !isTriggering && (
+              <>
+                <button
+                  style={styles.btnStartBot}
+                  onClick={handleStartBot}
+                  title="Start the bot pipeline"
+                >
+                  <Play size={14} />
+                  <span>Start Bot</span>
+                </button>
+                <button
+                  style={styles.btnDryRun}
+                  onClick={handleDryRun}
+                  title="Run without submitting applications"
+                >
+                  <FlaskConical size={14} />
+                  <span>Dry Run</span>
+                </button>
+              </>
+            )}
+
+            {/* Loading state while triggering */}
+            {isTriggering && (
+              <span style={styles.triggeringBadge}>
+                <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+                Triggering...
+              </span>
+            )}
+
+            {/* Stop button when bot is active (visual only for now) */}
+            {isBotActive && !isTriggering && (
+              <button
+                style={styles.btnStopBot}
+                onClick={() => {/* future: cancel run */}}
+                title="Stop the bot (coming soon)"
+              >
+                <Square size={14} />
+                <span>Stop Bot</span>
+              </button>
+            )}
+
+            {/* Fallback badge when no profiles exist */}
+            {profiles.length === 0 && !isBotActive && statusCfg.badgeLabel && (
+              <span
+                style={{
+                  ...styles.comingSoonBadge,
+                  color: statusCfg.badgeColor,
+                  background: statusCfg.badgeBg,
+                }}
+              >
+                {statusCfg.badgeLabel}
+              </span>
+            )}
+          </div>
         </div>
+
+        {/* Error display */}
+        {triggerError && (
+          <div style={styles.triggerErrorRow}>
+            <XCircle size={14} color="#f43f5e" />
+            <span style={styles.triggerErrorText}>{triggerError}</span>
+          </div>
+        )}
       </section>
 
       {/* 2 -- Search Profiles */}
@@ -633,7 +806,68 @@ export function AutopilotView() {
         )}
       </section>
 
-      {/* Keyframe injection for pulsing dot */}
+      {/* 4 -- Run History */}
+      <section style={styles.section}>
+        <div style={styles.sectionHeader}>
+          <div>
+            <h2 style={styles.sectionTitle}>Run History</h2>
+            <p style={styles.sectionSubtitle}>Past bot pipeline runs</p>
+          </div>
+          <History size={16} color="var(--text-tertiary)" />
+        </div>
+
+        {historyLoading ? (
+          <div style={styles.historyLoading}>
+            <Loader2 size={16} color="var(--text-tertiary)" style={{ animation: 'spin 1s linear infinite' }} />
+            <span style={styles.historyLoadingText}>Loading history...</span>
+          </div>
+        ) : runHistory.length === 0 ? (
+          <p style={styles.emptyTimelineText}>No bot runs yet.</p>
+        ) : (
+          <div style={styles.historyTable}>
+            {/* Header */}
+            <div style={styles.historyHeaderRow}>
+              <span style={{ ...styles.historyCell, flex: 2 }}>Date</span>
+              <span style={{ ...styles.historyCell, flex: 1 }}>Status</span>
+              <span style={{ ...styles.historyCell, flex: 1, textAlign: 'right' as const }}>Applied</span>
+              <span style={{ ...styles.historyCell, flex: 1, textAlign: 'right' as const }}>Skipped</span>
+              <span style={{ ...styles.historyCell, flex: 1, textAlign: 'right' as const }}>Failed</span>
+              <span style={{ ...styles.historyCell, flex: 1, textAlign: 'right' as const }}>Duration</span>
+            </div>
+            {/* Rows */}
+            {runHistory.map((run) => (
+              <div key={run.id} style={styles.historyRow}>
+                <span style={{ ...styles.historyCellValue, flex: 2 }}>
+                  {formatRunDate(run.startedAt || run.completedAt)}
+                </span>
+                <span style={{ ...styles.historyCellValue, flex: 1 }}>
+                  <span
+                    style={{
+                      ...styles.historyStatusDot,
+                      background: RUN_STATUS_COLORS[run.status] || '#6b7280',
+                    }}
+                  />
+                  {run.status}
+                </span>
+                <span style={{ ...styles.historyCellValue, flex: 1, textAlign: 'right' as const, color: '#34d399' }}>
+                  {run.jobsApplied}
+                </span>
+                <span style={{ ...styles.historyCellValue, flex: 1, textAlign: 'right' as const, color: '#fbbf24' }}>
+                  {run.jobsSkipped}
+                </span>
+                <span style={{ ...styles.historyCellValue, flex: 1, textAlign: 'right' as const, color: '#f43f5e' }}>
+                  {run.jobsFailed}
+                </span>
+                <span style={{ ...styles.historyCellValue, flex: 1, textAlign: 'right' as const }}>
+                  {formatDuration(run.startedAt, run.completedAt)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Keyframe injection for pulsing dot + spinner */}
       <style>{`
         @keyframes pulseGlow {
           0%, 100% { opacity: 1; transform: scale(1); }
@@ -642,6 +876,10 @@ export function AutopilotView() {
         @keyframes livePulse {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.4; }
+        }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
         }
       `}</style>
     </div>
@@ -1054,5 +1292,134 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--text-tertiary)',
     textAlign: 'center',
     padding: '16px 0',
+  },
+
+  /* ---- Status Actions (bot controls) ---- */
+  statusActions: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    flexShrink: 0,
+  },
+  btnStartBot: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    background: '#34d399',
+    color: '#09090b',
+    fontWeight: 600,
+    fontSize: 13,
+    padding: '8px 16px',
+    borderRadius: 'var(--radius-md)',
+    border: 'none',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap' as const,
+    transition: 'opacity 0.15s',
+  },
+  btnDryRun: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    background: 'transparent',
+    color: 'var(--text-secondary)',
+    fontWeight: 500,
+    fontSize: 13,
+    padding: '8px 16px',
+    borderRadius: 'var(--radius-md)',
+    border: '1px solid var(--border)',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap' as const,
+    transition: 'border-color 0.15s',
+  },
+  btnStopBot: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    background: 'rgba(244, 63, 94, 0.12)',
+    color: '#f43f5e',
+    fontWeight: 600,
+    fontSize: 13,
+    padding: '8px 16px',
+    borderRadius: 'var(--radius-md)',
+    border: '1px solid rgba(244, 63, 94, 0.25)',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap' as const,
+  },
+  triggeringBadge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    fontSize: 13,
+    fontWeight: 500,
+    color: 'var(--text-secondary)',
+    padding: '8px 16px',
+    borderRadius: 'var(--radius-md)',
+    background: 'var(--bg-elevated)',
+    border: '1px solid var(--border)',
+  },
+  triggerErrorRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 12,
+    padding: '8px 12px',
+    borderRadius: 'var(--radius-md)',
+    background: 'rgba(244, 63, 94, 0.08)',
+    border: '1px solid rgba(244, 63, 94, 0.2)',
+  },
+  triggerErrorText: {
+    fontSize: 12,
+    color: '#f87171',
+  },
+
+  /* ---- Run History ---- */
+  historyLoading: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    padding: '24px 0',
+  },
+  historyLoadingText: {
+    fontSize: 13,
+    color: 'var(--text-tertiary)',
+  },
+  historyTable: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 0,
+  },
+  historyHeaderRow: {
+    display: 'flex',
+    gap: 8,
+    padding: '8px 12px',
+    borderBottom: '1px solid var(--border)',
+  },
+  historyCell: {
+    fontSize: 11,
+    fontWeight: 600,
+    color: 'var(--text-tertiary)',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.04em',
+  },
+  historyRow: {
+    display: 'flex',
+    gap: 8,
+    padding: '10px 12px',
+    borderBottom: '1px solid var(--border)',
+    transition: 'background 0.1s',
+  },
+  historyCellValue: {
+    fontSize: 13,
+    color: 'var(--text-primary)',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+  },
+  historyStatusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: '50%',
+    flexShrink: 0,
   },
 }
