@@ -1766,61 +1766,62 @@ function FinalCTAContent({ onGetStarted }: { onGetStarted: () => void }) {
 /* ---------- Ambient Background ---------- */
 
 /* ------------------------------------------------------------------ */
-/*  Interactive Particle Canvas — Neural Network Constellation          */
+/*  Premium Atmospheric Canvas — 3-Layer System                        */
+/*  Layer 1: Animated mesh gradient (Stripe-style morphing blobs)      */
+/*  Layer 2: Atmospheric particles (barely visible, organic drift)     */
+/*  Layer 3: Cursor glow (Linear-style flashlight + subtle parallax)   */
 /* ------------------------------------------------------------------ */
 
-/* ---- Boid particle (fish-like flocking) ---- */
-interface Boid {
+interface AtmosphericParticle {
   x: number
   y: number
-  vx: number
-  vy: number
-  size: number        // 1.2 - 4  (simulates depth)
-  depth: number       // 0-1 where 0 = far / dim, 1 = near / bright
-  hue: number         // individual color offset within green-cyan palette
-  trail: { x: number; y: number }[] // last N positions for trail rendering
+  baseX: number
+  baseY: number
+  size: number
+  opacity: number
+  hasShadow: boolean
+  shadowBlur: number
+  phaseX: number
+  phaseY: number
+  speedX: number
+  speedY: number
+  driftAmplitudeX: number
+  driftAmplitudeY: number
 }
 
-/* palette constants */
-const BOID_COUNT = 140
-const TRAIL_LENGTH = 3
-const GRID_CELL = 80          // spatial hash cell for neighbor lookup
-const NEIGHBOR_RADIUS = 70    // boids within this are "neighbors"
-const SEPARATION_DIST = 28    // too-close threshold
-const MAX_SPEED_BASE = 1.6
-const MAX_FORCE = 0.045
-
-/* boid weights */
-const W_SEPARATION = 1.8
-const W_ALIGNMENT = 1.0
-const W_COHESION = 0.9
-const W_CURRENT = 0.35        // ocean current pull
-
-/* mouse avoidance */
-const MOUSE_AVOID_RADIUS = 180
-const MOUSE_AVOID_STRENGTH = 3.5
+interface GradientBlob {
+  x: number
+  y: number
+  radius: number
+  color: string
+  phaseX: number
+  phaseY: number
+  speedX: number
+  speedY: number
+  amplitudeX: number
+  amplitudeY: number
+}
 
 function ParticleCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const mouseRef = useRef({ x: -9999, y: -9999 })
-  const boidsRef = useRef<Boid[]>([])
+  const particlesRef = useRef<AtmosphericParticle[]>([])
+  const blobsRef = useRef<GradientBlob[]>([])
   const animFrameRef = useRef(0)
-  const currentAngleRef = useRef(Math.random() * Math.PI * 2)
-  const currentTargetRef = useRef(Math.random() * Math.PI * 2)
-  const currentChangeTimerRef = useRef(0)
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
 
-    const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    if (prefersReduced) return
-
-    const ctx = canvas.getContext('2d', { alpha: true })
+    const ctx = canvas.getContext('2d', { alpha: false })
     if (!ctx) return
 
     const dpr = window.devicePixelRatio || 1
+    const isMobile = window.innerWidth < 768
 
+    const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+    /* --- sizing --- */
     const resize = () => {
       const w = window.innerWidth
       const h = window.innerHeight
@@ -1832,41 +1833,74 @@ function ParticleCanvas() {
     }
     resize()
 
-    /* --- helpers --- */
-    const clampMag = (vx: number, vy: number, max: number) => {
-      const mag = Math.sqrt(vx * vx + vy * vy)
-      if (mag > max && mag > 0) {
-        const s = max / mag
-        return { x: vx * s, y: vy * s }
-      }
-      return { x: vx, y: vy }
-    }
-
-    /* --- init boids --- */
-    const initBoids = () => {
+    /* --- Layer 1: init gradient blobs --- */
+    const initBlobs = () => {
       const w = window.innerWidth
       const h = window.innerHeight
-      const boids: Boid[] = []
-      for (let i = 0; i < BOID_COUNT; i++) {
-        const depth = Math.random()
-        const angle = Math.random() * Math.PI * 2
-        const speed = 0.3 + Math.random() * 0.7
-        boids.push({
-          x: Math.random() * w,
-          y: Math.random() * h,
-          vx: Math.cos(angle) * speed,
-          vy: Math.sin(angle) * speed,
-          size: 1.2 + depth * 2.8,
-          depth,
-          hue: 155 + Math.random() * 40, // 155-195 = green to cyan range
-          trail: [],
+      blobsRef.current = [
+        {
+          x: w * 0.3, y: h * 0.3, radius: 350 + Math.random() * 150,
+          color: 'rgba(5, 150, 105, 0.15)',
+          phaseX: Math.random() * Math.PI * 2, phaseY: Math.random() * Math.PI * 2,
+          speedX: 0.00015 + Math.random() * 0.0001, speedY: 0.00012 + Math.random() * 0.0001,
+          amplitudeX: w * 0.15, amplitudeY: h * 0.12,
+        },
+        {
+          x: w * 0.7, y: h * 0.5, radius: 300 + Math.random() * 150,
+          color: 'rgba(8, 145, 178, 0.12)',
+          phaseX: Math.random() * Math.PI * 2, phaseY: Math.random() * Math.PI * 2,
+          speedX: 0.00012 + Math.random() * 0.0001, speedY: 0.00018 + Math.random() * 0.0001,
+          amplitudeX: w * 0.18, amplitudeY: h * 0.14,
+        },
+        {
+          x: w * 0.5, y: h * 0.7, radius: 320 + Math.random() * 130,
+          color: 'rgba(124, 58, 237, 0.10)',
+          phaseX: Math.random() * Math.PI * 2, phaseY: Math.random() * Math.PI * 2,
+          speedX: 0.00018 + Math.random() * 0.00008, speedY: 0.00013 + Math.random() * 0.00008,
+          amplitudeX: w * 0.14, amplitudeY: h * 0.16,
+        },
+        {
+          x: w * 0.2, y: h * 0.6, radius: 280 + Math.random() * 120,
+          color: 'rgba(245, 158, 11, 0.06)',
+          phaseX: Math.random() * Math.PI * 2, phaseY: Math.random() * Math.PI * 2,
+          speedX: 0.0001 + Math.random() * 0.00012, speedY: 0.00015 + Math.random() * 0.0001,
+          amplitudeX: w * 0.12, amplitudeY: h * 0.1,
+        },
+      ]
+    }
+    initBlobs()
+
+    /* --- Layer 2: init atmospheric particles --- */
+    const initParticles = () => {
+      const w = window.innerWidth
+      const h = window.innerHeight
+      const count = isMobile ? 25 : 50
+      const particles: AtmosphericParticle[] = []
+      for (let i = 0; i < count; i++) {
+        const x = Math.random() * w
+        const y = Math.random() * h
+        particles.push({
+          x,
+          y,
+          baseX: x,
+          baseY: y,
+          size: 1 + Math.random() * 2,
+          opacity: 0.08 + Math.random() * 0.17,
+          hasShadow: Math.random() < 0.3,
+          shadowBlur: 3 + Math.random() * 3,
+          phaseX: Math.random() * Math.PI * 2,
+          phaseY: Math.random() * Math.PI * 2,
+          speedX: 0.0003 + Math.random() * 0.0005,
+          speedY: 0.0002 + Math.random() * 0.0004,
+          driftAmplitudeX: 40 + Math.random() * 80,
+          driftAmplitudeY: 30 + Math.random() * 60,
         })
       }
-      boidsRef.current = boids
+      particlesRef.current = particles
     }
-    initBoids()
+    initParticles()
 
-    /* --- mouse --- */
+    /* --- mouse tracking (Layer 3) --- */
     const onMouseMove = (e: MouseEvent) => {
       mouseRef.current.x = e.clientX
       mouseRef.current.y = e.clientY
@@ -1875,275 +1909,141 @@ function ParticleCanvas() {
       mouseRef.current.x = -9999
       mouseRef.current.y = -9999
     }
-    window.addEventListener('mousemove', onMouseMove, { passive: true })
-    document.addEventListener('mouseleave', onMouseLeave)
+    if (!isMobile) {
+      window.addEventListener('mousemove', onMouseMove, { passive: true })
+      document.addEventListener('mouseleave', onMouseLeave)
+    }
 
-    /* --- resize --- */
+    /* --- resize handler --- */
     let resizeTimer = 0
     const onResize = () => {
       clearTimeout(resizeTimer)
-      resizeTimer = window.setTimeout(resize, 150)
+      resizeTimer = window.setTimeout(() => {
+        resize()
+        initBlobs()
+        initParticles()
+      }, 200)
     }
     window.addEventListener('resize', onResize, { passive: true })
 
-    /* --- spatial hash --- */
-    const buildGrid = (boids: Boid[], cellSize: number) => {
-      const grid: Map<string, number[]> = new Map()
-      for (let i = 0; i < boids.length; i++) {
-        const cx = Math.floor(boids[i].x / cellSize)
-        const cy = Math.floor(boids[i].y / cellSize)
-        const key = `${cx},${cy}`
-        const cell = grid.get(key)
-        if (cell) cell.push(i)
-        else grid.set(key, [i])
-      }
-      return grid
-    }
-
-    /* --- animation --- */
-    let lastTime = 0
-
-    const animate = (timestamp: number) => {
-      const dt = lastTime === 0 ? 16.67 : Math.min(timestamp - lastTime, 50)
-      lastTime = timestamp
-      const dtFactor = dt / 16.67 // normalize to ~60fps
-
+    /* --- prefers-reduced-motion: draw static blobs once and stop --- */
+    if (prefersReduced) {
       const w = window.innerWidth
       const h = window.innerHeight
-      const t = timestamp * 0.001
-
-      /* --- evolve ocean current direction --- */
-      currentChangeTimerRef.current -= dt
-      if (currentChangeTimerRef.current <= 0) {
-        currentTargetRef.current = Math.random() * Math.PI * 2
-        currentChangeTimerRef.current = 4000 + Math.random() * 6000 // change every 4-10s
+      ctx.fillStyle = '#09090b'
+      ctx.fillRect(0, 0, w, h)
+      ctx.globalCompositeOperation = 'screen'
+      for (const blob of blobsRef.current) {
+        const grad = ctx.createRadialGradient(blob.x, blob.y, 0, blob.x, blob.y, blob.radius)
+        grad.addColorStop(0, blob.color)
+        grad.addColorStop(1, 'rgba(0, 0, 0, 0)')
+        ctx.fillStyle = grad
+        ctx.fillRect(0, 0, w, h)
       }
-      // ease current angle toward target
-      let angleDiff = currentTargetRef.current - currentAngleRef.current
-      // normalize to -PI..PI
-      while (angleDiff > Math.PI) angleDiff -= Math.PI * 2
-      while (angleDiff < -Math.PI) angleDiff += Math.PI * 2
-      currentAngleRef.current += angleDiff * 0.005 * dtFactor
-      const currentVX = Math.cos(currentAngleRef.current)
-      const currentVY = Math.sin(currentAngleRef.current)
+      ctx.globalCompositeOperation = 'source-over'
+      return () => {
+        window.removeEventListener('resize', onResize)
+        clearTimeout(resizeTimer)
+      }
+    }
 
-      /* --- fade previous frame (creates faint trail on canvas) --- */
-      ctx.clearRect(0, 0, w, h)
-
-      const boids = boidsRef.current
+    /* --- main animation loop --- */
+    const animate = (timestamp: number) => {
+      const w = window.innerWidth
+      const h = window.innerHeight
       const mx = mouseRef.current.x
       const my = mouseRef.current.y
-      const mouseActive = mx > -999
+      const mouseActive = mx > -999 && !isMobile
 
-      /* --- build spatial hash --- */
-      const grid = buildGrid(boids, GRID_CELL)
+      /* --- clear with background color --- */
+      ctx.fillStyle = '#09090b'
+      ctx.fillRect(0, 0, w, h)
 
-      /* --- update each boid --- */
-      for (let i = 0; i < boids.length; i++) {
-        const b = boids[i]
-        const maxSpeed = MAX_SPEED_BASE * (0.5 + b.depth * 0.8) // deeper = slower
-
-        // save trail position BEFORE move
-        b.trail.push({ x: b.x, y: b.y })
-        if (b.trail.length > TRAIL_LENGTH) b.trail.shift()
-
-        /* --- find neighbors via spatial hash --- */
-        const cx = Math.floor(b.x / GRID_CELL)
-        const cy = Math.floor(b.y / GRID_CELL)
-
-        let sepX = 0, sepY = 0, sepCount = 0
-        let aliX = 0, aliY = 0, aliCount = 0
-        let cohX = 0, cohY = 0, cohCount = 0
-
-        for (let dx = -1; dx <= 1; dx++) {
-          for (let dy = -1; dy <= 1; dy++) {
-            const cell = grid.get(`${cx + dx},${cy + dy}`)
-            if (!cell) continue
-            for (const j of cell) {
-              if (j === i) continue
-              const other = boids[j]
-              const ddx = b.x - other.x
-              const ddy = b.y - other.y
-              const d2 = ddx * ddx + ddy * ddy
-              const dist = Math.sqrt(d2)
-
-              if (dist < NEIGHBOR_RADIUS && dist > 0) {
-                // Separation
-                if (dist < SEPARATION_DIST) {
-                  sepX += ddx / dist / dist * SEPARATION_DIST
-                  sepY += ddy / dist / dist * SEPARATION_DIST
-                  sepCount++
-                }
-                // Alignment
-                aliX += other.vx
-                aliY += other.vy
-                aliCount++
-                // Cohesion
-                cohX += other.x
-                cohY += other.y
-                cohCount++
-              }
-            }
-          }
-        }
-
-        let steerX = 0, steerY = 0
-
-        // Separation force
-        if (sepCount > 0) {
-          sepX /= sepCount
-          sepY /= sepCount
-          const mag = Math.sqrt(sepX * sepX + sepY * sepY)
-          if (mag > 0) {
-            steerX += (sepX / mag * maxSpeed - b.vx) * W_SEPARATION
-            steerY += (sepY / mag * maxSpeed - b.vy) * W_SEPARATION
-          }
-        }
-
-        // Alignment force
-        if (aliCount > 0) {
-          aliX /= aliCount
-          aliY /= aliCount
-          const mag = Math.sqrt(aliX * aliX + aliY * aliY)
-          if (mag > 0) {
-            steerX += (aliX / mag * maxSpeed - b.vx) * W_ALIGNMENT
-            steerY += (aliY / mag * maxSpeed - b.vy) * W_ALIGNMENT
-          }
-        }
-
-        // Cohesion force
-        if (cohCount > 0) {
-          cohX = cohX / cohCount - b.x
-          cohY = cohY / cohCount - b.y
-          const mag = Math.sqrt(cohX * cohX + cohY * cohY)
-          if (mag > 0) {
-            steerX += (cohX / mag * maxSpeed - b.vx) * W_COHESION
-            steerY += (cohY / mag * maxSpeed - b.vy) * W_COHESION
-          }
-        }
-
-        // Ocean current force (with subtle per-particle variation)
-        const currentNoise = Math.sin(t * 0.3 + i * 0.7) * 0.3
-        steerX += (currentVX + currentNoise * 0.5) * W_CURRENT
-        steerY += (currentVY + Math.cos(t * 0.2 + i * 0.5) * 0.3) * W_CURRENT
-
-        // Mouse avoidance (scatter then flow around)
-        if (mouseActive) {
-          const dmx = b.x - mx
-          const dmy = b.y - my
-          const mDist = Math.sqrt(dmx * dmx + dmy * dmy)
-          if (mDist < MOUSE_AVOID_RADIUS && mDist > 1) {
-            const falloff = 1 - mDist / MOUSE_AVOID_RADIUS
-            const avoidForce = falloff * falloff * MOUSE_AVOID_STRENGTH
-            // Push away from cursor
-            steerX += (dmx / mDist) * avoidForce
-            steerY += (dmy / mDist) * avoidForce
-            // Add a gentle tangential force so they flow around, not just bounce away
-            steerX += (-dmy / mDist) * avoidForce * 0.35
-            steerY += (dmx / mDist) * avoidForce * 0.35
-          }
-        }
-
-        // Clamp steering force
-        const clamped = clampMag(steerX, steerY, MAX_FORCE * dtFactor * 10)
-
-        // Apply
-        b.vx += clamped.x * dtFactor
-        b.vy += clamped.y * dtFactor
-
-        // Clamp velocity
-        const vel = clampMag(b.vx, b.vy, maxSpeed)
-        b.vx = vel.x
-        b.vy = vel.y
-
-        b.x += b.vx * dtFactor
-        b.y += b.vy * dtFactor
-
-        // Wrap edges with margin
-        const margin = 30
-        if (b.x < -margin) b.x += w + margin * 2
-        else if (b.x > w + margin) b.x -= w + margin * 2
-        if (b.y < -margin) b.y += h + margin * 2
-        else if (b.y > h + margin) b.y -= h + margin * 2
+      /* ======================================== */
+      /*  LAYER 1: Animated Mesh Gradient          */
+      /* ======================================== */
+      ctx.globalCompositeOperation = 'screen'
+      const blobs = blobsRef.current
+      for (let i = 0; i < blobs.length; i++) {
+        const blob = blobs[i]
+        const bx = blob.x + Math.sin(timestamp * blob.speedX + blob.phaseX) * blob.amplitudeX
+        const by = blob.y + Math.cos(timestamp * blob.speedY + blob.phaseY) * blob.amplitudeY
+        const grad = ctx.createRadialGradient(bx, by, 0, bx, by, blob.radius)
+        grad.addColorStop(0, blob.color)
+        grad.addColorStop(1, 'rgba(0, 0, 0, 0)')
+        ctx.fillStyle = grad
+        ctx.fillRect(0, 0, w, h)
       }
+      ctx.globalCompositeOperation = 'source-over'
 
-      /* --- draw trails --- */
-      for (let i = 0; i < boids.length; i++) {
-        const b = boids[i]
-        if (b.trail.length < 2) continue
+      /* ======================================== */
+      /*  LAYER 2: Atmospheric Particles           */
+      /* ======================================== */
+      const particles = particlesRef.current
+      for (let i = 0; i < particles.length; i++) {
+        const p = particles[i]
 
-        const baseAlpha = 0.08 + b.depth * 0.12 // deeper = dimmer trails
-        for (let t = 0; t < b.trail.length; t++) {
-          const frac = t / b.trail.length
-          const alpha = baseAlpha * frac * 0.5
-          const r = b.size * frac * 0.6
-          if (r < 0.3) continue
-          ctx.beginPath()
-          ctx.arc(b.trail[t].x, b.trail[t].y, r, 0, Math.PI * 2)
-          ctx.fillStyle = `hsla(${b.hue}, 80%, 65%, ${alpha})`
+        /* organic drift using layered sin/cos */
+        p.x = p.baseX
+          + Math.sin(timestamp * p.speedX + p.phaseX) * p.driftAmplitudeX
+          + Math.sin(timestamp * p.speedX * 0.7 + p.phaseY * 1.3) * p.driftAmplitudeX * 0.3
+        p.y = p.baseY
+          + Math.cos(timestamp * p.speedY + p.phaseY) * p.driftAmplitudeY
+          + Math.cos(timestamp * p.speedY * 0.6 + p.phaseX * 0.9) * p.driftAmplitudeY * 0.4
+
+        /* slow global drift so particles don't stay in one zone forever */
+        p.baseX += Math.sin(timestamp * 0.00003 + i) * 0.02
+        p.baseY += Math.cos(timestamp * 0.00002 + i * 0.7) * 0.015
+
+        /* wrap edges */
+        if (p.baseX < -60) p.baseX += w + 120
+        else if (p.baseX > w + 60) p.baseX -= w + 120
+        if (p.baseY < -60) p.baseY += h + 120
+        else if (p.baseY > h + 60) p.baseY -= h + 120
+
+        /* Layer 3 interaction: subtle parallax push away from cursor */
+        let drawX = p.x
+        let drawY = p.y
+        if (mouseActive) {
+          const dx = p.x - mx
+          const dy = p.y - my
+          const dist = Math.sqrt(dx * dx + dy * dy)
+          if (dist < 150 && dist > 0) {
+            const pushStrength = (1 - dist / 150) * (5 + p.size * 3)
+            drawX += (dx / dist) * pushStrength
+            drawY += (dy / dist) * pushStrength
+          }
+        }
+
+        /* draw particle */
+        ctx.beginPath()
+        ctx.arc(drawX, drawY, p.size, 0, Math.PI * 2)
+        if (p.hasShadow) {
+          ctx.save()
+          ctx.shadowColor = `rgba(209, 250, 229, ${p.opacity * 0.5})`
+          ctx.shadowBlur = p.shadowBlur
+          ctx.fillStyle = `rgba(209, 250, 229, ${p.opacity})`
+          ctx.fill()
+          ctx.restore()
+        } else {
+          ctx.fillStyle = `rgba(255, 255, 255, ${p.opacity})`
           ctx.fill()
         }
       }
 
-      /* --- draw subtle connection lines between close neighbors --- */
-      const connDist = 55
-      const connDist2 = connDist * connDist
-      for (let i = 0; i < boids.length; i++) {
-        const a = boids[i]
-        const cx = Math.floor(a.x / GRID_CELL)
-        const cy = Math.floor(a.y / GRID_CELL)
-        for (let dx = -1; dx <= 1; dx++) {
-          for (let dy = -1; dy <= 1; dy++) {
-            const cell = grid.get(`${cx + dx},${cy + dy}`)
-            if (!cell) continue
-            for (const j of cell) {
-              if (j <= i) continue
-              const bb = boids[j]
-              const ddx = a.x - bb.x
-              const ddy = a.y - bb.y
-              const d2 = ddx * ddx + ddy * ddy
-              if (d2 > connDist2) continue
-
-              const dist = Math.sqrt(d2)
-              const alpha = (1 - dist / connDist) * 0.04 * Math.min(a.depth, bb.depth)
-              if (alpha < 0.003) continue
-
-              ctx.beginPath()
-              ctx.moveTo(a.x, a.y)
-              ctx.lineTo(bb.x, bb.y)
-              ctx.strokeStyle = `hsla(170, 70%, 60%, ${alpha})`
-              ctx.lineWidth = 0.4
-              ctx.stroke()
-            }
-          }
-        }
-      }
-
-      /* --- draw mouse glow (subtle avoidance halo) --- */
+      /* ======================================== */
+      /*  LAYER 3: Cursor Glow (flashlight)        */
+      /* ======================================== */
       if (mouseActive) {
-        const grad = ctx.createRadialGradient(mx, my, 0, mx, my, MOUSE_AVOID_RADIUS * 0.7)
-        grad.addColorStop(0, 'rgba(6, 182, 212, 0.04)')
-        grad.addColorStop(1, 'rgba(6, 182, 212, 0)')
+        const glowRadius = 150
+        const grad = ctx.createRadialGradient(mx, my, 0, mx, my, glowRadius)
+        grad.addColorStop(0, 'rgba(52, 211, 153, 0.05)')
+        grad.addColorStop(0.5, 'rgba(52, 211, 153, 0.025)')
+        grad.addColorStop(1, 'rgba(52, 211, 153, 0)')
         ctx.fillStyle = grad
         ctx.beginPath()
-        ctx.arc(mx, my, MOUSE_AVOID_RADIUS * 0.7, 0, Math.PI * 2)
+        ctx.arc(mx, my, glowRadius, 0, Math.PI * 2)
         ctx.fill()
-      }
-
-      /* --- draw boids (particles) --- */
-      for (let i = 0; i < boids.length; i++) {
-        const b = boids[i]
-        const alpha = 0.25 + b.depth * 0.55 // depth affects opacity
-        const lightness = 55 + b.depth * 15  // brighter when closer
-
-        ctx.save()
-        ctx.shadowColor = `hsla(${b.hue}, 80%, ${lightness}%, ${alpha * 0.8})`
-        ctx.shadowBlur = b.size * 2.5
-        ctx.beginPath()
-        ctx.arc(b.x, b.y, b.size, 0, Math.PI * 2)
-        ctx.fillStyle = `hsla(${b.hue}, 80%, ${lightness}%, ${alpha})`
-        ctx.fill()
-        ctx.restore()
       }
 
       animFrameRef.current = requestAnimationFrame(animate)
