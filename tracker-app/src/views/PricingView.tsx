@@ -336,7 +336,7 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: '0 0 40px rgba(52, 211, 153, 0.08)',
   },
   cardHover: {
-    borderColor: 'var(--border-hover)',
+    border: '1px solid var(--border-hover)',
     transform: 'translateY(-2px)',
     boxShadow: '0 8px 24px rgba(0, 0, 0, 0.3)',
   },

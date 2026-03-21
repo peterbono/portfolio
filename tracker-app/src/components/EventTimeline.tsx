@@ -130,11 +130,10 @@ export function EventTimeline({ events, onDelete, onEdit }: EventTimelineProps) 
               <div
                 style={{
                   background: 'var(--bg-elevated)',
-                  border: '1px solid var(--border)',
+                  border: `1px solid ${isHovered ? 'var(--border-hover)' : 'var(--border)'}`,
                   borderRadius: 'var(--radius-md)',
                   padding: '10px 12px',
                   transition: 'border-color var(--transition-fast)',
-                  borderColor: isHovered ? 'var(--border-hover)' : 'var(--border)',
                 }}
               >
                 {/* Top row: date + type badge + outcome + actions */}

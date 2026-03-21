@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import {
   Bot,
   Plus,
@@ -21,6 +21,7 @@ import {
   Square,
   History,
   Loader2,
+  X,
 } from 'lucide-react'
 import { useBotActivity } from '../hooks/useBotActivity'
 import type { BotActivityItem, BotRunStatus } from '../hooks/useBotActivity'
@@ -271,6 +272,537 @@ function getStatusConfig(run: BotRunStatus | null): StatusConfig {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Job title suggestions (curated ~100)                               */
+/* ------------------------------------------------------------------ */
+const JOB_TITLE_SUGGESTIONS = [
+  'Product Designer', 'Senior Product Designer', 'Staff Product Designer',
+  'Principal Product Designer', 'Lead Product Designer', 'UX Designer',
+  'Senior UX Designer', 'UX/UI Designer', 'UI Designer', 'Senior UI Designer',
+  'Visual Designer', 'Senior Visual Designer', 'Interaction Designer',
+  'UX Researcher', 'Senior UX Researcher', 'Design Systems Designer',
+  'Design Systems Lead', 'Design Ops Manager', 'Design Manager',
+  'Head of Design', 'VP of Design', 'Director of Design', 'Creative Director',
+  'Design Lead', 'Design Director', 'Brand Designer', 'Graphic Designer',
+  'Web Designer', 'Mobile Designer', 'Motion Designer', 'Service Designer',
+  'Content Designer', 'UX Writer', 'UX Engineer', 'Design Technologist',
+  'Frontend Designer', 'Product Design Lead', 'Product Design Manager',
+  'User Experience Architect', 'Information Architect', 'Accessibility Designer',
+  'Design Researcher', 'User Researcher', 'Research Lead',
+  'Figma Designer', 'Prototyper', 'Design Consultant',
+  'Product Manager', 'Senior Product Manager', 'Technical Product Manager',
+  'Growth Designer', 'Conversion Designer', 'E-commerce Designer',
+  'SaaS Designer', 'B2B Designer', 'Fintech Designer', 'Healthtech Designer',
+  'Gaming Designer', 'iGaming Designer', 'EdTech Designer',
+  'Design Sprint Facilitator', 'Workshop Facilitator',
+  'CX Designer', 'Customer Experience Designer',
+  'Full Stack Designer', 'Unicorn Designer', 'Zero-to-One Designer',
+  'Design System Engineer', 'Component Library Designer',
+  'Illustration Designer', 'Icon Designer', 'Data Visualization Designer',
+  'Dashboard Designer', 'Enterprise UX Designer', 'Platform Designer',
+  'Design Strategist', 'UX Strategist', 'Product Strategist',
+  'Creative Technologist', 'Webflow Designer', 'Framer Designer',
+  'AR/VR Designer', '3D Designer', 'Spatial Designer',
+  'Conversational Designer', 'Voice UI Designer', 'AI Product Designer',
+  'Design Ops Lead', 'DesignOps', 'Design Program Manager',
+  'Art Director', 'Senior Art Director', 'Associate Art Director',
+  'Packaging Designer', 'Environmental Designer', 'Experience Designer',
+  'Multidisciplinary Designer', 'Communication Designer',
+  'Head of Product Design', 'Head of UX', 'VP Product Design',
+  'Staff UX Designer', 'Principal UX Designer', 'Staff Visual Designer',
+  'Founding Designer', 'Solo Designer', 'Contract Designer', 'Freelance Designer',
+]
+
+/* ------------------------------------------------------------------ */
+/*  Teleport city search (debounced)                                   */
+/* ------------------------------------------------------------------ */
+interface CityResult {
+  name: string
+  fullName: string
+}
+
+async function searchCities(query: string): Promise<CityResult[]> {
+  if (!query || query.length < 2) return []
+  try {
+    const res = await fetch(
+      `https://api.teleport.org/api/cities/?search=${encodeURIComponent(query)}&limit=5`
+    )
+    if (!res.ok) return []
+    const data = await res.json()
+    const embedded = data?._embedded?.['city:search-results']
+    if (!Array.isArray(embedded)) return []
+    return embedded.map((item: Record<string, unknown>) => ({
+      name: (item.matching_full_name as string) || '',
+      fullName: (item.matching_full_name as string) || '',
+    }))
+  } catch {
+    return []
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Reusable ChipInput component                                       */
+/* ------------------------------------------------------------------ */
+function ChipInput({
+  chips,
+  onAdd,
+  onRemove,
+  placeholder,
+  suggestions,
+  onQueryChange,
+  isLoading,
+  noResults,
+}: {
+  chips: string[]
+  onAdd: (value: string) => void
+  onRemove: (index: number) => void
+  placeholder: string
+  suggestions?: string[]
+  onQueryChange?: (q: string) => void
+  isLoading?: boolean
+  noResults?: boolean
+}) {
+  const [query, setQuery] = useState('')
+  const [showDropdown, setShowDropdown] = useState(false)
+  const [highlightIdx, setHighlightIdx] = useState(-1)
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const filtered = suggestions
+    ? suggestions.filter(
+        (s) =>
+          s.toLowerCase().includes(query.toLowerCase()) &&
+          !chips.includes(s)
+      ).slice(0, 8)
+    : []
+
+  const addChip = useCallback(
+    (value: string) => {
+      const trimmed = value.trim()
+      if (trimmed && !chips.includes(trimmed)) {
+        onAdd(trimmed)
+      }
+      setQuery('')
+      setShowDropdown(false)
+      setHighlightIdx(-1)
+      onQueryChange?.('')
+    },
+    [chips, onAdd, onQueryChange]
+  )
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        if (highlightIdx >= 0 && filtered[highlightIdx]) {
+          addChip(filtered[highlightIdx])
+        } else if (query.trim()) {
+          addChip(query)
+        }
+      } else if (e.key === ',' && query.trim()) {
+        e.preventDefault()
+        addChip(query)
+      } else if (e.key === 'Backspace' && !query && chips.length > 0) {
+        onRemove(chips.length - 1)
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setHighlightIdx((prev) => Math.min(prev + 1, filtered.length - 1))
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setHighlightIdx((prev) => Math.max(prev - 1, 0))
+      } else if (e.key === 'Escape') {
+        setShowDropdown(false)
+        setHighlightIdx(-1)
+      }
+    },
+    [query, chips, filtered, highlightIdx, addChip, onRemove]
+  )
+
+  const handleChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const val = e.target.value
+      // If user types comma, add what's before as a chip
+      if (val.endsWith(',')) {
+        const before = val.slice(0, -1).trim()
+        if (before) addChip(before)
+        return
+      }
+      setQuery(val)
+      setShowDropdown(val.length > 0)
+      setHighlightIdx(-1)
+      onQueryChange?.(val)
+    },
+    [addChip, onQueryChange]
+  )
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setShowDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const showSuggestions =
+    showDropdown && (filtered.length > 0 || isLoading || noResults)
+
+  return (
+    <div ref={wrapperRef} style={chipStyles.wrapper}>
+      <div
+        style={chipStyles.inputArea}
+        onClick={() => inputRef.current?.focus()}
+      >
+        {chips.map((chip, i) => (
+          <span key={`${chip}-${i}`} style={chipStyles.chip}>
+            <span style={chipStyles.chipText}>{chip}</span>
+            <button
+              type="button"
+              style={chipStyles.chipRemove}
+              onClick={(e) => {
+                e.stopPropagation()
+                onRemove(i)
+              }}
+              aria-label={`Remove ${chip}`}
+            >
+              <X size={10} />
+            </button>
+          </span>
+        ))}
+        <div style={chipStyles.inputWrap}>
+          <input
+            ref={inputRef}
+            style={chipStyles.chipInput}
+            value={query}
+            onChange={handleChange}
+            onKeyDown={handleKeyDown}
+            onFocus={() => { if (query.length > 0) setShowDropdown(true) }}
+            placeholder={chips.length === 0 ? placeholder : ''}
+          />
+          {isLoading && (
+            <Loader2
+              size={14}
+              color="var(--text-tertiary)"
+              style={{ animation: 'spin 1s linear infinite', flexShrink: 0 }}
+            />
+          )}
+        </div>
+      </div>
+      {showSuggestions && (
+        <div style={chipStyles.dropdown}>
+          {isLoading && filtered.length === 0 && (
+            <div style={chipStyles.dropdownLoading}>
+              <Loader2
+                size={12}
+                color="var(--text-tertiary)"
+                style={{ animation: 'spin 1s linear infinite' }}
+              />
+              <span>Searching...</span>
+            </div>
+          )}
+          {noResults && !isLoading && filtered.length === 0 && (
+            <div style={chipStyles.dropdownEmpty}>No results found</div>
+          )}
+          {filtered.map((item, idx) => (
+            <div
+              key={item}
+              style={{
+                ...chipStyles.dropdownItem,
+                ...(idx === highlightIdx ? chipStyles.dropdownItemHighlight : {}),
+              }}
+              onMouseEnter={() => setHighlightIdx(idx)}
+              onMouseDown={(e) => {
+                e.preventDefault()
+                addChip(item)
+              }}
+            >
+              {item}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/*  LocationInput with Teleport API                                    */
+/* ------------------------------------------------------------------ */
+function LocationAutocomplete({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (val: string) => void
+}) {
+  const [query, setQuery] = useState(value)
+  const [results, setResults] = useState<CityResult[]>([])
+  const [isLoading, setIsLoading] = useState(false)
+  const [showDropdown, setShowDropdown] = useState(false)
+  const [highlightIdx, setHighlightIdx] = useState(-1)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const wrapperRef = useRef<HTMLDivElement>(null)
+
+  // Sync external value
+  useEffect(() => {
+    setQuery(value)
+  }, [value])
+
+  const handleChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const val = e.target.value
+      setQuery(val)
+      onChange(val)
+      setHighlightIdx(-1)
+
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+      if (val.length < 2) {
+        setResults([])
+        setShowDropdown(false)
+        setIsLoading(false)
+        return
+      }
+      setIsLoading(true)
+      setShowDropdown(true)
+      debounceRef.current = setTimeout(async () => {
+        const cities = await searchCities(val)
+        setResults(cities)
+        setIsLoading(false)
+      }, 300)
+    },
+    [onChange]
+  )
+
+  const selectCity = useCallback(
+    (city: CityResult) => {
+      setQuery(city.fullName)
+      onChange(city.fullName)
+      setShowDropdown(false)
+      setResults([])
+    },
+    [onChange]
+  )
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setHighlightIdx((prev) => Math.min(prev + 1, results.length - 1))
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setHighlightIdx((prev) => Math.max(prev - 1, 0))
+      } else if (e.key === 'Enter' && highlightIdx >= 0 && results[highlightIdx]) {
+        e.preventDefault()
+        selectCity(results[highlightIdx])
+      } else if (e.key === 'Escape') {
+        setShowDropdown(false)
+      }
+    },
+    [results, highlightIdx, selectCity]
+  )
+
+  // Close on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setShowDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const showSuggestions =
+    showDropdown && (results.length > 0 || isLoading || (query.length >= 2 && !isLoading && results.length === 0))
+
+  return (
+    <div ref={wrapperRef} style={chipStyles.locWrapper}>
+      <div style={chipStyles.locInputWrap}>
+        <input
+          style={chipStyles.locInput}
+          value={query}
+          onChange={handleChange}
+          onKeyDown={handleKeyDown}
+          onFocus={() => { if (results.length > 0) setShowDropdown(true) }}
+          placeholder="Search city..."
+        />
+        {isLoading && (
+          <Loader2
+            size={14}
+            color="var(--text-tertiary)"
+            style={{ animation: 'spin 1s linear infinite', position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)' }}
+          />
+        )}
+      </div>
+      {showSuggestions && (
+        <div style={chipStyles.dropdown}>
+          {isLoading && results.length === 0 && (
+            <div style={chipStyles.dropdownLoading}>
+              <Loader2
+                size={12}
+                color="var(--text-tertiary)"
+                style={{ animation: 'spin 1s linear infinite' }}
+              />
+              <span>Searching cities...</span>
+            </div>
+          )}
+          {!isLoading && results.length === 0 && query.length >= 2 && (
+            <div style={chipStyles.dropdownEmpty}>No cities found</div>
+          )}
+          {results.map((city, idx) => (
+            <div
+              key={city.fullName}
+              style={{
+                ...chipStyles.dropdownItem,
+                ...(idx === highlightIdx ? chipStyles.dropdownItemHighlight : {}),
+              }}
+              onMouseEnter={() => setHighlightIdx(idx)}
+              onMouseDown={(e) => {
+                e.preventDefault()
+                selectCity(city)
+              }}
+            >
+              <MapPin size={12} color="var(--text-tertiary)" style={{ flexShrink: 0, marginRight: 6 }} />
+              {city.fullName}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/*  ChipInput + Dropdown styles                                        */
+/* ------------------------------------------------------------------ */
+const chipStyles: Record<string, React.CSSProperties> = {
+  wrapper: {
+    position: 'relative',
+  },
+  inputArea: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 4,
+    minHeight: 38,
+    padding: '4px 8px',
+    background: 'var(--bg-surface)',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-md)',
+    cursor: 'text',
+    boxSizing: 'border-box',
+  },
+  inputWrap: {
+    display: 'flex',
+    alignItems: 'center',
+    flex: 1,
+    minWidth: 80,
+    gap: 4,
+  },
+  chipInput: {
+    flex: 1,
+    minWidth: 60,
+    background: 'transparent',
+    border: 'none',
+    outline: 'none',
+    color: 'var(--text-primary)',
+    fontSize: 13,
+    padding: '4px 0',
+  },
+  chip: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    padding: '2px 6px 2px 8px',
+    borderRadius: 12,
+    background: 'rgba(96, 165, 250, 0.15)',
+    border: '1px solid rgba(96, 165, 250, 0.25)',
+    fontSize: 12,
+    color: '#93c5fd',
+    whiteSpace: 'nowrap',
+    maxWidth: 200,
+    overflow: 'hidden',
+  },
+  chipText: {
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
+  chipRemove: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: 'transparent',
+    border: 'none',
+    color: '#93c5fd',
+    cursor: 'pointer',
+    padding: 2,
+    borderRadius: '50%',
+    flexShrink: 0,
+    transition: 'background 0.15s',
+  },
+  dropdown: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    marginTop: 4,
+    background: 'var(--bg-elevated)',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-md)',
+    zIndex: 50,
+    maxHeight: 200,
+    overflowY: 'auto',
+    boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+  },
+  dropdownItem: {
+    display: 'flex',
+    alignItems: 'center',
+    padding: '8px 12px',
+    fontSize: 13,
+    color: 'var(--text-primary)',
+    cursor: 'pointer',
+    transition: 'background 0.1s',
+  },
+  dropdownItemHighlight: {
+    background: 'rgba(96, 165, 250, 0.1)',
+  },
+  dropdownLoading: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: '10px 12px',
+    fontSize: 12,
+    color: 'var(--text-tertiary)',
+  },
+  dropdownEmpty: {
+    padding: '10px 12px',
+    fontSize: 12,
+    color: 'var(--text-tertiary)',
+    textAlign: 'center',
+  },
+  locWrapper: {
+    position: 'relative',
+    width: '100%',
+  },
+  locInputWrap: {
+    position: 'relative',
+  },
+  locInput: {
+    width: '100%',
+    background: 'var(--bg-surface)',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-md)',
+    padding: '8px 12px',
+    paddingRight: 32,
+    color: 'var(--text-primary)',
+    fontSize: 13,
+    outline: 'none',
+    boxSizing: 'border-box',
+  },
+}
+
+/* ------------------------------------------------------------------ */
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 export function AutopilotView() {
@@ -353,11 +885,11 @@ export function AutopilotView() {
 
   // Form state
   const [formName, setFormName] = useState('')
-  const [formKeywords, setFormKeywords] = useState('')
+  const [formKeywords, setFormKeywords] = useState<string[]>([])
   const [formLocation, setFormLocation] = useState('')
   const [formSalary, setFormSalary] = useState('')
   const [formRemote, setFormRemote] = useState(false)
-  const [formExcluded, setFormExcluded] = useState('')
+  const [formExcluded, setFormExcluded] = useState<string[]>([])
 
   // Persist on change
   useEffect(() => {
@@ -366,11 +898,11 @@ export function AutopilotView() {
 
   const resetForm = useCallback(() => {
     setFormName('')
-    setFormKeywords('')
+    setFormKeywords([])
     setFormLocation('')
     setFormSalary('')
     setFormRemote(false)
-    setFormExcluded('')
+    setFormExcluded([])
   }, [])
 
   const handleSave = useCallback(() => {
@@ -378,17 +910,11 @@ export function AutopilotView() {
     const newProfile: SearchProfile = {
       id: crypto.randomUUID(),
       name: formName.trim(),
-      keywords: formKeywords
-        .split(',')
-        .map((k) => k.trim())
-        .filter(Boolean),
+      keywords: [...formKeywords],
       location: formLocation.trim(),
       minSalary: parseInt(formSalary) || 0,
       remoteOnly: formRemote,
-      excludedCompanies: formExcluded
-        .split(',')
-        .map((c) => c.trim())
-        .filter(Boolean),
+      excludedCompanies: [...formExcluded],
       createdAt: new Date().toISOString(),
     }
     setProfiles((prev) => [...prev, newProfile])
@@ -628,25 +1154,22 @@ export function AutopilotView() {
 
             <div style={styles.fieldGroup}>
               <label style={styles.label}>Keywords</label>
-              <p style={styles.hint}>Comma-separated search terms</p>
-              <input
-                style={styles.input}
-                type="text"
-                value={formKeywords}
-                onChange={(e) => setFormKeywords(e.target.value)}
-                placeholder="product designer, UX lead, design systems"
+              <p style={styles.hint}>Search or type a keyword and press Enter</p>
+              <ChipInput
+                chips={formKeywords}
+                onAdd={(val) => setFormKeywords((prev) => [...prev, val])}
+                onRemove={(idx) => setFormKeywords((prev) => prev.filter((_, i) => i !== idx))}
+                placeholder="Search job titles..."
+                suggestions={JOB_TITLE_SUGGESTIONS}
               />
             </div>
 
             <div style={styles.fieldRow}>
               <div style={{ flex: 1 }}>
                 <label style={styles.label}>Location</label>
-                <input
-                  style={styles.input}
-                  type="text"
+                <LocationAutocomplete
                   value={formLocation}
-                  onChange={(e) => setFormLocation(e.target.value)}
-                  placeholder="Bangkok, Remote APAC"
+                  onChange={setFormLocation}
                 />
               </div>
               <div style={{ flex: 1 }}>
@@ -675,13 +1198,12 @@ export function AutopilotView() {
 
             <div style={styles.fieldGroup}>
               <label style={styles.label}>Excluded Companies</label>
-              <p style={styles.hint}>Comma-separated list of companies to skip</p>
-              <input
-                style={styles.input}
-                type="text"
-                value={formExcluded}
-                onChange={(e) => setFormExcluded(e.target.value)}
-                placeholder="Company A, Company B"
+              <p style={styles.hint}>Type a company name and press Enter to add</p>
+              <ChipInput
+                chips={formExcluded}
+                onAdd={(val) => setFormExcluded((prev) => [...prev, val])}
+                onRemove={(idx) => setFormExcluded((prev) => prev.filter((_, i) => i !== idx))}
+                placeholder="Type company name..."
               />
             </div>
 

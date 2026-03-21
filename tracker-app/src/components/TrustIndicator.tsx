@@ -168,7 +168,7 @@ export function TrustIndicator() {
         onClick={() => setExpanded(!expanded)}
         style={{
           ...styles.pill,
-          borderColor: `${config.color}33`,
+          border: `1px solid ${config.color}33`,
         }}
       >
         <StatusIcon size={14} color={config.color} />

@@ -69,7 +69,7 @@ export function StatCards({ counts, totalJobs, activeFilter, onFilterChange }: S
             style={{
               ...styles.card,
               background: isActive ? card.bg : 'var(--bg-surface)',
-              borderColor: isActive ? card.color : 'var(--border)',
+              border: `1px solid ${isActive ? card.color : 'var(--border)'}`,
               boxShadow: isActive ? `0 0 12px ${card.color}20` : 'none',
             }}
           >

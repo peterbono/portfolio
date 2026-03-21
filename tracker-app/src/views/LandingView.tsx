@@ -750,7 +750,7 @@ const styles: Record<string, React.CSSProperties> = {
     position: 'relative',
   },
   pricingCardFeatured: {
-    borderColor: 'rgba(52, 211, 153, 0.4)',
+    border: '1px solid rgba(52, 211, 153, 0.4)',
     boxShadow: '0 0 24px rgba(52, 211, 153, 0.08)',
   },
   pricingBadge: {

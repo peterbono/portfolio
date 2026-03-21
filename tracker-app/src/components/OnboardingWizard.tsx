@@ -1,45 +1,234 @@
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import {
   Bot,
   ArrowRight,
   ArrowLeft,
   MapPin,
-  Upload,
+  Mail,
   Sparkles,
   Zap,
   Brain,
   Shield,
   X,
   Check,
+  Loader2,
+  Search,
+  ChevronDown,
+  Globe,
+  Lock,
+  Unplug,
+  HelpCircle,
+  AlertCircle,
 } from 'lucide-react'
 import confetti from 'canvas-confetti'
 
-const ONBOARDING_KEY = 'tracker_v2_onboarding_done'
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
 
-const ROLE_OPTIONS = [
-  'Software Engineer',
-  'Frontend Developer',
-  'Backend Developer',
-  'Full Stack Developer',
-  'Product Designer',
-  'UX Designer',
-  'UI Designer',
-  'Product Manager',
-  'Data Scientist',
-  'Data Analyst',
-  'DevOps Engineer',
-  'QA Engineer',
-  'Marketing Manager',
-  'Sales Representative',
-  'Project Manager',
-  'Business Analyst',
-  'Customer Success',
-  'HR / Recruiter',
-  'Finance / Accounting',
-  'Operations Manager',
-]
+const ONBOARDING_KEY = 'tracker_v2_onboarding_done'
+const GMAIL_URL_KEY = 'tracker_v2_gmail_url'
 
 const EXPERIENCE_LEVELS = ['Junior', 'Mid', 'Senior', 'Lead', 'Principal']
+
+const JOB_TITLES = [
+  'Software Engineer', 'Frontend Developer', 'Backend Developer', 'Full Stack Developer',
+  'Mobile Developer', 'iOS Developer', 'Android Developer', 'React Developer',
+  'Node.js Developer', 'Python Developer', 'Java Developer', 'Go Developer',
+  'Rust Developer', 'DevOps Engineer', 'SRE / Site Reliability Engineer',
+  'Cloud Engineer', 'Platform Engineer', 'Infrastructure Engineer',
+  'Data Engineer', 'Data Scientist', 'Data Analyst', 'Machine Learning Engineer',
+  'AI Engineer', 'ML Ops Engineer', 'Business Intelligence Analyst',
+  'Product Designer', 'UX Designer', 'UI Designer', 'UX Researcher',
+  'Visual Designer', 'Interaction Designer', 'Design Systems Designer',
+  'Brand Designer', 'Motion Designer', 'Graphic Designer',
+  'Product Manager', 'Technical Program Manager', 'Engineering Manager',
+  'Project Manager', 'Scrum Master', 'Agile Coach',
+  'QA Engineer', 'SDET', 'Test Automation Engineer', 'Quality Assurance Lead',
+  'Security Engineer', 'Cybersecurity Analyst', 'Penetration Tester',
+  'Solutions Architect', 'Enterprise Architect', 'Technical Architect',
+  'Technical Writer', 'Documentation Engineer',
+  'Marketing Manager', 'Growth Marketing Manager', 'Content Marketing Manager',
+  'SEO Specialist', 'PPC Specialist', 'Social Media Manager',
+  'Digital Marketing Manager', 'Performance Marketing Manager',
+  'Sales Representative', 'Account Executive', 'Business Development Rep',
+  'Sales Engineer', 'Solutions Consultant',
+  'Customer Success Manager', 'Customer Support Engineer', 'Technical Support',
+  'Business Analyst', 'Systems Analyst', 'Operations Manager',
+  'HR Manager', 'Recruiter', 'Technical Recruiter', 'People Operations',
+  'Finance Manager', 'Financial Analyst', 'Accounting Manager',
+  'Legal Counsel', 'Compliance Officer',
+  'CTO', 'VP Engineering', 'VP Product', 'VP Design',
+  'Head of Engineering', 'Head of Product', 'Head of Design',
+  'Director of Engineering', 'Director of Product', 'Director of Design',
+  'Staff Engineer', 'Principal Engineer', 'Distinguished Engineer',
+  'Staff Designer', 'Principal Designer', 'Lead Designer',
+  'Game Developer', 'Game Designer', 'Unity Developer', 'Unreal Developer',
+  'Blockchain Developer', 'Smart Contract Engineer', 'Web3 Developer',
+  'Embedded Systems Engineer', 'Firmware Engineer', 'Hardware Engineer',
+  'Network Engineer', 'Database Administrator', 'Systems Administrator',
+  'Salesforce Developer', 'SAP Consultant', 'ERP Consultant',
+  'Supply Chain Analyst', 'Operations Analyst', 'Strategy Consultant',
+  'Executive Assistant', 'Office Manager', 'Administrative Assistant',
+  'Content Creator', 'Copywriter', 'Video Producer', 'Photographer',
+]
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function useDebounce<T>(value: T, ms: number): T {
+  const [debounced, setDebounced] = useState(value)
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), ms)
+    return () => clearTimeout(t)
+  }, [value, ms])
+  return debounced
+}
+
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+}
+
+function formatTzLabel(tz: string): string {
+  try {
+    const now = new Date()
+    const fmt = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'shortOffset' })
+    const parts = fmt.formatToParts(now)
+    const offset = parts.find(p => p.type === 'timeZoneName')?.value ?? ''
+    return `${tz.replace(/_/g, ' ')} (${offset})`
+  } catch {
+    return tz
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Sub-components
+// ---------------------------------------------------------------------------
+
+interface AutocompleteInputProps {
+  value: string
+  onChange: (v: string) => void
+  placeholder: string
+  suggestions: string[]
+  loading?: boolean
+  onSelect: (v: string) => void
+  style?: React.CSSProperties
+  icon?: React.ReactNode
+}
+
+function AutocompleteInput({
+  value, onChange, placeholder, suggestions, loading, onSelect, style, icon,
+}: AutocompleteInputProps) {
+  const [open, setOpen] = useState(false)
+  const [focusIdx, setFocusIdx] = useState(-1)
+  const wrapRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  useEffect(() => { setFocusIdx(-1) }, [suggestions])
+
+  const handleKey = (e: React.KeyboardEvent) => {
+    if (!open) {
+      if (e.key === 'Enter' && value.trim()) {
+        e.preventDefault()
+        onSelect(value.trim())
+      }
+      return
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setFocusIdx(i => Math.min(i + 1, suggestions.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setFocusIdx(i => Math.max(i - 1, 0))
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      if (focusIdx >= 0 && focusIdx < suggestions.length) {
+        onSelect(suggestions[focusIdx])
+        setOpen(false)
+      } else if (value.trim()) {
+        onSelect(value.trim())
+        setOpen(false)
+      }
+    } else if (e.key === 'Escape') {
+      setOpen(false)
+    }
+  }
+
+  return (
+    <div ref={wrapRef} style={{ position: 'relative', ...style }}>
+      <div style={{ position: 'relative' }}>
+        {icon && (
+          <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)', pointerEvents: 'none', display: 'flex' }}>
+            {icon}
+          </span>
+        )}
+        <input
+          type="text"
+          value={value}
+          onChange={e => { onChange(e.target.value); setOpen(true) }}
+          onFocus={() => { if (value.length > 0 && suggestions.length > 0) setOpen(true) }}
+          onKeyDown={handleKey}
+          placeholder={placeholder}
+          style={{ ...inputStyle, ...(icon ? { paddingLeft: 34 } : {}) }}
+        />
+        {loading && (
+          <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', display: 'flex', animation: 'spin 0.8s linear infinite' }}>
+            <Loader2 size={14} color="var(--text-tertiary)" />
+          </span>
+        )}
+      </div>
+      {open && suggestions.length > 0 && (
+        <div style={styles.dropdown}>
+          {suggestions.map((s, i) => (
+            <button
+              key={s}
+              onMouseDown={() => { onSelect(s); setOpen(false) }}
+              style={{
+                ...styles.dropdownItem,
+                background: i === focusIdx ? 'var(--bg-elevated)' : 'transparent',
+              }}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
+      {open && value.length > 1 && suggestions.length === 0 && !loading && (
+        <div style={styles.dropdown}>
+          <div style={{ padding: '10px 12px', fontSize: 13, color: 'var(--text-tertiary)' }}>
+            No results — press Enter to add custom
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Shared input style used by AutocompleteInput (avoids circular ref with styles object)
+const inputStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '9px 12px',
+  fontSize: 14,
+  background: 'var(--bg-elevated)',
+  border: '1px solid var(--border)',
+  borderRadius: 'var(--radius-md)',
+  color: 'var(--text-primary)',
+  outline: 'none',
+  transition: 'border-color 150ms ease, box-shadow 150ms ease',
+  boxSizing: 'border-box',
+}
+
+// ---------------------------------------------------------------------------
+// Main Component
+// ---------------------------------------------------------------------------
 
 interface OnboardingWizardProps {
   onComplete: () => void
@@ -48,37 +237,178 @@ interface OnboardingWizardProps {
 }
 
 export function OnboardingWizard({ onComplete, defaultEmail, defaultName }: OnboardingWizardProps) {
+  // Step index
   const [step, setStep] = useState(0)
+  // Animation direction for transitions
+  const [direction, setDirection] = useState<'forward' | 'back'>('forward')
+  const [transitioning, setTransitioning] = useState(false)
+  const totalSteps = 5
+
+  // Step 0 — Welcome
+  const [botAnimating, setBotAnimating] = useState(true)
+
+  // Step 1 — Profile
   const [name, setName] = useState(defaultName ?? '')
   const [email, setEmail] = useState(defaultEmail ?? '')
+  const [emailTouched, setEmailTouched] = useState(false)
+  const [nameTouched, setNameTouched] = useState(false)
   const [location, setLocation] = useState('')
+  const [locationQuery, setLocationQuery] = useState('')
+  const [citySuggestions, setCitySuggestions] = useState<string[]>([])
+  const [cityLoading, setCityLoading] = useState(false)
   const [selectedRoles, setSelectedRoles] = useState<string[]>([])
+  const [roleQuery, setRoleQuery] = useState('')
   const [experience, setExperience] = useState('Mid')
+
+  // Step 2 — Preferences
   const [remoteOnly, setRemoteOnly] = useState(false)
   const [salaryMin, setSalaryMin] = useState(50)
-  const [timezone, setTimezone] = useState('')
+  const [timezone, setTimezone] = useState(() => {
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone } catch { return '' }
+  })
+  const [showTzPicker, setShowTzPicker] = useState(false)
+  const [tzQuery, setTzQuery] = useState('')
   const [excludedCompanies, setExcludedCompanies] = useState('')
-  const [importFile, setImportFile] = useState<File | null>(null)
-  const [botAnimating, setBotAnimating] = useState(true)
-  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const totalSteps = 5
+  // Step 3 — Gmail
+  const [gmailUrl, setGmailUrl] = useState('')
+  const [gmailTestStatus, setGmailTestStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
+  const [gmailTestMsg, setGmailTestMsg] = useState('')
+  const [showGmailHelp, setShowGmailHelp] = useState(false)
+
+  // Attempted to proceed (for validation display)
+  const [attemptedNext, setAttemptedNext] = useState(false)
+
+  // ---------------------------------------------------------------------------
+  // Effects
+  // ---------------------------------------------------------------------------
 
   useEffect(() => {
     const timer = setTimeout(() => setBotAnimating(false), 2000)
     return () => clearTimeout(timer)
   }, [])
 
-  const toggleRole = useCallback((role: string) => {
-    setSelectedRoles(prev =>
-      prev.includes(role) ? prev.filter(r => r !== role) : [...prev, role]
-    )
+  // City autocomplete via Teleport API
+  const debouncedLocationQuery = useDebounce(locationQuery, 300)
+
+  useEffect(() => {
+    if (debouncedLocationQuery.length < 2) { setCitySuggestions([]); return }
+    let cancelled = false
+    setCityLoading(true)
+    fetch(`https://api.teleport.org/api/cities/?search=${encodeURIComponent(debouncedLocationQuery)}&limit=6`)
+      .then(r => r.json())
+      .then(data => {
+        if (cancelled) return
+        const embedded = data?._embedded?.['city:search-results'] ?? []
+        const names: string[] = embedded.map((c: { matching_full_name: string }) => c.matching_full_name).filter(Boolean)
+        setCitySuggestions(names)
+      })
+      .catch(() => { if (!cancelled) setCitySuggestions([]) })
+      .finally(() => { if (!cancelled) setCityLoading(false) })
+    return () => { cancelled = true }
+  }, [debouncedLocationQuery])
+
+  // Role autocomplete — filter inline list
+  const roleSuggestions = useMemo(() => {
+    if (roleQuery.length < 1) return []
+    const q = roleQuery.toLowerCase()
+    return JOB_TITLES
+      .filter(t => t.toLowerCase().includes(q) && !selectedRoles.includes(t))
+      .slice(0, 8)
+  }, [roleQuery, selectedRoles])
+
+  // Timezone list filtered
+  const tzSuggestions = useMemo((): string[] => {
+    if (!showTzPicker) return []
+    let all: string[] = []
+    try { all = (Intl as unknown as { supportedValuesOf: (key: string) => string[] }).supportedValuesOf('timeZone') } catch { /* fallback empty */ }
+    if (tzQuery.length < 1) return all.slice(0, 15)
+    const q = tzQuery.toLowerCase()
+    return all.filter((tz: string) => tz.toLowerCase().includes(q)).slice(0, 15)
+  }, [tzQuery, showTzPicker])
+
+  // ---------------------------------------------------------------------------
+  // Validation
+  // ---------------------------------------------------------------------------
+
+  const nameError = nameTouched || attemptedNext ? (name.trim() ? '' : 'Name is required') : ''
+  const emailError = (() => {
+    if (!emailTouched && !attemptedNext) return ''
+    if (!email.trim()) return 'Email is required'
+    if (!isValidEmail(email)) return 'Invalid email format'
+    return ''
+  })()
+
+  const canProceed = () => {
+    if (step === 1) return name.trim().length > 0 && email.trim().length > 0 && isValidEmail(email)
+    return true
+  }
+
+  // ---------------------------------------------------------------------------
+  // Handlers
+  // ---------------------------------------------------------------------------
+
+  const animateStep = (newStep: number, dir: 'forward' | 'back') => {
+    setDirection(dir)
+    setTransitioning(true)
+    setTimeout(() => {
+      setStep(newStep)
+      setAttemptedNext(false)
+      setTimeout(() => setTransitioning(false), 20)
+    }, 180)
+  }
+
+  const nextStep = () => {
+    if (step === 1 && !canProceed()) {
+      setAttemptedNext(true)
+      setNameTouched(true)
+      setEmailTouched(true)
+      return
+    }
+    if (step < totalSteps - 1) animateStep(step + 1, 'forward')
+  }
+
+  const prevStep = () => {
+    if (step > 0) animateStep(step - 1, 'back')
+  }
+
+  const addRole = useCallback((role: string) => {
+    const trimmed = role.trim()
+    if (trimmed && !selectedRoles.includes(trimmed)) {
+      setSelectedRoles(prev => [...prev, trimmed])
+    }
+    setRoleQuery('')
+  }, [selectedRoles])
+
+  const removeRole = useCallback((role: string) => {
+    setSelectedRoles(prev => prev.filter(r => r !== role))
   }, [])
+
+  const testGmailConnection = useCallback(async () => {
+    if (!gmailUrl.trim()) return
+    setGmailTestStatus('loading')
+    setGmailTestMsg('')
+    try {
+      const res = await fetch(gmailUrl.trim())
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      if (data && (Array.isArray(data.rejections) || Array.isArray(data.events) || data.lastScan)) {
+        setGmailTestStatus('success')
+        setGmailTestMsg('Connected! Gmail sync is working.')
+        localStorage.setItem(GMAIL_URL_KEY, gmailUrl.trim())
+      } else {
+        setGmailTestStatus('error')
+        setGmailTestMsg('Response received but format unexpected. Check your script.')
+      }
+    } catch (err) {
+      setGmailTestStatus('error')
+      setGmailTestMsg(err instanceof Error ? err.message : 'Connection failed')
+    }
+  }, [gmailUrl])
 
   const handleComplete = useCallback(() => {
     localStorage.setItem(ONBOARDING_KEY, 'true')
 
-    // Store profile data
     const profile = {
       name,
       email,
@@ -92,42 +422,37 @@ export function OnboardingWizard({ onComplete, defaultEmail, defaultName }: Onbo
     }
     localStorage.setItem('tracker_v2_user_profile', JSON.stringify(profile))
 
-    // Fire confetti
+    if (gmailUrl.trim()) {
+      localStorage.setItem(GMAIL_URL_KEY, gmailUrl.trim())
+    }
+
+    // Confetti
     const end = Date.now() + 1200
     const fire = () => {
-      confetti({
-        particleCount: 3,
-        angle: 60,
-        spread: 55,
-        origin: { x: 0, y: 0.7 },
-        colors: ['#34d399', '#60a5fa', '#f59e0b'],
-      })
-      confetti({
-        particleCount: 3,
-        angle: 120,
-        spread: 55,
-        origin: { x: 1, y: 0.7 },
-        colors: ['#34d399', '#60a5fa', '#f59e0b'],
-      })
+      confetti({ particleCount: 3, angle: 60, spread: 55, origin: { x: 0, y: 0.7 }, colors: ['#34d399', '#60a5fa', '#f59e0b'] })
+      confetti({ particleCount: 3, angle: 120, spread: 55, origin: { x: 1, y: 0.7 }, colors: ['#34d399', '#60a5fa', '#f59e0b'] })
       if (Date.now() < end) requestAnimationFrame(fire)
     }
     fire()
-
     setTimeout(onComplete, 1500)
-  }, [name, email, location, selectedRoles, experience, remoteOnly, salaryMin, timezone, excludedCompanies, onComplete])
+  }, [name, email, location, selectedRoles, experience, remoteOnly, salaryMin, timezone, excludedCompanies, gmailUrl, onComplete])
 
-  const canProceed = () => {
-    if (step === 1) return name.trim().length > 0
-    return true
+  // ---------------------------------------------------------------------------
+  // Render helpers
+  // ---------------------------------------------------------------------------
+
+  const stepContentStyle: React.CSSProperties = {
+    ...styles.stepContent,
+    opacity: transitioning ? 0 : 1,
+    transform: transitioning
+      ? `translateX(${direction === 'forward' ? '24px' : '-24px'})`
+      : 'translateX(0)',
+    transition: 'opacity 180ms ease, transform 180ms ease',
   }
 
-  const nextStep = () => {
-    if (step < totalSteps - 1) setStep(s => s + 1)
-  }
-
-  const prevStep = () => {
-    if (step > 0) setStep(s => s - 1)
-  }
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
 
   return (
     <div style={styles.overlay}>
@@ -146,9 +471,11 @@ export function OnboardingWizard({ onComplete, defaultEmail, defaultName }: Onbo
           ))}
         </div>
 
-        {/* Step 0: Welcome */}
+        {/* ================================================================ */}
+        {/* Step 0: Welcome                                                  */}
+        {/* ================================================================ */}
         {step === 0 && (
-          <div style={styles.stepContent}>
+          <div style={stepContentStyle}>
             <div style={{
               ...styles.botIcon,
               animation: botAnimating ? 'pulse 1s ease-in-out infinite' : 'none',
@@ -166,45 +493,62 @@ export function OnboardingWizard({ onComplete, defaultEmail, defaultName }: Onbo
           </div>
         )}
 
-        {/* Step 1: Profile */}
+        {/* ================================================================ */}
+        {/* Step 1: Profile                                                  */}
+        {/* ================================================================ */}
         {step === 1 && (
-          <div style={styles.stepContent}>
+          <div style={stepContentStyle}>
             <h2 style={styles.stepTitle}>Your Profile</h2>
             <p style={styles.stepDesc}>Tell us a bit about yourself</p>
             <div style={styles.formGrid}>
+              {/* Name */}
               <div style={styles.field}>
-                <label style={styles.label}>Name</label>
+                <label style={styles.label}>Name <span style={{ color: 'var(--accent)' }}>*</span></label>
                 <input
                   type="text"
                   value={name}
                   onChange={e => setName(e.target.value)}
+                  onBlur={() => setNameTouched(true)}
                   placeholder="Your full name"
-                  style={styles.input}
+                  style={{ ...styles.input, ...(nameError ? styles.inputError : {}) }}
                 />
+                {nameError && <span style={styles.errorText}>{nameError}</span>}
               </div>
+
+              {/* Email */}
               <div style={styles.field}>
-                <label style={styles.label}>Email</label>
+                <label style={styles.label}>Email <span style={{ color: 'var(--accent)' }}>*</span></label>
                 <input
                   type="email"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
+                  onBlur={() => setEmailTouched(true)}
                   placeholder="your@email.com"
-                  style={styles.input}
+                  style={{ ...styles.input, ...(emailError ? styles.inputError : {}) }}
                 />
+                {emailError && <span style={styles.errorText}>{emailError}</span>}
               </div>
+
+              {/* Location (Autocomplete) */}
               <div style={styles.field}>
                 <label style={styles.label}>
-                  <MapPin size={14} style={{ verticalAlign: 'middle', marginRight: 4 }} />
-                  Current Location
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <MapPin size={14} />
+                    Current Location
+                  </span>
                 </label>
-                <input
-                  type="text"
-                  value={location}
-                  onChange={e => setLocation(e.target.value)}
-                  placeholder="Bangkok, Thailand"
-                  style={styles.input}
+                <AutocompleteInput
+                  value={locationQuery || location}
+                  onChange={v => { setLocationQuery(v); setLocation(v) }}
+                  placeholder="Start typing a city..."
+                  suggestions={citySuggestions}
+                  loading={cityLoading}
+                  onSelect={v => { setLocation(v); setLocationQuery('') }}
+                  icon={<Globe size={14} />}
                 />
               </div>
+
+              {/* Experience */}
               <div style={styles.field}>
                 <label style={styles.label}>Experience Level</label>
                 <div style={styles.chipRow}>
@@ -222,34 +566,51 @@ export function OnboardingWizard({ onComplete, defaultEmail, defaultName }: Onbo
                   ))}
                 </div>
               </div>
+
+              {/* Target Roles (Autocomplete + Chips) */}
               <div style={styles.field}>
                 <label style={styles.label}>Target Roles</label>
-                <div style={styles.chipRow}>
-                  {ROLE_OPTIONS.map(role => (
-                    <button
-                      key={role}
-                      onClick={() => toggleRole(role)}
-                      style={{
-                        ...styles.chip,
-                        ...(selectedRoles.includes(role) ? styles.chipActive : {}),
-                      }}
-                    >
-                      {selectedRoles.includes(role) && <Check size={12} />}
-                      {role}
-                    </button>
-                  ))}
-                </div>
+                <AutocompleteInput
+                  value={roleQuery}
+                  onChange={setRoleQuery}
+                  placeholder="Search or type a role..."
+                  suggestions={roleSuggestions}
+                  onSelect={addRole}
+                  icon={<Search size={14} />}
+                />
+                {selectedRoles.length > 0 && (
+                  <div style={{ ...styles.chipRow, marginTop: 8 }}>
+                    {selectedRoles.map(role => (
+                      <span key={role} style={{ ...styles.chip, ...styles.chipActive }}>
+                        {role}
+                        <button
+                          onClick={() => removeRole(role)}
+                          style={{ display: 'flex', alignItems: 'center', marginLeft: 2, color: 'inherit', padding: 0, background: 'none', border: 'none', cursor: 'pointer' }}
+                          aria-label={`Remove ${role}`}
+                        >
+                          <X size={12} />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <span style={styles.hint}>
+                  Search from 100+ titles or type your own and press Enter
+                </span>
               </div>
             </div>
           </div>
         )}
 
-        {/* Step 2: Search Preferences */}
+        {/* ================================================================ */}
+        {/* Step 2: Search Preferences                                       */}
+        {/* ================================================================ */}
         {step === 2 && (
-          <div style={styles.stepContent}>
+          <div style={stepContentStyle}>
             <h2 style={styles.stepTitle}>Search Preferences</h2>
             <p style={styles.stepDesc}>Configure how the bot searches for you</p>
             <div style={styles.formGrid}>
+              {/* Remote toggle */}
               <div style={styles.field}>
                 <label style={styles.label}>
                   <span>Remote Only</span>
@@ -267,6 +628,8 @@ export function OnboardingWizard({ onComplete, defaultEmail, defaultName }: Onbo
                   </button>
                 </label>
               </div>
+
+              {/* Salary */}
               <div style={styles.field}>
                 <label style={styles.label}>
                   Minimum Salary: {salaryMin}k EUR/year
@@ -285,16 +648,87 @@ export function OnboardingWizard({ onComplete, defaultEmail, defaultName }: Onbo
                   <span>200k</span>
                 </div>
               </div>
+
+              {/* Timezone */}
               <div style={styles.field}>
-                <label style={styles.label}>Timezone Preference</label>
-                <input
-                  type="text"
-                  value={timezone}
-                  onChange={e => setTimezone(e.target.value)}
-                  placeholder="GMT+7 (APAC)"
-                  style={styles.input}
-                />
+                <label style={styles.label}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <Globe size={14} />
+                    Timezone
+                  </span>
+                </label>
+                {!showTzPicker ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{
+                      ...styles.input,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flex: 1,
+                      cursor: 'default',
+                    }}>
+                      <span style={{ fontSize: 14, color: 'var(--text-primary)' }}>
+                        {timezone ? formatTzLabel(timezone) : 'Not detected'}
+                      </span>
+                      <span style={{ fontSize: 11, color: 'var(--accent)', padding: '2px 6px', borderRadius: 4, background: 'rgba(52,211,153,0.1)' }}>
+                        Auto-detected
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => setShowTzPicker(true)}
+                      style={{
+                        fontSize: 12,
+                        color: 'var(--text-tertiary)',
+                        padding: '6px 10px',
+                        borderRadius: 'var(--radius-md)',
+                        border: '1px solid var(--border)',
+                        background: 'var(--bg-elevated)',
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                        flexShrink: 0,
+                      }}
+                    >
+                      Change
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type="text"
+                      value={tzQuery}
+                      onChange={e => setTzQuery(e.target.value)}
+                      placeholder="Search timezone..."
+                      style={styles.input}
+                      autoFocus
+                    />
+                    {tzSuggestions.length > 0 && (
+                      <div style={{ ...styles.dropdown, maxHeight: 200 }}>
+                        {tzSuggestions.map((tz: string) => (
+                          <button
+                            key={tz}
+                            onMouseDown={() => {
+                              setTimezone(tz)
+                              setShowTzPicker(false)
+                              setTzQuery('')
+                            }}
+                            style={styles.dropdownItem}
+                          >
+                            {formatTzLabel(tz)}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <button
+                      onClick={() => { setShowTzPicker(false); setTzQuery('') }}
+                      style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)', display: 'flex', cursor: 'pointer', background: 'none', border: 'none' }}
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                )}
               </div>
+
+              {/* Excluded companies */}
               <div style={styles.field}>
                 <label style={styles.label}>Excluded Companies</label>
                 <input
@@ -310,65 +744,151 @@ export function OnboardingWizard({ onComplete, defaultEmail, defaultName }: Onbo
           </div>
         )}
 
-        {/* Step 3: Import */}
+        {/* ================================================================ */}
+        {/* Step 3: Gmail Sync                                               */}
+        {/* ================================================================ */}
         {step === 3 && (
-          <div style={styles.stepContent}>
-            <h2 style={styles.stepTitle}>Import Data</h2>
-            <p style={styles.stepDesc}>Bring your existing job applications</p>
-            <div
-              onClick={() => fileInputRef.current?.click()}
-              style={styles.dropZone}
-              onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = 'var(--accent)' }}
-              onDragLeave={e => { e.currentTarget.style.borderColor = 'var(--border)' }}
-              onDrop={e => {
-                e.preventDefault()
-                e.currentTarget.style.borderColor = 'var(--border)'
-                const file = e.dataTransfer.files[0]
-                if (file?.type === 'application/json') setImportFile(file)
-              }}
-            >
-              <Upload size={32} color="var(--text-tertiary)" />
-              {importFile ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ color: 'var(--accent)', fontSize: 14 }}>{importFile.name}</span>
-                  <button onClick={e => { e.stopPropagation(); setImportFile(null) }} style={{ color: 'var(--text-tertiary)' }}>
-                    <X size={14} />
-                  </button>
+          <div style={stepContentStyle}>
+            <div style={styles.gmailIcon}>
+              <Mail size={28} color="var(--accent)" />
+            </div>
+            <h2 style={styles.stepTitle}>Track your applications automatically</h2>
+            <p style={{ ...styles.stepDesc, maxWidth: 380 }}>
+              Connect your Gmail to automatically detect application confirmations, rejections, and interview invites.
+              We only read email subjects and senders — no email content is stored.
+            </p>
+
+            {/* Privacy badges */}
+            <div style={styles.privacyRow}>
+              <span style={styles.privacyBadge}>
+                <Lock size={12} /> Read-only access
+              </span>
+              <span style={styles.privacyBadge}>
+                <Shield size={12} /> No emails stored
+              </span>
+              <span style={styles.privacyBadge}>
+                <Unplug size={12} /> Disconnect anytime
+              </span>
+            </div>
+
+            {/* URL Input */}
+            <div style={{ width: '100%' }}>
+              <div style={styles.field}>
+                <label style={styles.label}>Apps Script URL</label>
+                <input
+                  type="url"
+                  value={gmailUrl}
+                  onChange={e => { setGmailUrl(e.target.value); setGmailTestStatus('idle') }}
+                  placeholder="Paste your Google Apps Script URL"
+                  style={styles.input}
+                />
+              </div>
+
+              {/* Test result */}
+              {gmailTestStatus !== 'idle' && (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  marginTop: 8,
+                  padding: '8px 12px',
+                  borderRadius: 'var(--radius-md)',
+                  fontSize: 13,
+                  background: gmailTestStatus === 'success'
+                    ? 'rgba(52, 211, 153, 0.1)'
+                    : gmailTestStatus === 'error'
+                      ? 'rgba(239, 68, 68, 0.1)'
+                      : 'var(--bg-elevated)',
+                  color: gmailTestStatus === 'success'
+                    ? '#34d399'
+                    : gmailTestStatus === 'error'
+                      ? '#ef4444'
+                      : 'var(--text-secondary)',
+                }}>
+                  {gmailTestStatus === 'loading' && <Loader2 size={14} style={{ animation: 'spin 0.8s linear infinite' }} />}
+                  {gmailTestStatus === 'success' && <Check size={14} />}
+                  {gmailTestStatus === 'error' && <AlertCircle size={14} />}
+                  <span>{gmailTestStatus === 'loading' ? 'Testing connection...' : gmailTestMsg}</span>
                 </div>
-              ) : (
-                <>
-                  <p style={{ fontSize: 14, color: 'var(--text-secondary)' }}>
-                    Drop your JSON file here or click to browse
-                  </p>
-                  <p style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
-                    Supports JSON format from common job trackers
-                  </p>
-                </>
+              )}
+
+              {/* Test button */}
+              <button
+                onClick={testGmailConnection}
+                disabled={!gmailUrl.trim() || gmailTestStatus === 'loading'}
+                style={{
+                  ...styles.outlineBtn,
+                  marginTop: 10,
+                  opacity: gmailUrl.trim() ? 1 : 0.4,
+                  pointerEvents: gmailUrl.trim() ? 'auto' : 'none',
+                }}
+              >
+                {gmailTestStatus === 'loading' ? (
+                  <><Loader2 size={14} style={{ animation: 'spin 0.8s linear infinite' }} /> Testing...</>
+                ) : (
+                  <><Zap size={14} /> Test Connection</>
+                )}
+              </button>
+
+              {/* Help accordion */}
+              <button
+                onClick={() => setShowGmailHelp(!showGmailHelp)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  fontSize: 12,
+                  color: 'var(--text-tertiary)',
+                  marginTop: 12,
+                  cursor: 'pointer',
+                  padding: 0,
+                  background: 'none',
+                  border: 'none',
+                }}
+              >
+                <HelpCircle size={14} />
+                How to set this up
+                <ChevronDown
+                  size={14}
+                  style={{
+                    transform: showGmailHelp ? 'rotate(180deg)' : 'rotate(0)',
+                    transition: 'transform 200ms ease',
+                  }}
+                />
+              </button>
+              {showGmailHelp && (
+                <div style={styles.helpBox}>
+                  <div style={styles.helpStep}>
+                    <span style={styles.helpNum}>1</span>
+                    <span>Open <strong>Google Apps Script</strong> at script.google.com</span>
+                  </div>
+                  <div style={styles.helpStep}>
+                    <span style={styles.helpNum}>2</span>
+                    <span>Copy our template script (handles Gmail label scanning)</span>
+                  </div>
+                  <div style={styles.helpStep}>
+                    <span style={styles.helpNum}>3</span>
+                    <span>
+                      Click <strong>Deploy &gt; New deployment</strong>, choose "Web app", then paste the URL here
+                    </span>
+                  </div>
+                </div>
               )}
             </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".json"
-              style={{ display: 'none' }}
-              onChange={e => {
-                const file = e.target.files?.[0]
-                if (file) setImportFile(file)
-              }}
-            />
-            <button
-              onClick={nextStep}
-              style={styles.ghostBtn}
-            >
-              Or start fresh
+
+            {/* Skip */}
+            <button onClick={nextStep} style={styles.ghostBtn}>
+              Skip for now
               <ArrowRight size={14} />
             </button>
           </div>
         )}
 
-        {/* Step 4: Ready */}
+        {/* ================================================================ */}
+        {/* Step 4: Ready                                                    */}
+        {/* ================================================================ */}
         {step === 4 && (
-          <div style={styles.stepContent}>
+          <div style={stepContentStyle}>
             <div style={styles.readyIcon}>
               <Sparkles size={32} color="var(--accent)" />
             </div>
@@ -416,7 +936,9 @@ export function OnboardingWizard({ onComplete, defaultEmail, defaultName }: Onbo
           </div>
         )}
 
-        {/* Navigation */}
+        {/* ================================================================ */}
+        {/* Navigation                                                       */}
+        {/* ================================================================ */}
         {step > 0 && step < 4 && (
           <div style={styles.navRow}>
             <button onClick={prevStep} style={styles.backBtn}>
@@ -425,11 +947,9 @@ export function OnboardingWizard({ onComplete, defaultEmail, defaultName }: Onbo
             </button>
             <button
               onClick={nextStep}
-              disabled={!canProceed()}
               style={{
                 ...styles.primaryBtn,
-                opacity: canProceed() ? 1 : 0.4,
-                pointerEvents: canProceed() ? 'auto' : 'none',
+                opacity: (step !== 1 || canProceed()) ? 1 : 0.4,
               }}
             >
               {step === 3 ? 'Continue' : 'Next'}
@@ -439,16 +959,24 @@ export function OnboardingWizard({ onComplete, defaultEmail, defaultName }: Onbo
         )}
       </div>
 
-      {/* Inline keyframe for pulse animation */}
+      {/* Inline keyframes */}
       <style>{`
         @keyframes pulse {
           0%, 100% { transform: scale(1); }
           50% { transform: scale(1.08); }
         }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
       `}</style>
     </div>
   )
 }
+
+// ---------------------------------------------------------------------------
+// Styles
+// ---------------------------------------------------------------------------
 
 const styles: Record<string, React.CSSProperties> = {
   overlay: {
@@ -547,14 +1075,16 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'space-between',
   },
   input: {
-    width: '100%',
-    padding: '9px 12px',
-    fontSize: 14,
-    background: 'var(--bg-elevated)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius-md)',
-    color: 'var(--text-primary)',
-    outline: 'none',
+    ...inputStyle,
+  },
+  inputError: {
+    borderColor: '#ef4444',
+    boxShadow: '0 0 0 2px rgba(239, 68, 68, 0.15)',
+  },
+  errorText: {
+    fontSize: 12,
+    color: '#ef4444',
+    marginTop: -2,
   },
   hint: {
     fontSize: 11,
@@ -589,7 +1119,7 @@ const styles: Record<string, React.CSSProperties> = {
     height: 20,
     borderRadius: 10,
     border: '1px solid var(--border)',
-    position: 'relative',
+    position: 'relative' as const,
     cursor: 'pointer',
     transition: 'background 200ms ease',
     flexShrink: 0,
@@ -600,7 +1130,7 @@ const styles: Record<string, React.CSSProperties> = {
     height: 14,
     borderRadius: '50%',
     background: '#fff',
-    position: 'absolute',
+    position: 'absolute' as const,
     top: 2,
     transition: 'transform 200ms ease',
   },
@@ -618,18 +1148,112 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 11,
     color: 'var(--text-tertiary)',
   },
-  dropZone: {
-    width: '100%',
-    padding: '32px 20px',
-    border: '2px dashed var(--border)',
-    borderRadius: 'var(--radius-lg)',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: 10,
-    cursor: 'pointer',
-    transition: 'border-color 200ms ease',
+  // Dropdown for autocomplete
+  dropdown: {
+    position: 'absolute' as const,
+    top: '100%',
+    left: 0,
+    right: 0,
     marginTop: 4,
+    background: 'var(--bg-surface)',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-md)',
+    maxHeight: 220,
+    overflowY: 'auto' as const,
+    zIndex: 100,
+    boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+  },
+  dropdownItem: {
+    display: 'block',
+    width: '100%',
+    textAlign: 'left' as const,
+    padding: '8px 12px',
+    fontSize: 13,
+    color: 'var(--text-primary)',
+    border: 'none',
+    cursor: 'pointer',
+    transition: 'background 100ms ease',
+    background: 'transparent',
+  },
+  // Gmail step
+  gmailIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: '50%',
+    background: 'rgba(52, 211, 153, 0.1)',
+    border: '2px solid rgba(52, 211, 153, 0.2)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  privacyRow: {
+    display: 'flex',
+    flexWrap: 'wrap' as const,
+    gap: 8,
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  privacyBadge: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 5,
+    fontSize: 11,
+    fontWeight: 500,
+    color: 'var(--text-tertiary)',
+    padding: '4px 10px',
+    borderRadius: 20,
+    background: 'rgba(255,255,255,0.04)',
+    border: '1px solid var(--border)',
+  },
+  outlineBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    width: '100%',
+    padding: '9px 16px',
+    fontSize: 13,
+    fontWeight: 500,
+    color: 'var(--accent)',
+    background: 'transparent',
+    border: '1px solid rgba(52, 211, 153, 0.3)',
+    borderRadius: 'var(--radius-md)',
+    cursor: 'pointer',
+    transition: 'all 150ms ease',
+  },
+  helpBox: {
+    width: '100%',
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 10,
+    padding: '12px 14px',
+    marginTop: 8,
+    background: 'var(--bg-elevated)',
+    borderRadius: 'var(--radius-md)',
+    border: '1px solid var(--border)',
+    textAlign: 'left' as const,
+    fontSize: 13,
+    color: 'var(--text-secondary)',
+    lineHeight: 1.5,
+  },
+  helpStep: {
+    display: 'flex',
+    gap: 10,
+    alignItems: 'flex-start',
+  },
+  helpNum: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 22,
+    height: 22,
+    borderRadius: '50%',
+    background: 'rgba(52, 211, 153, 0.12)',
+    color: 'var(--accent)',
+    fontSize: 12,
+    fontWeight: 600,
+    flexShrink: 0,
   },
   ghostBtn: {
     display: 'flex',
@@ -641,13 +1265,16 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 'var(--radius-md)',
     transition: 'color 150ms ease',
     marginTop: 8,
+    cursor: 'pointer',
+    background: 'none',
+    border: 'none',
   },
   featureList: {
     display: 'flex',
-    flexDirection: 'column',
+    flexDirection: 'column' as const,
     gap: 16,
     width: '100%',
-    textAlign: 'left',
+    textAlign: 'left' as const,
     marginTop: 8,
     marginBottom: 8,
   },
@@ -705,6 +1332,7 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     transition: 'opacity 150ms ease',
     marginTop: 8,
+    border: 'none',
   },
   backBtn: {
     display: 'flex',
@@ -716,6 +1344,8 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 'var(--radius-md)',
     cursor: 'pointer',
     transition: 'color 150ms ease',
+    background: 'none',
+    border: 'none',
   },
   navRow: {
     display: 'flex',

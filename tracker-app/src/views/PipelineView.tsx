@@ -619,7 +619,7 @@ function PipelineColumn({
             </button>
             <button
               onClick={handleSubmitAdd}
-              style={{ ...quickBtnStyle, color: config.color, borderColor: config.color }}
+              style={{ ...quickBtnStyle, color: config.color, border: `1px solid ${config.color}` }}
             >
               Add
             </button>
@@ -718,7 +718,9 @@ function PipelineCard({
         width: '100%',
         padding: '10px 12px',
         background: isDragging ? 'var(--bg-surface)' : 'var(--bg-elevated)',
-        border: '1px solid var(--border)',
+        borderTop: '1px solid var(--border)',
+        borderRight: '1px solid var(--border)',
+        borderBottom: '1px solid var(--border)',
         borderLeft: progress ? `3px solid ${progress.color}` : '1px solid var(--border)',
         borderRadius: 'var(--radius-md)',
         cursor: isDragging ? 'grabbing' : 'grab',
