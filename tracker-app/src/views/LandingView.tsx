@@ -578,9 +578,6 @@ export function LandingView({ onGetStarted, onSignIn }: LandingViewProps) {
       {/* ============================================================ */}
       <section style={s.finalCTA}>
         <div style={s.finalCTAGlow} />
-        {/* Ambient orbs for CTA section */}
-        <div style={s.ctaOrb1} aria-hidden="true" />
-        <div style={s.ctaOrb2} aria-hidden="true" />
         <div style={s.container}>
           <FinalCTAContent onGetStarted={onGetStarted} />
         </div>
@@ -1767,20 +1764,27 @@ function FinalCTAContent({ onGetStarted }: { onGetStarted: () => void }) {
         transition: 'opacity 0.7s ease, transform 0.7s ease',
       }}
     >
-      <h2 style={s.finalTitle}>Ready to apply smarter?</h2>
-      <p style={s.finalSub}>
+      <h2 style={{ ...s.finalTitle, color: '#09090b' }}>Ready to apply smarter?</h2>
+      <p style={{ ...s.finalSub, color: 'rgba(9, 9, 11, 0.7)' }}>
         Join hundreds of job seekers automating their search. Start free today.
       </p>
       <button
         ref={btnRef}
         onClick={onGetStarted}
         onMouseEnter={handleRipple}
-        style={{ ...s.btnPrimaryLarge, position: 'relative' as const, overflow: 'hidden' as const }}
+        style={{
+          ...s.btnPrimaryLarge,
+          position: 'relative' as const,
+          overflow: 'hidden' as const,
+          background: '#09090b',
+          color: '#34d399',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+        }}
       >
         Get started for free
         <ArrowRight size={18} />
       </button>
-      <p style={s.heroMicro}>
+      <p style={{ ...s.heroMicro, color: 'rgba(9, 9, 11, 0.5)' }}>
         No credit card required &middot; Free forever &middot; Cancel anytime
       </p>
     </div>
@@ -2984,7 +2988,7 @@ const s: Record<string, React.CSSProperties> = {
     zIndex: 1,
     padding: '100px 24px',
     overflow: 'hidden',
-    background: 'linear-gradient(180deg, #09090b 0%, #0a1a14 50%, #09090b 100%)',
+    background: '#34d399',
   },
   finalCTAGlow: {
     position: 'absolute',
@@ -2994,7 +2998,7 @@ const s: Record<string, React.CSSProperties> = {
     width: 600,
     height: 400,
     borderRadius: '50%',
-    background: 'radial-gradient(ellipse, rgba(52, 211, 153, 0.1) 0%, transparent 70%)',
+    background: 'radial-gradient(ellipse, rgba(255, 255, 255, 0.15) 0%, transparent 70%)',
     pointerEvents: 'none',
   },
   ctaOrb1: {
