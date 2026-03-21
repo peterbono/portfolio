@@ -7,7 +7,9 @@ import { AnalyticsView } from '../views/AnalyticsView'
 import { SettingsView } from '../views/SettingsView'
 import { CoachView } from '../views/CoachView'
 import { AutopilotView } from '../views/AutopilotView'
+import { InsightsView } from '../views/InsightsView'
 import { PricingViewWithResponsive } from '../views/PricingView'
+import { TrustIndicator } from '../components/TrustIndicator'
 
 const TIME_OPTIONS: { value: TimeRange; label: string }[] = [
   { value: 'all', label: 'All time' },
@@ -79,6 +81,7 @@ export function AppShell() {
         <ActiveViewContent view={activeView} />
       </main>
       {drawerOpen && selectedJobId && <DetailDrawer />}
+      <TrustIndicator />
     </div>
   )
 }
@@ -93,6 +96,8 @@ function ActiveViewContent({ view }: { view: string }) {
       return <AnalyticsView />
     case 'coach':
       return <CoachView />
+    case 'insights':
+      return <InsightsView />
     case 'autopilot':
       return <AutopilotView />
     case 'settings':
