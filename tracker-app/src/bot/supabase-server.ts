@@ -6,9 +6,8 @@ import type { ApplyResult } from './types'
 // Server-side Supabase client (service_role — full access, never expose to browser)
 // ---------------------------------------------------------------------------
 
-const SUPABASE_URL = 'https://vcevscplobshspnficnk.supabase.co'
-const SUPABASE_SERVICE_ROLE_KEY =
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZjZXZzY3Bsb2JzaHNwbmZpY25rIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDA5ODk3NSwiZXhwIjoyMDg5Njc0OTc1fQ.e7bwDGdAYcg4k-Co5n1nOl4Zzfvu5I2RbQxtmQrbXls'
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ''
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
 
 export const supabaseServer: SupabaseClient<Database> = createClient<Database>(
   SUPABASE_URL,
