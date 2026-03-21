@@ -578,17 +578,17 @@ export function LandingView({ onGetStarted, onSignIn }: LandingViewProps) {
       {/* ============================================================ */}
       <section style={s.finalCTA}>
         <div style={s.finalCTAGlow} />
-        {/* Large faded bot icon as background decoration */}
+        {/* Centered bot watermark behind text */}
         <div style={{
           position: 'absolute',
-          right: '8%',
+          left: '50%',
           top: '50%',
-          transform: 'translateY(-50%)',
-          opacity: 0.07,
+          transform: 'translate(-50%, -50%)',
+          opacity: 0.06,
           pointerEvents: 'none',
           zIndex: 0,
         }} aria-hidden="true">
-          <Bot size={320} strokeWidth={1} color="#09090b" />
+          <Bot size={400} strokeWidth={0.8} color="#09090b" />
         </div>
         <div style={s.container}>
           <FinalCTAContent onGetStarted={onGetStarted} />
