@@ -1779,65 +1779,67 @@ function FinalCTAContent({ onGetStarted }: { onGetStarted: () => void }) {
   )
 }
 
-/* ---------- Ambient Background ---------- */
-
 /* ------------------------------------------------------------------ */
-/*  Premium Atmospheric Canvas — 3-Layer System                        */
-/*  Layer 1: Animated mesh gradient (Stripe-style morphing blobs)      */
-/*  Layer 2: Atmospheric particles (barely visible, organic drift)     */
-/*  Layer 3: Cursor glow (Linear-style flashlight + subtle parallax)   */
+/*  Interactive Particle Canvas — Neural Network Constellation          */
 /* ------------------------------------------------------------------ */
 
-interface AtmosphericParticle {
+interface Particle {
   x: number
   y: number
   baseX: number
   baseY: number
+  vx: number
+  vy: number
   size: number
-  opacity: number
-  hasShadow: boolean
-  shadowBlur: number
-  phaseX: number
+  color: string
+  phase: number
   phaseY: number
-  speedX: number
-  speedY: number
-  driftAmplitudeX: number
-  driftAmplitudeY: number
+  speed: number
 }
 
-interface GradientBlob {
-  x: number
-  y: number
-  radius: number
-  color: string
-  phaseX: number
-  phaseY: number
-  speedX: number
-  speedY: number
-  amplitudeX: number
-  amplitudeY: number
-}
+const PARTICLE_COLORS = [
+  'rgba(52, 211, 153, 0.4)',
+  'rgba(6, 182, 212, 0.35)',
+  'rgba(139, 92, 246, 0.4)',
+  'rgba(52, 211, 153, 0.3)',
+  'rgba(6, 182, 212, 0.45)',
+  'rgba(139, 92, 246, 0.35)',
+]
+
+const PARTICLE_GLOW_COLORS = [
+  'rgba(52, 211, 153, 0.6)',
+  'rgba(6, 182, 212, 0.5)',
+  'rgba(139, 92, 246, 0.6)',
+  'rgba(52, 211, 153, 0.5)',
+  'rgba(6, 182, 212, 0.6)',
+  'rgba(139, 92, 246, 0.5)',
+]
+
+const PARTICLE_COUNT = 100
+const CONNECTION_DIST = 120
+const MOUSE_RADIUS = 200
+const MOUSE_ATTRACT_STRENGTH = 0.015
+const GRID_CELL_SIZE = 130
 
 function ParticleCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const mouseRef = useRef({ x: -9999, y: -9999 })
-  const particlesRef = useRef<AtmosphericParticle[]>([])
-  const blobsRef = useRef<GradientBlob[]>([])
+  const particlesRef = useRef<Particle[]>([])
   const animFrameRef = useRef(0)
+  const timeRef = useRef(0)
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
 
-    const ctx = canvas.getContext('2d', { alpha: false })
+    const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (prefersReduced) return
+
+    const ctx = canvas.getContext('2d', { alpha: true })
     if (!ctx) return
 
     const dpr = window.devicePixelRatio || 1
-    const isMobile = window.innerWidth < 768
 
-    const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-
-    /* --- sizing --- */
     const resize = () => {
       const w = window.innerWidth
       const h = window.innerHeight
@@ -1849,217 +1851,138 @@ function ParticleCanvas() {
     }
     resize()
 
-    /* --- Layer 1: init gradient blobs --- */
-    const initBlobs = () => {
-      const w = window.innerWidth
-      const h = window.innerHeight
-      blobsRef.current = [
-        {
-          x: w * 0.3, y: h * 0.3, radius: 350 + Math.random() * 150,
-          color: 'rgba(5, 150, 105, 0.15)',
-          phaseX: Math.random() * Math.PI * 2, phaseY: Math.random() * Math.PI * 2,
-          speedX: 0.00015 + Math.random() * 0.0001, speedY: 0.00012 + Math.random() * 0.0001,
-          amplitudeX: w * 0.15, amplitudeY: h * 0.12,
-        },
-        {
-          x: w * 0.7, y: h * 0.5, radius: 300 + Math.random() * 150,
-          color: 'rgba(8, 145, 178, 0.12)',
-          phaseX: Math.random() * Math.PI * 2, phaseY: Math.random() * Math.PI * 2,
-          speedX: 0.00012 + Math.random() * 0.0001, speedY: 0.00018 + Math.random() * 0.0001,
-          amplitudeX: w * 0.18, amplitudeY: h * 0.14,
-        },
-        {
-          x: w * 0.5, y: h * 0.7, radius: 320 + Math.random() * 130,
-          color: 'rgba(124, 58, 237, 0.10)',
-          phaseX: Math.random() * Math.PI * 2, phaseY: Math.random() * Math.PI * 2,
-          speedX: 0.00018 + Math.random() * 0.00008, speedY: 0.00013 + Math.random() * 0.00008,
-          amplitudeX: w * 0.14, amplitudeY: h * 0.16,
-        },
-        {
-          x: w * 0.2, y: h * 0.6, radius: 280 + Math.random() * 120,
-          color: 'rgba(245, 158, 11, 0.06)',
-          phaseX: Math.random() * Math.PI * 2, phaseY: Math.random() * Math.PI * 2,
-          speedX: 0.0001 + Math.random() * 0.00012, speedY: 0.00015 + Math.random() * 0.0001,
-          amplitudeX: w * 0.12, amplitudeY: h * 0.1,
-        },
-      ]
-    }
-    initBlobs()
-
-    /* --- Layer 2: init atmospheric particles --- */
     const initParticles = () => {
       const w = window.innerWidth
       const h = window.innerHeight
-      const count = isMobile ? 80 : 150
-      const particles: AtmosphericParticle[] = []
-      for (let i = 0; i < count; i++) {
+      const particles: Particle[] = []
+      for (let i = 0; i < PARTICLE_COUNT; i++) {
         const x = Math.random() * w
         const y = Math.random() * h
         particles.push({
-          x,
-          y,
-          baseX: x,
-          baseY: y,
-          size: 0.5 + Math.random() * 1.5,
-          opacity: 0.1 + Math.random() * 0.3,
-          hasShadow: Math.random() < 0.25,
-          shadowBlur: 2 + Math.random() * 3,
-          phaseX: Math.random() * Math.PI * 2,
+          x, y, baseX: x, baseY: y, vx: 0, vy: 0,
+          size: 1.5 + Math.random() * 2.5,
+          color: PARTICLE_COLORS[i % PARTICLE_COLORS.length],
+          phase: Math.random() * Math.PI * 2,
           phaseY: Math.random() * Math.PI * 2,
-          speedX: 0.0003 + Math.random() * 0.0005,
-          speedY: 0.0002 + Math.random() * 0.0004,
-          driftAmplitudeX: 40 + Math.random() * 80,
-          driftAmplitudeY: 30 + Math.random() * 60,
+          speed: 0.15 + Math.random() * 0.25,
         })
       }
       particlesRef.current = particles
     }
     initParticles()
 
-    /* --- mouse tracking (Layer 3) --- */
-    const onMouseMove = (e: MouseEvent) => {
-      mouseRef.current.x = e.clientX
-      mouseRef.current.y = e.clientY
-    }
-    const onMouseLeave = () => {
-      mouseRef.current.x = -9999
-      mouseRef.current.y = -9999
-    }
-    if (!isMobile) {
-      window.addEventListener('mousemove', onMouseMove, { passive: true })
-      document.addEventListener('mouseleave', onMouseLeave)
-    }
+    const onMouseMove = (e: MouseEvent) => { mouseRef.current.x = e.clientX; mouseRef.current.y = e.clientY }
+    const onMouseLeave = () => { mouseRef.current.x = -9999; mouseRef.current.y = -9999 }
+    window.addEventListener('mousemove', onMouseMove, { passive: true })
+    document.addEventListener('mouseleave', onMouseLeave)
 
-    /* --- resize handler --- */
     let resizeTimer = 0
     const onResize = () => {
       clearTimeout(resizeTimer)
       resizeTimer = window.setTimeout(() => {
         resize()
-        initBlobs()
-        initParticles()
-      }, 200)
+        const w = window.innerWidth; const h = window.innerHeight
+        particlesRef.current.forEach(p => { p.baseX = Math.random() * w; p.baseY = Math.random() * h })
+      }, 150)
     }
     window.addEventListener('resize', onResize, { passive: true })
 
-    /* --- prefers-reduced-motion: draw static blobs once and stop --- */
-    if (prefersReduced) {
-      const w = window.innerWidth
-      const h = window.innerHeight
-      ctx.fillStyle = '#09090b'
-      ctx.fillRect(0, 0, w, h)
-      ctx.globalCompositeOperation = 'screen'
-      for (const blob of blobsRef.current) {
-        const grad = ctx.createRadialGradient(blob.x, blob.y, 0, blob.x, blob.y, blob.radius)
-        grad.addColorStop(0, blob.color)
-        grad.addColorStop(1, 'rgba(0, 0, 0, 0)')
-        ctx.fillStyle = grad
-        ctx.fillRect(0, 0, w, h)
+    const buildGrid = (particles: Particle[], cellSize: number) => {
+      const grid: Map<string, number[]> = new Map()
+      for (let i = 0; i < particles.length; i++) {
+        const cx = Math.floor(particles[i].x / cellSize)
+        const cy = Math.floor(particles[i].y / cellSize)
+        const key = `${cx},${cy}`
+        const cell = grid.get(key)
+        if (cell) cell.push(i); else grid.set(key, [i])
       }
-      ctx.globalCompositeOperation = 'source-over'
-      return () => {
-        window.removeEventListener('resize', onResize)
-        clearTimeout(resizeTimer)
-      }
+      return grid
     }
 
-    /* --- main animation loop --- */
     const animate = (timestamp: number) => {
-      const w = window.innerWidth
-      const h = window.innerHeight
-      const mx = mouseRef.current.x
-      const my = mouseRef.current.y
-      const mouseActive = mx > -999 && !isMobile
+      const w = window.innerWidth; const h = window.innerHeight
+      timeRef.current = timestamp * 0.001
+      ctx.clearRect(0, 0, w, h)
 
-      /* --- clear with background color --- */
-      ctx.fillStyle = '#09090b'
-      ctx.fillRect(0, 0, w, h)
-
-      /* ======================================== */
-      /*  LAYER 1: Animated Mesh Gradient          */
-      /* ======================================== */
-      ctx.globalCompositeOperation = 'screen'
-      const blobs = blobsRef.current
-      for (let i = 0; i < blobs.length; i++) {
-        const blob = blobs[i]
-        const bx = blob.x + Math.sin(timestamp * blob.speedX + blob.phaseX) * blob.amplitudeX
-        const by = blob.y + Math.cos(timestamp * blob.speedY + blob.phaseY) * blob.amplitudeY
-        const grad = ctx.createRadialGradient(bx, by, 0, bx, by, blob.radius)
-        grad.addColorStop(0, blob.color)
-        grad.addColorStop(1, 'rgba(0, 0, 0, 0)')
-        ctx.fillStyle = grad
-        ctx.fillRect(0, 0, w, h)
-      }
-      ctx.globalCompositeOperation = 'source-over'
-
-      /* ======================================== */
-      /*  LAYER 2: Atmospheric Particles           */
-      /* ======================================== */
       const particles = particlesRef.current
+      const t = timeRef.current
+      const mx = mouseRef.current.x; const my = mouseRef.current.y
+      const mouseActive = mx > -999
+
       for (let i = 0; i < particles.length; i++) {
         const p = particles[i]
+        const noiseX = Math.sin(t * p.speed + p.phase) * 30 + Math.sin(t * p.speed * 0.7 + p.phase * 1.3) * 15
+        const noiseY = Math.sin(t * p.speed * 0.8 + p.phaseY) * 25 + Math.cos(t * p.speed * 0.5 + p.phaseY * 1.5) * 18
+        let targetX = p.baseX + noiseX
+        let targetY = p.baseY + noiseY
 
-        /* organic drift using layered sin/cos */
-        p.x = p.baseX
-          + Math.sin(timestamp * p.speedX + p.phaseX) * p.driftAmplitudeX
-          + Math.sin(timestamp * p.speedX * 0.7 + p.phaseY * 1.3) * p.driftAmplitudeX * 0.3
-        p.y = p.baseY
-          + Math.cos(timestamp * p.speedY + p.phaseY) * p.driftAmplitudeY
-          + Math.cos(timestamp * p.speedY * 0.6 + p.phaseX * 0.9) * p.driftAmplitudeY * 0.4
-
-        /* slow global drift so particles don't stay in one zone forever */
-        p.baseX += Math.sin(timestamp * 0.00003 + i) * 0.02
-        p.baseY += Math.cos(timestamp * 0.00002 + i * 0.7) * 0.015
-
-        /* wrap edges */
-        if (p.baseX < -60) p.baseX += w + 120
-        else if (p.baseX > w + 60) p.baseX -= w + 120
-        if (p.baseY < -60) p.baseY += h + 120
-        else if (p.baseY > h + 60) p.baseY -= h + 120
-
-        /* Layer 3 interaction: subtle parallax push away from cursor */
-        let drawX = p.x
-        let drawY = p.y
         if (mouseActive) {
-          const dx = p.x - mx
-          const dy = p.y - my
+          const dx = mx - p.x; const dy = my - p.y
           const dist = Math.sqrt(dx * dx + dy * dy)
-          if (dist < 150 && dist > 0) {
-            const pushStrength = (1 - dist / 150) * (5 + p.size * 3)
-            drawX += (dx / dist) * pushStrength
-            drawY += (dy / dist) * pushStrength
+          if (dist < MOUSE_RADIUS && dist > 1) {
+            const force = MOUSE_ATTRACT_STRENGTH * (1 - dist / MOUSE_RADIUS)
+            targetX = p.x + dx * force * 8; targetY = p.y + dy * force * 8
           }
         }
 
-        /* draw particle */
-        ctx.beginPath()
-        ctx.arc(drawX, drawY, p.size, 0, Math.PI * 2)
-        if (p.hasShadow) {
-          ctx.save()
-          ctx.shadowColor = `rgba(209, 250, 229, ${p.opacity * 0.5})`
-          ctx.shadowBlur = p.shadowBlur
-          ctx.fillStyle = `rgba(209, 250, 229, ${p.opacity})`
-          ctx.fill()
-          ctx.restore()
-        } else {
-          ctx.fillStyle = `rgba(255, 255, 255, ${p.opacity})`
-          ctx.fill()
+        p.vx += (targetX - p.x) * 0.04; p.vy += (targetY - p.y) * 0.04
+        p.vx *= 0.88; p.vy *= 0.88
+        p.x += p.vx; p.y += p.vy
+
+        if (p.x < -20) { p.x = w + 20; p.baseX = w + 20 }
+        else if (p.x > w + 20) { p.x = -20; p.baseX = -20 }
+        if (p.y < -20) { p.y = h + 20; p.baseY = h + 20 }
+        else if (p.y > h + 20) { p.y = -20; p.baseY = -20 }
+      }
+
+      const grid = buildGrid(particles, GRID_CELL_SIZE)
+      const connDist2 = CONNECTION_DIST * CONNECTION_DIST
+      const drawn = new Set<string>()
+
+      for (let i = 0; i < particles.length; i++) {
+        const a = particles[i]
+        const cx = Math.floor(a.x / GRID_CELL_SIZE); const cy = Math.floor(a.y / GRID_CELL_SIZE)
+        for (let dx = -1; dx <= 1; dx++) {
+          for (let dy = -1; dy <= 1; dy++) {
+            const cell = grid.get(`${cx + dx},${cy + dy}`)
+            if (!cell) continue
+            for (const j of cell) {
+              if (j <= i) continue
+              const pairKey = `${i},${j}`
+              if (drawn.has(pairKey)) continue
+              const b = particles[j]
+              const ddx = a.x - b.x; const ddy = a.y - b.y
+              const d2 = ddx * ddx + ddy * ddy
+              if (d2 > connDist2) continue
+              drawn.add(pairKey)
+              const dist = Math.sqrt(d2)
+              let alpha = (1 - dist / CONNECTION_DIST) * 0.06
+              if (mouseActive) {
+                const midX = (a.x + b.x) * 0.5; const midY = (a.y + b.y) * 0.5
+                const mDist = Math.sqrt((mx - midX) * (mx - midX) + (my - midY) * (my - midY))
+                if (mDist < MOUSE_RADIUS) alpha += (1 - mDist / MOUSE_RADIUS) * 0.12
+              }
+              ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y)
+              ctx.strokeStyle = `rgba(255, 255, 255, ${Math.min(alpha, 0.2)})`
+              ctx.lineWidth = 0.5; ctx.stroke()
+            }
+          }
         }
       }
 
-      /* ======================================== */
-      /*  LAYER 3: Cursor Glow (flashlight)        */
-      /* ======================================== */
       if (mouseActive) {
-        const glowRadius = 150
-        const grad = ctx.createRadialGradient(mx, my, 0, mx, my, glowRadius)
-        grad.addColorStop(0, 'rgba(52, 211, 153, 0.05)')
-        grad.addColorStop(0.5, 'rgba(52, 211, 153, 0.025)')
-        grad.addColorStop(1, 'rgba(52, 211, 153, 0)')
-        ctx.fillStyle = grad
-        ctx.beginPath()
-        ctx.arc(mx, my, glowRadius, 0, Math.PI * 2)
-        ctx.fill()
+        const gradient = ctx.createRadialGradient(mx, my, 0, mx, my, MOUSE_RADIUS)
+        gradient.addColorStop(0, 'rgba(52, 211, 153, 0.06)')
+        gradient.addColorStop(1, 'rgba(52, 211, 153, 0)')
+        ctx.fillStyle = gradient; ctx.beginPath(); ctx.arc(mx, my, MOUSE_RADIUS, 0, Math.PI * 2); ctx.fill()
+      }
+
+      for (let i = 0; i < particles.length; i++) {
+        const p = particles[i]
+        const glowColor = PARTICLE_GLOW_COLORS[i % PARTICLE_GLOW_COLORS.length]
+        ctx.save(); ctx.shadowColor = glowColor; ctx.shadowBlur = p.size * 3
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2)
+        ctx.fillStyle = p.color; ctx.fill(); ctx.restore()
       }
 
       animFrameRef.current = requestAnimationFrame(animate)
