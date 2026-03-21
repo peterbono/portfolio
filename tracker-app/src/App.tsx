@@ -8,6 +8,7 @@ import { AppShell } from './layout/AppShell'
 import { GmailSyncBridge } from './components/GmailSyncBridge'
 import { AuthWall } from './components/AuthWall'
 import { LandingView } from './views/LandingView'
+import { AuthView } from './views/AuthView'
 import { OnboardingWizard } from './components/OnboardingWizard'
 
 const ONBOARDING_KEY = 'tracker_v2_onboarding_done'
@@ -22,10 +23,15 @@ function AppContent() {
   const [onboardingDone, setOnboardingDone] = useState(
     () => localStorage.getItem(ONBOARDING_KEY) === 'true'
   )
+  const [showAuthModal, setShowAuthModal] = useState(false)
 
   const handleGetStarted = useCallback(() => {
     localStorage.setItem(VISITED_KEY, 'true')
     setHasVisited(true)
+  }, [])
+
+  const handleSignIn = useCallback(() => {
+    setShowAuthModal(true)
   }, [])
 
   const handleOnboardingComplete = useCallback(() => {
@@ -61,9 +67,12 @@ function AppContent() {
     )
   }
 
-  // First visit and not authenticated: show landing page
+  // First visit and not authenticated: show landing or auth
   if (!hasVisited && !session) {
-    return <LandingView onGetStarted={handleGetStarted} onSignIn={handleGetStarted} />
+    if (showAuthModal) {
+      return <AuthView onBack={() => setShowAuthModal(false)} />
+    }
+    return <LandingView onGetStarted={handleGetStarted} onSignIn={handleSignIn} />
   }
 
   // Authenticated but onboarding not done: show wizard over dashboard

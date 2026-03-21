@@ -27,15 +27,24 @@ const PLAN_BADGE_COLORS: Record<PlanTier, { bg: string; color: string }> = {
   premium: { bg: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b' },
 }
 
-const NAV_ITEMS: { view: ActiveView; label: string; icon: typeof LayoutList }[] = [
-  { view: 'table', label: 'Table', icon: LayoutList },
-  { view: 'pipeline', label: 'Pipeline', icon: Kanban },
-  { view: 'analytics', label: 'Analytics', icon: BarChart3 },
-  { view: 'coach', label: 'Coach', icon: Flame },
-  { view: 'insights', label: 'Insights', icon: Brain },
-  { view: 'autopilot', label: 'Autopilot', icon: Bot },
-  { view: 'settings', label: 'Settings', icon: Settings },
-  { view: 'pricing', label: 'Pricing', icon: CreditCard },
+type NavEntry =
+  | { kind: 'item'; view: ActiveView; label: string; icon: typeof LayoutList }
+  | { kind: 'separator'; label?: string }
+
+const NAV_ITEMS: NavEntry[] = [
+  // --- PRIMARY (Core Loop) ---
+  { kind: 'item', view: 'autopilot', label: 'Autopilot', icon: Bot },
+  { kind: 'item', view: 'pipeline', label: 'Pipeline', icon: Kanban },
+  { kind: 'item', view: 'table', label: 'Table', icon: LayoutList },
+  { kind: 'separator', label: 'Intelligence' },
+  // --- INTELLIGENCE ---
+  { kind: 'item', view: 'analytics', label: 'Analytics', icon: BarChart3 },
+  { kind: 'item', view: 'insights', label: 'Insights', icon: Brain },
+  { kind: 'item', view: 'coach', label: 'Coach', icon: Flame },
+  { kind: 'separator' },
+  // --- SYSTEM ---
+  { kind: 'item', view: 'settings', label: 'Settings', icon: Settings },
+  { kind: 'item', view: 'pricing', label: 'Pricing', icon: CreditCard },
 ]
 
 /** Views that require auth — show lock icon for anonymous users */
@@ -110,7 +119,20 @@ export function Sidebar() {
 
       {/* Nav */}
       <nav style={{ flex: 1, padding: '8px 0', display: 'flex', flexDirection: 'column', gap: 2 }}>
-        {NAV_ITEMS.map(({ view, label, icon: Icon }) => {
+        {NAV_ITEMS.map((entry, idx) => {
+          if (entry.kind === 'separator') {
+            return (
+              <div key={`sep-${idx}`} style={{ padding: sidebarCollapsed ? '6px 12px' : '6px 16px', margin: '2px 0' }}>
+                <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }} />
+                {entry.label && !sidebarCollapsed && (
+                  <span style={{ fontSize: 10, fontWeight: 500, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginTop: 8 }}>
+                    {entry.label}
+                  </span>
+                )}
+              </div>
+            )
+          }
+          const { view, label, icon: Icon } = entry
           const isActive = activeView === view
           const isAutopilotHighlight = view === 'autopilot' && !user
           const isLocked = !user && LOCKED_VIEWS.has(view)

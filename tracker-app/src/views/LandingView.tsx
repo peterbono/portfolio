@@ -170,6 +170,24 @@ function injectKeyframes() {
       0%, 100% { box-shadow: 0 0 4px rgba(52, 211, 153, 0.6); }
       50% { box-shadow: 0 0 8px rgba(52, 211, 153, 0.9), 0 0 16px rgba(52, 211, 153, 0.3); }
     }
+    @keyframes landing-ripple {
+      0% { transform: translate(-50%, -50%) scale(0); opacity: 0.45; }
+      100% { transform: translate(-50%, -50%) scale(2.5); opacity: 0; }
+    }
+    @keyframes landing-energyFlow {
+      0% { background-position: 0% 50%; }
+      100% { background-position: 200% 50%; }
+    }
+    @keyframes landing-spark {
+      0%, 100% { opacity: 0.15; transform: translateY(0) scale(0.8); }
+      25% { opacity: 1; transform: translateY(-2px) scale(1.2); }
+      50% { opacity: 0.3; transform: translateY(1px) scale(0.9); }
+      75% { opacity: 0.9; transform: translateY(-1px) scale(1.1); }
+    }
+    @keyframes landing-pulseEdge {
+      0%, 100% { opacity: 0.4; transform: translateX(-50%) scaleX(0.8); }
+      50% { opacity: 1; transform: translateX(-50%) scaleX(1.2); }
+    }
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after {
         animation-duration: 0.01ms !important;
@@ -534,6 +552,9 @@ export function LandingView({ onGetStarted, onSignIn }: LandingViewProps) {
       {/* ============================================================ */}
       <section style={s.finalCTA}>
         <div style={s.finalCTAGlow} />
+        {/* Ambient orbs for CTA section */}
+        <div style={s.ctaOrb1} aria-hidden="true" />
+        <div style={s.ctaOrb2} aria-hidden="true" />
         <div style={s.container}>
           <FinalCTAContent onGetStarted={onGetStarted} />
         </div>
@@ -1067,6 +1088,7 @@ function PromiseSection() {
   const { ref, isVisible } = useScrollReveal()
   const barRef = useRef<HTMLDivElement>(null)
   const [barAnimated, setBarAnimated] = useState(false)
+  const [countVal, setCountVal] = useState(0)
 
   useEffect(() => {
     if (isVisible && !barAnimated) {
@@ -1075,6 +1097,33 @@ function PromiseSection() {
       return () => clearTimeout(t)
     }
   }, [isVisible, barAnimated])
+
+  // Count-up animation for the percentage label
+  useEffect(() => {
+    if (!barAnimated) return
+    const duration = 1800 // ms, matches bar fill roughly
+    const steps = 60
+    const increment = 100 / steps
+    const interval = duration / steps
+    let current = 0
+    const timer = setInterval(() => {
+      current += increment
+      if (current >= 100) {
+        current = 100
+        clearInterval(timer)
+      }
+      setCountVal(Math.round(current))
+    }, interval)
+    return () => clearInterval(timer)
+  }, [barAnimated])
+
+  // Spark positions along the bar (percentages from left)
+  const sparks = [
+    { left: '15%', delay: '0s' },
+    { left: '38%', delay: '0.7s' },
+    { left: '55%', delay: '1.4s' },
+    { left: '72%', delay: '0.3s' },
+  ]
 
   return (
     <section id="our-promise" style={s.sectionAlt}>
@@ -1108,30 +1157,89 @@ function PromiseSection() {
             {/* The bar */}
             <div style={ps.barLabel}>
               <span style={ps.barLabelText}>Application coverage</span>
-              <span style={ps.barLabelValue}>100%</span>
+              <span style={{
+                ...ps.barLabelValue,
+                fontVariantNumeric: 'tabular-nums',
+              }}>{countVal}%</span>
             </div>
             <div ref={barRef} style={ps.barTrack}>
+              {/* Green auto-applied portion with energy flow */}
               <div
                 style={{
                   ...ps.barFillAuto,
                   width: barAnimated ? '78%' : '0%',
+                  background: barAnimated
+                    ? 'linear-gradient(90deg, #059669, #34d399, #6ee7b7, #34d399, #059669)'
+                    : 'linear-gradient(90deg, #34d399 0%, #2dd4a8 100%)',
+                  backgroundSize: '200% 100%',
+                  animation: barAnimated ? 'landing-energyFlow 2s linear infinite' : 'none',
+                  boxShadow: barAnimated
+                    ? '0 0 20px rgba(52, 211, 153, 0.4), 0 0 40px rgba(52, 211, 153, 0.15)'
+                    : 'none',
                 }}
               />
+              {/* Blue assisted portion with blue glow */}
               <div
                 style={{
                   ...ps.barFillAssisted,
                   width: barAnimated ? '22%' : '0%',
+                  background: barAnimated
+                    ? 'linear-gradient(90deg, #2563eb, #3b82f6, #60a5fa, #3b82f6, #2563eb)'
+                    : 'linear-gradient(90deg, #3b82f6 0%, #60a5fa 100%)',
+                  backgroundSize: '200% 100%',
+                  animation: barAnimated ? 'landing-energyFlow 2.5s linear infinite' : 'none',
+                  boxShadow: barAnimated
+                    ? '0 0 20px rgba(59, 130, 246, 0.35), 0 0 40px rgba(59, 130, 246, 0.12)'
+                    : 'none',
                 }}
               />
+              {/* Pulse edge at green/blue junction */}
+              {barAnimated && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: '78%',
+                    top: 0,
+                    width: 6,
+                    height: '100%',
+                    background: 'radial-gradient(ellipse at center, rgba(255,255,255,0.9) 0%, rgba(52,211,153,0.6) 40%, transparent 70%)',
+                    animation: 'landing-pulseEdge 1.5s ease-in-out infinite',
+                    zIndex: 3,
+                    pointerEvents: 'none',
+                    filter: 'blur(1px)',
+                  }}
+                />
+              )}
+              {/* Electric sparks */}
+              {barAnimated && sparks.map((sp, i) => (
+                <span
+                  key={i}
+                  style={{
+                    position: 'absolute',
+                    left: sp.left,
+                    top: '50%',
+                    width: 4,
+                    height: 4,
+                    borderRadius: '50%',
+                    background: '#fff',
+                    boxShadow: '0 0 6px 2px rgba(255,255,255,0.8), 0 0 12px 4px rgba(52,211,153,0.5)',
+                    animation: `landing-spark 1.2s ease-in-out infinite`,
+                    animationDelay: sp.delay,
+                    zIndex: 4,
+                    pointerEvents: 'none',
+                    transform: 'translate(-50%, -50%)',
+                  }}
+                />
+              ))}
             </div>
             <div data-landing-promise-legend="" style={ps.barLegend}>
               <div style={ps.legendItem}>
-                <div style={{ ...ps.legendDot, background: '#34d399' }} />
+                <div style={{ ...ps.legendDot, background: '#34d399', boxShadow: '0 0 6px rgba(52,211,153,0.5)' }} />
                 <span style={ps.legendLabel}>Bot auto-applied</span>
                 <span style={ps.legendPercent}>~80%</span>
               </div>
               <div style={ps.legendItem}>
-                <div style={{ ...ps.legendDot, background: '#60a5fa' }} />
+                <div style={{ ...ps.legendDot, background: '#60a5fa', boxShadow: '0 0 6px rgba(96,165,250,0.5)' }} />
                 <span style={ps.legendLabel}>You, assisted by bot</span>
                 <span style={ps.legendPercent}>~20%</span>
               </div>
@@ -1262,26 +1370,29 @@ const ps: Record<string, React.CSSProperties> = {
     letterSpacing: '0.01em',
   },
   barLabelValue: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: 700,
     color: '#fff',
     letterSpacing: '-0.02em',
+    textShadow: '0 0 20px rgba(52, 211, 153, 0.5)',
+    minWidth: 60,
+    textAlign: 'right' as const,
   },
   barTrack: {
     display: 'flex',
     width: '100%',
     height: 32,
-    borderRadius: 8,
+    borderRadius: 10,
     background: 'rgba(255,255,255,0.04)',
-    overflow: 'hidden',
+    overflow: 'visible',
     position: 'relative',
     zIndex: 1,
   },
   barFillAuto: {
     height: '100%',
     background: 'linear-gradient(90deg, #34d399 0%, #2dd4a8 100%)',
-    borderRadius: '8px 0 0 8px',
-    transition: 'width 1.2s cubic-bezier(0.23, 1, 0.32, 1)',
+    borderRadius: '10px 0 0 10px',
+    transition: 'width 1.4s cubic-bezier(0.16, 1, 0.3, 1)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1289,12 +1400,14 @@ const ps: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     color: '#000',
     letterSpacing: '0.02em',
+    position: 'relative',
+    zIndex: 1,
   },
   barFillAssisted: {
     height: '100%',
     background: 'linear-gradient(90deg, #3b82f6 0%, #60a5fa 100%)',
-    borderRadius: '0 8px 8px 0',
-    transition: 'width 1s cubic-bezier(0.23, 1, 0.32, 1) 0.3s',
+    borderRadius: '0 10px 10px 0',
+    transition: 'width 1.2s cubic-bezier(0.16, 1, 0.3, 1) 0.4s',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1302,6 +1415,8 @@ const ps: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     color: '#000',
     letterSpacing: '0.02em',
+    position: 'relative',
+    zIndex: 2,
   },
   barLegend: {
     display: 'flex',
@@ -1592,6 +1707,31 @@ function PricingCard({
 
 function FinalCTAContent({ onGetStarted }: { onGetStarted: () => void }) {
   const { ref, isVisible } = useScrollReveal()
+  const btnRef = useRef<HTMLButtonElement>(null)
+
+  const handleRipple = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+    const btn = btnRef.current
+    if (!btn) return
+    const rect = btn.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+    const size = Math.max(rect.width, rect.height) * 2
+
+    const ripple = document.createElement('span')
+    ripple.style.cssText = `
+      position: absolute;
+      left: ${x}px;
+      top: ${y}px;
+      width: ${size}px;
+      height: ${size}px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(255,255,255,0.25) 0%, rgba(52,211,153,0.18) 40%, transparent 70%);
+      pointer-events: none;
+      animation: landing-ripple 0.7s ease-out forwards;
+    `
+    btn.appendChild(ripple)
+    ripple.addEventListener('animationend', () => ripple.remove())
+  }, [])
 
   return (
     <div
@@ -1607,7 +1747,12 @@ function FinalCTAContent({ onGetStarted }: { onGetStarted: () => void }) {
       <p style={s.finalSub}>
         Join hundreds of job seekers automating their search. Start free today.
       </p>
-      <button onClick={onGetStarted} style={s.btnPrimaryLarge}>
+      <button
+        ref={btnRef}
+        onClick={onGetStarted}
+        onMouseEnter={handleRipple}
+        style={{ ...s.btnPrimaryLarge, position: 'relative' as const, overflow: 'hidden' as const }}
+      >
         Get started for free
         <ArrowRight size={18} />
       </button>
@@ -2633,6 +2778,34 @@ const s: Record<string, React.CSSProperties> = {
     height: 400,
     borderRadius: '50%',
     background: 'radial-gradient(ellipse, rgba(52, 211, 153, 0.1) 0%, transparent 70%)',
+    pointerEvents: 'none',
+  },
+  ctaOrb1: {
+    position: 'absolute',
+    top: '15%',
+    left: '10%',
+    width: 420,
+    height: 420,
+    borderRadius: '50%',
+    background: 'radial-gradient(circle, rgba(52, 211, 153, 0.16) 0%, transparent 70%)',
+    filter: 'blur(100px)',
+    animation: 'landing-cta-orb1 28s cubic-bezier(0.4, 0, 0.2, 1) infinite',
+    willChange: 'transform',
+    opacity: 0.85,
+    pointerEvents: 'none',
+  },
+  ctaOrb2: {
+    position: 'absolute',
+    bottom: '10%',
+    right: '8%',
+    width: 380,
+    height: 380,
+    borderRadius: '50%',
+    background: 'radial-gradient(circle, rgba(6, 182, 212, 0.14) 0%, transparent 70%)',
+    filter: 'blur(110px)',
+    animation: 'landing-cta-orb2 33s cubic-bezier(0.4, 0, 0.2, 1) infinite',
+    willChange: 'transform',
+    opacity: 0.8,
     pointerEvents: 'none',
   },
   finalCTAInner: {

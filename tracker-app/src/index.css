@@ -176,6 +176,21 @@ textarea:focus {
   50% { transform: translateY(8px); opacity: 1; }
 }
 
+/* Final CTA section orbs */
+@keyframes landing-cta-orb1 {
+  0%   { transform: translate(0, 0) scale(1); }
+  30%  { transform: translate(25px, -20px) scale(1.1); }
+  60%  { transform: translate(-15px, 15px) scale(0.93); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+@keyframes landing-cta-orb2 {
+  0%   { transform: translate(0, 0) scale(1); }
+  25%  { transform: translate(-30px, 20px) scale(1.05); }
+  50%  { transform: translate(20px, -25px) scale(0.95); }
+  75%  { transform: translate(-10px, -15px) scale(1.08); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+
 /* CTA glow pulse */
 @keyframes landing-cta-glow {
   0%, 100% { box-shadow: 0 0 20px rgba(52, 211, 153, 0.15), 0 0 60px rgba(52, 211, 153, 0.05); }

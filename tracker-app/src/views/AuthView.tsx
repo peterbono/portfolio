@@ -1,10 +1,14 @@
 import { useState, type FormEvent } from 'react'
-import { Bot, Mail, Lock, User, ArrowRight } from 'lucide-react'
+import { Bot, Mail, Lock, User, ArrowRight, ArrowLeft } from 'lucide-react'
 import { useSupabase } from '../context/SupabaseContext'
 
 type AuthTab = 'signin' | 'signup'
 
-export function AuthView() {
+interface AuthViewProps {
+  onBack?: () => void
+}
+
+export function AuthView({ onBack }: AuthViewProps = {}) {
   const { supabase } = useSupabase()
   const [activeTab, setActiveTab] = useState<AuthTab>('signin')
   const [email, setEmail] = useState('')
@@ -106,6 +110,21 @@ export function AuthView() {
   return (
     <div style={styles.wrapper}>
       <div style={styles.card}>
+        {/* Back button */}
+        {onBack && (
+          <button
+            onClick={onBack}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              background: 'none', border: 'none', color: 'var(--text-secondary)',
+              cursor: 'pointer', fontSize: 13, padding: '0 0 12px',
+            }}
+            onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-primary)')}
+            onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-secondary)')}
+          >
+            <ArrowLeft size={14} /> Back
+          </button>
+        )}
         {/* Logo / Header */}
         <div style={styles.header}>
           <div style={styles.logoRow}>
