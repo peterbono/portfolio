@@ -1860,11 +1860,11 @@ const s: Record<string, React.CSSProperties> = {
   gridPattern: {
     position: 'absolute',
     inset: 0,
-    backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.08) 1px, transparent 1px)',
+    backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.12) 1px, transparent 1px)',
     backgroundSize: '28px 28px',
-    maskImage: 'radial-gradient(ellipse 90% 80% at 50% 40%, black 15%, transparent 75%)',
-    WebkitMaskImage: 'radial-gradient(ellipse 90% 80% at 50% 40%, black 15%, transparent 75%)',
-    opacity: 0.5,
+    maskImage: 'linear-gradient(to bottom, black 0%, black 70%, transparent 100%)',
+    WebkitMaskImage: 'linear-gradient(to bottom, black 0%, black 70%, transparent 100%)',
+    opacity: 0.55,
     animation: 'landing-grid-fade 2s ease both',
   } as React.CSSProperties,
 
