@@ -174,19 +174,45 @@ function injectKeyframes() {
       0% { transform: translate(-50%, -50%) scale(0); opacity: 0.45; }
       100% { transform: translate(-50%, -50%) scale(2.5); opacity: 0; }
     }
-    @keyframes landing-energyFlow {
+    @keyframes landing-liquidFlow {
       0% { background-position: 0% 50%; }
-      100% { background-position: 200% 50%; }
+      100% { background-position: 300% 50%; }
     }
-    @keyframes landing-spark {
-      0%, 100% { opacity: 0.15; transform: translateY(0) scale(0.8); }
-      25% { opacity: 1; transform: translateY(-2px) scale(1.2); }
-      50% { opacity: 0.3; transform: translateY(1px) scale(0.9); }
-      75% { opacity: 0.9; transform: translateY(-1px) scale(1.1); }
+    @keyframes landing-glowPulse {
+      0%, 100% {
+        box-shadow:
+          inset 0 0 15px rgba(52, 211, 153, 0.4),
+          0 0 25px rgba(52, 211, 153, 0.25),
+          0 0 50px rgba(52, 211, 153, 0.1);
+      }
+      50% {
+        box-shadow:
+          inset 0 0 20px rgba(52, 211, 153, 0.6),
+          0 0 35px rgba(52, 211, 153, 0.35),
+          0 0 70px rgba(52, 211, 153, 0.18);
+      }
     }
-    @keyframes landing-pulseEdge {
-      0%, 100% { opacity: 0.4; transform: translateX(-50%) scaleX(0.8); }
-      50% { opacity: 1; transform: translateX(-50%) scaleX(1.2); }
+    @keyframes landing-glowPulseBlue {
+      0%, 100% {
+        box-shadow:
+          inset 0 0 15px rgba(59, 130, 246, 0.4),
+          0 0 25px rgba(59, 130, 246, 0.25),
+          0 0 50px rgba(59, 130, 246, 0.1);
+      }
+      50% {
+        box-shadow:
+          inset 0 0 20px rgba(59, 130, 246, 0.6),
+          0 0 35px rgba(59, 130, 246, 0.35),
+          0 0 70px rgba(59, 130, 246, 0.18);
+      }
+    }
+    @keyframes landing-barBreathe {
+      0%, 100% { transform: scaleY(1); }
+      50% { transform: scaleY(1.02); }
+    }
+    @keyframes landing-junctionThrob {
+      0%, 100% { opacity: 0.5; transform: translateX(-50%) scaleX(0.7); }
+      50% { opacity: 1; transform: translateX(-50%) scaleX(1.5); }
     }
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after {
@@ -1117,14 +1143,6 @@ function PromiseSection() {
     return () => clearInterval(timer)
   }, [barAnimated])
 
-  // Spark positions along the bar (percentages from left)
-  const sparks = [
-    { left: '15%', delay: '0s' },
-    { left: '38%', delay: '0.7s' },
-    { left: '55%', delay: '1.4s' },
-    { left: '72%', delay: '0.3s' },
-  ]
-
   return (
     <section id="our-promise" style={s.sectionAlt}>
       <div style={s.container}>
@@ -1160,77 +1178,88 @@ function PromiseSection() {
               <span style={{
                 ...ps.barLabelValue,
                 fontVariantNumeric: 'tabular-nums',
+                textShadow: barAnimated
+                  ? '0 0 20px rgba(52, 211, 153, 0.6), 0 0 40px rgba(52, 211, 153, 0.3)'
+                  : '0 0 20px rgba(52, 211, 153, 0.5)',
               }}>{countVal}%</span>
             </div>
-            <div ref={barRef} style={ps.barTrack}>
-              {/* Green auto-applied portion with energy flow */}
-              <div
-                style={{
-                  ...ps.barFillAuto,
-                  width: barAnimated ? '78%' : '0%',
-                  background: barAnimated
-                    ? 'linear-gradient(90deg, #059669, #34d399, #6ee7b7, #34d399, #059669)'
-                    : 'linear-gradient(90deg, #34d399 0%, #2dd4a8 100%)',
-                  backgroundSize: '200% 100%',
-                  animation: barAnimated ? 'landing-energyFlow 2s linear infinite' : 'none',
-                  boxShadow: barAnimated
-                    ? '0 0 20px rgba(52, 211, 153, 0.4), 0 0 40px rgba(52, 211, 153, 0.15)'
-                    : 'none',
-                }}
-              />
-              {/* Blue assisted portion with blue glow */}
-              <div
-                style={{
-                  ...ps.barFillAssisted,
-                  width: barAnimated ? '22%' : '0%',
-                  background: barAnimated
-                    ? 'linear-gradient(90deg, #2563eb, #3b82f6, #60a5fa, #3b82f6, #2563eb)'
-                    : 'linear-gradient(90deg, #3b82f6 0%, #60a5fa 100%)',
-                  backgroundSize: '200% 100%',
-                  animation: barAnimated ? 'landing-energyFlow 2.5s linear infinite' : 'none',
-                  boxShadow: barAnimated
-                    ? '0 0 20px rgba(59, 130, 246, 0.35), 0 0 40px rgba(59, 130, 246, 0.12)'
-                    : 'none',
-                }}
-              />
-              {/* Pulse edge at green/blue junction */}
-              {barAnimated && (
+            {/* Breathing wrapper */}
+            <div style={{
+              animation: barAnimated ? 'landing-barBreathe 2.5s ease-in-out infinite' : 'none',
+              transformOrigin: 'center center',
+            }}>
+              <div ref={barRef} style={ps.barTrack}>
+                {/* Green auto-applied portion -- liquid glow */}
                 <div
                   style={{
+                    ...ps.barFillAuto,
+                    width: barAnimated ? '78%' : '0%',
+                    background: barAnimated
+                      ? 'linear-gradient(90deg, #059669, #34d399, #6ee7b7, #34d399, #059669)'
+                      : '#34d399',
+                    backgroundSize: '300% 100%',
+                    animation: barAnimated
+                      ? 'landing-liquidFlow 3s linear infinite, landing-glowPulse 2.5s ease-in-out infinite'
+                      : 'none',
+                  }}
+                >
+                  {/* Glass highlight overlay */}
+                  <div style={{
                     position: 'absolute',
-                    left: '78%',
                     top: 0,
-                    width: 6,
-                    height: '100%',
-                    background: 'radial-gradient(ellipse at center, rgba(255,255,255,0.9) 0%, rgba(52,211,153,0.6) 40%, transparent 70%)',
-                    animation: 'landing-pulseEdge 1.5s ease-in-out infinite',
-                    zIndex: 3,
+                    left: 0,
+                    right: 0,
+                    height: '45%',
+                    borderRadius: '12px 12px 0 0',
+                    background: 'linear-gradient(180deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.05) 60%, transparent 100%)',
                     pointerEvents: 'none',
-                    filter: 'blur(1px)',
-                  }}
-                />
-              )}
-              {/* Electric sparks */}
-              {barAnimated && sparks.map((sp, i) => (
-                <span
-                  key={i}
+                  }} />
+                </div>
+                {/* Blue assisted portion -- liquid glow */}
+                <div
                   style={{
-                    position: 'absolute',
-                    left: sp.left,
-                    top: '50%',
-                    width: 4,
-                    height: 4,
-                    borderRadius: '50%',
-                    background: '#fff',
-                    boxShadow: '0 0 6px 2px rgba(255,255,255,0.8), 0 0 12px 4px rgba(52,211,153,0.5)',
-                    animation: `landing-spark 1.2s ease-in-out infinite`,
-                    animationDelay: sp.delay,
-                    zIndex: 4,
-                    pointerEvents: 'none',
-                    transform: 'translate(-50%, -50%)',
+                    ...ps.barFillAssisted,
+                    width: barAnimated ? '22%' : '0%',
+                    background: barAnimated
+                      ? 'linear-gradient(90deg, #2563eb, #3b82f6, #60a5fa, #3b82f6, #2563eb)'
+                      : '#3b82f6',
+                    backgroundSize: '300% 100%',
+                    animation: barAnimated
+                      ? 'landing-liquidFlow 3.5s linear infinite, landing-glowPulseBlue 2.8s ease-in-out infinite'
+                      : 'none',
                   }}
-                />
-              ))}
+                >
+                  {/* Glass highlight overlay */}
+                  <div style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    height: '45%',
+                    borderRadius: '0 12px 0 0',
+                    background: 'linear-gradient(180deg, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0.04) 60%, transparent 100%)',
+                    pointerEvents: 'none',
+                  }} />
+                </div>
+                {/* Junction pulse at green/blue boundary */}
+                {barAnimated && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: '78%',
+                      top: '-2px',
+                      width: 8,
+                      height: 'calc(100% + 4px)',
+                      background: 'radial-gradient(ellipse at center, rgba(255,255,255,0.95) 0%, rgba(110,231,183,0.6) 35%, rgba(59,130,246,0.4) 65%, transparent 100%)',
+                      animation: 'landing-junctionThrob 1.8s ease-in-out infinite',
+                      zIndex: 3,
+                      pointerEvents: 'none',
+                      filter: 'blur(1.5px)',
+                      borderRadius: 4,
+                    }}
+                  />
+                )}
+              </div>
             </div>
             <div data-landing-promise-legend="" style={ps.barLegend}>
               <div style={ps.legendItem}>
@@ -1381,42 +1410,29 @@ const ps: Record<string, React.CSSProperties> = {
   barTrack: {
     display: 'flex',
     width: '100%',
-    height: 32,
-    borderRadius: 10,
-    background: 'rgba(255,255,255,0.04)',
+    height: 22,
+    borderRadius: 12,
+    background: 'rgba(255,255,255,0.06)',
     overflow: 'visible',
     position: 'relative',
     zIndex: 1,
+    border: '1px solid rgba(255,255,255,0.04)',
   },
   barFillAuto: {
     height: '100%',
-    background: 'linear-gradient(90deg, #34d399 0%, #2dd4a8 100%)',
-    borderRadius: '10px 0 0 10px',
-    transition: 'width 1.4s cubic-bezier(0.16, 1, 0.3, 1)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: 11,
-    fontWeight: 700,
-    color: '#000',
-    letterSpacing: '0.02em',
+    borderRadius: '12px 0 0 12px',
+    transition: 'width 1.6s cubic-bezier(0.22, 1, 0.36, 1)',
     position: 'relative',
     zIndex: 1,
+    overflow: 'hidden',
   },
   barFillAssisted: {
     height: '100%',
-    background: 'linear-gradient(90deg, #3b82f6 0%, #60a5fa 100%)',
-    borderRadius: '0 10px 10px 0',
-    transition: 'width 1.2s cubic-bezier(0.16, 1, 0.3, 1) 0.4s',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: 11,
-    fontWeight: 700,
-    color: '#000',
-    letterSpacing: '0.02em',
+    borderRadius: '0 12px 12px 0',
+    transition: 'width 1.4s cubic-bezier(0.22, 1, 0.36, 1) 0.4s',
     position: 'relative',
     zIndex: 2,
+    overflow: 'hidden',
   },
   barLegend: {
     display: 'flex',
