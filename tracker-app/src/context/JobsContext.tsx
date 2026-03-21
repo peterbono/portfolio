@@ -196,7 +196,11 @@ export function JobsProvider({ children }: { children: ReactNode }) {
 
   const markRejected = useCallback((rejections: { company: string; date?: string }[]) => {
     const rejMap = new Map<string, string | undefined>()
-    for (const r of rejections) rejMap.set(r.company.toLowerCase(), r.date)
+    for (const r of rejections) {
+      // Normalize date to YYYY-MM-DD (strip ISO timestamp)
+      const d = r.date ? r.date.split('T')[0] : undefined
+      rejMap.set(r.company.toLowerCase(), d)
+    }
 
     function addRejectionEvent(existing: Partial<Job>, rejDate: string): Partial<Job> {
       const events = existing.events ?? []

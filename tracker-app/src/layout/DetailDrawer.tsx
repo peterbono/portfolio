@@ -164,11 +164,13 @@ export function DetailDrawer() {
             <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
               Applied {job.date}
             </span>
-            {job.status === 'rejected' && job.lastContactDate && job.lastContactDate !== job.date && (() => {
-              const days = Math.floor((new Date(job.lastContactDate).getTime() - new Date(job.date).getTime()) / 86400000)
+            {job.status === 'rejected' && job.lastContactDate && (() => {
+              const rejDate = job.lastContactDate.split('T')[0]
+              if (rejDate === job.date) return null
+              const days = Math.floor((new Date(rejDate).getTime() - new Date(job.date).getTime()) / 86400000)
               return (
                 <span style={{ fontSize: 12, color: '#a855f7' }}>
-                  Rejected {job.lastContactDate} ({days}d)
+                  Rejected {rejDate} ({days}d)
                 </span>
               )
             })()}

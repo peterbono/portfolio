@@ -342,7 +342,10 @@ const inputStyle: React.CSSProperties = {
 
 function formatDate(dateStr: string): string {
   try {
-    const d = new Date(dateStr + 'T00:00:00')
+    // Normalize: strip time portion if full ISO timestamp
+    const normalized = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr
+    const d = new Date(normalized + 'T00:00:00')
+    if (isNaN(d.getTime())) return dateStr
     return d.toLocaleDateString('en-GB', {
       day: 'numeric',
       month: 'short',
