@@ -1,4 +1,3 @@
-import { useCallback } from 'react'
 import { Sidebar } from './Sidebar'
 import { DetailDrawer } from './DetailDrawer'
 import { useUI, type TimeRange, type AreaFilter, type WorkMode } from '../context/UIContext'
@@ -75,13 +74,8 @@ function GlobalFilters() {
 const VIEWS_WITH_FILTERS = new Set(['table', 'pipeline', 'analytics'])
 
 export function AppShell() {
-  const { activeView, drawerOpen, selectedJobId, setActiveView } = useUI()
-  const { isDemo, clearDemoData, manualJobCount } = useJobs()
-
-  const handleAddJobFromDemo = useCallback(() => {
-    setActiveView('table')
-    // The table view has its own "add job" UI
-  }, [setActiveView])
+  const { activeView, drawerOpen, selectedJobId } = useUI()
+  const { isDemo, clearDemoData } = useJobs()
 
   return (
     <div style={styles.container}>
@@ -89,7 +83,7 @@ export function AppShell() {
       <main style={styles.main}>
         {isDemo && (
           <div style={{ padding: '12px 20px 0' }}>
-            <DemoBanner onAddJob={handleAddJobFromDemo} onClearDemo={clearDemoData} />
+            <DemoBanner onClearDemo={clearDemoData} />
           </div>
         )}
         {VIEWS_WITH_FILTERS.has(activeView) && <GlobalFilters />}
@@ -97,7 +91,7 @@ export function AppShell() {
       </main>
       {drawerOpen && selectedJobId && <DetailDrawer />}
       <TrustIndicator />
-      <SunkCostNudge manualJobCount={manualJobCount} />
+      <SunkCostNudge />
     </div>
   )
 }

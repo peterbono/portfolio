@@ -106,6 +106,7 @@ export function Sidebar() {
       <nav style={{ flex: 1, padding: '8px 0', display: 'flex', flexDirection: 'column', gap: 2 }}>
         {NAV_ITEMS.map(({ view, label, icon: Icon }) => {
           const isActive = activeView === view
+          const isAutopilotHighlight = view === 'autopilot' && !user
           return (
             <button
               key={view}
@@ -118,13 +119,20 @@ export function Sidebar() {
                 padding: sidebarCollapsed ? '10px 0' : '10px 16px',
                 justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
                 borderLeft: isActive ? '2px solid var(--accent)' : '2px solid transparent',
-                background: isActive ? 'rgba(52, 211, 153, 0.08)' : 'transparent',
-                color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
+                background: isActive
+                  ? 'rgba(52, 211, 153, 0.08)'
+                  : isAutopilotHighlight && !isActive
+                    ? 'rgba(52, 211, 153, 0.04)'
+                    : 'transparent',
+                color: isActive || isAutopilotHighlight
+                  ? 'var(--text-primary)'
+                  : 'var(--text-secondary)',
                 fontSize: 13,
-                fontWeight: isActive ? 500 : 400,
+                fontWeight: isActive || isAutopilotHighlight ? 500 : 400,
                 transition: 'all var(--transition-fast)',
                 width: '100%',
                 cursor: 'pointer',
+                position: 'relative',
               }}
               onMouseEnter={(e) => {
                 if (!isActive) {
@@ -134,13 +142,41 @@ export function Sidebar() {
               }}
               onMouseLeave={(e) => {
                 if (!isActive) {
-                  e.currentTarget.style.background = 'transparent'
-                  e.currentTarget.style.color = 'var(--text-secondary)'
+                  e.currentTarget.style.background = isAutopilotHighlight
+                    ? 'rgba(52, 211, 153, 0.04)'
+                    : 'transparent'
+                  e.currentTarget.style.color = isAutopilotHighlight
+                    ? 'var(--text-primary)'
+                    : 'var(--text-secondary)'
                 }
               }}
             >
-              <Icon size={18} />
-              {!sidebarCollapsed && <span style={{ whiteSpace: 'nowrap' }}>{label}</span>}
+              <Icon
+                size={18}
+                style={isAutopilotHighlight && !isActive ? { color: 'var(--accent)' } : undefined}
+              />
+              {!sidebarCollapsed && (
+                <span style={{ whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {label}
+                  {isAutopilotHighlight && (
+                    <span
+                      style={{
+                        fontSize: 9,
+                        fontWeight: 700,
+                        padding: '1px 5px',
+                        borderRadius: 4,
+                        background: 'rgba(52, 211, 153, 0.15)',
+                        color: '#34d399',
+                        letterSpacing: '0.04em',
+                        textTransform: 'uppercase',
+                        animation: 'subtlePulse 2s ease-in-out infinite',
+                      }}
+                    >
+                      NEW
+                    </span>
+                  )}
+                </span>
+              )}
             </button>
           )
         })}

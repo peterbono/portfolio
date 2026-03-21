@@ -3,6 +3,7 @@ import {
   useContext,
   useState,
   useCallback,
+  useEffect,
   type ReactNode,
 } from 'react'
 
@@ -30,13 +31,30 @@ interface UIContextValue {
 const UIContext = createContext<UIContextValue | null>(null)
 
 export function UIProvider({ children }: { children: ReactNode }) {
-  const [activeView, setActiveView] = useState<ActiveView>('table')
+  // Default to 'autopilot' for new/anonymous users (core value = auto-apply)
+  // Authenticated users who have previously used the app may override via navigation
+  const [activeView, setActiveView] = useState<ActiveView>(() => {
+    try {
+      const saved = sessionStorage.getItem('tracker_v2_last_view')
+      if (saved && ['table', 'pipeline', 'analytics', 'coach', 'insights', 'autopilot', 'settings', 'pricing'].includes(saved)) {
+        return saved as ActiveView
+      }
+    } catch { /* ignore */ }
+    return 'autopilot'
+  })
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [timeRange, setTimeRange] = useState<TimeRange>('all')
   const [areaFilter, setAreaFilter] = useState<AreaFilter>('all')
   const [workMode, setWorkMode] = useState<WorkMode>('all')
+
+  // Persist active view so refreshes within the session keep user's choice
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('tracker_v2_last_view', activeView)
+    } catch { /* ignore */ }
+  }, [activeView])
 
   const toggleSidebar = useCallback(() => {
     setSidebarCollapsed((prev) => !prev)

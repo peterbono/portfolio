@@ -1,19 +1,21 @@
-import { useState, useEffect, useCallback } from 'react'
-import { Shield, X, ArrowRight } from 'lucide-react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { Bot, X, ArrowRight } from 'lucide-react'
 import { useSupabase } from '../context/SupabaseContext'
 import { useAuthWallContext } from '../context/AuthWallContext'
+import { useUI } from '../context/UIContext'
 
 const NUDGE_KEY = 'tracker_v2_sunk_cost_nudge_dismissed'
-const NUDGE_THRESHOLD = 5
+const SESSION_START_KEY = 'tracker_v2_session_start'
+/** Time in ms before the nudge appears (2 minutes) */
+const TIME_THRESHOLD_MS = 2 * 60 * 1000
+/** Number of distinct view navigations to trigger the nudge */
+const VIEW_CLICK_THRESHOLD = 3
 
-interface SunkCostNudgeProps {
-  /** Total number of manually-added (non-demo) jobs */
-  manualJobCount: number
-}
-
-export function SunkCostNudge({ manualJobCount }: SunkCostNudgeProps) {
+export function SunkCostNudge() {
   const { session } = useSupabase()
   const { showAuthWall } = useAuthWallContext()
+  const { activeView } = useUI()
+
   const [dismissed, setDismissed] = useState(() => {
     try {
       return localStorage.getItem(NUDGE_KEY) === 'true'
@@ -23,15 +25,54 @@ export function SunkCostNudge({ manualJobCount }: SunkCostNudgeProps) {
   })
   const [visible, setVisible] = useState(false)
 
+  // Track distinct view navigations
+  const viewClicksRef = useRef(0)
+  const prevViewRef = useRef(activeView)
+
+  // Record session start time once
   useEffect(() => {
-    // Show nudge if: not authenticated, not dismissed, >= threshold jobs
-    if (!session && !dismissed && manualJobCount >= NUDGE_THRESHOLD) {
-      // Small delay so it doesn't flash on page load
-      const timer = setTimeout(() => setVisible(true), 2000)
-      return () => clearTimeout(timer)
+    try {
+      if (!sessionStorage.getItem(SESSION_START_KEY)) {
+        sessionStorage.setItem(SESSION_START_KEY, String(Date.now()))
+      }
+    } catch { /* ignore */ }
+  }, [])
+
+  // Count distinct view changes
+  useEffect(() => {
+    if (activeView !== prevViewRef.current) {
+      viewClicksRef.current += 1
+      prevViewRef.current = activeView
     }
-    setVisible(false)
-  }, [session, dismissed, manualJobCount])
+  }, [activeView])
+
+  // Check triggers: time-based OR interaction-based
+  useEffect(() => {
+    if (session || dismissed) {
+      setVisible(false)
+      return
+    }
+
+    // Check every 5 seconds
+    const interval = setInterval(() => {
+      // View click threshold
+      if (viewClicksRef.current >= VIEW_CLICK_THRESHOLD) {
+        setVisible(true)
+        clearInterval(interval)
+        return
+      }
+      // Time threshold
+      try {
+        const start = sessionStorage.getItem(SESSION_START_KEY)
+        if (start && Date.now() - Number(start) >= TIME_THRESHOLD_MS) {
+          setVisible(true)
+          clearInterval(interval)
+        }
+      } catch { /* ignore */ }
+    }, 5000)
+
+    return () => clearInterval(interval)
+  }, [session, dismissed])
 
   const handleDismiss = useCallback(() => {
     setVisible(false)
@@ -41,9 +82,9 @@ export function SunkCostNudge({ manualJobCount }: SunkCostNudgeProps) {
     } catch { /* ignore */ }
   }, [])
 
-  const handleSignUp = useCallback(() => {
+  const handleStartBot = useCallback(() => {
     handleDismiss()
-    showAuthWall('save_cloud', () => {})
+    showAuthWall('start_bot', () => {})
   }, [handleDismiss, showAuthWall])
 
   if (!visible) return null
@@ -51,19 +92,19 @@ export function SunkCostNudge({ manualJobCount }: SunkCostNudgeProps) {
   return (
     <div style={styles.toast}>
       <div style={styles.content}>
-        <Shield size={16} color="var(--accent)" style={{ flexShrink: 0 }} />
+        <Bot size={16} color="var(--accent)" style={{ flexShrink: 0 }} />
         <div style={styles.textWrap}>
           <span style={styles.title}>
-            You've tracked {manualJobCount} jobs!
+            Like what you see?
           </span>
           <span style={styles.subtitle}>
-            Create a free account to keep your data safe and unlock auto-apply.
+            Start the auto-apply bot and get real results like these.
           </span>
         </div>
       </div>
       <div style={styles.actions}>
-        <button style={styles.ctaBtn} onClick={handleSignUp}>
-          Sign up free
+        <button style={styles.ctaBtn} onClick={handleStartBot}>
+          Start Bot
           <ArrowRight size={14} />
         </button>
         <button

@@ -28,6 +28,8 @@ import type { BotActivityItem, BotRunStatus } from '../hooks/useBotActivity'
 import { triggerBotRun, triggerDryRun } from '../lib/bot-api'
 import { supabase } from '../lib/supabase'
 import { useAuthWall } from '../hooks/useAuthWall'
+import { useSupabase } from '../context/SupabaseContext'
+import { useAuthWallContext } from '../context/AuthWallContext'
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -804,6 +806,112 @@ const chipStyles: Record<string, React.CSSProperties> = {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Extracted SearchProfileForm (shared by anon + auth)                 */
+/* ------------------------------------------------------------------ */
+function SearchProfileForm({
+  formName, setFormName,
+  formKeywords, setFormKeywords,
+  formLocation, setFormLocation,
+  formSalary, setFormSalary,
+  formRemote, setFormRemote,
+  formExcluded, setFormExcluded,
+  onSave, onCancel,
+}: {
+  formName: string; setFormName: (v: string) => void
+  formKeywords: string[]; setFormKeywords: React.Dispatch<React.SetStateAction<string[]>>
+  formLocation: string; setFormLocation: (v: string) => void
+  formSalary: string; setFormSalary: (v: string) => void
+  formRemote: boolean; setFormRemote: (v: boolean) => void
+  formExcluded: string[]; setFormExcluded: React.Dispatch<React.SetStateAction<string[]>>
+  onSave: () => void; onCancel: () => void
+}) {
+  return (
+    <div style={styles.formCard}>
+      <h3 style={styles.formTitle}>New Search Profile</h3>
+
+      <div style={styles.fieldGroup}>
+        <label style={styles.label}>Profile Name</label>
+        <input
+          style={styles.input}
+          type="text"
+          value={formName}
+          onChange={(e) => setFormName(e.target.value)}
+          placeholder='e.g. "Senior Product Designer APAC"'
+        />
+      </div>
+
+      <div style={styles.fieldGroup}>
+        <label style={styles.label}>Keywords</label>
+        <p style={styles.hint}>Search or type a keyword and press Enter</p>
+        <ChipInput
+          chips={formKeywords}
+          onAdd={(val) => setFormKeywords((prev) => [...prev, val])}
+          onRemove={(idx) => setFormKeywords((prev) => prev.filter((_, i) => i !== idx))}
+          placeholder="Search job titles..."
+          suggestions={JOB_TITLE_SUGGESTIONS}
+        />
+      </div>
+
+      <div style={styles.fieldRow}>
+        <div style={{ flex: 1 }}>
+          <label style={styles.label}>Location</label>
+          <LocationAutocomplete value={formLocation} onChange={setFormLocation} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <label style={styles.label}>Min Salary (EUR)</label>
+          <input
+            style={styles.input}
+            type="number"
+            value={formSalary}
+            onChange={(e) => setFormSalary(e.target.value)}
+            placeholder="70000"
+          />
+        </div>
+      </div>
+
+      <div style={styles.fieldGroup}>
+        <label style={styles.toggleRow}>
+          <input
+            type="checkbox"
+            checked={formRemote}
+            onChange={(e) => setFormRemote(e.target.checked)}
+            style={styles.checkbox}
+          />
+          <span style={styles.toggleLabel}>Remote only</span>
+        </label>
+      </div>
+
+      <div style={styles.fieldGroup}>
+        <label style={styles.label}>Excluded Companies</label>
+        <p style={styles.hint}>Type a company name and press Enter to add</p>
+        <ChipInput
+          chips={formExcluded}
+          onAdd={(val) => setFormExcluded((prev) => [...prev, val])}
+          onRemove={(idx) => setFormExcluded((prev) => prev.filter((_, i) => i !== idx))}
+          placeholder="Type company name..."
+        />
+      </div>
+
+      <div style={styles.formActions}>
+        <button style={styles.btnSecondary} onClick={onCancel}>
+          Cancel
+        </button>
+        <button
+          style={{
+            ...styles.btnPrimary,
+            opacity: formName.trim() ? 1 : 0.5,
+          }}
+          onClick={onSave}
+          disabled={!formName.trim()}
+        >
+          Save Profile
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 export function AutopilotView() {
@@ -944,6 +1052,229 @@ export function AutopilotView() {
   // Status banner config
   const statusCfg = getStatusConfig(currentRun)
 
+  // Auth state for anonymous-vs-authenticated branching
+  const { session } = useSupabase()
+  const { showAuthWall } = useAuthWallContext()
+  const isAnonymous = !session
+
+  // Anonymous CTA handler
+  const handleAnonStartBot = useCallback(() => {
+    showAuthWall('start_bot', () => {
+      // After sign-up, bot starts with saved preferences
+      if (profiles.length > 0) {
+        doStartBot()
+      }
+    })
+  }, [showAuthWall, profiles, doStartBot])
+
+  /* ------------------------------------------------------------------ */
+  /*  ANONYMOUS USER: Conversion-focused layout                          */
+  /* ------------------------------------------------------------------ */
+  if (isAnonymous) {
+    return (
+      <div style={styles.container}>
+        {/* Hero Section */}
+        <div style={styles.heroSection}>
+          <div style={styles.heroIconWrap}>
+            <Bot size={32} color="var(--accent)" />
+          </div>
+          <h1 style={styles.heroTitle}>Auto-Apply Bot</h1>
+          <p style={styles.heroSubtitle}>
+            Set your criteria. The bot scouts LinkedIn, qualifies jobs, and auto-applies for you.
+          </p>
+
+          {/* How it works steps */}
+          <div style={styles.heroSteps}>
+            {[
+              { num: '1', text: 'Set your search criteria' },
+              { num: '2', text: 'Bot scouts LinkedIn daily' },
+              { num: '3', text: 'Smart filtering by timezone, salary, fit' },
+              { num: '4', text: 'Auto-applies via Greenhouse, Lever, Workable...' },
+            ].map((step) => (
+              <div key={step.num} style={styles.heroStep}>
+                <span style={styles.heroStepNum}>{step.num}</span>
+                <span style={styles.heroStepText}>{step.text}</span>
+              </div>
+            ))}
+          </div>
+
+          <button style={styles.heroCta} onClick={handleAnonStartBot}>
+            <Play size={16} />
+            Start My Bot
+          </button>
+        </div>
+
+        {/* Live Activity Feed (the hook) */}
+        <section style={styles.section}>
+          <div style={styles.sectionHeader}>
+            <div>
+              <h2 style={styles.sectionTitle}>Bot Activity</h2>
+              <p style={styles.sectionSubtitle}>
+                What the bot does in a typical run
+              </p>
+            </div>
+            <span style={styles.liveIndicator}>
+              <span style={styles.liveIndicatorDot} />
+              Live Demo
+            </span>
+          </div>
+          <div style={styles.timeline}>
+            {MOCK_ACTIVITY.map((item, i) => {
+              const Icon = STATUS_ICON[item.status]
+              const color = STATUS_COLOR[item.status]
+              return (
+                <div key={i} style={styles.timelineItem}>
+                  <div style={styles.timelineIconWrap}>
+                    <Icon size={14} color={color} />
+                    {i < MOCK_ACTIVITY.length - 1 && (
+                      <div style={styles.timelineLine} />
+                    )}
+                  </div>
+                  <div style={styles.timelineContent}>
+                    <span style={styles.timelineTime}>
+                      <Clock size={10} color="var(--text-tertiary)" />
+                      {item.time}
+                    </span>
+                    <span
+                      style={{
+                        ...styles.timelineText,
+                        color: item.status === 'error' ? '#f87171' : 'var(--text-primary)',
+                      }}
+                    >
+                      {item.text}
+                    </span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+
+        {/* Search Profiles (anonymous users can configure before sign-up) */}
+        <section style={styles.section}>
+          <div style={styles.sectionHeader}>
+            <div>
+              <h2 style={styles.sectionTitle}>Your Search Profile</h2>
+              <p style={styles.sectionSubtitle}>
+                Configure now — the bot starts immediately after sign-up
+              </p>
+            </div>
+          </div>
+
+          {/* Profile list */}
+          {profiles.length > 0 && !showForm && (
+            <>
+              <div style={styles.profileList}>
+                {profiles.map((p) => (
+                  <div key={p.id} style={styles.profileCard}>
+                    <div style={styles.profileTop}>
+                      <span style={styles.profileName}>{p.name}</span>
+                      <button
+                        style={styles.deleteBtn}
+                        onClick={() => handleDelete(p.id)}
+                        title="Delete profile"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                    <div style={styles.profileMeta}>
+                      {p.keywords.length > 0 && (
+                        <div style={styles.metaItem}>
+                          <Search size={12} color="var(--text-tertiary)" />
+                          <span style={styles.metaText}>{p.keywords.join(', ')}</span>
+                        </div>
+                      )}
+                      {p.location && (
+                        <div style={styles.metaItem}>
+                          <MapPin size={12} color="var(--text-tertiary)" />
+                          <span style={styles.metaText}>{p.location}</span>
+                        </div>
+                      )}
+                      {p.minSalary > 0 && (
+                        <div style={styles.metaItem}>
+                          <DollarSign size={12} color="var(--text-tertiary)" />
+                          <span style={styles.metaText}>{p.minSalary.toLocaleString()} EUR min</span>
+                        </div>
+                      )}
+                      {p.remoteOnly && (
+                        <div style={styles.metaItem}>
+                          <Wifi size={12} color="var(--text-tertiary)" />
+                          <span style={styles.metaText}>Remote only</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                <button style={styles.btnPrimary} onClick={() => setShowForm(true)}>
+                  <Plus size={14} />
+                  <span>Add another</span>
+                </button>
+                <button style={styles.heroCta} onClick={handleAnonStartBot}>
+                  <Play size={14} />
+                  <span>Start My Bot</span>
+                </button>
+              </div>
+            </>
+          )}
+
+          {/* Empty — show form directly */}
+          {profiles.length === 0 && !showForm && (
+            <div style={styles.emptyState}>
+              <div style={styles.emptyIllustration}>
+                <Sparkles size={40} color="var(--text-tertiary)" strokeWidth={1.2} />
+              </div>
+              <p style={styles.emptyText}>Tell the bot what to search for</p>
+              <p style={styles.emptyHint}>Your preferences are saved locally — the bot starts right after sign-up</p>
+              <button style={styles.btnPrimary} onClick={() => setShowForm(true)}>
+                <Plus size={14} />
+                <span>Create your search profile</span>
+              </button>
+            </div>
+          )}
+
+          {/* Form (same for anon + auth) */}
+          {showForm && <SearchProfileForm
+            formName={formName} setFormName={setFormName}
+            formKeywords={formKeywords} setFormKeywords={setFormKeywords}
+            formLocation={formLocation} setFormLocation={setFormLocation}
+            formSalary={formSalary} setFormSalary={setFormSalary}
+            formRemote={formRemote} setFormRemote={setFormRemote}
+            formExcluded={formExcluded} setFormExcluded={setFormExcluded}
+            onSave={handleSave} onCancel={() => { resetForm(); setShowForm(false) }}
+          />}
+        </section>
+
+        {/* Bottom CTA */}
+        <div style={styles.bottomCta}>
+          <button style={styles.heroCta} onClick={handleAnonStartBot}>
+            <Play size={16} />
+            Start My Bot
+          </button>
+        </div>
+
+        <style>{`
+          @keyframes pulseGlow {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.6; transform: scale(1.3); }
+          }
+          @keyframes livePulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+          }
+          @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+          }
+        `}</style>
+      </div>
+    )
+  }
+
+  /* ------------------------------------------------------------------ */
+  /*  AUTHENTICATED USER: Full dashboard (existing behavior)             */
+  /* ------------------------------------------------------------------ */
   return (
     <div style={styles.container}>
       {/* Header */}
@@ -985,7 +1316,6 @@ export function AutopilotView() {
             </div>
           </div>
           <div style={styles.statusActions}>
-            {/* Show bot controls when profiles exist and bot is not running */}
             {profiles.length > 0 && !isBotActive && !isTriggering && (
               <>
                 <button
@@ -1006,16 +1336,12 @@ export function AutopilotView() {
                 </button>
               </>
             )}
-
-            {/* Loading state while triggering */}
             {isTriggering && (
               <span style={styles.triggeringBadge}>
                 <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
                 Triggering...
               </span>
             )}
-
-            {/* Stop button when bot is active (visual only for now) */}
             {isBotActive && !isTriggering && (
               <button
                 style={styles.btnStopBot}
@@ -1026,8 +1352,6 @@ export function AutopilotView() {
                 <span>Stop Bot</span>
               </button>
             )}
-
-            {/* Fallback badge when no profiles exist */}
             {profiles.length === 0 && !isBotActive && statusCfg.badgeLabel && (
               <span
                 style={{
@@ -1041,8 +1365,6 @@ export function AutopilotView() {
             )}
           </div>
         </div>
-
-        {/* Error display */}
         {triggerError && (
           <div style={styles.triggerErrorRow}>
             <XCircle size={14} color="#f43f5e" />
@@ -1071,7 +1393,6 @@ export function AutopilotView() {
           )}
         </div>
 
-        {/* Profile list */}
         {profiles.length > 0 && (
           <div style={styles.profileList}>
             {profiles.map((p) => (
@@ -1129,7 +1450,6 @@ export function AutopilotView() {
           </div>
         )}
 
-        {/* Empty state */}
         {profiles.length === 0 && !showForm && (
           <div style={styles.emptyState}>
             <div style={styles.emptyIllustration}>
@@ -1151,100 +1471,15 @@ export function AutopilotView() {
           </div>
         )}
 
-        {/* Form */}
-        {showForm && (
-          <div style={styles.formCard}>
-            <h3 style={styles.formTitle}>New Search Profile</h3>
-
-            <div style={styles.fieldGroup}>
-              <label style={styles.label}>Profile Name</label>
-              <input
-                style={styles.input}
-                type="text"
-                value={formName}
-                onChange={(e) => setFormName(e.target.value)}
-                placeholder='e.g. "Senior Product Designer APAC"'
-              />
-            </div>
-
-            <div style={styles.fieldGroup}>
-              <label style={styles.label}>Keywords</label>
-              <p style={styles.hint}>Search or type a keyword and press Enter</p>
-              <ChipInput
-                chips={formKeywords}
-                onAdd={(val) => setFormKeywords((prev) => [...prev, val])}
-                onRemove={(idx) => setFormKeywords((prev) => prev.filter((_, i) => i !== idx))}
-                placeholder="Search job titles..."
-                suggestions={JOB_TITLE_SUGGESTIONS}
-              />
-            </div>
-
-            <div style={styles.fieldRow}>
-              <div style={{ flex: 1 }}>
-                <label style={styles.label}>Location</label>
-                <LocationAutocomplete
-                  value={formLocation}
-                  onChange={setFormLocation}
-                />
-              </div>
-              <div style={{ flex: 1 }}>
-                <label style={styles.label}>Min Salary (EUR)</label>
-                <input
-                  style={styles.input}
-                  type="number"
-                  value={formSalary}
-                  onChange={(e) => setFormSalary(e.target.value)}
-                  placeholder="70000"
-                />
-              </div>
-            </div>
-
-            <div style={styles.fieldGroup}>
-              <label style={styles.toggleRow}>
-                <input
-                  type="checkbox"
-                  checked={formRemote}
-                  onChange={(e) => setFormRemote(e.target.checked)}
-                  style={styles.checkbox}
-                />
-                <span style={styles.toggleLabel}>Remote only</span>
-              </label>
-            </div>
-
-            <div style={styles.fieldGroup}>
-              <label style={styles.label}>Excluded Companies</label>
-              <p style={styles.hint}>Type a company name and press Enter to add</p>
-              <ChipInput
-                chips={formExcluded}
-                onAdd={(val) => setFormExcluded((prev) => [...prev, val])}
-                onRemove={(idx) => setFormExcluded((prev) => prev.filter((_, i) => i !== idx))}
-                placeholder="Type company name..."
-              />
-            </div>
-
-            <div style={styles.formActions}>
-              <button
-                style={styles.btnSecondary}
-                onClick={() => {
-                  resetForm()
-                  setShowForm(false)
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                style={{
-                  ...styles.btnPrimary,
-                  opacity: formName.trim() ? 1 : 0.5,
-                }}
-                onClick={handleSave}
-                disabled={!formName.trim()}
-              >
-                Save Profile
-              </button>
-            </div>
-          </div>
-        )}
+        {showForm && <SearchProfileForm
+          formName={formName} setFormName={setFormName}
+          formKeywords={formKeywords} setFormKeywords={setFormKeywords}
+          formLocation={formLocation} setFormLocation={setFormLocation}
+          formSalary={formSalary} setFormSalary={setFormSalary}
+          formRemote={formRemote} setFormRemote={setFormRemote}
+          formExcluded={formExcluded} setFormExcluded={setFormExcluded}
+          onSave={handleSave} onCancel={() => { resetForm(); setShowForm(false) }}
+        />}
       </section>
 
       {/* 3 -- Activity Log */}
@@ -1958,5 +2193,99 @@ const styles: Record<string, React.CSSProperties> = {
     height: 6,
     borderRadius: '50%',
     flexShrink: 0,
+  },
+
+  /* ---- Anonymous Hero Section ---- */
+  heroSection: {
+    background: 'linear-gradient(135deg, rgba(52, 211, 153, 0.06) 0%, rgba(96, 165, 250, 0.04) 100%)',
+    border: '1px solid rgba(52, 211, 153, 0.15)',
+    borderRadius: 'var(--radius-lg)',
+    padding: '40px 32px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    textAlign: 'center',
+    gap: 12,
+  },
+  heroIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 16,
+    background: 'rgba(52, 211, 153, 0.1)',
+    border: '1px solid rgba(52, 211, 153, 0.2)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  heroTitle: {
+    fontSize: 28,
+    fontWeight: 700,
+    color: 'var(--text-primary)',
+    margin: 0,
+  },
+  heroSubtitle: {
+    fontSize: 15,
+    color: 'var(--text-secondary)',
+    maxWidth: 480,
+    lineHeight: 1.5,
+    margin: 0,
+  },
+  heroSteps: {
+    display: 'flex',
+    flexWrap: 'wrap' as const,
+    justifyContent: 'center',
+    gap: 12,
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  heroStep: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: '8px 14px',
+    background: 'var(--bg-surface)',
+    border: '1px solid var(--border)',
+    borderRadius: 8,
+    fontSize: 13,
+    color: 'var(--text-primary)',
+  },
+  heroStepNum: {
+    width: 22,
+    height: 22,
+    borderRadius: '50%',
+    background: 'rgba(52, 211, 153, 0.15)',
+    color: '#34d399',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: 11,
+    fontWeight: 700,
+    flexShrink: 0,
+  },
+  heroStepText: {
+    fontSize: 13,
+    color: 'var(--text-secondary)',
+    whiteSpace: 'nowrap' as const,
+  },
+  heroCta: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: '12px 28px',
+    fontSize: 15,
+    fontWeight: 700,
+    color: '#09090b',
+    background: '#34d399',
+    border: 'none',
+    borderRadius: 10,
+    cursor: 'pointer',
+    marginTop: 4,
+    transition: 'opacity 0.15s',
+  },
+  bottomCta: {
+    display: 'flex',
+    justifyContent: 'center',
+    padding: '16px 0',
   },
 }
