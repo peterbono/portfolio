@@ -1874,7 +1874,7 @@ function ParticleCanvas() {
     const initParticles = () => {
       const w = window.innerWidth
       const h = window.innerHeight
-      const count = isMobile ? 25 : 50
+      const count = isMobile ? 80 : 150
       const particles: AtmosphericParticle[] = []
       for (let i = 0; i < count; i++) {
         const x = Math.random() * w
@@ -1884,10 +1884,10 @@ function ParticleCanvas() {
           y,
           baseX: x,
           baseY: y,
-          size: 1 + Math.random() * 2,
-          opacity: 0.08 + Math.random() * 0.17,
-          hasShadow: Math.random() < 0.3,
-          shadowBlur: 3 + Math.random() * 3,
+          size: 0.5 + Math.random() * 1.5,
+          opacity: 0.1 + Math.random() * 0.3,
+          hasShadow: Math.random() < 0.25,
+          shadowBlur: 2 + Math.random() * 3,
           phaseX: Math.random() * Math.PI * 2,
           phaseY: Math.random() * Math.PI * 2,
           speedX: 0.0003 + Math.random() * 0.0005,
