@@ -1,252 +1,547 @@
+import { useEffect, useRef, useState, useCallback } from 'react'
 import {
   Bot,
   ArrowRight,
   Zap,
   Brain,
   Ghost,
-  Search,
   Cpu,
   BarChart3,
   Check,
   Github,
-  CreditCard,
   Sparkles,
   Shield,
-  LayoutDashboard,
+  ChevronRight,
+  Play,
+  Star,
+  TrendingUp,
+  Target,
 } from 'lucide-react'
+
+/* ------------------------------------------------------------------ */
+/*  Types                                                               */
+/* ------------------------------------------------------------------ */
 
 interface LandingViewProps {
   onGetStarted: () => void
   onSignIn: () => void
 }
 
+/* ------------------------------------------------------------------ */
+/*  Scroll animation hook                                               */
+/* ------------------------------------------------------------------ */
+
+function useScrollReveal() {
+  const ref = useRef<HTMLDivElement>(null)
+  const [isVisible, setIsVisible] = useState(false)
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+
+    // Respect reduced motion
+    const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (prefersReduced) {
+      setIsVisible(true)
+      return
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true)
+          observer.unobserve(el)
+        }
+      },
+      { threshold: 0.15, rootMargin: '0px 0px -40px 0px' }
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  return { ref, isVisible }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Animated counter hook                                               */
+/* ------------------------------------------------------------------ */
+
+function useCountUp(target: number, isVisible: boolean, duration = 1800) {
+  const [count, setCount] = useState(0)
+  const hasAnimated = useRef(false)
+
+  useEffect(() => {
+    if (!isVisible || hasAnimated.current) return
+    hasAnimated.current = true
+
+    const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (prefersReduced) {
+      setCount(target)
+      return
+    }
+
+    const start = performance.now()
+    const animate = (now: number) => {
+      const elapsed = now - start
+      const progress = Math.min(elapsed / duration, 1)
+      // ease out cubic
+      const eased = 1 - Math.pow(1 - progress, 3)
+      setCount(Math.floor(eased * target))
+      if (progress < 1) requestAnimationFrame(animate)
+    }
+    requestAnimationFrame(animate)
+  }, [isVisible, target, duration])
+
+  return count
+}
+
+/* ------------------------------------------------------------------ */
+/*  CSS keyframes injection (once)                                      */
+/* ------------------------------------------------------------------ */
+
+const KEYFRAMES_ID = 'landing-keyframes'
+
+function injectKeyframes() {
+  if (document.getElementById(KEYFRAMES_ID)) return
+  const style = document.createElement('style')
+  style.id = KEYFRAMES_ID
+  style.textContent = `
+    @keyframes landing-fadeUp {
+      from { opacity: 0; transform: translateY(24px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes landing-fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @keyframes landing-pulse {
+      0%, 100% { opacity: 0.4; }
+      50% { opacity: 1; }
+    }
+    @keyframes landing-slideRight {
+      from { transform: translateX(-100%); }
+      to { transform: translateX(100%); }
+    }
+    @keyframes landing-float {
+      0%, 100% { transform: translateY(0px); }
+      50% { transform: translateY(-6px); }
+    }
+    @keyframes landing-typing {
+      from { width: 0; }
+      to { width: 100%; }
+    }
+    @keyframes landing-blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0; }
+    }
+    @keyframes landing-shimmer {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
+    @keyframes landing-dot1 {
+      0%, 20% { opacity: 0.3; }
+      10% { opacity: 1; }
+    }
+    @keyframes landing-dot2 {
+      0%, 20% { opacity: 0.3; }
+      10% { opacity: 1; }
+    }
+    @keyframes landing-gradientMove {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+    @keyframes landing-scaleIn {
+      from { opacity: 0; transform: scale(0.95); }
+      to { opacity: 1; transform: scale(1); }
+    }
+    @keyframes landing-activitySlide {
+      0% { transform: translateX(-10px); opacity: 0; }
+      10% { transform: translateX(0); opacity: 1; }
+      90% { transform: translateX(0); opacity: 1; }
+      100% { transform: translateX(10px); opacity: 0; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+  `
+  document.head.appendChild(style)
+}
+
+/* ------------------------------------------------------------------ */
+/*  Main component                                                      */
+/* ------------------------------------------------------------------ */
+
 export function LandingView({ onGetStarted, onSignIn }: LandingViewProps) {
+  const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('monthly')
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+
+  useEffect(() => {
+    injectKeyframes()
+  }, [])
+
+  const scrollTo = useCallback((id: string) => {
+    setMobileMenuOpen(false)
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
+  }, [])
+
   return (
-    <div style={styles.page}>
-      {/* Nav */}
-      <nav style={styles.nav}>
-        <div style={styles.navInner}>
-          <div style={styles.logoRow}>
-            <div style={styles.logoCircle}>
-              <Bot size={20} color="var(--accent)" />
+    <div style={s.page}>
+      {/* ============================================================ */}
+      {/*  NAV                                                          */}
+      {/* ============================================================ */}
+      <nav style={s.nav}>
+        <div style={s.navInner}>
+          <div style={s.logoRow}>
+            <div style={s.logoMark}>
+              <Bot size={18} color="#000" />
             </div>
-            <span style={styles.logoText}>Job Tracker</span>
+            <span style={s.logoText}>JobTracker</span>
           </div>
-          <div style={styles.navLinks}>
-            <a href="#features" style={styles.navLink}>Features</a>
-            <a href="#how-it-works" style={styles.navLink}>How It Works</a>
-            <a href="#pricing" style={styles.navLink}>Pricing</a>
-            <button onClick={onSignIn} style={styles.signInBtn}>Sign In</button>
+
+          {/* Desktop nav */}
+          <div data-landing-nav-center="" style={s.navCenter}>
+            <button onClick={() => scrollTo('features')} style={s.navLink}>Features</button>
+            <button onClick={() => scrollTo('how-it-works')} style={s.navLink}>How It Works</button>
+            <button onClick={() => scrollTo('pricing')} style={s.navLink}>Pricing</button>
           </div>
+
+          <div data-landing-nav-right="" style={s.navRight}>
+            <button onClick={onSignIn} style={s.navSignIn}>Log in</button>
+            <button onClick={onGetStarted} style={s.navCTA}>
+              Get Started
+              <ArrowRight size={14} />
+            </button>
+          </div>
+
+          {/* Mobile hamburger */}
+          <button
+            data-landing-hamburger=""
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            style={s.hamburger}
+            aria-label="Toggle menu"
+          >
+            <span style={{
+              ...s.hamburgerLine,
+              transform: mobileMenuOpen ? 'rotate(45deg) translateY(6px)' : 'none',
+            }} />
+            <span style={{
+              ...s.hamburgerLine,
+              opacity: mobileMenuOpen ? 0 : 1,
+            }} />
+            <span style={{
+              ...s.hamburgerLine,
+              transform: mobileMenuOpen ? 'rotate(-45deg) translateY(-6px)' : 'none',
+            }} />
+          </button>
         </div>
+
+        {/* Mobile menu */}
+        {mobileMenuOpen && (
+          <div style={s.mobileMenu}>
+            <button onClick={() => scrollTo('features')} style={s.mobileMenuLink}>Features</button>
+            <button onClick={() => scrollTo('how-it-works')} style={s.mobileMenuLink}>How It Works</button>
+            <button onClick={() => scrollTo('pricing')} style={s.mobileMenuLink}>Pricing</button>
+            <div style={s.mobileMenuDivider} />
+            <button onClick={onSignIn} style={s.mobileMenuLink}>Log in</button>
+            <button onClick={onGetStarted} style={s.mobileMenuCTA}>
+              Get Started Free
+              <ArrowRight size={14} />
+            </button>
+          </div>
+        )}
       </nav>
 
-      {/* Hero */}
-      <section style={styles.hero}>
-        <div style={styles.heroBadge}>
-          <Sparkles size={14} color="var(--accent)" />
-          <span>AI-Powered Job Application Bot</span>
-        </div>
-        <h1 style={styles.heroTitle}>
-          Apply Smarter,<br />Not Harder
-        </h1>
-        <p style={styles.heroSubtitle}>
-          AI-powered job application bot that learns from your results.
-          Set your criteria, and let it work while you sleep.
-        </p>
-        <div style={styles.heroCTAs}>
-          <button onClick={onGetStarted} style={styles.ctaPrimary}>
-            Try it free
-            <ArrowRight size={16} />
-          </button>
-          <a href="#how-it-works" style={styles.ctaSecondary}>
-            See How It Works
-          </a>
-        </div>
+      {/* ============================================================ */}
+      {/*  HERO                                                         */}
+      {/* ============================================================ */}
+      <section style={s.hero}>
+        {/* Background glow */}
+        <div style={s.heroGlow} />
 
-        {/* Hero illustration: stylized dashboard mockup */}
-        <div style={styles.heroMockup}>
-          <div style={styles.mockupHeader}>
-            <div style={styles.mockupDots}>
-              <span style={{ ...styles.dot, background: '#f43f5e' }} />
-              <span style={{ ...styles.dot, background: '#fbbf24' }} />
-              <span style={{ ...styles.dot, background: '#34d399' }} />
-            </div>
-            <span style={styles.mockupUrl}>app.jobtracker.ai</span>
+        <div style={s.heroContent}>
+          {/* Badge */}
+          <div style={s.heroBadge}>
+            <div style={s.heroBadgeDot} />
+            <span>AI-powered auto-apply is live</span>
+            <ChevronRight size={12} color="var(--accent)" />
           </div>
-          <div style={styles.mockupBody}>
-            <div style={styles.mockupSidebar}>
-              {['Table', 'Pipeline', 'Analytics', 'Coach', 'Autopilot'].map((item, i) => (
-                <div key={item} style={{
-                  ...styles.mockupNavItem,
-                  background: i === 4 ? 'rgba(52, 211, 153, 0.1)' : 'transparent',
-                  color: i === 4 ? 'var(--accent)' : 'var(--text-tertiary)',
-                }}>
-                  <div style={{ width: 8, height: 8, borderRadius: 2, background: 'currentColor', opacity: 0.4 }} />
-                  <span style={{ fontSize: 9 }}>{item}</span>
-                </div>
-              ))}
-            </div>
-            <div style={styles.mockupContent}>
-              {/* Mini stat cards */}
-              <div style={styles.mockupStats}>
-                {[
-                  { label: 'Applied', value: '207', color: '#34d399' },
-                  { label: 'Pending', value: '299', color: '#60a5fa' },
-                  { label: 'Interviews', value: '12', color: '#f59e0b' },
-                ].map(stat => (
-                  <div key={stat.label} style={styles.mockupStatCard}>
-                    <span style={{ fontSize: 16, fontWeight: 700, color: stat.color }}>{stat.value}</span>
-                    <span style={{ fontSize: 8, color: 'var(--text-tertiary)' }}>{stat.label}</span>
-                  </div>
-                ))}
-              </div>
-              {/* Mini activity lines */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '0 12px' }}>
-                {[90, 70, 85, 50, 65].map((w, i) => (
-                  <div key={i} style={{
-                    height: 6,
-                    width: `${w}%`,
-                    borderRadius: 3,
-                    background: i === 0 ? 'rgba(52, 211, 153, 0.2)' : 'var(--border)',
-                  }} />
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
 
-      {/* Features */}
-      <section id="features" style={styles.section}>
-        <div style={styles.sectionInner}>
-          <h2 style={styles.sectionTitle}>Everything You Need</h2>
-          <p style={styles.sectionSubtitle}>
-            Stop wasting hours on repetitive applications. Let the bot handle the grind.
+          {/* Headline */}
+          <h1 style={s.heroTitle}>
+            Land your next role<br />on autopilot
+          </h1>
+
+          {/* Subheadline */}
+          <p style={s.heroSub}>
+            The AI job application bot that learns what works, applies while you sleep,
+            and tells you who's ghosting you.
           </p>
-          <div style={styles.featureGrid}>
-            <FeatureCard
-              Icon={Zap}
-              iconColor="#f59e0b"
-              title="Auto-Apply Bot"
-              description="Set your criteria, the bot applies while you sleep. Supports Greenhouse, Lever, Workable, and more."
-            />
-            <FeatureCard
-              Icon={Brain}
-              iconColor="#60a5fa"
-              title="Learns & Adapts"
-              description="Thompson Sampling optimizes which platforms and approaches work best for your profile."
-            />
-            <FeatureCard
-              Icon={Ghost}
-              iconColor="#a78bfa"
-              title="Ghost Detection"
-              description="Know which companies are ghosting you before wasting more time. Smart timeout tracking."
-            />
+
+          {/* CTA group */}
+          <div style={s.heroCTARow}>
+            <button onClick={onGetStarted} style={s.btnPrimary}>
+              Start for free
+              <ArrowRight size={16} />
+            </button>
+            <button onClick={() => scrollTo('how-it-works')} style={s.btnGhost}>
+              <Play size={14} />
+              See how it works
+            </button>
           </div>
+
+          {/* Micro-copy */}
+          <p style={s.heroMicro}>
+            No credit card required &middot; Free forever &middot; Setup in 2 minutes
+          </p>
+        </div>
+
+        {/* Hero product mockup */}
+        <HeroMockup />
+      </section>
+
+      {/* ============================================================ */}
+      {/*  LOGO STRIP (Social Proof)                                    */}
+      {/* ============================================================ */}
+      <LogoStrip />
+
+      {/* ============================================================ */}
+      {/*  FEATURES                                                     */}
+      {/* ============================================================ */}
+      <section id="features" style={s.sectionDark}>
+        <div style={s.container}>
+          <SectionHeader
+            label="Features"
+            title="Everything you need to job-search smarter"
+            subtitle="Stop spending hours on repetitive applications. Let the bot handle the grind while you focus on what matters."
+          />
+
+          <FeatureRow
+            reverse={false}
+            icon={<Zap size={20} color="#f59e0b" />}
+            iconBg="rgba(245, 158, 11, 0.1)"
+            label="Automation"
+            title="Auto-apply while you sleep"
+            description="Set your criteria once. The bot scouts jobs across Greenhouse, Lever, Workable, and more, then fills and submits applications for you. Wake up to a full pipeline."
+            mockup={<AutoApplyMockup />}
+          />
+
+          <FeatureRow
+            reverse={true}
+            icon={<Brain size={20} color="#60a5fa" />}
+            iconBg="rgba(96, 165, 250, 0.1)"
+            label="Intelligence"
+            title="Learns what works for you"
+            description="Thompson Sampling AI optimizes which platforms, job titles, and application styles get the best response rates for your specific profile."
+            mockup={<InsightsMockup />}
+          />
+
+          <FeatureRow
+            reverse={false}
+            icon={<Ghost size={20} color="#a78bfa" />}
+            iconBg="rgba(167, 139, 250, 0.1)"
+            label="Detection"
+            title="Know who's ghosting you"
+            description="Smart timeout tracking identifies companies that go silent. Stop wasting energy following up on dead ends and focus on real opportunities."
+            mockup={<GhostMockup />}
+          />
+
+          <FeatureRow
+            reverse={true}
+            icon={<BarChart3 size={20} color="#34d399" />}
+            iconBg="rgba(52, 211, 153, 0.1)"
+            label="Analytics"
+            title="Real data, real insights"
+            description="Response rates, time-to-reply, platform performance, and weekly trends. See exactly where your job search stands at a glance."
+            mockup={<AnalyticsMockup />}
+          />
         </div>
       </section>
 
-      {/* How It Works */}
-      <section id="how-it-works" style={styles.howSection}>
-        <div style={styles.sectionInner}>
-          <h2 style={styles.sectionTitle}>How It Works</h2>
-          <p style={styles.sectionSubtitle}>Three steps to automate your job search</p>
-          <div style={styles.stepsGrid}>
-            <StepCard
-              number={1}
-              Icon={Search}
-              title="Set your search profile"
-              description="Define your target roles, salary range, location preferences, and excluded companies."
-            />
-            <StepCard
-              number={2}
-              Icon={Cpu}
-              title="Bot scouts & applies"
-              description="AI qualifies jobs against your criteria, fills ATS forms, and submits applications."
-            />
-            <StepCard
-              number={3}
-              Icon={BarChart3}
-              title="Review & optimize"
-              description="See what's working, track responses, and the bot gets smarter with every cycle."
-            />
+      {/* ============================================================ */}
+      {/*  HOW IT WORKS                                                 */}
+      {/* ============================================================ */}
+      <section id="how-it-works" style={s.sectionAlt}>
+        <div style={s.container}>
+          <SectionHeader
+            label="How it works"
+            title="Three steps to autopilot"
+            subtitle="From setup to submitted applications in under five minutes."
+          />
+          <HowItWorksSteps />
+        </div>
+      </section>
+
+      {/* ============================================================ */}
+      {/*  STATS                                                        */}
+      {/* ============================================================ */}
+      <StatsSection />
+
+      {/* ============================================================ */}
+      {/*  TESTIMONIAL                                                  */}
+      {/* ============================================================ */}
+      <TestimonialSection />
+
+      {/* ============================================================ */}
+      {/*  PRICING                                                      */}
+      {/* ============================================================ */}
+      <section id="pricing" style={s.sectionDark}>
+        <div style={s.container}>
+          <SectionHeader
+            label="Pricing"
+            title="Start free, scale when ready"
+            subtitle="No hidden fees. No surprise charges. Cancel anytime."
+          />
+
+          {/* Billing toggle */}
+          <div style={s.billingToggle}>
+            <button
+              onClick={() => setBillingCycle('monthly')}
+              style={{
+                ...s.billingBtn,
+                ...(billingCycle === 'monthly' ? s.billingBtnActive : {}),
+              }}
+            >
+              Monthly
+            </button>
+            <button
+              onClick={() => setBillingCycle('annual')}
+              style={{
+                ...s.billingBtn,
+                ...(billingCycle === 'annual' ? s.billingBtnActive : {}),
+              }}
+            >
+              Annual
+              <span style={s.saveBadge}>-20%</span>
+            </button>
           </div>
-        </div>
-      </section>
 
-      {/* Social Proof */}
-      <section style={styles.proofSection}>
-        <div style={styles.proofGrid}>
-          <ProofStat value="672+" label="Applications managed" />
-          <ProofStat value="4" label="ATS platforms supported" />
-          <ProofStat value="AI" label="Powered feedback loop" />
-        </div>
-      </section>
-
-      {/* Pricing Preview */}
-      <section id="pricing" style={styles.section}>
-        <div style={styles.sectionInner}>
-          <h2 style={styles.sectionTitle}>Simple Pricing</h2>
-          <p style={styles.sectionSubtitle}>Start free, upgrade when you need more power</p>
-          <div style={styles.pricingGrid}>
+          <div data-landing-pricing-grid="" style={s.pricingGrid}>
             <PricingCard
               name="Free"
-              price="0"
-              features={['50 tracked jobs', 'Manual applications', 'Basic analytics']}
+              price={0}
+              period={billingCycle}
+              description="For getting started"
+              features={[
+                '50 tracked jobs',
+                'Manual applications',
+                'Basic analytics',
+                'Email support',
+              ]}
+              cta="Get started"
+              onCta={onGetStarted}
             />
             <PricingCard
               name="Starter"
-              price="9"
-              features={['200 tracked jobs', '10 auto-applies/mo', 'Coach insights']}
+              price={billingCycle === 'monthly' ? 9 : 7}
+              period={billingCycle}
+              description="For active job seekers"
+              features={[
+                '200 tracked jobs',
+                '10 auto-applies/month',
+                'Coach insights',
+                'Platform analytics',
+                'Priority support',
+              ]}
+              cta="Start free trial"
+              onCta={onGetStarted}
             />
             <PricingCard
               name="Pro"
-              price="29"
+              price={billingCycle === 'monthly' ? 29 : 23}
+              period={billingCycle}
+              description="For serious applicants"
+              features={[
+                'Unlimited jobs',
+                '100 auto-applies/month',
+                'Thompson Sampling AI',
+                'Ghost detection',
+                'Advanced analytics',
+                'Custom integrations',
+              ]}
               featured
-              features={['Unlimited jobs', '100 auto-applies/mo', 'Thompson Sampling AI', 'Ghost detection']}
+              cta="Start free trial"
+              onCta={onGetStarted}
             />
             <PricingCard
               name="Premium"
-              price="79"
-              features={['Everything in Pro', 'Unlimited auto-applies', 'Priority support', 'Custom integrations']}
+              price={billingCycle === 'monthly' ? 79 : 63}
+              period={billingCycle}
+              description="For power users"
+              features={[
+                'Everything in Pro',
+                'Unlimited auto-applies',
+                'Priority AI processing',
+                'Custom ATS integrations',
+                'Dedicated support',
+                'API access',
+              ]}
+              cta="Contact us"
+              onCta={onGetStarted}
             />
-          </div>
-          <div style={{ textAlign: 'center', marginTop: 32 }}>
-            <button onClick={onGetStarted} style={styles.ctaPrimary}>
-              Try it free
-              <ArrowRight size={16} />
-            </button>
           </div>
         </div>
       </section>
 
-      {/* Footer */}
-      <footer style={styles.footer}>
-        <div style={styles.footerInner}>
-          <div style={styles.footerLeft}>
-            <div style={styles.logoRow}>
-              <div style={{ ...styles.logoCircle, width: 28, height: 28 }}>
-                <Bot size={14} color="var(--accent)" />
+      {/* ============================================================ */}
+      {/*  FINAL CTA                                                    */}
+      {/* ============================================================ */}
+      <section style={s.finalCTA}>
+        <div style={s.finalCTAGlow} />
+        <div style={s.container}>
+          <FinalCTAContent onGetStarted={onGetStarted} />
+        </div>
+      </section>
+
+      {/* ============================================================ */}
+      {/*  FOOTER                                                       */}
+      {/* ============================================================ */}
+      <footer style={s.footer}>
+        <div style={s.footerInner}>
+          <div style={s.footerLeft}>
+            <div style={s.logoRow}>
+              <div style={{ ...s.logoMark, width: 24, height: 24 }}>
+                <Bot size={12} color="#000" />
               </div>
               <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
-                Job Tracker
+                JobTracker
               </span>
             </div>
-            <p style={styles.footerTag}>Built by a designer, for designers</p>
+            <p style={s.footerTagline}>AI-powered job search automation</p>
           </div>
-          <div style={styles.footerLinks}>
-            <a href="#features" style={styles.footerLink}>Features</a>
-            <a href="#pricing" style={styles.footerLink}>Pricing</a>
-            <a
-              href="https://github.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={styles.footerLink}
-            >
-              <Github size={14} />
-              GitHub
-            </a>
+          <div data-landing-footer-columns="" style={s.footerColumns}>
+            <div style={s.footerCol}>
+              <span style={s.footerColTitle}>Product</span>
+              <button onClick={() => scrollTo('features')} style={s.footerLink}>Features</button>
+              <button onClick={() => scrollTo('pricing')} style={s.footerLink}>Pricing</button>
+              <button onClick={() => scrollTo('how-it-works')} style={s.footerLink}>How It Works</button>
+            </div>
+            <div style={s.footerCol}>
+              <span style={s.footerColTitle}>Company</span>
+              <a href="#" style={s.footerLink}>Terms</a>
+              <a href="#" style={s.footerLink}>Privacy</a>
+              <a
+                href="https://github.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ ...s.footerLink, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+              >
+                <Github size={12} /> GitHub
+              </a>
+            </div>
+          </div>
+        </div>
+        <div style={s.footerBottom}>
+          <div style={s.footerBottomInner}>
+            <span style={s.footerCopyright}>&copy; {new Date().getFullYear()} JobTracker. All rights reserved.</span>
+            <div style={s.footerBadge}>
+              <Sparkles size={10} color="var(--accent)" />
+              <span>Built with AI</span>
+            </div>
           </div>
         </div>
       </footer>
@@ -254,96 +549,611 @@ export function LandingView({ onGetStarted, onSignIn }: LandingViewProps) {
   )
 }
 
-/* ------------------------------------------------------------------ */
-/*  Sub-components                                                      */
-/* ------------------------------------------------------------------ */
+/* ================================================================== */
+/*  SUB-COMPONENTS                                                      */
+/* ================================================================== */
 
-function FeatureCard({
-  Icon,
-  iconColor,
+/* ---------- Section Header ---------- */
+
+function SectionHeader({
+  label,
+  title,
+  subtitle,
+}: {
+  label: string
+  title: string
+  subtitle: string
+}) {
+  const { ref, isVisible } = useScrollReveal()
+  return (
+    <div
+      ref={ref}
+      style={{
+        textAlign: 'center',
+        marginBottom: 64,
+        opacity: isVisible ? 1 : 0,
+        transform: isVisible ? 'translateY(0)' : 'translateY(24px)',
+        transition: 'opacity 0.6s ease, transform 0.6s ease',
+      }}
+    >
+      <div style={s.sectionLabel}>
+        <span>{label}</span>
+      </div>
+      <h2 style={s.sectionTitle}>{title}</h2>
+      <p style={s.sectionSubtitle}>{subtitle}</p>
+    </div>
+  )
+}
+
+/* ---------- Hero Mockup (animated) ---------- */
+
+function HeroMockup() {
+  const { ref, isVisible } = useScrollReveal()
+
+  const activities = [
+    { company: 'Stripe', role: 'Senior Product Designer', status: 'Applied', color: '#34d399' },
+    { company: 'Figma', role: 'Design Systems Lead', status: 'Applied', color: '#34d399' },
+    { company: 'Linear', role: 'Staff Designer', status: 'Screening', color: '#60a5fa' },
+    { company: 'Vercel', role: 'UX Designer', status: 'Applied', color: '#34d399' },
+    { company: 'Notion', role: 'Product Designer', status: 'Interview', color: '#f59e0b' },
+  ]
+
+  return (
+    <div
+      ref={ref}
+      style={{
+        ...s.heroMockupWrap,
+        opacity: isVisible ? 1 : 0,
+        transform: isVisible ? 'translateY(0) scale(1)' : 'translateY(32px) scale(0.97)',
+        transition: 'opacity 0.8s ease 0.2s, transform 0.8s ease 0.2s',
+      }}
+    >
+      {/* Glow behind mockup */}
+      <div style={s.mockupGlow} />
+
+      <div style={s.mockupFrame}>
+        {/* Browser chrome */}
+        <div style={s.mockupChrome}>
+          <div style={s.chromeDots}>
+            <span style={{ ...s.chromeDot, background: '#f43f5e' }} />
+            <span style={{ ...s.chromeDot, background: '#fbbf24' }} />
+            <span style={{ ...s.chromeDot, background: '#34d399' }} />
+          </div>
+          <div style={s.chromeUrlBar}>
+            <Shield size={10} color="var(--text-tertiary)" />
+            <span>app.jobtracker.ai</span>
+          </div>
+          <div style={{ width: 48 }} />
+        </div>
+
+        {/* Dashboard body */}
+        <div style={s.mockupDash}>
+          {/* Sidebar mini */}
+          <div data-landing-mockup-sidebar="" style={s.mockupSidebar}>
+            {['Dashboard', 'Pipeline', 'Autopilot', 'Analytics', 'Coach'].map((item, i) => (
+              <div
+                key={item}
+                style={{
+                  ...s.mockupSideItem,
+                  background: i === 2 ? 'rgba(52, 211, 153, 0.12)' : 'transparent',
+                  color: i === 2 ? 'var(--accent)' : 'var(--text-tertiary)',
+                  fontWeight: i === 2 ? 600 : 400,
+                }}
+              >
+                <div style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: 2,
+                  background: 'currentColor',
+                  opacity: i === 2 ? 1 : 0.4,
+                }} />
+                <span>{item}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Main content */}
+          <div style={s.mockupMain}>
+            {/* Stat row */}
+            <div style={s.mockupStatRow}>
+              {[
+                { label: 'Applied', val: '207', col: '#34d399', delta: '+12 today' },
+                { label: 'In Review', val: '38', col: '#60a5fa', delta: '+3 today' },
+                { label: 'Interviews', val: '12', col: '#f59e0b', delta: '+1 today' },
+              ].map((st) => (
+                <div key={st.label} style={s.mockupStatCard}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 8, color: 'var(--text-tertiary)', textTransform: 'uppercase' as const, letterSpacing: '0.05em' }}>{st.label}</span>
+                    <span style={{ fontSize: 7, color: st.col }}>{st.delta}</span>
+                  </div>
+                  <span style={{ fontSize: 18, fontWeight: 700, color: st.col, letterSpacing: '-0.02em' }}>{st.val}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Activity feed with animation */}
+            <div style={s.mockupFeed}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 10px', marginBottom: 6 }}>
+                <span style={{ fontSize: 8, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.05em' }}>Live Activity</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <div style={s.liveDot} />
+                  <span style={{ fontSize: 7, color: 'var(--accent)' }}>Bot Active</span>
+                </div>
+              </div>
+              {activities.map((a, i) => (
+                <div
+                  key={a.company}
+                  style={{
+                    ...s.activityRow,
+                    animation: `landing-activitySlide 4s ease ${i * 0.8}s infinite`,
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      width: 16,
+                      height: 16,
+                      borderRadius: 4,
+                      background: `${a.color}15`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}>
+                      <span style={{ fontSize: 7, fontWeight: 700, color: a.color }}>
+                        {a.company[0]}
+                      </span>
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 8, fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.company}</div>
+                      <div style={{ fontSize: 7, color: 'var(--text-tertiary)', whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.role}</div>
+                    </div>
+                  </div>
+                  <span style={{
+                    fontSize: 7,
+                    fontWeight: 600,
+                    color: a.color,
+                    padding: '1px 6px',
+                    borderRadius: 3,
+                    background: `${a.color}12`,
+                    flexShrink: 0,
+                  }}>
+                    {a.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ---------- Logo Strip ---------- */
+
+function LogoStrip() {
+  const { ref, isVisible } = useScrollReveal()
+  const companies = ['Stripe', 'Figma', 'Google', 'Meta', 'Shopify', 'Spotify', 'Linear', 'Vercel']
+
+  return (
+    <section
+      ref={ref}
+      style={{
+        ...s.logoSection,
+        opacity: isVisible ? 1 : 0,
+        transform: isVisible ? 'translateY(0)' : 'translateY(16px)',
+        transition: 'opacity 0.6s ease, transform 0.6s ease',
+      }}
+    >
+      <p style={s.logoSectionLabel}>Trusted by professionals hunting roles at</p>
+      <div data-landing-logo-grid="" style={s.logoGrid}>
+        {companies.map((name) => (
+          <div key={name} style={s.logoItem}>
+            <span style={s.logoName}>{name}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+/* ---------- Feature Row (alternating) ---------- */
+
+function FeatureRow({
+  reverse,
+  icon,
+  iconBg,
+  label,
   title,
   description,
+  mockup,
 }: {
-  Icon: typeof Zap
-  iconColor: string
+  reverse: boolean
+  icon: React.ReactNode
+  iconBg: string
+  label: string
   title: string
   description: string
+  mockup: React.ReactNode
 }) {
+  const { ref, isVisible } = useScrollReveal()
+
   return (
-    <div style={styles.featureCard}>
-      <div style={{
-        ...styles.featureIcon,
-        background: `${iconColor}15`,
-      }}>
-        <Icon size={24} color={iconColor} />
+    <div
+      ref={ref}
+      data-landing-feature-row=""
+      style={{
+        ...s.featureRow,
+        flexDirection: reverse ? 'row-reverse' : 'row',
+        opacity: isVisible ? 1 : 0,
+        transform: isVisible ? 'translateY(0)' : 'translateY(32px)',
+        transition: 'opacity 0.7s ease, transform 0.7s ease',
+      }}
+    >
+      <div style={s.featureText}>
+        <div style={{ ...s.featureIconBadge, background: iconBg }}>
+          {icon}
+        </div>
+        <span style={s.featureLabel}>{label}</span>
+        <h3 style={s.featureTitle}>{title}</h3>
+        <p style={s.featureDesc}>{description}</p>
       </div>
-      <h3 style={styles.featureTitle}>{title}</h3>
-      <p style={styles.featureDesc}>{description}</p>
+      <div style={s.featureMockupWrap}>
+        {mockup}
+      </div>
     </div>
   )
 }
 
-function StepCard({
-  number,
-  Icon,
-  title,
-  description,
-}: {
-  number: number
-  Icon: typeof Search
-  title: string
-  description: string
-}) {
+/* ---------- Feature Mockups ---------- */
+
+function AutoApplyMockup() {
   return (
-    <div style={styles.stepCard}>
-      <div style={styles.stepNumber}>{number}</div>
-      <div style={styles.stepIconWrap}>
-        <Icon size={24} color="var(--accent)" />
+    <div style={s.miniMockup}>
+      <div style={s.miniHeader}>
+        <Zap size={12} color="#f59e0b" />
+        <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-primary)' }}>Autopilot Activity</span>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
+          <div style={s.liveDot} />
+          <span style={{ fontSize: 8, color: 'var(--accent)' }}>Running</span>
+        </div>
       </div>
-      <h3 style={styles.stepTitle}>{title}</h3>
-      <p style={styles.stepDesc}>{description}</p>
+      {[
+        { name: 'Stripe — Sr Product Designer', time: '2m ago', status: 'Submitted' },
+        { name: 'Figma — Design Lead', time: '5m ago', status: 'Submitted' },
+        { name: 'Notion — UX Designer', time: '8m ago', status: 'Filling...' },
+        { name: 'Linear — Staff Designer', time: '12m ago', status: 'Submitted' },
+      ].map((item, i) => (
+        <div key={i} style={s.miniRow}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 10, fontWeight: 500, color: 'var(--text-primary)', whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</div>
+            <div style={{ fontSize: 8, color: 'var(--text-tertiary)' }}>{item.time}</div>
+          </div>
+          <span style={{
+            fontSize: 8,
+            fontWeight: 600,
+            color: item.status === 'Filling...' ? '#f59e0b' : '#34d399',
+            padding: '2px 6px',
+            borderRadius: 4,
+            background: item.status === 'Filling...' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(52, 211, 153, 0.1)',
+          }}>
+            {item.status}
+          </span>
+        </div>
+      ))}
     </div>
   )
 }
 
-function ProofStat({ value, label }: { value: string; label: string }) {
+function InsightsMockup() {
+  const bars = [65, 82, 45, 90, 70, 55, 88]
   return (
-    <div style={styles.proofStat}>
-      <span style={styles.proofValue}>{value}</span>
-      <span style={styles.proofLabel}>{label}</span>
+    <div style={s.miniMockup}>
+      <div style={s.miniHeader}>
+        <Brain size={12} color="#60a5fa" />
+        <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-primary)' }}>AI Insights</span>
+      </div>
+      <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 50 }}>
+          {bars.map((h, i) => (
+            <div
+              key={i}
+              style={{
+                flex: 1,
+                height: `${h}%`,
+                borderRadius: 2,
+                background: i === 3 ? '#60a5fa' : 'rgba(96, 165, 250, 0.2)',
+                transition: 'height 0.3s ease',
+              }}
+            />
+          ))}
+        </div>
+        <div style={{ fontSize: 8, color: 'var(--text-tertiary)', textAlign: 'center' as const }}>
+          Response Rate by Platform
+        </div>
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8, display: 'flex', gap: 8 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#60a5fa' }}>23%</div>
+            <div style={{ fontSize: 8, color: 'var(--text-tertiary)' }}>Avg Response</div>
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#34d399' }}>+8%</div>
+            <div style={{ fontSize: 8, color: 'var(--text-tertiary)' }}>vs Last Week</div>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
+
+function GhostMockup() {
+  return (
+    <div style={s.miniMockup}>
+      <div style={s.miniHeader}>
+        <Ghost size={12} color="#a78bfa" />
+        <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-primary)' }}>Ghost Radar</span>
+      </div>
+      <div style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {[
+          { name: 'AcmeCorp', days: 21, risk: 'High' },
+          { name: 'TechVenture', days: 14, risk: 'Medium' },
+          { name: 'StartupXYZ', days: 8, risk: 'Low' },
+        ].map((g) => (
+          <div key={g.name} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 6, background: 'var(--bg-base)' }}>
+            <Ghost size={10} color={g.risk === 'High' ? '#f43f5e' : g.risk === 'Medium' ? '#f59e0b' : '#34d399'} />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 9, fontWeight: 600, color: 'var(--text-primary)' }}>{g.name}</div>
+              <div style={{ fontSize: 7, color: 'var(--text-tertiary)' }}>No reply in {g.days} days</div>
+            </div>
+            <span style={{
+              fontSize: 7,
+              fontWeight: 600,
+              padding: '2px 5px',
+              borderRadius: 3,
+              color: g.risk === 'High' ? '#f43f5e' : g.risk === 'Medium' ? '#f59e0b' : '#34d399',
+              background: g.risk === 'High' ? 'rgba(244, 63, 94, 0.1)' : g.risk === 'Medium' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(52, 211, 153, 0.1)',
+            }}>
+              {g.risk}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function AnalyticsMockup() {
+  return (
+    <div style={s.miniMockup}>
+      <div style={s.miniHeader}>
+        <BarChart3 size={12} color="#34d399" />
+        <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-primary)' }}>Weekly Overview</span>
+      </div>
+      <div style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {/* Mini chart */}
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 40 }}>
+          {[30, 45, 35, 60, 80, 55, 72].map((h, i) => (
+            <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
+              <div style={{
+                height: `${h}%`,
+                borderRadius: 2,
+                background: `rgba(52, 211, 153, ${0.3 + (h / 100) * 0.7})`,
+              }} />
+            </div>
+          ))}
+        </div>
+        {/* Stats row */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+          {[
+            { label: 'Applied', val: '47', color: '#34d399' },
+            { label: 'Response', val: '23%', color: '#60a5fa' },
+            { label: 'Interviews', val: '5', color: '#f59e0b' },
+          ].map((item) => (
+            <div key={item.label} style={{ textAlign: 'center' as const }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: item.color }}>{item.val}</div>
+              <div style={{ fontSize: 7, color: 'var(--text-tertiary)' }}>{item.label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ---------- How It Works Steps ---------- */
+
+function HowItWorksSteps() {
+  const { ref, isVisible } = useScrollReveal()
+
+  const steps = [
+    {
+      num: 1,
+      icon: <Target size={24} color="var(--accent)" />,
+      title: 'Define your criteria',
+      desc: 'Set target roles, salary, location, and excluded companies. Takes 2 minutes.',
+    },
+    {
+      num: 2,
+      icon: <Cpu size={24} color="var(--accent)" />,
+      title: 'Bot scouts & applies',
+      desc: 'AI qualifies jobs, fills ATS forms, and submits. Runs on autopilot 24/7.',
+    },
+    {
+      num: 3,
+      icon: <TrendingUp size={24} color="var(--accent)" />,
+      title: 'Track & optimize',
+      desc: 'Review results, see what works, and the bot gets smarter every cycle.',
+    },
+  ]
+
+  return (
+    <div
+      ref={ref}
+      data-landing-steps-row=""
+      style={{
+        ...s.stepsRow,
+        opacity: isVisible ? 1 : 0,
+        transform: isVisible ? 'translateY(0)' : 'translateY(24px)',
+        transition: 'opacity 0.7s ease, transform 0.7s ease',
+      }}
+    >
+      {steps.map((step, i) => (
+        <div key={step.num} style={s.stepItem}>
+          {/* Connector line */}
+          {i < steps.length - 1 && <div data-landing-step-connector="" style={s.stepConnector} />}
+
+          <div style={s.stepNumCircle}>
+            <span style={s.stepNum}>{step.num}</span>
+          </div>
+          <div style={s.stepIconWrap}>{step.icon}</div>
+          <h3 style={s.stepTitle}>{step.title}</h3>
+          <p style={s.stepDesc}>{step.desc}</p>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/* ---------- Stats Section ---------- */
+
+function StatsSection() {
+  const { ref, isVisible } = useScrollReveal()
+  const applies = useCountUp(25, isVisible)
+  const ats = useCountUp(4, isVisible, 1200)
+  const uptime = useCountUp(99, isVisible, 1600)
+
+  return (
+    <section ref={ref} style={s.statsSection}>
+      <div style={s.container}>
+        <div style={{
+          ...s.statsGrid,
+          opacity: isVisible ? 1 : 0,
+          transform: isVisible ? 'translateY(0)' : 'translateY(24px)',
+          transition: 'opacity 0.6s ease, transform 0.6s ease',
+        }}>
+          <div style={s.statItem}>
+            <span style={s.statValue}>{applies}+</span>
+            <span style={s.statLabel}>Auto-applies per month free</span>
+          </div>
+          <div data-landing-stats-divider="" style={s.statDivider} />
+          <div style={s.statItem}>
+            <span style={s.statValue}>{ats}</span>
+            <span style={s.statLabel}>ATS platforms supported</span>
+          </div>
+          <div data-landing-stats-divider="" style={s.statDivider} />
+          <div style={s.statItem}>
+            <span style={s.statValue}>{uptime}%</span>
+            <span style={s.statLabel}>Uptime reliability</span>
+          </div>
+          <div data-landing-stats-divider="" style={s.statDivider} />
+          <div style={s.statItem}>
+            <span style={{ ...s.statValue, fontSize: 'clamp(28px, 4vw, 44px)' }}>AI</span>
+            <span style={s.statLabel}>Powered learning loop</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+/* ---------- Testimonial Section ---------- */
+
+function TestimonialSection() {
+  const { ref, isVisible } = useScrollReveal()
+
+  return (
+    <section
+      ref={ref}
+      style={{
+        ...s.testimonialSection,
+        opacity: isVisible ? 1 : 0,
+        transform: isVisible ? 'translateY(0)' : 'translateY(24px)',
+        transition: 'opacity 0.7s ease, transform 0.7s ease',
+      }}
+    >
+      <div style={s.container}>
+        <div style={s.testimonialCard}>
+          <div style={s.quoteMarks}>&ldquo;</div>
+          <p style={s.quoteText}>
+            I went from spending 3 hours a day on applications to waking up with 10 new submissions. The ghost detection alone saved me weeks of wasted follow-ups.
+          </p>
+          <div style={s.quoteAuthor}>
+            <div style={s.quoteAvatar}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: '#000' }}>SK</span>
+            </div>
+            <div>
+              <div style={s.quoteName}>Sarah K.</div>
+              <div style={s.quoteRole}>Senior UX Designer, landed role at Shopify</div>
+            </div>
+          </div>
+          <div style={s.quoteStars}>
+            {[1, 2, 3, 4, 5].map((i) => (
+              <Star key={i} size={14} fill="#f59e0b" color="#f59e0b" />
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+/* ---------- Pricing Card ---------- */
 
 function PricingCard({
   name,
   price,
+  period,
+  description,
   features,
   featured = false,
+  cta,
+  onCta,
 }: {
   name: string
-  price: string
+  price: number
+  period: 'monthly' | 'annual'
+  description: string
   features: string[]
   featured?: boolean
+  cta: string
+  onCta: () => void
 }) {
+  const { ref, isVisible } = useScrollReveal()
+
   return (
-    <div style={{
-      ...styles.pricingCard,
-      ...(featured ? styles.pricingCardFeatured : {}),
-    }}>
+    <div
+      ref={ref}
+      style={{
+        ...s.pricingCard,
+        ...(featured ? s.pricingCardFeatured : {}),
+        opacity: isVisible ? 1 : 0,
+        transform: isVisible ? 'translateY(0) scale(1)' : 'translateY(16px) scale(0.98)',
+        transition: 'opacity 0.5s ease, transform 0.5s ease',
+      }}
+    >
       {featured && (
-        <div style={styles.pricingBadge}>Most Popular</div>
+        <div style={s.pricingRecommended}>Recommended</div>
       )}
-      <h3 style={styles.pricingName}>{name}</h3>
-      <div style={styles.pricingPrice}>
-        <span style={styles.pricingCurrency}>$</span>
-        <span style={styles.pricingAmount}>{price}</span>
-        <span style={styles.pricingPeriod}>/mo</span>
+      <div>
+        <h3 style={s.pricingName}>{name}</h3>
+        <p style={s.pricingDescription}>{description}</p>
       </div>
-      <ul style={styles.pricingFeatures}>
+      <div style={s.pricingPriceRow}>
+        <span style={s.pricingCurrency}>$</span>
+        <span style={s.pricingAmount}>{price}</span>
+        <span style={s.pricingPeriod}>/{period === 'monthly' ? 'mo' : 'mo'}</span>
+      </div>
+      <button
+        onClick={onCta}
+        style={featured ? s.pricingCTAFeatured : s.pricingCTA}
+      >
+        {cta}
+        <ArrowRight size={14} />
+      </button>
+      <ul style={s.pricingFeatures}>
         {features.map((f, i) => (
-          <li key={i} style={styles.pricingFeatureItem}>
-            <Check size={14} color="var(--accent)" />
+          <li key={i} style={s.pricingFeatureItem}>
+            <Check size={14} color="var(--accent)" style={{ flexShrink: 0 }} />
             <span>{f}</span>
           </li>
         ))}
@@ -352,33 +1162,70 @@ function PricingCard({
   )
 }
 
-/* ------------------------------------------------------------------ */
-/*  Styles                                                              */
-/* ------------------------------------------------------------------ */
+/* ---------- Final CTA Content ---------- */
 
-const styles: Record<string, React.CSSProperties> = {
+function FinalCTAContent({ onGetStarted }: { onGetStarted: () => void }) {
+  const { ref, isVisible } = useScrollReveal()
+
+  return (
+    <div
+      ref={ref}
+      style={{
+        ...s.finalCTAInner,
+        opacity: isVisible ? 1 : 0,
+        transform: isVisible ? 'translateY(0)' : 'translateY(24px)',
+        transition: 'opacity 0.7s ease, transform 0.7s ease',
+      }}
+    >
+      <h2 style={s.finalTitle}>Ready to apply smarter?</h2>
+      <p style={s.finalSub}>
+        Join hundreds of job seekers automating their search. Start free today.
+      </p>
+      <button onClick={onGetStarted} style={s.btnPrimaryLarge}>
+        Get started for free
+        <ArrowRight size={18} />
+      </button>
+      <p style={s.heroMicro}>
+        No credit card required &middot; Free forever &middot; Cancel anytime
+      </p>
+    </div>
+  )
+}
+
+/* ================================================================== */
+/*  STYLES                                                              */
+/* ================================================================== */
+
+const s: Record<string, React.CSSProperties> = {
+  /* ---------- Page ---------- */
   page: {
     width: '100vw',
     minHeight: '100vh',
-    background: 'var(--bg-base)',
+    background: '#09090b',
     overflowX: 'hidden',
     overflowY: 'auto',
   },
+  container: {
+    maxWidth: 1140,
+    margin: '0 auto',
+    padding: '0 24px',
+  },
 
-  /* Nav */
+  /* ---------- Nav ---------- */
   nav: {
     position: 'sticky',
     top: 0,
-    zIndex: 100,
-    borderBottom: '1px solid var(--border)',
-    background: 'rgba(9, 9, 11, 0.85)',
-    backdropFilter: 'blur(12px)',
+    zIndex: 200,
+    background: 'rgba(9, 9, 11, 0.8)',
+    backdropFilter: 'blur(16px)',
+    WebkitBackdropFilter: 'blur(16px)',
+    borderBottom: '1px solid rgba(255,255,255,0.06)',
   },
   navInner: {
-    maxWidth: 1120,
+    maxWidth: 1140,
     margin: '0 auto',
     padding: '0 24px',
-    height: 56,
+    height: 60,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -386,466 +1233,1012 @@ const styles: Record<string, React.CSSProperties> = {
   logoRow: {
     display: 'flex',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
   },
-  logoCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: '50%',
-    background: 'rgba(52, 211, 153, 0.12)',
+  logoMark: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    background: 'var(--accent)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
   },
   logoText: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: 700,
-    color: 'var(--text-primary)',
+    color: '#fff',
+    letterSpacing: '-0.02em',
   },
-  navLinks: {
+  navCenter: {
     display: 'flex',
     alignItems: 'center',
-    gap: 20,
+    gap: 32,
   },
   navLink: {
-    fontSize: 13,
+    fontSize: 14,
     color: 'var(--text-secondary)',
-    textDecoration: 'none',
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    padding: '4px 0',
+    transition: 'color 150ms ease',
+    fontFamily: 'inherit',
+  },
+  navRight: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 12,
+  },
+  navSignIn: {
+    fontSize: 14,
+    color: 'var(--text-secondary)',
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    padding: '6px 12px',
+    fontFamily: 'inherit',
     transition: 'color 150ms ease',
   },
-  signInBtn: {
-    padding: '6px 16px',
-    fontSize: 13,
-    fontWeight: 600,
-    color: 'var(--text-primary)',
-    background: 'var(--bg-elevated)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-    transition: 'all 150ms ease',
-  },
-
-  /* Hero */
-  hero: {
-    maxWidth: 1120,
-    margin: '0 auto',
-    padding: '80px 24px 60px',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    textAlign: 'center',
-  },
-  heroBadge: {
+  navCTA: {
     display: 'inline-flex',
     alignItems: 'center',
     gap: 6,
-    padding: '6px 14px',
-    borderRadius: 20,
-    background: 'rgba(52, 211, 153, 0.08)',
-    border: '1px solid rgba(52, 211, 153, 0.15)',
-    fontSize: 12,
-    fontWeight: 500,
-    color: 'var(--accent)',
-    marginBottom: 24,
+    padding: '8px 18px',
+    fontSize: 13,
+    fontWeight: 600,
+    color: '#000',
+    background: 'var(--accent)',
+    borderRadius: 8,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    border: 'none',
+    transition: 'opacity 150ms ease, transform 100ms ease',
   },
-  heroTitle: {
-    fontSize: 'clamp(36px, 6vw, 64px)',
-    fontWeight: 800,
-    color: 'var(--text-primary)',
-    lineHeight: 1.1,
-    letterSpacing: '-0.03em',
-    marginBottom: 20,
-    background: 'linear-gradient(135deg, var(--text-primary) 0%, var(--accent) 100%)',
-    WebkitBackgroundClip: 'text',
-    WebkitTextFillColor: 'transparent',
+  hamburger: {
+    display: 'none',
+    flexDirection: 'column',
+    gap: 4,
+    padding: 8,
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
   },
-  heroSubtitle: {
-    fontSize: 'clamp(16px, 2vw, 18px)',
-    color: 'var(--text-secondary)',
-    maxWidth: 540,
-    lineHeight: 1.6,
-    marginBottom: 32,
+  hamburgerLine: {
+    display: 'block',
+    width: 18,
+    height: 2,
+    borderRadius: 1,
+    background: 'var(--text-secondary)',
+    transition: 'all 200ms ease',
   },
-  heroCTAs: {
+  mobileMenu: {
     display: 'flex',
-    gap: 12,
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    marginBottom: 60,
+    flexDirection: 'column',
+    padding: '12px 24px 20px',
+    gap: 4,
+    borderTop: '1px solid rgba(255,255,255,0.06)',
   },
-  ctaPrimary: {
+  mobileMenuLink: {
+    fontSize: 15,
+    color: 'var(--text-secondary)',
+    padding: '10px 0',
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    textAlign: 'left' as const,
+    fontFamily: 'inherit',
+  },
+  mobileMenuDivider: {
+    height: 1,
+    background: 'rgba(255,255,255,0.06)',
+    margin: '4px 0',
+  },
+  mobileMenuCTA: {
     display: 'inline-flex',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 8,
-    padding: '12px 28px',
+    padding: '12px 20px',
     fontSize: 15,
     fontWeight: 600,
     color: '#000',
     background: 'var(--accent)',
-    borderRadius: 'var(--radius-lg)',
+    borderRadius: 8,
     cursor: 'pointer',
-    transition: 'opacity 150ms ease, transform 150ms ease',
-    textDecoration: 'none',
+    fontFamily: 'inherit',
     border: 'none',
+    marginTop: 8,
   },
-  ctaSecondary: {
+
+  /* ---------- Hero ---------- */
+  hero: {
+    position: 'relative',
+    maxWidth: 1140,
+    margin: '0 auto',
+    padding: '80px 24px 40px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    textAlign: 'center',
+    overflow: 'hidden',
+  },
+  heroGlow: {
+    position: 'absolute',
+    top: -120,
+    left: '50%',
+    transform: 'translateX(-50%)',
+    width: 600,
+    height: 400,
+    borderRadius: '50%',
+    background: 'radial-gradient(ellipse, rgba(52, 211, 153, 0.08) 0%, transparent 70%)',
+    pointerEvents: 'none',
+    zIndex: 0,
+  },
+  heroContent: {
+    position: 'relative',
+    zIndex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+  },
+  heroBadge: {
     display: 'inline-flex',
     alignItems: 'center',
     gap: 8,
-    padding: '12px 24px',
+    padding: '6px 16px 6px 12px',
+    borderRadius: 24,
+    background: 'rgba(52, 211, 153, 0.06)',
+    border: '1px solid rgba(52, 211, 153, 0.12)',
+    fontSize: 13,
+    fontWeight: 500,
+    color: 'var(--text-secondary)',
+    marginBottom: 32,
+    animation: 'landing-fadeUp 0.6s ease both',
+  },
+  heroBadgeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: '50%',
+    background: 'var(--accent)',
+    animation: 'landing-pulse 2s ease infinite',
+  },
+  heroTitle: {
+    fontSize: 'clamp(2.5rem, 5vw, 4.5rem)',
+    fontWeight: 800,
+    color: '#fff',
+    lineHeight: 1.08,
+    letterSpacing: '-0.04em',
+    marginBottom: 24,
+    background: 'linear-gradient(135deg, #ffffff 30%, var(--accent) 100%)',
+    WebkitBackgroundClip: 'text',
+    WebkitTextFillColor: 'transparent',
+    animation: 'landing-fadeUp 0.6s ease 0.1s both',
+  },
+  heroSub: {
+    fontSize: 'clamp(16px, 2vw, 19px)',
+    color: 'var(--text-secondary)',
+    maxWidth: 560,
+    lineHeight: 1.65,
+    marginBottom: 36,
+    animation: 'landing-fadeUp 0.6s ease 0.2s both',
+  },
+  heroCTARow: {
+    display: 'flex',
+    gap: 14,
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    marginBottom: 16,
+    animation: 'landing-fadeUp 0.6s ease 0.3s both',
+  },
+  heroMicro: {
+    fontSize: 13,
+    color: 'var(--text-tertiary)',
+    animation: 'landing-fadeUp 0.6s ease 0.4s both',
+  },
+
+  /* ---------- Buttons ---------- */
+  btnPrimary: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: '14px 32px',
+    fontSize: 15,
+    fontWeight: 600,
+    color: '#000',
+    background: 'var(--accent)',
+    borderRadius: 10,
+    cursor: 'pointer',
+    border: 'none',
+    fontFamily: 'inherit',
+    transition: 'opacity 150ms ease, transform 100ms ease',
+  },
+  btnPrimaryLarge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 10,
+    padding: '18px 40px',
+    fontSize: 17,
+    fontWeight: 600,
+    color: '#000',
+    background: 'var(--accent)',
+    borderRadius: 12,
+    cursor: 'pointer',
+    border: 'none',
+    fontFamily: 'inherit',
+    transition: 'opacity 150ms ease, transform 100ms ease',
+  },
+  btnGhost: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: '14px 28px',
     fontSize: 15,
     fontWeight: 500,
     color: 'var(--text-secondary)',
     background: 'transparent',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius-lg)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: 10,
     cursor: 'pointer',
+    fontFamily: 'inherit',
     transition: 'all 150ms ease',
-    textDecoration: 'none',
   },
 
-  /* Hero Mockup */
-  heroMockup: {
+  /* ---------- Hero Mockup ---------- */
+  heroMockupWrap: {
+    position: 'relative',
     width: '100%',
-    maxWidth: 720,
-    borderRadius: 12,
-    border: '1px solid var(--border)',
-    overflow: 'hidden',
-    background: 'var(--bg-surface)',
-    boxShadow: '0 20px 60px rgba(0,0,0,0.4), 0 0 0 1px rgba(52, 211, 153, 0.05)',
+    maxWidth: 780,
+    marginTop: 48,
+    zIndex: 1,
   },
-  mockupHeader: {
+  mockupGlow: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: 'translate(-50%, -50%)',
+    width: '100%',
+    height: '100%',
+    borderRadius: 16,
+    background: 'radial-gradient(ellipse, rgba(52, 211, 153, 0.06) 0%, transparent 60%)',
+    pointerEvents: 'none',
+    zIndex: 0,
+  },
+  mockupFrame: {
+    position: 'relative',
+    zIndex: 1,
+    borderRadius: 14,
+    border: '1px solid rgba(255,255,255,0.08)',
+    overflow: 'hidden',
+    background: '#111113',
+    boxShadow: '0 24px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(52, 211, 153, 0.04)',
+  },
+  mockupChrome: {
     display: 'flex',
     alignItems: 'center',
-    gap: 10,
-    padding: '10px 14px',
-    borderBottom: '1px solid var(--border)',
-    background: 'var(--bg-elevated)',
+    padding: '10px 16px',
+    borderBottom: '1px solid rgba(255,255,255,0.06)',
+    background: '#0e0e10',
   },
-  mockupDots: {
+  chromeDots: {
     display: 'flex',
-    gap: 5,
+    gap: 6,
   },
-  dot: {
+  chromeDot: {
     display: 'block',
-    width: 8,
-    height: 8,
+    width: 10,
+    height: 10,
     borderRadius: '50%',
   },
-  mockupUrl: {
-    fontSize: 10,
-    color: 'var(--text-tertiary)',
+  chromeUrlBar: {
     flex: 1,
-    textAlign: 'center',
-  },
-  mockupBody: {
     display: 'flex',
-    minHeight: 200,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    fontSize: 11,
+    color: 'var(--text-tertiary)',
+  },
+  mockupDash: {
+    display: 'flex',
+    minHeight: 220,
   },
   mockupSidebar: {
-    width: 90,
-    borderRight: '1px solid var(--border)',
-    padding: '10px 0',
+    width: 100,
+    borderRight: '1px solid rgba(255,255,255,0.06)',
+    padding: '12px 0',
     display: 'flex',
     flexDirection: 'column',
-    gap: 2,
+    gap: 1,
   },
-  mockupNavItem: {
+  mockupSideItem: {
     display: 'flex',
     alignItems: 'center',
     gap: 6,
-    padding: '5px 10px',
+    padding: '6px 12px',
     fontSize: 9,
-    color: 'var(--text-tertiary)',
+    borderRadius: 0,
+    transition: 'all 150ms ease',
   },
-  mockupContent: {
+  mockupMain: {
     flex: 1,
-    padding: '14px 0',
+    padding: '12px 0',
     display: 'flex',
     flexDirection: 'column',
-    gap: 14,
+    gap: 10,
   },
-  mockupStats: {
+  mockupStatRow: {
     display: 'flex',
-    gap: 8,
-    padding: '0 12px',
+    gap: 6,
+    padding: '0 10px',
   },
   mockupStatCard: {
     flex: 1,
     display: 'flex',
     flexDirection: 'column',
-    alignItems: 'center',
-    gap: 2,
-    padding: '10px 8px',
-    background: 'var(--bg-elevated)',
+    gap: 4,
+    padding: '8px 10px',
+    background: 'rgba(255,255,255,0.02)',
     borderRadius: 6,
-    border: '1px solid var(--border)',
+    border: '1px solid rgba(255,255,255,0.04)',
+  },
+  mockupFeed: {
+    padding: '0 10px',
+  },
+  liveDot: {
+    width: 5,
+    height: 5,
+    borderRadius: '50%',
+    background: 'var(--accent)',
+    animation: 'landing-pulse 2s ease infinite',
+  },
+  activityRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: '5px 10px',
+    borderRadius: 5,
+    marginBottom: 2,
+    background: 'rgba(255,255,255,0.01)',
   },
 
-  /* Sections */
-  section: {
-    padding: '80px 24px',
+  /* ---------- Logo Strip ---------- */
+  logoSection: {
+    padding: '40px 24px',
+    borderBottom: '1px solid rgba(255,255,255,0.04)',
+    borderTop: '1px solid rgba(255,255,255,0.04)',
   },
-  sectionInner: {
-    maxWidth: 1120,
+  logoSectionLabel: {
+    fontSize: 12,
+    fontWeight: 500,
+    color: 'var(--text-tertiary)',
+    textAlign: 'center',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.08em',
+    marginBottom: 24,
+  },
+  logoGrid: {
+    maxWidth: 900,
     margin: '0 auto',
+    display: 'flex',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 32,
+    alignItems: 'center',
+  },
+  logoItem: {
+    display: 'flex',
+    alignItems: 'center',
+  },
+  logoName: {
+    fontSize: 16,
+    fontWeight: 700,
+    color: 'var(--text-tertiary)',
+    opacity: 0.5,
+    letterSpacing: '-0.01em',
+    transition: 'opacity 200ms ease',
+  },
+
+  /* ---------- Sections ---------- */
+  sectionDark: {
+    padding: '100px 24px',
+  },
+  sectionAlt: {
+    padding: '100px 24px',
+    background: 'rgba(255,255,255,0.015)',
+    borderTop: '1px solid rgba(255,255,255,0.04)',
+    borderBottom: '1px solid rgba(255,255,255,0.04)',
+  },
+  sectionLabel: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '4px 14px',
+    borderRadius: 20,
+    background: 'rgba(52, 211, 153, 0.06)',
+    border: '1px solid rgba(52, 211, 153, 0.1)',
+    fontSize: 12,
+    fontWeight: 600,
+    color: 'var(--accent)',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.06em',
+    marginBottom: 16,
   },
   sectionTitle: {
-    fontSize: 'clamp(24px, 4vw, 36px)',
+    fontSize: 'clamp(28px, 4vw, 42px)',
     fontWeight: 700,
-    color: 'var(--text-primary)',
-    textAlign: 'center',
-    letterSpacing: '-0.02em',
-    marginBottom: 12,
+    color: '#fff',
+    letterSpacing: '-0.03em',
+    lineHeight: 1.15,
+    marginBottom: 16,
   },
   sectionSubtitle: {
-    fontSize: 16,
+    fontSize: 'clamp(15px, 1.5vw, 17px)',
     color: 'var(--text-secondary)',
-    textAlign: 'center',
-    maxWidth: 500,
-    margin: '0 auto 48px',
-    lineHeight: 1.5,
+    maxWidth: 540,
+    margin: '0 auto',
+    lineHeight: 1.6,
   },
 
-  /* Features */
-  featureGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-    gap: 20,
-  },
-  featureCard: {
-    padding: '28px 24px',
-    background: 'var(--bg-surface)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius-xl)',
+  /* ---------- Feature Rows ---------- */
+  featureRow: {
     display: 'flex',
-    flexDirection: 'column',
-    gap: 14,
-    transition: 'border-color 200ms ease, transform 200ms ease',
+    gap: 48,
+    alignItems: 'center',
+    marginBottom: 80,
   },
-  featureIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
+  featureText: {
+    flex: 1,
+    minWidth: 280,
+  },
+  featureIconBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: 16,
+  },
+  featureLabel: {
+    fontSize: 12,
+    fontWeight: 600,
+    color: 'var(--text-tertiary)',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.06em',
+    marginBottom: 8,
+    display: 'block',
   },
   featureTitle: {
-    fontSize: 17,
-    fontWeight: 600,
-    color: 'var(--text-primary)',
+    fontSize: 'clamp(22px, 3vw, 28px)',
+    fontWeight: 700,
+    color: '#fff',
+    letterSpacing: '-0.02em',
+    lineHeight: 1.2,
+    marginBottom: 12,
   },
   featureDesc: {
-    fontSize: 14,
+    fontSize: 15,
     color: 'var(--text-secondary)',
-    lineHeight: 1.5,
+    lineHeight: 1.7,
+    maxWidth: 420,
+  },
+  featureMockupWrap: {
+    flex: 1,
+    minWidth: 280,
+    display: 'flex',
+    justifyContent: 'center',
   },
 
-  /* How It Works */
-  howSection: {
-    padding: '80px 24px',
-    background: 'var(--bg-surface)',
-    borderTop: '1px solid var(--border)',
-    borderBottom: '1px solid var(--border)',
+  /* ---------- Mini Mockups ---------- */
+  miniMockup: {
+    width: '100%',
+    maxWidth: 320,
+    borderRadius: 12,
+    border: '1px solid rgba(255,255,255,0.06)',
+    background: '#111113',
+    overflow: 'hidden',
+    boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
   },
-  stepsGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
-    gap: 24,
-  },
-  stepCard: {
-    padding: '28px 24px',
-    background: 'var(--bg-elevated)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius-xl)',
+  miniHeader: {
     display: 'flex',
-    flexDirection: 'column',
     alignItems: 'center',
-    textAlign: 'center',
-    gap: 14,
+    gap: 8,
+    padding: '10px 14px',
+    borderBottom: '1px solid rgba(255,255,255,0.06)',
+    background: '#0e0e10',
+  },
+  miniRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    padding: '8px 14px',
+    borderBottom: '1px solid rgba(255,255,255,0.03)',
+  },
+
+  /* ---------- How It Works Steps ---------- */
+  stepsRow: {
+    display: 'flex',
+    gap: 24,
+    justifyContent: 'center',
     position: 'relative',
   },
-  stepNumber: {
+  stepItem: {
+    flex: 1,
+    maxWidth: 320,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    textAlign: 'center',
+    position: 'relative',
+    padding: '0 16px',
+  },
+  stepConnector: {
     position: 'absolute',
-    top: 16,
-    right: 16,
+    top: 24,
+    right: -12,
     width: 24,
-    height: 24,
+    height: 2,
+    background: 'rgba(52, 211, 153, 0.2)',
+    zIndex: 0,
+  },
+  stepNumCircle: {
+    width: 48,
+    height: 48,
     borderRadius: '50%',
     background: 'rgba(52, 211, 153, 0.1)',
-    color: 'var(--accent)',
-    fontSize: 12,
-    fontWeight: 700,
+    border: '1px solid rgba(52, 211, 153, 0.2)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: 16,
+    position: 'relative',
+    zIndex: 1,
+  },
+  stepNum: {
+    fontSize: 18,
+    fontWeight: 700,
+    color: 'var(--accent)',
   },
   stepIconWrap: {
-    width: 56,
-    height: 56,
+    marginBottom: 12,
+  },
+  stepTitle: {
+    fontSize: 17,
+    fontWeight: 600,
+    color: '#fff',
+    marginBottom: 8,
+  },
+  stepDesc: {
+    fontSize: 14,
+    color: 'var(--text-secondary)',
+    lineHeight: 1.6,
+  },
+
+  /* ---------- Stats ---------- */
+  statsSection: {
+    padding: '64px 24px',
+    background: 'linear-gradient(135deg, rgba(52, 211, 153, 0.04) 0%, rgba(96, 165, 250, 0.04) 100%)',
+    borderTop: '1px solid rgba(255,255,255,0.04)',
+    borderBottom: '1px solid rgba(255,255,255,0.04)',
+  },
+  statsGrid: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 40,
+  },
+  statItem: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 4,
+    minWidth: 140,
+  },
+  statValue: {
+    fontSize: 'clamp(32px, 4vw, 48px)',
+    fontWeight: 800,
+    color: 'var(--accent)',
+    letterSpacing: '-0.03em',
+    lineHeight: 1,
+  },
+  statLabel: {
+    fontSize: 13,
+    color: 'var(--text-secondary)',
+    textAlign: 'center',
+  },
+  statDivider: {
+    width: 1,
+    height: 48,
+    background: 'rgba(255,255,255,0.06)',
+  },
+
+  /* ---------- Testimonial ---------- */
+  testimonialSection: {
+    padding: '80px 24px',
+  },
+  testimonialCard: {
+    maxWidth: 640,
+    margin: '0 auto',
+    textAlign: 'center',
+    position: 'relative',
+  },
+  quoteMarks: {
+    fontSize: 60,
+    fontWeight: 700,
+    color: 'rgba(52, 211, 153, 0.15)',
+    lineHeight: 1,
+    marginBottom: -8,
+  },
+  quoteText: {
+    fontSize: 'clamp(17px, 2vw, 20px)',
+    color: 'var(--text-primary)',
+    lineHeight: 1.7,
+    fontStyle: 'italic',
+    marginBottom: 28,
+  },
+  quoteAuthor: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    marginBottom: 16,
+  },
+  quoteAvatar: {
+    width: 40,
+    height: 40,
     borderRadius: '50%',
-    background: 'rgba(52, 211, 153, 0.08)',
-    border: '1px solid rgba(52, 211, 153, 0.15)',
+    background: 'var(--accent)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  stepTitle: {
-    fontSize: 16,
+  quoteName: {
+    fontSize: 14,
     fontWeight: 600,
-    color: 'var(--text-primary)',
+    color: '#fff',
+    textAlign: 'left',
   },
-  stepDesc: {
-    fontSize: 13,
-    color: 'var(--text-secondary)',
-    lineHeight: 1.5,
+  quoteRole: {
+    fontSize: 12,
+    color: 'var(--text-tertiary)',
+    textAlign: 'left',
   },
-
-  /* Social Proof */
-  proofSection: {
-    padding: '48px 24px',
-    background: 'linear-gradient(135deg, rgba(52, 211, 153, 0.05) 0%, rgba(96, 165, 250, 0.05) 100%)',
-    borderBottom: '1px solid var(--border)',
-  },
-  proofGrid: {
-    maxWidth: 800,
-    margin: '0 auto',
-    display: 'grid',
-    gridTemplateColumns: 'repeat(3, 1fr)',
-    gap: 20,
-    textAlign: 'center',
-  },
-  proofStat: {
+  quoteStars: {
     display: 'flex',
-    flexDirection: 'column',
-    gap: 4,
-  },
-  proofValue: {
-    fontSize: 36,
-    fontWeight: 800,
-    color: 'var(--accent)',
-    letterSpacing: '-0.02em',
-  },
-  proofLabel: {
-    fontSize: 13,
-    color: 'var(--text-secondary)',
+    justifyContent: 'center',
+    gap: 2,
   },
 
-  /* Pricing */
+  /* ---------- Pricing ---------- */
+  billingToggle: {
+    display: 'flex',
+    justifyContent: 'center',
+    gap: 4,
+    padding: 4,
+    borderRadius: 10,
+    background: 'rgba(255,255,255,0.04)',
+    border: '1px solid rgba(255,255,255,0.06)',
+    marginBottom: 48,
+    width: 'fit-content',
+    margin: '0 auto 48px',
+  },
+  billingBtn: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    padding: '8px 20px',
+    fontSize: 13,
+    fontWeight: 500,
+    color: 'var(--text-secondary)',
+    background: 'transparent',
+    border: 'none',
+    borderRadius: 8,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    transition: 'all 200ms ease',
+  },
+  billingBtnActive: {
+    background: 'rgba(255,255,255,0.08)',
+    color: '#fff',
+    fontWeight: 600,
+  },
+  saveBadge: {
+    fontSize: 10,
+    fontWeight: 700,
+    color: '#000',
+    background: 'var(--accent)',
+    padding: '1px 6px',
+    borderRadius: 4,
+  },
   pricingGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+    gridTemplateColumns: 'repeat(4, 1fr)',
     gap: 16,
+    maxWidth: 1080,
+    margin: '0 auto',
   },
   pricingCard: {
-    padding: '24px 20px',
-    background: 'var(--bg-surface)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius-xl)',
+    padding: '28px 24px',
+    background: 'rgba(255,255,255,0.02)',
+    border: '1px solid rgba(255,255,255,0.06)',
+    borderRadius: 14,
     display: 'flex',
     flexDirection: 'column',
-    gap: 16,
+    gap: 20,
     position: 'relative',
   },
   pricingCardFeatured: {
-    border: '1px solid rgba(52, 211, 153, 0.4)',
-    boxShadow: '0 0 24px rgba(52, 211, 153, 0.08)',
+    border: '1px solid rgba(52, 211, 153, 0.3)',
+    background: 'rgba(52, 211, 153, 0.03)',
+    boxShadow: '0 0 40px rgba(52, 211, 153, 0.06)',
+    transform: 'scale(1.02)',
   },
-  pricingBadge: {
+  pricingRecommended: {
     position: 'absolute',
-    top: -10,
+    top: -11,
     left: '50%',
     transform: 'translateX(-50%)',
-    padding: '3px 12px',
+    padding: '4px 14px',
     borderRadius: 20,
     background: 'var(--accent)',
     color: '#000',
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: 700,
-    textTransform: 'uppercase',
-    letterSpacing: '0.05em',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.04em',
     whiteSpace: 'nowrap',
   },
   pricingName: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: 600,
-    color: 'var(--text-primary)',
+    color: '#fff',
   },
-  pricingPrice: {
+  pricingDescription: {
+    fontSize: 13,
+    color: 'var(--text-tertiary)',
+    marginTop: 2,
+  },
+  pricingPriceRow: {
     display: 'flex',
     alignItems: 'baseline',
     gap: 2,
   },
   pricingCurrency: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: 500,
     color: 'var(--text-secondary)',
   },
   pricingAmount: {
-    fontSize: 36,
+    fontSize: 40,
     fontWeight: 800,
-    color: 'var(--text-primary)',
-    letterSpacing: '-0.02em',
+    color: '#fff',
+    letterSpacing: '-0.03em',
+    lineHeight: 1,
   },
   pricingPeriod: {
-    fontSize: 13,
+    fontSize: 14,
     color: 'var(--text-tertiary)',
+  },
+  pricingCTA: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    padding: '10px 20px',
+    fontSize: 14,
+    fontWeight: 600,
+    color: '#fff',
+    background: 'rgba(255,255,255,0.06)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: 8,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    transition: 'all 150ms ease',
+  },
+  pricingCTAFeatured: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    padding: '10px 20px',
+    fontSize: 14,
+    fontWeight: 600,
+    color: '#000',
+    background: 'var(--accent)',
+    border: 'none',
+    borderRadius: 8,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    transition: 'all 150ms ease',
   },
   pricingFeatures: {
     listStyle: 'none',
     display: 'flex',
     flexDirection: 'column',
-    gap: 8,
+    gap: 10,
     margin: 0,
     padding: 0,
   },
   pricingFeatureItem: {
     display: 'flex',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
     fontSize: 13,
     color: 'var(--text-secondary)',
   },
 
-  /* Footer */
+  /* ---------- Final CTA ---------- */
+  finalCTA: {
+    position: 'relative',
+    padding: '100px 24px',
+    overflow: 'hidden',
+    background: 'linear-gradient(180deg, #09090b 0%, #0a1a14 50%, #09090b 100%)',
+  },
+  finalCTAGlow: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: 'translate(-50%, -50%)',
+    width: 600,
+    height: 400,
+    borderRadius: '50%',
+    background: 'radial-gradient(ellipse, rgba(52, 211, 153, 0.1) 0%, transparent 70%)',
+    pointerEvents: 'none',
+  },
+  finalCTAInner: {
+    position: 'relative',
+    zIndex: 1,
+    textAlign: 'center',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 20,
+  },
+  finalTitle: {
+    fontSize: 'clamp(28px, 4vw, 44px)',
+    fontWeight: 700,
+    color: '#fff',
+    letterSpacing: '-0.03em',
+    lineHeight: 1.15,
+  },
+  finalSub: {
+    fontSize: 17,
+    color: 'var(--text-secondary)',
+    maxWidth: 480,
+    lineHeight: 1.6,
+  },
+
+  /* ---------- Footer ---------- */
   footer: {
-    borderTop: '1px solid var(--border)',
-    padding: '32px 24px',
-    background: 'var(--bg-surface)',
+    borderTop: '1px solid rgba(255,255,255,0.04)',
+    background: '#09090b',
   },
   footerInner: {
-    maxWidth: 1120,
+    maxWidth: 1140,
+    margin: '0 auto',
+    padding: '48px 24px',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    flexWrap: 'wrap',
+    gap: 40,
+  },
+  footerLeft: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 8,
+  },
+  footerTagline: {
+    fontSize: 13,
+    color: 'var(--text-tertiary)',
+  },
+  footerColumns: {
+    display: 'flex',
+    gap: 64,
+  },
+  footerCol: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 8,
+  },
+  footerColTitle: {
+    fontSize: 12,
+    fontWeight: 600,
+    color: 'var(--text-secondary)',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.06em',
+    marginBottom: 4,
+  },
+  footerLink: {
+    fontSize: 13,
+    color: 'var(--text-tertiary)',
+    textDecoration: 'none',
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    padding: 0,
+    textAlign: 'left' as const,
+    transition: 'color 150ms ease',
+  },
+  footerBottom: {
+    borderTop: '1px solid rgba(255,255,255,0.04)',
+    padding: '16px 24px',
+  },
+  footerBottomInner: {
+    maxWidth: 1140,
     margin: '0 auto',
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
     flexWrap: 'wrap',
-    gap: 16,
+    gap: 8,
   },
-  footerLeft: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 6,
-  },
-  footerTag: {
+  footerCopyright: {
     fontSize: 12,
     color: 'var(--text-tertiary)',
-    fontStyle: 'italic',
   },
-  footerLinks: {
-    display: 'flex',
-    gap: 20,
-    alignItems: 'center',
-  },
-  footerLink: {
+  footerBadge: {
     display: 'flex',
     alignItems: 'center',
     gap: 4,
-    fontSize: 13,
-    color: 'var(--text-secondary)',
-    textDecoration: 'none',
-    transition: 'color 150ms ease',
+    fontSize: 11,
+    color: 'var(--text-tertiary)',
   },
+}
+
+/* ================================================================== */
+/*  RESPONSIVE OVERRIDES via CSS-in-JS media query style tag            */
+/* ================================================================== */
+
+// Inject responsive styles once
+const RESPONSIVE_ID = 'landing-responsive'
+
+if (typeof document !== 'undefined' && !document.getElementById(RESPONSIVE_ID)) {
+  const style = document.createElement('style')
+  style.id = RESPONSIVE_ID
+  style.textContent = `
+    /* Mobile: hide desktop nav, show hamburger */
+    @media (max-width: 768px) {
+      [data-landing-nav-center] { display: none !important; }
+      [data-landing-nav-right] { display: none !important; }
+      [data-landing-hamburger] { display: flex !important; }
+      [data-landing-feature-row] {
+        flex-direction: column !important;
+        gap: 32px !important;
+      }
+      [data-landing-steps-row] {
+        flex-direction: column !important;
+        gap: 40px !important;
+        align-items: center !important;
+      }
+      [data-landing-step-connector] {
+        display: none !important;
+      }
+      [data-landing-pricing-grid] {
+        grid-template-columns: 1fr !important;
+        max-width: 400px !important;
+        margin-left: auto !important;
+        margin-right: auto !important;
+      }
+      [data-landing-stats-divider] {
+        display: none !important;
+      }
+      [data-landing-mockup-sidebar] {
+        display: none !important;
+      }
+      [data-landing-footer-columns] {
+        flex-direction: row !important;
+        gap: 40px !important;
+      }
+    }
+    @media (max-width: 480px) {
+      [data-landing-logo-grid] {
+        gap: 20px !important;
+      }
+    }
+  `
+  document.head.appendChild(style)
 }
