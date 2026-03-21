@@ -70,6 +70,19 @@ export function useGmailSync(options: UseGmailSyncOptions = {}): UseGmailSyncRet
         setIsLoading(false)
         return
       }
+      // Validate URL to prevent fetching arbitrary/malicious endpoints
+      try {
+        const parsed = new URL(url)
+        if (parsed.protocol !== 'https:') {
+          setError('Gmail sync URL must use HTTPS')
+          setIsLoading(false)
+          return
+        }
+      } catch {
+        setError('Invalid Gmail sync URL')
+        setIsLoading(false)
+        return
+      }
       const res = await fetch(url)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data: GmailSyncResponse = await res.json()

@@ -27,6 +27,7 @@ import { useBotActivity } from '../hooks/useBotActivity'
 import type { BotActivityItem, BotRunStatus } from '../hooks/useBotActivity'
 import { triggerBotRun, triggerDryRun } from '../lib/bot-api'
 import { supabase } from '../lib/supabase'
+import { useAuthWall } from '../hooks/useAuthWall'
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -856,8 +857,11 @@ export function AutopilotView() {
     loadHistory()
   }, [])
 
-  // Handlers for bot control
-  const handleStartBot = useCallback(async () => {
+  // Auth wall for bot features
+  const { requireAuth } = useAuthWall()
+
+  // Core bot run logic (called after auth check)
+  const doStartBot = useCallback(async () => {
     if (profiles.length === 0) return
     setIsTriggering(true)
     setTriggerError(null)
@@ -870,7 +874,7 @@ export function AutopilotView() {
     }
   }, [profiles])
 
-  const handleDryRun = useCallback(async () => {
+  const doDryRun = useCallback(async () => {
     if (profiles.length === 0) return
     setIsTriggering(true)
     setTriggerError(null)
@@ -882,6 +886,17 @@ export function AutopilotView() {
       setIsTriggering(false)
     }
   }, [profiles])
+
+  // Handlers with auth wall gate
+  const handleStartBot = useCallback(() => {
+    if (!requireAuth('start_bot', () => { doStartBot() })) return
+    doStartBot()
+  }, [requireAuth, doStartBot])
+
+  const handleDryRun = useCallback(() => {
+    if (!requireAuth('start_bot', () => { doDryRun() })) return
+    doDryRun()
+  }, [requireAuth, doDryRun])
 
   // Form state
   const [formName, setFormName] = useState('')

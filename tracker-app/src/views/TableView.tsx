@@ -33,8 +33,18 @@ function formatDate(dateStr: string): string {
   }
 }
 
+function isValidUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    return ['http:', 'https:'].includes(parsed.protocol)
+  } catch {
+    return false
+  }
+}
+
 function CellLink({ href }: { href: string }) {
   if (!href) return <span style={{ color: 'var(--text-tertiary)' }}>—</span>
+  if (!isValidUrl(href)) return <span style={{ color: 'var(--text-tertiary)' }}>—</span>
   return (
     <a
       href={href}

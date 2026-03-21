@@ -22,29 +22,16 @@ export type MigrationProgress = {
 }
 
 /**
- * Sign in to Supabase with migration credentials.
- * Returns the user id on success, null on failure.
+ * Get the current signed-in user's id for migration.
+ * Migration now requires the user to be already authenticated
+ * (no more hardcoded credentials in client bundle).
  */
-async function signInForMigration(): Promise<string | null> {
-  const email = import.meta.env.VITE_MIGRATION_EMAIL
-  const password = import.meta.env.VITE_MIGRATION_PASSWORD
-
-  if (!email || !password) {
-    return null
-  }
-
-  // Check if already signed in
+async function getAuthenticatedUserId(): Promise<string | null> {
   const { data: { session } } = await supabase.auth.getSession()
   if (session?.user?.id) {
     return session.user.id
   }
-
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-  if (error || !data.user) {
-    console.error('[migration] Sign-in failed:', error?.message)
-    return null
-  }
-  return data.user.id
+  return null
 }
 
 /**
@@ -200,20 +187,24 @@ export async function runMigration(
 ): Promise<MigrationResult> {
   const allErrors: string[] = []
 
-  // Phase 1: Sign in
+  // Phase 1: Verify user is signed in
   onProgress?.({ phase: 'signing-in', current: 0, total: jobs.length, errors: [] })
-  const userId = await signInForMigration()
+  const userId = await getAuthenticatedUserId()
   if (!userId) {
     return {
       migrated: 0,
-      errors: ['Sign-in failed. Check VITE_MIGRATION_EMAIL and VITE_MIGRATION_PASSWORD in .env'],
+      errors: ['Not signed in. Please sign in first before running migration.'],
     }
   }
 
   // Phase 2: Ensure profile exists
   onProgress?.({ phase: 'ensuring-profile', current: 0, total: jobs.length, errors: [] })
   try {
-    const email = import.meta.env.VITE_MIGRATION_EMAIL || 'florian.gouloubi@gmail.com'
+    const { data: { session } } = await supabase.auth.getSession()
+    const email = session?.user?.email || ''
+    if (!email) {
+      return { migrated: 0, errors: ['No email found in session. Please sign in again.'] }
+    }
     await ensureProfile(userId, email)
   } catch (err) {
     return {

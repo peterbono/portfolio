@@ -38,6 +38,14 @@ export function AuthView() {
       setError('Password must be at least 8 characters')
       return
     }
+    if (password.length > 128) {
+      setError('Password must be 128 characters or fewer')
+      return
+    }
+    if (!/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {
+      setError('Password must contain both letters and numbers')
+      return
+    }
     setLoading(true)
     try {
       const { error: signUpError } = await supabase.auth.signUp({
@@ -152,6 +160,8 @@ export function AuthView() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
+                maxLength={254}
+                autoComplete="email"
                 style={styles.input}
               />
             </div>
@@ -163,6 +173,8 @@ export function AuthView() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                maxLength={128}
+                autoComplete="current-password"
                 style={styles.input}
               />
             </div>
@@ -198,6 +210,8 @@ export function AuthView() {
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 required
+                maxLength={100}
+                autoComplete="name"
                 style={styles.input}
               />
             </div>
@@ -209,6 +223,8 @@ export function AuthView() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
+                maxLength={254}
+                autoComplete="email"
                 style={styles.input}
               />
             </div>
@@ -221,6 +237,8 @@ export function AuthView() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 minLength={8}
+                maxLength={128}
+                autoComplete="new-password"
                 style={styles.input}
               />
             </div>

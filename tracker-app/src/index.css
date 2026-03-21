@@ -119,6 +119,11 @@ textarea:focus {
   to { transform: rotate(360deg); }
 }
 
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
 /* Utility */
 .sr-only {
   position: absolute;

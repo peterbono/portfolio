@@ -3,43 +3,34 @@ import { SupabaseProvider, useSupabase } from './context/SupabaseContext'
 import { JobsProvider } from './context/JobsContext'
 import { UIProvider } from './context/UIContext'
 import { CoachProvider } from './context/CoachContext'
+import { AuthWallProvider } from './context/AuthWallContext'
 import { AppShell } from './layout/AppShell'
 import { GmailSyncBridge } from './components/GmailSyncBridge'
-import { AuthView } from './views/AuthView'
+import { AuthWall } from './components/AuthWall'
 import { LandingView } from './views/LandingView'
 import { OnboardingWizard } from './components/OnboardingWizard'
 
-const AUTH_REQUIRED = import.meta.env.VITE_AUTH_REQUIRED === 'true'
 const ONBOARDING_KEY = 'tracker_v2_onboarding_done'
+const VISITED_KEY = 'tracker_v2_visited'
 
-function AuthGate() {
+function AppContent() {
   const { session, user, authLoading } = useSupabase()
-  const [showAuth, setShowAuth] = useState(false)
+
+  const [hasVisited, setHasVisited] = useState(
+    () => localStorage.getItem(VISITED_KEY) === 'true'
+  )
   const [onboardingDone, setOnboardingDone] = useState(
     () => localStorage.getItem(ONBOARDING_KEY) === 'true'
   )
 
-  const handleGetStarted = useCallback(() => setShowAuth(true), [])
-  const handleSignIn = useCallback(() => setShowAuth(true), [])
-  const handleBackToLanding = useCallback(() => setShowAuth(false), [])
-  const handleOnboardingComplete = useCallback(() => setOnboardingDone(true), [])
+  const handleGetStarted = useCallback(() => {
+    localStorage.setItem(VISITED_KEY, 'true')
+    setHasVisited(true)
+  }, [])
 
-  // If auth is not required, skip the gate entirely
-  if (!AUTH_REQUIRED) {
-    return (
-      <UIProvider>
-        <JobsProvider>
-          <CoachProvider>
-            <GmailSyncBridge />
-            {!onboardingDone ? (
-              <OnboardingWizard onComplete={handleOnboardingComplete} />
-            ) : null}
-            <AppShell />
-          </CoachProvider>
-        </JobsProvider>
-      </UIProvider>
-    )
-  }
+  const handleOnboardingComplete = useCallback(() => {
+    setOnboardingDone(true)
+  }, [])
 
   // Show a minimal loading state while checking session
   if (authLoading) {
@@ -70,63 +61,31 @@ function AuthGate() {
     )
   }
 
-  // No session -> show landing page or auth view
-  if (!session) {
-    if (showAuth) {
-      return (
-        <div style={{ position: 'relative' }}>
-          <AuthView />
-          <button
-            onClick={handleBackToLanding}
-            style={{
-              position: 'fixed',
-              top: 20,
-              left: 20,
-              padding: '6px 14px',
-              fontSize: 13,
-              color: 'var(--text-secondary)',
-              background: 'var(--bg-elevated)',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-md)',
-              cursor: 'pointer',
-              zIndex: 10,
-              fontFamily: 'inherit',
-            }}
-          >
-            &larr; Back
-          </button>
-        </div>
-      )
-    }
-    return <LandingView onGetStarted={handleGetStarted} onSignIn={handleSignIn} />
+  // First visit and not authenticated: show landing page
+  if (!hasVisited && !session) {
+    return <LandingView onGetStarted={handleGetStarted} onSignIn={handleGetStarted} />
   }
 
-  // Authenticated but onboarding not done -> show wizard
-  if (!onboardingDone) {
-    return (
-      <UIProvider>
-        <JobsProvider>
-          <CoachProvider>
-            <GmailSyncBridge />
-            <OnboardingWizard
-              onComplete={handleOnboardingComplete}
-              defaultEmail={user?.email ?? undefined}
-              defaultName={user?.user_metadata?.full_name ?? undefined}
-            />
-            <AppShell />
-          </CoachProvider>
-        </JobsProvider>
-      </UIProvider>
-    )
-  }
+  // Authenticated but onboarding not done: show wizard over dashboard
+  const showOnboarding = session && !onboardingDone
 
-  // Authenticated and onboarded -> show app
   return (
     <UIProvider>
       <JobsProvider>
         <CoachProvider>
-          <GmailSyncBridge />
-          <AppShell />
+          <AuthWallProvider>
+            <GmailSyncBridge />
+            {showOnboarding && (
+              <OnboardingWizard
+                onComplete={handleOnboardingComplete}
+                defaultEmail={user?.email ?? undefined}
+                defaultName={user?.user_metadata?.full_name ?? undefined}
+              />
+            )}
+            <AppShell />
+            {/* Global auth wall modal (rendered when triggered) */}
+            <AuthWall />
+          </AuthWallProvider>
         </CoachProvider>
       </JobsProvider>
     </UIProvider>
@@ -136,7 +95,7 @@ function AuthGate() {
 export default function App() {
   return (
     <SupabaseProvider>
-      <AuthGate />
+      <AppContent />
     </SupabaseProvider>
   )
 }

@@ -13,10 +13,12 @@ import companyHQ from '../data/company-hq.json'
 const HQ_MAP: Record<string, string> = companyHQ as Record<string, string>
 import seedData from '../data/jobs.json'
 import knownRejections from '../data/known-rejections.json'
+import { DEMO_JOBS } from '../data/demo-jobs'
 
 const seedJobs: Job[] = seedData as Job[]
 
 const STORAGE_KEY = 'tracker_v2_overrides'
+const DEMO_CLEARED_KEY = 'tracker_v2_demo_cleared'
 
 interface Overrides {
   [jobId: string]: Partial<Job>
@@ -99,15 +101,56 @@ interface JobsContextValue {
   addJob: (job: Job) => void
   markRejected: (rejections: { company: string; date?: string; role?: string }[]) => void
   counts: Record<JobStatus, number>
+  /** True when showing demo data (no user data, not authenticated) */
+  isDemo: boolean
+  /** Clear demo data and switch to empty state */
+  clearDemoData: () => void
+  /** Count of non-demo, manually-added jobs (for sunk cost nudge) */
+  manualJobCount: number
 }
 
 const JobsContext = createContext<JobsContextValue | null>(null)
 
 export function JobsProvider({ children }: { children: ReactNode }) {
   const [overrides, setOverrides] = useState<Overrides>(loadOverrides)
+  const [demoCleared, setDemoCleared] = useState(
+    () => localStorage.getItem(DEMO_CLEARED_KEY) === 'true'
+  )
   const { timeRange, areaFilter, workMode } = useUI()
 
-  const allJobs = useMemo(() => mergeJobs(seedJobs, overrides), [overrides])
+  // Determine if we should show demo data:
+  // - No localStorage overrides exist (fresh user)
+  // - User hasn't explicitly cleared demo data
+  const hasUserData = useMemo(() => {
+    const keys = Object.keys(overrides)
+    // If there are any overrides that are NOT demo-prefixed, user has their own data
+    return keys.length > 0 && keys.some(k => !k.startsWith('demo-'))
+  }, [overrides])
+
+  const isDemo = !hasUserData && !demoCleared
+
+  const allJobs = useMemo(() => {
+    const baseJobs = mergeJobs(seedJobs, overrides)
+    if (isDemo) {
+      // Prepend demo jobs (they won't collide with seed IDs)
+      return [...DEMO_JOBS, ...baseJobs]
+    }
+    return baseJobs
+  }, [overrides, isDemo])
+
+  const clearDemoData = useCallback(() => {
+    setDemoCleared(true)
+    try {
+      localStorage.setItem(DEMO_CLEARED_KEY, 'true')
+    } catch { /* ignore */ }
+  }, [])
+
+  // Count of non-demo, manually-added jobs (for sunk cost nudge)
+  const manualJobCount = useMemo(() => {
+    return Object.keys(overrides).filter(
+      k => !k.startsWith('demo-') && !(overrides[k] as Record<string, unknown>)._deleted
+    ).length
+  }, [overrides])
 
   const jobs = useMemo(() => {
     let filtered = allJobs
@@ -327,7 +370,7 @@ export function JobsProvider({ children }: { children: ReactNode }) {
   }, [jobs])
 
   return (
-    <JobsContext.Provider value={{ jobs, allJobs, updateJobStatus, updateJobField, addJobEvent, removeJobEvent, deleteJob, addJob, markRejected, counts }}>
+    <JobsContext.Provider value={{ jobs, allJobs, updateJobStatus, updateJobField, addJobEvent, removeJobEvent, deleteJob, addJob, markRejected, counts, isDemo, clearDemoData, manualJobCount }}>
       {children}
     </JobsContext.Provider>
   )

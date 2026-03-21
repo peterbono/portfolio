@@ -3,6 +3,7 @@ import { useJobs } from '../context/JobsContext'
 import { useGmailSync } from '../hooks/useGmailSync'
 import { STATUS_CONFIG, type JobStatus, type Job } from '../types/job'
 import { MigrationBanner } from '../components/MigrationBanner'
+import { useAuthWall } from '../hooks/useAuthWall'
 
 const GMAIL_URL_KEY = 'tracker_v2_gmail_url'
 const DEFAULT_GMAIL_URL = ''
@@ -10,6 +11,7 @@ const DEFAULT_GMAIL_URL = ''
 export function SettingsView() {
   const { jobs, counts, addJob } = useJobs()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const { requireAuth } = useAuthWall()
 
   const [gmailUrl, setGmailUrl] = useState(() => {
     try {
@@ -29,6 +31,10 @@ export function SettingsView() {
 
   const handleSaveApiKey = useCallback(() => {
     try {
+      // Basic validation: Anthropic keys start with sk-ant-
+      if (apiKey && !apiKey.startsWith('sk-ant-')) {
+        return // silently reject invalid keys
+      }
       if (apiKey) localStorage.setItem('tracker_anthropic_key', apiKey)
       else localStorage.removeItem('tracker_anthropic_key')
       setApiKeySaved(true)
@@ -40,6 +46,15 @@ export function SettingsView() {
 
   const handleSaveUrl = useCallback(() => {
     try {
+      // Validate URL format: only allow https URLs to Google Scripts
+      if (gmailUrl) {
+        try {
+          const parsed = new URL(gmailUrl)
+          if (parsed.protocol !== 'https:') return
+        } catch {
+          return // invalid URL
+        }
+      }
       localStorage.setItem(GMAIL_URL_KEY, gmailUrl)
       setUrlSaved(true)
       setTimeout(() => setUrlSaved(false), 2000)
@@ -64,15 +79,31 @@ export function SettingsView() {
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0]
       if (!file) return
+      // Limit import file size to 10MB to prevent memory abuse
+      if (file.size > 10 * 1024 * 1024) {
+        setImportStatus('Import failed: File too large (max 10MB)')
+        setTimeout(() => setImportStatus(null), 4000)
+        return
+      }
       const reader = new FileReader()
       reader.onload = () => {
         try {
           const data = JSON.parse(reader.result as string) as Job[]
           if (!Array.isArray(data)) throw new Error('Expected an array')
+          // Limit import to 5000 jobs max
+          if (data.length > 5000) throw new Error('Too many jobs (max 5000)')
           let imported = 0
           for (const job of data) {
             if (job.id && job.company && job.role) {
-              addJob(job)
+              // Sanitize string fields to prevent oversized entries
+              const sanitized = {
+                ...job,
+                company: String(job.company).slice(0, 200),
+                role: String(job.role).slice(0, 200),
+                notes: job.notes ? String(job.notes).slice(0, 2000) : '',
+                link: job.link ? String(job.link).slice(0, 500) : '',
+              }
+              addJob(sanitized)
               imported++
             }
           }
@@ -130,7 +161,10 @@ export function SettingsView() {
         <div style={styles.fieldGroup}>
           <button
             style={{ ...styles.btnPrimary, opacity: isLoading ? 0.6 : 1 }}
-            onClick={syncNow}
+            onClick={() => {
+              if (!requireAuth('sync_gmail', () => syncNow())) return
+              syncNow()
+            }}
             disabled={isLoading}
           >
             {isLoading ? 'Syncing...' : 'Sync Now'}
@@ -188,7 +222,10 @@ export function SettingsView() {
         <div style={styles.fieldGroup}>
           <label style={styles.label}>Export</label>
           <p style={styles.hint}>Download all {jobs.length} jobs as a JSON file</p>
-          <button style={styles.btnSecondary} onClick={handleExport}>
+          <button style={styles.btnSecondary} onClick={() => {
+            if (!requireAuth('export_data', () => handleExport())) return
+            handleExport()
+          }}>
             Download JSON
           </button>
         </div>

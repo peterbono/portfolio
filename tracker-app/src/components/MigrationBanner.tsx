@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import { useJobs } from '../context/JobsContext'
 import { runMigration, type MigrationProgress } from '../lib/migration'
+import { useAuthWall } from '../hooks/useAuthWall'
 
 const MIGRATION_KEY = 'tracker_v2_migration_done'
 
@@ -25,11 +26,12 @@ function saveMigrationState(state: MigrationState) {
 
 export function MigrationBanner() {
   const { allJobs } = useJobs()
+  const { requireAuth } = useAuthWall()
   const [migrationState, setMigrationState] = useState<MigrationState>(loadMigrationState)
   const [progress, setProgress] = useState<MigrationProgress | null>(null)
   const [isRunning, setIsRunning] = useState(false)
 
-  const handleMigrate = useCallback(async () => {
+  const doMigrate = useCallback(async () => {
     if (isRunning) return
     setIsRunning(true)
     setProgress({ phase: 'signing-in', current: 0, total: allJobs.length, errors: [] })
@@ -58,6 +60,11 @@ export function MigrationBanner() {
       setIsRunning(false)
     }
   }, [allJobs, isRunning])
+
+  const handleMigrate = useCallback(() => {
+    if (!requireAuth('save_cloud', () => { doMigrate() })) return
+    doMigrate()
+  }, [requireAuth, doMigrate])
 
   const phaseLabel = (p: MigrationProgress): string => {
     switch (p.phase) {

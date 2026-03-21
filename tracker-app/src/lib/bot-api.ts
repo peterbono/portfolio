@@ -7,11 +7,21 @@
 
 const TRIGGER_API_URL = 'https://api.trigger.dev/api/v1/tasks/apply-job-pipeline/trigger'
 
-// Florian's user ID (single-tenant for now)
-const USER_ID = '3b6384c8-8f81-4cb5-9a6e-76d6f25cf19b'
-
 function getTriggerKey(): string {
   return import.meta.env.VITE_TRIGGER_PUBLIC_KEY || ''
+}
+
+/**
+ * Get the current user ID from Supabase auth session.
+ * Never hardcode user IDs in client-side code.
+ */
+async function getCurrentUserId(): Promise<string> {
+  const { supabase } = await import('./supabase')
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session?.user?.id) {
+    throw new Error('Not authenticated. Please sign in first.')
+  }
+  return session.user.id
 }
 
 export interface TriggerBotResponse {
@@ -30,6 +40,8 @@ export async function triggerBotRun(
     throw new Error('VITE_TRIGGER_PUBLIC_KEY is not configured')
   }
 
+  const userId = await getCurrentUserId()
+
   const response = await fetch(TRIGGER_API_URL, {
     method: 'POST',
     headers: {
@@ -38,7 +50,7 @@ export async function triggerBotRun(
     },
     body: JSON.stringify({
       payload: {
-        userId: USER_ID,
+        userId,
         searchProfileId,
         maxApplications: options?.maxApplications ?? 20,
         dryRun: false,
@@ -67,6 +79,8 @@ export async function triggerDryRun(
     throw new Error('VITE_TRIGGER_PUBLIC_KEY is not configured')
   }
 
+  const userId = await getCurrentUserId()
+
   const response = await fetch(TRIGGER_API_URL, {
     method: 'POST',
     headers: {
@@ -75,7 +89,7 @@ export async function triggerDryRun(
     },
     body: JSON.stringify({
       payload: {
-        userId: USER_ID,
+        userId,
         searchProfileId,
         maxApplications: options?.maxApplications ?? 20,
         dryRun: true,

@@ -9,6 +9,15 @@ import { useJobEvents } from '../hooks/useJobEvents'
 import type { JobStatus, JobEvent } from '../types/job'
 import { STATUS_CONFIG } from '../types/job'
 
+function isValidUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    return ['http:', 'https:'].includes(parsed.protocol)
+  } catch {
+    return false
+  }
+}
+
 // Only statuses that appear in the pipeline — no Easy Apply, no saved
 const ALLOWED_STATUSES: JobStatus[] = [
   'manual', 'submitted', 'screening', 'interviewing', 'challenge',
@@ -247,7 +256,7 @@ export function DetailDrawer() {
                   style={{ fontSize: 13, color: 'var(--accent)', flex: 1 }}
                   placeholder="https://..."
                 />
-                {job.link && (
+                {job.link && isValidUrl(job.link) && (
                   <a href={job.link} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', flexShrink: 0 }}>
                     <ExternalLink size={12} />
                   </a>

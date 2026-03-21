@@ -56,7 +56,7 @@ export function LandingView({ onGetStarted, onSignIn }: LandingViewProps) {
         </p>
         <div style={styles.heroCTAs}>
           <button onClick={onGetStarted} style={styles.ctaPrimary}>
-            Get Started Free
+            Try it free
             <ArrowRight size={16} />
           </button>
           <a href="#how-it-works" style={styles.ctaSecondary}>
@@ -214,7 +214,7 @@ export function LandingView({ onGetStarted, onSignIn }: LandingViewProps) {
           </div>
           <div style={{ textAlign: 'center', marginTop: 32 }}>
             <button onClick={onGetStarted} style={styles.ctaPrimary}>
-              Start Free
+              Try it free
               <ArrowRight size={16} />
             </button>
           </div>

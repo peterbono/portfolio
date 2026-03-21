@@ -1,6 +1,8 @@
+import { useCallback } from 'react'
 import { Sidebar } from './Sidebar'
 import { DetailDrawer } from './DetailDrawer'
 import { useUI, type TimeRange, type AreaFilter, type WorkMode } from '../context/UIContext'
+import { useJobs } from '../context/JobsContext'
 import { TableView } from '../views/TableView'
 import { PipelineView } from '../views/PipelineView'
 import { AnalyticsView } from '../views/AnalyticsView'
@@ -10,6 +12,8 @@ import { AutopilotView } from '../views/AutopilotView'
 import { InsightsView } from '../views/InsightsView'
 import { PricingViewWithResponsive } from '../views/PricingView'
 import { TrustIndicator } from '../components/TrustIndicator'
+import { DemoBanner } from '../components/DemoBanner'
+import { SunkCostNudge } from '../components/SunkCostNudge'
 
 const TIME_OPTIONS: { value: TimeRange; label: string }[] = [
   { value: 'all', label: 'All time' },
@@ -71,17 +75,29 @@ function GlobalFilters() {
 const VIEWS_WITH_FILTERS = new Set(['table', 'pipeline', 'analytics'])
 
 export function AppShell() {
-  const { activeView, drawerOpen, selectedJobId } = useUI()
+  const { activeView, drawerOpen, selectedJobId, setActiveView } = useUI()
+  const { isDemo, clearDemoData, manualJobCount } = useJobs()
+
+  const handleAddJobFromDemo = useCallback(() => {
+    setActiveView('table')
+    // The table view has its own "add job" UI
+  }, [setActiveView])
 
   return (
     <div style={styles.container}>
       <Sidebar />
       <main style={styles.main}>
+        {isDemo && (
+          <div style={{ padding: '12px 20px 0' }}>
+            <DemoBanner onAddJob={handleAddJobFromDemo} onClearDemo={clearDemoData} />
+          </div>
+        )}
         {VIEWS_WITH_FILTERS.has(activeView) && <GlobalFilters />}
         <ActiveViewContent view={activeView} />
       </main>
       {drawerOpen && selectedJobId && <DetailDrawer />}
       <TrustIndicator />
+      <SunkCostNudge manualJobCount={manualJobCount} />
     </div>
   )
 }
