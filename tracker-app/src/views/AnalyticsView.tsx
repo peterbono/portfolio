@@ -1,6 +1,7 @@
 import { useMemo, useState, lazy, Suspense } from 'react'
 import { useJobs } from '../context/JobsContext'
 import { STATUS_CONFIG, type JobStatus } from '../types/job'
+import { computeIntelligenceSummary, computeATSStats } from '../utils/intelligence'
 
 const RechartsBarChart = lazy(() =>
   import('recharts').then((m) => ({ default: m.BarChart }))
@@ -537,6 +538,115 @@ function TopRejectors() {
 }
 
 /* ------------------------------------------------------------------ */
+/*  IntelligenceCards — 4 KPI cards at the top                         */
+/* ------------------------------------------------------------------ */
+function IntelligenceCards() {
+  const { allJobs } = useJobs()
+
+  const intel = useMemo(() => computeIntelligenceSummary(allJobs), [allJobs])
+
+  const atsStats = useMemo(() => computeATSStats(allJobs), [allJobs])
+
+  // Ghost rate display
+  const ghostPct = Math.round(intel.ghostRate * 100)
+  const submittedCount = allJobs.filter(
+    (j) => !['manual', 'saved', 'skipped'].includes(j.status),
+  ).length
+  const ghostColor = ghostPct > 30 ? '#fb923c' : ghostPct < 15 ? '#34d399' : '#fbbf24'
+
+  // Best ATS: highest response rate with >= 5 applications
+  const bestATS = intel.bestATS
+  const bestATSName = bestATS ? bestATS.ats : '—'
+  const bestATSRate = bestATS ? `${Math.round(bestATS.responseRate * 100)}%` : '—'
+
+  // Average quality score
+  const avgQ = intel.avgQualityScore
+  const qualityColor = avgQ > 70 ? '#34d399' : avgQ >= 50 ? '#fbbf24' : '#f43f5e'
+
+  // Average response time: weighted across all ATS
+  const avgResponseTime = useMemo(() => {
+    let totalDays = 0
+    let totalResponses = 0
+    for (const s of atsStats) {
+      if (s.avgDaysToResponse > 0 && s.gotResponse > 0) {
+        totalDays += s.avgDaysToResponse * s.gotResponse
+        totalResponses += s.gotResponse
+      }
+    }
+    return totalResponses > 0 ? Math.round((totalDays / totalResponses) * 10) / 10 : 0
+  }, [atsStats])
+
+  return (
+    <div style={intelStyles.row}>
+      {/* Ghost Rate */}
+      <div style={intelStyles.card}>
+        <span style={{ ...intelStyles.value, color: ghostColor }}>{ghostPct}%</span>
+        <span style={intelStyles.label}>Ghost Rate</span>
+        <span style={intelStyles.sub}>{intel.totalGhosts} of {submittedCount} applications</span>
+      </div>
+
+      {/* Best ATS */}
+      <div style={intelStyles.card}>
+        <span style={{ ...intelStyles.value, color: '#60a5fa' }}>{bestATSName}</span>
+        <span style={intelStyles.label}>Best ATS</span>
+        <span style={intelStyles.sub}>{bestATSRate} response rate</span>
+      </div>
+
+      {/* Avg Quality */}
+      <div style={intelStyles.card}>
+        <span style={{ ...intelStyles.value, color: qualityColor }}>{avgQ}</span>
+        <span style={intelStyles.label}>Avg Quality</span>
+        <span style={intelStyles.sub}>out of 100</span>
+      </div>
+
+      {/* Avg Response Time */}
+      <div style={intelStyles.card}>
+        <span style={{ ...intelStyles.value, color: '#a78bfa' }}>{avgResponseTime > 0 ? `${avgResponseTime}d` : '—'}</span>
+        <span style={intelStyles.label}>Avg Response</span>
+        <span style={intelStyles.sub}>days to first reply</span>
+      </div>
+    </div>
+  )
+}
+
+const intelStyles: Record<string, React.CSSProperties> = {
+  row: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(4, 1fr)',
+    gap: 16,
+    marginBottom: 24,
+  },
+  card: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: 'var(--bg-surface)',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-lg)',
+    padding: '24px 16px',
+    gap: 6,
+  },
+  value: {
+    fontSize: 32,
+    fontWeight: 700,
+    lineHeight: 1,
+  },
+  label: {
+    fontSize: 12,
+    fontWeight: 600,
+    color: 'var(--text-secondary)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+    marginTop: 4,
+  },
+  sub: {
+    fontSize: 11,
+    color: 'var(--text-tertiary)',
+  },
+}
+
+/* ------------------------------------------------------------------ */
 /*  AnalyticsView                                                      */
 /* ------------------------------------------------------------------ */
 // Import new chart components
@@ -550,6 +660,7 @@ export function AnalyticsView() {
         <h1 style={styles.title}>Analytics</h1>
         <p style={styles.subtitle}>Visual breakdown of your job search progress</p>
       </div>
+      <IntelligenceCards />
       <div style={styles.grid}>
         <ResponseRate />
         <ManualVsBotFunnel />

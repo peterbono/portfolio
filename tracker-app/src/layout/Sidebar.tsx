@@ -8,6 +8,7 @@ import {
   PanelLeft,
   Briefcase,
   Flame,
+  Bot,
 } from 'lucide-react'
 import { useUI, type ActiveView } from '../context/UIContext'
 import { useJobs } from '../context/JobsContext'
@@ -17,6 +18,7 @@ const NAV_ITEMS: { view: ActiveView; label: string; icon: typeof LayoutList }[] 
   { view: 'pipeline', label: 'Pipeline', icon: Kanban },
   { view: 'analytics', label: 'Analytics', icon: BarChart3 },
   { view: 'coach', label: 'Coach', icon: Flame },
+  { view: 'autopilot', label: 'Autopilot', icon: Bot },
   { view: 'settings', label: 'Settings', icon: Settings },
 ]
 

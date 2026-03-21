@@ -6,6 +6,7 @@ import { PipelineView } from '../views/PipelineView'
 import { AnalyticsView } from '../views/AnalyticsView'
 import { SettingsView } from '../views/SettingsView'
 import { CoachView } from '../views/CoachView'
+import { AutopilotView } from '../views/AutopilotView'
 
 const TIME_OPTIONS: { value: TimeRange; label: string }[] = [
   { value: 'all', label: 'All time' },
@@ -91,6 +92,8 @@ function ActiveViewContent({ view }: { view: string }) {
       return <AnalyticsView />
     case 'coach':
       return <CoachView />
+    case 'autopilot':
+      return <AutopilotView />
     case 'settings':
       return <SettingsView />
     default:

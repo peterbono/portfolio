@@ -6,7 +6,7 @@ import {
   type ReactNode,
 } from 'react'
 
-export type ActiveView = 'table' | 'pipeline' | 'analytics' | 'coach' | 'settings'
+export type ActiveView = 'table' | 'pipeline' | 'analytics' | 'coach' | 'autopilot' | 'settings'
 export type TimeRange = 'all' | 'today' | 'week' | 'month' | '3months'
 export type AreaFilter = 'all' | 'apac' | 'emea' | 'americas'
 export type WorkMode = 'all' | 'remote' | 'onsite' | 'hybrid'
