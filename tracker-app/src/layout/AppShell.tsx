@@ -75,13 +75,13 @@ function GlobalFilters() {
 
 const VIEWS_WITH_FILTERS = new Set(['table', 'pipeline', 'analytics'])
 
-export function AppShell() {
+export function AppShell({ onBackToLanding }: { onBackToLanding?: () => void }) {
   const { activeView, drawerOpen, selectedJobId } = useUI()
   const { isDemo, clearDemoData } = useJobs()
 
   return (
     <div style={styles.container}>
-      <Sidebar />
+      <Sidebar onBackToLanding={onBackToLanding} />
       <main style={styles.main}>
         {isDemo && (
           <div style={{ padding: '12px 20px 0' }}>

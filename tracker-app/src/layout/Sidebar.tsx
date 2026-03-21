@@ -13,6 +13,7 @@ import {
   LogOut,
   CreditCard,
   Lock,
+  ArrowLeft,
 } from 'lucide-react'
 import { useUI, type ActiveView } from '../context/UIContext'
 import { useJobs } from '../context/JobsContext'
@@ -50,7 +51,7 @@ const NAV_ITEMS: NavEntry[] = [
 /** Views that require auth — show lock icon for anonymous users */
 const LOCKED_VIEWS = new Set<ActiveView>(['table', 'pipeline', 'analytics', 'coach', 'insights'])
 
-export function Sidebar() {
+export function Sidebar({ onBackToLanding }: { onBackToLanding?: () => void }) {
   const { activeView, setActiveView, sidebarCollapsed, toggleSidebar } = useUI()
   const { jobs } = useJobs()
   const { user, signOut } = useSupabase()
@@ -116,6 +117,33 @@ export function Sidebar() {
           </span>
         )}
       </div>
+
+      {/* Back to landing (anonymous users only) */}
+      {onBackToLanding && (
+        <button
+          onClick={onBackToLanding}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: sidebarCollapsed ? '8px 0' : '8px 16px',
+            justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
+            background: 'none',
+            border: 'none',
+            color: 'var(--text-tertiary)',
+            fontSize: 12,
+            cursor: 'pointer',
+            width: '100%',
+            transition: 'color 150ms ease',
+          }}
+          onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-primary)')}
+          onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-tertiary)')}
+          title="Back to home"
+        >
+          <ArrowLeft size={14} />
+          {!sidebarCollapsed && 'Back to home'}
+        </button>
+      )}
 
       {/* Nav */}
       <nav style={{ flex: 1, padding: '8px 0', display: 'flex', flexDirection: 'column', gap: 2 }}>

@@ -30,6 +30,11 @@ function AppContent() {
     setHasVisited(true)
   }, [])
 
+  const handleBackToLanding = useCallback(() => {
+    localStorage.removeItem(VISITED_KEY)
+    setHasVisited(false)
+  }, [])
+
   const handleSignIn = useCallback(() => {
     setShowAuthModal(true)
   }, [])
@@ -91,7 +96,7 @@ function AppContent() {
                 defaultName={user?.user_metadata?.full_name ?? undefined}
               />
             )}
-            <AppShell />
+            <AppShell onBackToLanding={!session ? handleBackToLanding : undefined} />
             {/* Global auth wall modal (rendered when triggered) */}
             <AuthWall />
           </AuthWallProvider>
