@@ -167,11 +167,6 @@ textarea:focus {
   60%  { transform: translate(-40px, -20px) scale(1.12); }
   100% { transform: translate(0, 0) scale(1); }
 }
-@keyframes landing-grid-fade {
-  from { opacity: 0; }
-  to { opacity: 0.55; }
-}
-
 /* Scroll indicator bounce */
 @keyframes landing-scroll-bounce {
   0%, 100% { transform: translateY(0); opacity: 0.6; }

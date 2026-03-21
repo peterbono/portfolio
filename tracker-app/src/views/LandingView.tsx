@@ -1785,13 +1785,190 @@ function FinalCTAContent({ onGetStarted }: { onGetStarted: () => void }) {
   )
 }
 
+function DotGridCanvas() {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    const SPACING = 28
+    const BASE_RADIUS = 1
+    const BASE_OPACITY = 0.12
+    const GLOBAL_OPACITY = 0.55 // matches old CSS opacity
+    const WAVE_RADIUS = 150
+    const WAVE_STRENGTH = 15
+    const GLOW_RADIUS = 100
+    const GLOW_SIZE_BOOST = 0.5
+    const GLOW_OPACITY_BOOST = 0.05
+    const LERP_RATE = 0.08
+
+    interface Dot {
+      gridX: number
+      gridY: number
+      currentX: number
+      currentY: number
+      baseFade: number // radial fade opacity multiplier (0..1)
+    }
+
+    let dots: Dot[] = []
+    let mouseX = -9999
+    let mouseY = -9999
+    let animId = 0
+    let w = 0
+    let h = 0
+    let dpr = 1
+
+    function buildGrid() {
+      dpr = window.devicePixelRatio || 1
+      const rect = canvas!.getBoundingClientRect()
+      w = rect.width
+      h = rect.height
+      canvas!.width = w * dpr
+      canvas!.height = h * dpr
+      ctx!.setTransform(dpr, 0, 0, dpr, 0, 0)
+
+      const cx = w / 2
+      const cy = h / 2
+      // Radial fade ellipse — matches CSS: ellipse 80% 70% at 50% 50%, black 30%, transparent 80%
+      const rx = w * 0.8
+      const ry = h * 0.7
+
+      dots = []
+      for (let y = SPACING / 2; y < h; y += SPACING) {
+        for (let x = SPACING / 2; x < w; x += SPACING) {
+          // Normalized distance from center using ellipse radii
+          const dx = (x - cx) / rx
+          const dy = (y - cy) / ry
+          const dist = Math.sqrt(dx * dx + dy * dy)
+          // Map dist: 0..0.375 → full opacity, 0.375..1.0 → fade to 0
+          // (30% of ellipse = inner solid, 80% = fully transparent)
+          const fade = dist < 0.375 ? 1 : dist > 1.0 ? 0 : 1 - (dist - 0.375) / (1.0 - 0.375)
+
+          if (fade > 0.001) {
+            dots.push({
+              gridX: x,
+              gridY: y,
+              currentX: x,
+              currentY: y,
+              baseFade: fade,
+            })
+          }
+        }
+      }
+    }
+
+    function draw() {
+      ctx!.clearRect(0, 0, w, h)
+
+      for (let i = 0; i < dots.length; i++) {
+        const dot = dots[i]
+
+        if (!prefersReduced) {
+          // Calculate displacement from mouse
+          const ddx = dot.gridX - mouseX
+          const ddy = dot.gridY - mouseY
+          const dist = Math.sqrt(ddx * ddx + ddy * ddy)
+
+          let targetX = dot.gridX
+          let targetY = dot.gridY
+          let sizeBoost = 0
+          let opacityBoost = 0
+
+          if (dist < WAVE_RADIUS && dist > 0.1) {
+            const factor = 1 - dist / WAVE_RADIUS
+            const displacement = WAVE_STRENGTH * factor
+            targetX = dot.gridX + (ddx / dist) * displacement
+            targetY = dot.gridY + (ddy / dist) * displacement
+          }
+
+          if (dist < GLOW_RADIUS) {
+            const glowFactor = 1 - dist / GLOW_RADIUS
+            sizeBoost = GLOW_SIZE_BOOST * glowFactor
+            opacityBoost = GLOW_OPACITY_BOOST * glowFactor
+          }
+
+          // Lerp toward target
+          dot.currentX += (targetX - dot.currentX) * LERP_RATE
+          dot.currentY += (targetY - dot.currentY) * LERP_RATE
+
+          const r = BASE_RADIUS + sizeBoost
+          const alpha = (BASE_OPACITY + opacityBoost) * dot.baseFade * GLOBAL_OPACITY
+
+          ctx!.beginPath()
+          ctx!.arc(dot.currentX, dot.currentY, r, 0, Math.PI * 2)
+          ctx!.fillStyle = `rgba(255,255,255,${alpha})`
+          ctx!.fill()
+        } else {
+          // Reduced motion: static dots, no animation
+          const alpha = BASE_OPACITY * dot.baseFade * GLOBAL_OPACITY
+          ctx!.beginPath()
+          ctx!.arc(dot.gridX, dot.gridY, BASE_RADIUS, 0, Math.PI * 2)
+          ctx!.fillStyle = `rgba(255,255,255,${alpha})`
+          ctx!.fill()
+        }
+      }
+
+      if (!prefersReduced) {
+        animId = requestAnimationFrame(draw)
+      }
+    }
+
+    function onMouseMove(e: MouseEvent) {
+      const rect = canvas!.getBoundingClientRect()
+      mouseX = e.clientX - rect.left
+      mouseY = e.clientY - rect.top
+    }
+
+    function onResize() {
+      buildGrid()
+      if (prefersReduced) draw()
+    }
+
+    buildGrid()
+
+    if (prefersReduced) {
+      draw()
+    } else {
+      window.addEventListener('mousemove', onMouseMove, { passive: true })
+      animId = requestAnimationFrame(draw)
+    }
+
+    window.addEventListener('resize', onResize)
+
+    return () => {
+      cancelAnimationFrame(animId)
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('resize', onResize)
+    }
+  }, [])
+
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{
+        position: 'absolute',
+        inset: 0,
+        width: '100%',
+        height: '100%',
+        pointerEvents: 'none',
+      }}
+    />
+  )
+}
+
 function AmbientBackground() {
   return (
     <div style={s.ambientWrap} aria-hidden="true">
       <div style={s.orb1} />
       <div style={s.orb2} />
       <div style={s.orb3} />
-      <div style={s.gridPattern} />
+      <DotGridCanvas />
     </div>
   )
 }
@@ -1857,17 +2034,6 @@ const s: Record<string, React.CSSProperties> = {
     willChange: 'transform',
     opacity: 0.8,
   } as React.CSSProperties,
-  gridPattern: {
-    position: 'absolute',
-    inset: 0,
-    backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.12) 1px, transparent 1px)',
-    backgroundSize: '28px 28px',
-    maskImage: 'radial-gradient(ellipse 80% 70% at 50% 50%, black 30%, transparent 80%)',
-    WebkitMaskImage: 'radial-gradient(ellipse 80% 70% at 50% 50%, black 30%, transparent 80%)',
-    opacity: 0.55,
-    animation: 'landing-grid-fade 2s ease both',
-  } as React.CSSProperties,
-
   container: {
     maxWidth: 1140,
     margin: '0 auto',
