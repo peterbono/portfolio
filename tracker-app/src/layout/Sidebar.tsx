@@ -91,7 +91,9 @@ export function Sidebar() {
           minHeight: 64,
         }}
       >
-        <Briefcase size={20} color="var(--accent)" />
+        <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(52, 211, 153, 0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Bot size={16} color="var(--accent)" />
+        </div>
         {!sidebarCollapsed && (
           <span
             style={{
