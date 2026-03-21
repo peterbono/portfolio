@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@hello-pangea/dnd": "^17.0.0",
+    "@supabase/supabase-js": "^2.78.0",
     "@tanstack/react-table": "^8.20.0",
     "canvas-confetti": "^1.9.4",
     "clsx": "^2.1.0",

@@ -2,6 +2,7 @@ import { useState, useCallback, useRef } from 'react'
 import { useJobs } from '../context/JobsContext'
 import { useGmailSync } from '../hooks/useGmailSync'
 import { STATUS_CONFIG, type JobStatus, type Job } from '../types/job'
+import { MigrationBanner } from '../components/MigrationBanner'
 
 const GMAIL_URL_KEY = 'tracker_v2_gmail_url'
 const DEFAULT_GMAIL_URL = ''
@@ -151,6 +152,12 @@ export function SettingsView() {
             </div>
           </div>
         )}
+      </section>
+
+      {/* Cloud Sync */}
+      <section style={styles.section}>
+        <h2 style={styles.sectionTitle}>Cloud Sync</h2>
+        <MigrationBanner />
       </section>
 
       {/* AI Coach */}

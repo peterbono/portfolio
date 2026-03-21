@@ -13,7 +13,12 @@ import {
   Building2,
   Trash2,
   Sparkles,
+  SkipForward,
+  Eye,
+  ThumbsDown,
 } from 'lucide-react'
+import { useBotActivity } from '../hooks/useBotActivity'
+import type { BotActivityItem, BotRunStatus } from '../hooks/useBotActivity'
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -49,7 +54,7 @@ function saveProfiles(profiles: SearchProfile[]) {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Mock activity data                                                 */
+/*  Mock activity data (fallback when no real data)                     */
 /* ------------------------------------------------------------------ */
 const MOCK_ACTIVITY = [
   {
@@ -87,11 +92,144 @@ const STATUS_COLOR: Record<string, string> = {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Activity helpers                                                    */
+/* ------------------------------------------------------------------ */
+const ACTION_ICON_MAP: Record<string, typeof CheckCircle2> = {
+  applied: CheckCircle2,
+  skipped: SkipForward,
+  failed: XCircle,
+  found: Eye,
+  qualified: CheckCircle2,
+  disqualified: ThumbsDown,
+}
+
+const ACTION_COLOR_MAP: Record<string, string> = {
+  applied: '#34d399',
+  skipped: '#fbbf24',
+  failed: '#f43f5e',
+  found: '#60a5fa',
+  qualified: '#34d399',
+  disqualified: '#f97316',
+}
+
+function formatActivityTime(iso: string): string {
+  try {
+    const d = new Date(iso)
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+  } catch {
+    return '--:--'
+  }
+}
+
+function formatActivityText(item: BotActivityItem): string {
+  const atsLabel = item.ats ? ` via ${item.ats}` : ''
+  switch (item.action) {
+    case 'applied':
+      return `Applied to "${item.role}" at ${item.company}${atsLabel}`
+    case 'skipped':
+      return `Skipped "${item.role}" at ${item.company}${item.reason ? ` \u2014 ${item.reason}` : ''}`
+    case 'failed':
+      return `Failed "${item.role}" at ${item.company}${item.reason ? ` \u2014 ${item.reason}` : ''}`
+    case 'found':
+      return `Found "${item.role}" at ${item.company}${atsLabel}`
+    case 'qualified':
+      return `Qualified "${item.role}" at ${item.company}`
+    case 'disqualified':
+      return `Disqualified "${item.role}" at ${item.company}${item.reason ? ` \u2014 ${item.reason}` : ''}`
+    default:
+      return `${item.action} "${item.role}" at ${item.company}`
+  }
+}
+
+function activityStatusKey(action: string): string {
+  if (action === 'applied' || action === 'qualified') return 'success'
+  if (action === 'skipped' || action === 'disqualified') return 'skipped'
+  if (action === 'failed') return 'error'
+  return 'success'
+}
+
+/* ------------------------------------------------------------------ */
+/*  Status banner helpers                                              */
+/* ------------------------------------------------------------------ */
+interface StatusConfig {
+  label: string
+  description: string
+  dotColor: string
+  pulsing: boolean
+  badgeLabel?: string
+  badgeColor?: string
+  badgeBg?: string
+}
+
+function getStatusConfig(run: BotRunStatus | null): StatusConfig {
+  if (!run) {
+    return {
+      label: 'Bot Inactive',
+      description: 'Set up your search profile to get started',
+      dotColor: '#6b7280',
+      pulsing: false,
+      badgeLabel: 'Coming Soon',
+      badgeColor: '#fbbf24',
+      badgeBg: 'rgba(251, 191, 36, 0.12)',
+    }
+  }
+
+  switch (run.status) {
+    case 'pending':
+      return {
+        label: 'Bot Queued',
+        description: 'Starting soon...',
+        dotColor: '#fbbf24',
+        pulsing: false,
+      }
+    case 'running':
+      return {
+        label: 'Bot Running',
+        description: `Applied ${run.jobsApplied}, Found ${run.jobsFound}, Skipped ${run.jobsSkipped}`,
+        dotColor: '#34d399',
+        pulsing: true,
+      }
+    case 'completed':
+      return {
+        label: 'Last run completed',
+        description: `Applied ${run.jobsApplied} job${run.jobsApplied !== 1 ? 's' : ''}`,
+        dotColor: '#34d399',
+        pulsing: false,
+      }
+    case 'failed':
+      return {
+        label: 'Last run failed',
+        description: run.errorMessage || 'Unknown error',
+        dotColor: '#f43f5e',
+        pulsing: false,
+      }
+    case 'cancelled':
+      return {
+        label: 'Run cancelled',
+        description: `Applied ${run.jobsApplied} before cancellation`,
+        dotColor: '#6b7280',
+        pulsing: false,
+      }
+    default:
+      return {
+        label: 'Bot Inactive',
+        description: 'Set up your search profile to get started',
+        dotColor: '#6b7280',
+        pulsing: false,
+      }
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 export function AutopilotView() {
   const [profiles, setProfiles] = useState<SearchProfile[]>(loadProfiles)
   const [showForm, setShowForm] = useState(false)
+
+  // Realtime bot data
+  const { activities, currentRun, isLive } = useBotActivity()
+  const hasRealData = activities.length > 0 || currentRun !== null
 
   // Form state
   const [formName, setFormName] = useState('')
@@ -142,6 +280,9 @@ export function AutopilotView() {
     setProfiles((prev) => prev.filter((p) => p.id !== id))
   }, [])
 
+  // Status banner config
+  const statusCfg = getStatusConfig(currentRun)
+
   return (
     <div style={styles.container}>
       {/* Header */}
@@ -159,15 +300,40 @@ export function AutopilotView() {
             </div>
             <div>
               <div style={styles.statusTitle}>
-                <span style={styles.statusDot} />
-                Bot Inactive
+                <span
+                  style={{
+                    ...styles.statusDot,
+                    background: statusCfg.dotColor,
+                    ...(statusCfg.pulsing
+                      ? {
+                          animation: 'pulseGlow 1.5s ease-in-out infinite',
+                          boxShadow: `0 0 6px ${statusCfg.dotColor}`,
+                        }
+                      : {}),
+                  }}
+                />
+                {statusCfg.label}
+                {isLive && (
+                  <span style={styles.liveBadge}>
+                    <span style={styles.liveDot} />
+                    LIVE
+                  </span>
+                )}
               </div>
-              <p style={styles.statusDesc}>
-                Set up your search profile to get started
-              </p>
+              <p style={styles.statusDesc}>{statusCfg.description}</p>
             </div>
           </div>
-          <span style={styles.comingSoonBadge}>Coming Soon</span>
+          {statusCfg.badgeLabel && (
+            <span
+              style={{
+                ...styles.comingSoonBadge,
+                color: statusCfg.badgeColor,
+                background: statusCfg.badgeBg,
+              }}
+            >
+              {statusCfg.badgeLabel}
+            </span>
+          )}
         </div>
       </section>
 
@@ -377,46 +543,107 @@ export function AutopilotView() {
           <div>
             <h2 style={styles.sectionTitle}>Bot Activity</h2>
             <p style={styles.sectionSubtitle}>
-              Recent automated actions
+              {hasRealData ? 'Live automated actions' : 'Recent automated actions'}
             </p>
           </div>
-          <span style={styles.previewBadge}>Preview &mdash; sample activity</span>
+          {!hasRealData && (
+            <span style={styles.previewBadge}>Preview &mdash; sample activity</span>
+          )}
+          {hasRealData && isLive && (
+            <span style={styles.liveIndicator}>
+              <span style={styles.liveIndicatorDot} />
+              Realtime
+            </span>
+          )}
         </div>
 
-        <div style={styles.timeline}>
-          {MOCK_ACTIVITY.map((item, i) => {
-            const Icon = STATUS_ICON[item.status]
-            const color = STATUS_COLOR[item.status]
-            return (
-              <div key={i} style={styles.timelineItem}>
-                <div style={styles.timelineIconWrap}>
-                  <Icon size={14} color={color} />
-                  {i < MOCK_ACTIVITY.length - 1 && (
-                    <div style={styles.timelineLine} />
-                  )}
+        {/* Real activity feed */}
+        {hasRealData ? (
+          <div style={styles.timeline}>
+            {activities.map((item, i) => {
+              const Icon = ACTION_ICON_MAP[item.action] || CheckCircle2
+              const color = ACTION_COLOR_MAP[item.action] || '#60a5fa'
+              const isError = item.action === 'failed'
+              return (
+                <div key={item.id} style={styles.timelineItem}>
+                  <div style={styles.timelineIconWrap}>
+                    <Icon size={14} color={color} />
+                    {i < activities.length - 1 && (
+                      <div style={styles.timelineLine} />
+                    )}
+                  </div>
+                  <div style={styles.timelineContent}>
+                    <span style={styles.timelineTime}>
+                      <Clock size={10} color="var(--text-tertiary)" />
+                      {formatActivityTime(item.createdAt)}
+                    </span>
+                    <span
+                      style={{
+                        ...styles.timelineText,
+                        color: isError ? '#f87171' : 'var(--text-primary)',
+                      }}
+                    >
+                      {formatActivityText(item)}
+                    </span>
+                  </div>
                 </div>
-                <div style={styles.timelineContent}>
-                  <span style={{ ...styles.timelineTime }}>
-                    <Clock size={10} color="var(--text-tertiary)" />
-                    {item.time}
-                  </span>
-                  <span
-                    style={{
-                      ...styles.timelineText,
-                      color:
-                        item.status === 'error'
-                          ? '#f87171'
-                          : 'var(--text-primary)',
-                    }}
-                  >
-                    {item.text}
-                  </span>
+              )
+            })}
+            {activities.length === 0 && (
+              <p style={styles.emptyTimelineText}>
+                No activity yet for the current run.
+              </p>
+            )}
+          </div>
+        ) : (
+          /* Mock fallback */
+          <div style={styles.timeline}>
+            {MOCK_ACTIVITY.map((item, i) => {
+              const Icon = STATUS_ICON[item.status]
+              const color = STATUS_COLOR[item.status]
+              return (
+                <div key={i} style={styles.timelineItem}>
+                  <div style={styles.timelineIconWrap}>
+                    <Icon size={14} color={color} />
+                    {i < MOCK_ACTIVITY.length - 1 && (
+                      <div style={styles.timelineLine} />
+                    )}
+                  </div>
+                  <div style={styles.timelineContent}>
+                    <span style={{ ...styles.timelineTime }}>
+                      <Clock size={10} color="var(--text-tertiary)" />
+                      {item.time}
+                    </span>
+                    <span
+                      style={{
+                        ...styles.timelineText,
+                        color:
+                          item.status === 'error'
+                            ? '#f87171'
+                            : 'var(--text-primary)',
+                      }}
+                    >
+                      {item.text}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            )
-          })}
-        </div>
+              )
+            })}
+          </div>
+        )}
       </section>
+
+      {/* Keyframe injection for pulsing dot */}
+      <style>{`
+        @keyframes pulseGlow {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.6; transform: scale(1.3); }
+        }
+        @keyframes livePulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.4; }
+        }
+      `}</style>
     </div>
   )
 }
@@ -508,6 +735,30 @@ const styles: Record<string, React.CSSProperties> = {
     whiteSpace: 'nowrap' as const,
     letterSpacing: '0.02em',
     textTransform: 'uppercase' as const,
+  },
+
+  /* ---- LIVE badge ---- */
+  liveBadge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    fontSize: 10,
+    fontWeight: 700,
+    padding: '2px 8px',
+    borderRadius: 12,
+    background: 'rgba(52, 211, 153, 0.12)',
+    color: '#34d399',
+    letterSpacing: '0.05em',
+    textTransform: 'uppercase' as const,
+    marginLeft: 4,
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: '50%',
+    background: '#34d399',
+    animation: 'livePulse 1.5s ease-in-out infinite',
+    flexShrink: 0,
   },
 
   /* ---- Sections ---- */
@@ -730,6 +981,29 @@ const styles: Record<string, React.CSSProperties> = {
     whiteSpace: 'nowrap' as const,
   },
 
+  /* ---- Live Indicator (activity section) ---- */
+  liveIndicator: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    fontSize: 11,
+    fontWeight: 600,
+    padding: '3px 10px',
+    borderRadius: 6,
+    background: 'rgba(52, 211, 153, 0.10)',
+    color: '#34d399',
+    whiteSpace: 'nowrap' as const,
+    letterSpacing: '0.02em',
+  },
+  liveIndicatorDot: {
+    width: 6,
+    height: 6,
+    borderRadius: '50%',
+    background: '#34d399',
+    animation: 'livePulse 1.5s ease-in-out infinite',
+    flexShrink: 0,
+  },
+
   /* ---- Timeline ---- */
   timeline: {
     display: 'flex',
@@ -774,5 +1048,11 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 13,
     color: 'var(--text-primary)',
     lineHeight: 1.4,
+  },
+  emptyTimelineText: {
+    fontSize: 13,
+    color: 'var(--text-tertiary)',
+    textAlign: 'center',
+    padding: '16px 0',
   },
 }

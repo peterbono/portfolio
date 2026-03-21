@@ -1,3 +1,4 @@
+import { SupabaseProvider } from './context/SupabaseContext'
 import { JobsProvider } from './context/JobsContext'
 import { UIProvider } from './context/UIContext'
 import { CoachProvider } from './context/CoachContext'
@@ -6,13 +7,15 @@ import { GmailSyncBridge } from './components/GmailSyncBridge'
 
 export default function App() {
   return (
-    <UIProvider>
-      <JobsProvider>
-        <CoachProvider>
-          <GmailSyncBridge />
-          <AppShell />
-        </CoachProvider>
-      </JobsProvider>
-    </UIProvider>
+    <SupabaseProvider>
+      <UIProvider>
+        <JobsProvider>
+          <CoachProvider>
+            <GmailSyncBridge />
+            <AppShell />
+          </CoachProvider>
+        </JobsProvider>
+      </UIProvider>
+    </SupabaseProvider>
   )
 }
