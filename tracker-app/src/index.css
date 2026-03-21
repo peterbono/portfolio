@@ -169,7 +169,7 @@ textarea:focus {
 }
 @keyframes landing-grid-fade {
   from { opacity: 0; }
-  to { opacity: 0.7; }
+  to { opacity: 0.45; }
 }
 
 /* Scroll indicator bounce */
