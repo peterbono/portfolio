@@ -11,6 +11,7 @@ const EVENT_TYPE_COLORS: Record<EventType, string> = {
   interview: '#fb923c',
   offer: '#fbbf24',
   negotiation: '#f59e0b',
+  rejection: '#a855f7',
   note: '#71717a',
 }
 
@@ -23,6 +24,7 @@ const EVENT_TYPE_LABELS: Record<EventType, string> = {
   interview: 'Interview',
   offer: 'Offer',
   negotiation: 'Negotiation',
+  rejection: 'Rejection',
   note: 'Note',
 }
 

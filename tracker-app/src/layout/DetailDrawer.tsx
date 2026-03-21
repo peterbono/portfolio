@@ -159,11 +159,19 @@ export function DetailDrawer() {
             </button>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <StatusBadge status={job.status} />
             <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
-              {job.date}
+              Applied {job.date}
             </span>
+            {job.status === 'rejected' && job.lastContactDate && job.lastContactDate !== job.date && (() => {
+              const days = Math.floor((new Date(job.lastContactDate).getTime() - new Date(job.date).getTime()) / 86400000)
+              return (
+                <span style={{ fontSize: 12, color: '#a855f7' }}>
+                  Rejected {job.lastContactDate} ({days}d)
+                </span>
+              )
+            })()}
             {job.location && (
               <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
                 {job.location}

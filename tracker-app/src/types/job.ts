@@ -21,6 +21,7 @@ export type EventType =
   | 'interview'
   | 'offer'
   | 'negotiation'
+  | 'rejection'
   | 'note'
 
 export type EventOutcome = 'aligned' | 'misaligned' | 'waiting' | null

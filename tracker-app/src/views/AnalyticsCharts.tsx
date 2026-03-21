@@ -521,18 +521,25 @@ export function TimeToResponse() {
       if (!hasResponse) continue
 
       let responseDateStr: string | null = null
-      if (job.events && job.events.length > 0) {
-        const sorted = [...job.events].sort((a, b) => a.date.localeCompare(b.date))
+
+      if (job.status === 'rejected') {
+        // For rejections: use lastContactDate (rejection date) as the definitive response date
+        if (job.lastContactDate) {
+          responseDateStr = job.lastContactDate
+        } else if (job.events && job.events.length > 0) {
+          // Fallback: look for a rejection event
+          const rejEvent = job.events.find(e => e.type === 'rejection')
+          responseDateStr = rejEvent ? rejEvent.date : null
+        }
+        // No date at all → skip (don't estimate)
+      } else if (job.events && job.events.length > 0) {
+        // For non-rejected: first real response event (exclude auto-confirmation emails)
+        const meaningful = job.events.filter(e => e.type !== 'email')
+        const sorted = (meaningful.length > 0 ? meaningful : job.events).sort((a, b) => a.date.localeCompare(b.date))
         responseDateStr = sorted[0].date
       } else if (job.lastContactDate) {
         responseDateStr = job.lastContactDate
-      } else if (job.status === 'rejected') {
-        // Heuristic: estimate 10 days for rejections without explicit date
-        const est = new Date(job.date)
-        est.setDate(est.getDate() + 10)
-        responseDateStr = est.toISOString().split('T')[0]
       } else if (job.status === 'screening' || job.status === 'interviewing') {
-        // Use today as response date since we know they responded
         responseDateStr = new Date().toISOString().split('T')[0]
       }
       if (!responseDateStr) continue

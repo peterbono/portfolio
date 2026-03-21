@@ -7,7 +7,7 @@ import {
   useEffect,
   type ReactNode,
 } from 'react'
-import type { Job, JobStatus, JobEvent } from '../types/job'
+import type { Job, JobStatus, JobEvent, EventType } from '../types/job'
 import { useUI, type TimeRange, type AreaFilter, type WorkMode } from './UIContext'
 import companyHQ from '../data/company-hq.json'
 const HQ_MAP: Record<string, string> = companyHQ as Record<string, string>
@@ -197,6 +197,23 @@ export function JobsProvider({ children }: { children: ReactNode }) {
   const markRejected = useCallback((rejections: { company: string; date?: string }[]) => {
     const rejMap = new Map<string, string | undefined>()
     for (const r of rejections) rejMap.set(r.company.toLowerCase(), r.date)
+
+    function addRejectionEvent(existing: Partial<Job>, rejDate: string): Partial<Job> {
+      const events = existing.events ?? []
+      // Don't add duplicate rejection events
+      if (events.some(e => e.type === 'rejection' as unknown)) return existing
+      const rejEvent: JobEvent = {
+        id: `rej-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        date: rejDate,
+        type: 'rejection' as EventType,
+        person: '',
+        notes: 'Application rejected',
+        outcome: 'misaligned',
+        createdAt: new Date().toISOString(),
+      }
+      return { ...existing, events: [...events, rejEvent], lastContactDate: rejDate }
+    }
+
     setOverrides((prev) => {
       const next = { ...prev }
       for (const job of seedJobs) {
@@ -204,15 +221,17 @@ export function JobsProvider({ children }: { children: ReactNode }) {
         if (!rejMap.has(companyLower)) continue
         const rejDate = rejMap.get(companyLower)
         if (job.status === 'submitted' || job.status === 'manual') {
-          // Mark as rejected + store date
           next[job.id] = {
             ...next[job.id],
             status: 'rejected' as JobStatus,
-            ...(rejDate && !next[job.id]?.lastContactDate ? { lastContactDate: rejDate } : {}),
+            ...(rejDate ? addRejectionEvent(next[job.id] ?? {}, rejDate) : {}),
           }
-        } else if (job.status === 'rejected' && rejDate && !next[job.id]?.lastContactDate) {
-          // Already rejected in seed — backfill the rejection date
-          next[job.id] = { ...next[job.id], lastContactDate: rejDate }
+        } else if (job.status === 'rejected' && rejDate) {
+          // Already rejected — backfill rejection event + date if missing
+          next[job.id] = {
+            ...next[job.id],
+            ...addRejectionEvent(next[job.id] ?? {}, rejDate),
+          }
         }
       }
       // Also check overridden jobs
@@ -227,10 +246,13 @@ export function JobsProvider({ children }: { children: ReactNode }) {
           next[id] = {
             ...next[id],
             status: 'rejected' as JobStatus,
-            ...(rejDate && !next[id]?.lastContactDate ? { lastContactDate: rejDate } : {}),
+            ...(rejDate ? addRejectionEvent(next[id] ?? {}, rejDate) : {}),
           }
-        } else if (status === 'rejected' && rejDate && !next[id]?.lastContactDate) {
-          next[id] = { ...next[id], lastContactDate: rejDate }
+        } else if (status === 'rejected' && rejDate) {
+          next[id] = {
+            ...next[id],
+            ...addRejectionEvent(next[id] ?? {}, rejDate),
+          }
         }
       }
       return next
