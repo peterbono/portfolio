@@ -219,9 +219,9 @@ export function LandingView({ onGetStarted, onSignIn }: LandingViewProps) {
   return (
     <div data-landing-page="" style={s.page}>
       {/* ============================================================ */}
-      {/*  AMBIENT BACKGROUND — always visible behind all content       */}
+      {/*  PARTICLE CANVAS — interactive neural constellation            */}
       {/* ============================================================ */}
-      <AmbientBackground />
+      <ParticleCanvas />
 
       {/* ============================================================ */}
       {/*  NAV                                                          */}
@@ -1765,17 +1765,415 @@ function FinalCTAContent({ onGetStarted }: { onGetStarted: () => void }) {
 
 /* ---------- Ambient Background ---------- */
 
-function AmbientBackground() {
-  return (
-    <div style={s.ambientWrap} aria-hidden="true">
-      {/* Three gradient orbs: green, cyan, purple */}
-      <div style={s.orb1} />
-      <div style={s.orb2} />
-      <div style={s.orb3} />
+/* ------------------------------------------------------------------ */
+/*  Interactive Particle Canvas — Neural Network Constellation          */
+/* ------------------------------------------------------------------ */
 
-      {/* Subtle dot grid — faded, centered */}
-      <div style={s.gridPattern} />
-    </div>
+/* ---- Boid particle (fish-like flocking) ---- */
+interface Boid {
+  x: number
+  y: number
+  vx: number
+  vy: number
+  size: number        // 1.2 - 4  (simulates depth)
+  depth: number       // 0-1 where 0 = far / dim, 1 = near / bright
+  hue: number         // individual color offset within green-cyan palette
+  trail: { x: number; y: number }[] // last N positions for trail rendering
+}
+
+/* palette constants */
+const BOID_COUNT = 140
+const TRAIL_LENGTH = 3
+const GRID_CELL = 80          // spatial hash cell for neighbor lookup
+const NEIGHBOR_RADIUS = 70    // boids within this are "neighbors"
+const SEPARATION_DIST = 28    // too-close threshold
+const MAX_SPEED_BASE = 1.6
+const MAX_FORCE = 0.045
+
+/* boid weights */
+const W_SEPARATION = 1.8
+const W_ALIGNMENT = 1.0
+const W_COHESION = 0.9
+const W_CURRENT = 0.35        // ocean current pull
+
+/* mouse avoidance */
+const MOUSE_AVOID_RADIUS = 180
+const MOUSE_AVOID_STRENGTH = 3.5
+
+function ParticleCanvas() {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const mouseRef = useRef({ x: -9999, y: -9999 })
+  const boidsRef = useRef<Boid[]>([])
+  const animFrameRef = useRef(0)
+  const currentAngleRef = useRef(Math.random() * Math.PI * 2)
+  const currentTargetRef = useRef(Math.random() * Math.PI * 2)
+  const currentChangeTimerRef = useRef(0)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (prefersReduced) return
+
+    const ctx = canvas.getContext('2d', { alpha: true })
+    if (!ctx) return
+
+    const dpr = window.devicePixelRatio || 1
+
+    const resize = () => {
+      const w = window.innerWidth
+      const h = window.innerHeight
+      canvas.width = w * dpr
+      canvas.height = h * dpr
+      canvas.style.width = `${w}px`
+      canvas.style.height = `${h}px`
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    }
+    resize()
+
+    /* --- helpers --- */
+    const clampMag = (vx: number, vy: number, max: number) => {
+      const mag = Math.sqrt(vx * vx + vy * vy)
+      if (mag > max && mag > 0) {
+        const s = max / mag
+        return { x: vx * s, y: vy * s }
+      }
+      return { x: vx, y: vy }
+    }
+
+    /* --- init boids --- */
+    const initBoids = () => {
+      const w = window.innerWidth
+      const h = window.innerHeight
+      const boids: Boid[] = []
+      for (let i = 0; i < BOID_COUNT; i++) {
+        const depth = Math.random()
+        const angle = Math.random() * Math.PI * 2
+        const speed = 0.3 + Math.random() * 0.7
+        boids.push({
+          x: Math.random() * w,
+          y: Math.random() * h,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          size: 1.2 + depth * 2.8,
+          depth,
+          hue: 155 + Math.random() * 40, // 155-195 = green to cyan range
+          trail: [],
+        })
+      }
+      boidsRef.current = boids
+    }
+    initBoids()
+
+    /* --- mouse --- */
+    const onMouseMove = (e: MouseEvent) => {
+      mouseRef.current.x = e.clientX
+      mouseRef.current.y = e.clientY
+    }
+    const onMouseLeave = () => {
+      mouseRef.current.x = -9999
+      mouseRef.current.y = -9999
+    }
+    window.addEventListener('mousemove', onMouseMove, { passive: true })
+    document.addEventListener('mouseleave', onMouseLeave)
+
+    /* --- resize --- */
+    let resizeTimer = 0
+    const onResize = () => {
+      clearTimeout(resizeTimer)
+      resizeTimer = window.setTimeout(resize, 150)
+    }
+    window.addEventListener('resize', onResize, { passive: true })
+
+    /* --- spatial hash --- */
+    const buildGrid = (boids: Boid[], cellSize: number) => {
+      const grid: Map<string, number[]> = new Map()
+      for (let i = 0; i < boids.length; i++) {
+        const cx = Math.floor(boids[i].x / cellSize)
+        const cy = Math.floor(boids[i].y / cellSize)
+        const key = `${cx},${cy}`
+        const cell = grid.get(key)
+        if (cell) cell.push(i)
+        else grid.set(key, [i])
+      }
+      return grid
+    }
+
+    /* --- animation --- */
+    let lastTime = 0
+
+    const animate = (timestamp: number) => {
+      const dt = lastTime === 0 ? 16.67 : Math.min(timestamp - lastTime, 50)
+      lastTime = timestamp
+      const dtFactor = dt / 16.67 // normalize to ~60fps
+
+      const w = window.innerWidth
+      const h = window.innerHeight
+      const t = timestamp * 0.001
+
+      /* --- evolve ocean current direction --- */
+      currentChangeTimerRef.current -= dt
+      if (currentChangeTimerRef.current <= 0) {
+        currentTargetRef.current = Math.random() * Math.PI * 2
+        currentChangeTimerRef.current = 4000 + Math.random() * 6000 // change every 4-10s
+      }
+      // ease current angle toward target
+      let angleDiff = currentTargetRef.current - currentAngleRef.current
+      // normalize to -PI..PI
+      while (angleDiff > Math.PI) angleDiff -= Math.PI * 2
+      while (angleDiff < -Math.PI) angleDiff += Math.PI * 2
+      currentAngleRef.current += angleDiff * 0.005 * dtFactor
+      const currentVX = Math.cos(currentAngleRef.current)
+      const currentVY = Math.sin(currentAngleRef.current)
+
+      /* --- fade previous frame (creates faint trail on canvas) --- */
+      ctx.clearRect(0, 0, w, h)
+
+      const boids = boidsRef.current
+      const mx = mouseRef.current.x
+      const my = mouseRef.current.y
+      const mouseActive = mx > -999
+
+      /* --- build spatial hash --- */
+      const grid = buildGrid(boids, GRID_CELL)
+
+      /* --- update each boid --- */
+      for (let i = 0; i < boids.length; i++) {
+        const b = boids[i]
+        const maxSpeed = MAX_SPEED_BASE * (0.5 + b.depth * 0.8) // deeper = slower
+
+        // save trail position BEFORE move
+        b.trail.push({ x: b.x, y: b.y })
+        if (b.trail.length > TRAIL_LENGTH) b.trail.shift()
+
+        /* --- find neighbors via spatial hash --- */
+        const cx = Math.floor(b.x / GRID_CELL)
+        const cy = Math.floor(b.y / GRID_CELL)
+
+        let sepX = 0, sepY = 0, sepCount = 0
+        let aliX = 0, aliY = 0, aliCount = 0
+        let cohX = 0, cohY = 0, cohCount = 0
+
+        for (let dx = -1; dx <= 1; dx++) {
+          for (let dy = -1; dy <= 1; dy++) {
+            const cell = grid.get(`${cx + dx},${cy + dy}`)
+            if (!cell) continue
+            for (const j of cell) {
+              if (j === i) continue
+              const other = boids[j]
+              const ddx = b.x - other.x
+              const ddy = b.y - other.y
+              const d2 = ddx * ddx + ddy * ddy
+              const dist = Math.sqrt(d2)
+
+              if (dist < NEIGHBOR_RADIUS && dist > 0) {
+                // Separation
+                if (dist < SEPARATION_DIST) {
+                  sepX += ddx / dist / dist * SEPARATION_DIST
+                  sepY += ddy / dist / dist * SEPARATION_DIST
+                  sepCount++
+                }
+                // Alignment
+                aliX += other.vx
+                aliY += other.vy
+                aliCount++
+                // Cohesion
+                cohX += other.x
+                cohY += other.y
+                cohCount++
+              }
+            }
+          }
+        }
+
+        let steerX = 0, steerY = 0
+
+        // Separation force
+        if (sepCount > 0) {
+          sepX /= sepCount
+          sepY /= sepCount
+          const mag = Math.sqrt(sepX * sepX + sepY * sepY)
+          if (mag > 0) {
+            steerX += (sepX / mag * maxSpeed - b.vx) * W_SEPARATION
+            steerY += (sepY / mag * maxSpeed - b.vy) * W_SEPARATION
+          }
+        }
+
+        // Alignment force
+        if (aliCount > 0) {
+          aliX /= aliCount
+          aliY /= aliCount
+          const mag = Math.sqrt(aliX * aliX + aliY * aliY)
+          if (mag > 0) {
+            steerX += (aliX / mag * maxSpeed - b.vx) * W_ALIGNMENT
+            steerY += (aliY / mag * maxSpeed - b.vy) * W_ALIGNMENT
+          }
+        }
+
+        // Cohesion force
+        if (cohCount > 0) {
+          cohX = cohX / cohCount - b.x
+          cohY = cohY / cohCount - b.y
+          const mag = Math.sqrt(cohX * cohX + cohY * cohY)
+          if (mag > 0) {
+            steerX += (cohX / mag * maxSpeed - b.vx) * W_COHESION
+            steerY += (cohY / mag * maxSpeed - b.vy) * W_COHESION
+          }
+        }
+
+        // Ocean current force (with subtle per-particle variation)
+        const currentNoise = Math.sin(t * 0.3 + i * 0.7) * 0.3
+        steerX += (currentVX + currentNoise * 0.5) * W_CURRENT
+        steerY += (currentVY + Math.cos(t * 0.2 + i * 0.5) * 0.3) * W_CURRENT
+
+        // Mouse avoidance (scatter then flow around)
+        if (mouseActive) {
+          const dmx = b.x - mx
+          const dmy = b.y - my
+          const mDist = Math.sqrt(dmx * dmx + dmy * dmy)
+          if (mDist < MOUSE_AVOID_RADIUS && mDist > 1) {
+            const falloff = 1 - mDist / MOUSE_AVOID_RADIUS
+            const avoidForce = falloff * falloff * MOUSE_AVOID_STRENGTH
+            // Push away from cursor
+            steerX += (dmx / mDist) * avoidForce
+            steerY += (dmy / mDist) * avoidForce
+            // Add a gentle tangential force so they flow around, not just bounce away
+            steerX += (-dmy / mDist) * avoidForce * 0.35
+            steerY += (dmx / mDist) * avoidForce * 0.35
+          }
+        }
+
+        // Clamp steering force
+        const clamped = clampMag(steerX, steerY, MAX_FORCE * dtFactor * 10)
+
+        // Apply
+        b.vx += clamped.x * dtFactor
+        b.vy += clamped.y * dtFactor
+
+        // Clamp velocity
+        const vel = clampMag(b.vx, b.vy, maxSpeed)
+        b.vx = vel.x
+        b.vy = vel.y
+
+        b.x += b.vx * dtFactor
+        b.y += b.vy * dtFactor
+
+        // Wrap edges with margin
+        const margin = 30
+        if (b.x < -margin) b.x += w + margin * 2
+        else if (b.x > w + margin) b.x -= w + margin * 2
+        if (b.y < -margin) b.y += h + margin * 2
+        else if (b.y > h + margin) b.y -= h + margin * 2
+      }
+
+      /* --- draw trails --- */
+      for (let i = 0; i < boids.length; i++) {
+        const b = boids[i]
+        if (b.trail.length < 2) continue
+
+        const baseAlpha = 0.08 + b.depth * 0.12 // deeper = dimmer trails
+        for (let t = 0; t < b.trail.length; t++) {
+          const frac = t / b.trail.length
+          const alpha = baseAlpha * frac * 0.5
+          const r = b.size * frac * 0.6
+          if (r < 0.3) continue
+          ctx.beginPath()
+          ctx.arc(b.trail[t].x, b.trail[t].y, r, 0, Math.PI * 2)
+          ctx.fillStyle = `hsla(${b.hue}, 80%, 65%, ${alpha})`
+          ctx.fill()
+        }
+      }
+
+      /* --- draw subtle connection lines between close neighbors --- */
+      const connDist = 55
+      const connDist2 = connDist * connDist
+      for (let i = 0; i < boids.length; i++) {
+        const a = boids[i]
+        const cx = Math.floor(a.x / GRID_CELL)
+        const cy = Math.floor(a.y / GRID_CELL)
+        for (let dx = -1; dx <= 1; dx++) {
+          for (let dy = -1; dy <= 1; dy++) {
+            const cell = grid.get(`${cx + dx},${cy + dy}`)
+            if (!cell) continue
+            for (const j of cell) {
+              if (j <= i) continue
+              const bb = boids[j]
+              const ddx = a.x - bb.x
+              const ddy = a.y - bb.y
+              const d2 = ddx * ddx + ddy * ddy
+              if (d2 > connDist2) continue
+
+              const dist = Math.sqrt(d2)
+              const alpha = (1 - dist / connDist) * 0.04 * Math.min(a.depth, bb.depth)
+              if (alpha < 0.003) continue
+
+              ctx.beginPath()
+              ctx.moveTo(a.x, a.y)
+              ctx.lineTo(bb.x, bb.y)
+              ctx.strokeStyle = `hsla(170, 70%, 60%, ${alpha})`
+              ctx.lineWidth = 0.4
+              ctx.stroke()
+            }
+          }
+        }
+      }
+
+      /* --- draw mouse glow (subtle avoidance halo) --- */
+      if (mouseActive) {
+        const grad = ctx.createRadialGradient(mx, my, 0, mx, my, MOUSE_AVOID_RADIUS * 0.7)
+        grad.addColorStop(0, 'rgba(6, 182, 212, 0.04)')
+        grad.addColorStop(1, 'rgba(6, 182, 212, 0)')
+        ctx.fillStyle = grad
+        ctx.beginPath()
+        ctx.arc(mx, my, MOUSE_AVOID_RADIUS * 0.7, 0, Math.PI * 2)
+        ctx.fill()
+      }
+
+      /* --- draw boids (particles) --- */
+      for (let i = 0; i < boids.length; i++) {
+        const b = boids[i]
+        const alpha = 0.25 + b.depth * 0.55 // depth affects opacity
+        const lightness = 55 + b.depth * 15  // brighter when closer
+
+        ctx.save()
+        ctx.shadowColor = `hsla(${b.hue}, 80%, ${lightness}%, ${alpha * 0.8})`
+        ctx.shadowBlur = b.size * 2.5
+        ctx.beginPath()
+        ctx.arc(b.x, b.y, b.size, 0, Math.PI * 2)
+        ctx.fillStyle = `hsla(${b.hue}, 80%, ${lightness}%, ${alpha})`
+        ctx.fill()
+        ctx.restore()
+      }
+
+      animFrameRef.current = requestAnimationFrame(animate)
+    }
+
+    animFrameRef.current = requestAnimationFrame(animate)
+
+    return () => {
+      cancelAnimationFrame(animFrameRef.current)
+      window.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseleave', onMouseLeave)
+      window.removeEventListener('resize', onResize)
+      clearTimeout(resizeTimer)
+    }
+  }, [])
+
+  return (
+    <canvas
+      ref={canvasRef}
+      aria-hidden="true"
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        width: '100vw',
+        height: '100vh',
+        zIndex: 0,
+        pointerEvents: 'none',
+      }}
+    />
   )
 }
 
@@ -1793,63 +2191,7 @@ const s: Record<string, React.CSSProperties> = {
     position: 'relative',
   },
 
-  /* ---------- Ambient Background ---------- */
-  ambientWrap: {
-    position: 'fixed',
-    inset: 0,
-    zIndex: 0,
-    pointerEvents: 'none',
-    overflow: 'hidden',
-  },
-  orb1: {
-    position: 'absolute',
-    top: '-15%',
-    left: '-10%',
-    width: 500,
-    height: 500,
-    borderRadius: '50%',
-    background: 'radial-gradient(circle, rgba(52, 211, 153, 0.18) 0%, transparent 70%)',
-    filter: 'blur(120px)',
-    animation: 'landing-orb1 35s cubic-bezier(0.4, 0, 0.2, 1) infinite',
-    willChange: 'transform',
-    opacity: 0.9,
-  },
-  orb2: {
-    position: 'absolute',
-    top: '25%',
-    right: '-8%',
-    width: 450,
-    height: 450,
-    borderRadius: '50%',
-    background: 'radial-gradient(circle, rgba(6, 182, 212, 0.15) 0%, transparent 70%)',
-    filter: 'blur(130px)',
-    animation: 'landing-orb2 40s cubic-bezier(0.4, 0, 0.2, 1) infinite',
-    willChange: 'transform',
-    opacity: 0.85,
-  },
-  orb3: {
-    position: 'absolute',
-    bottom: '5%',
-    left: '25%',
-    width: 400,
-    height: 400,
-    borderRadius: '50%',
-    background: 'radial-gradient(circle, rgba(139, 92, 246, 0.14) 0%, transparent 70%)',
-    filter: 'blur(120px)',
-    animation: 'landing-orb3 30s cubic-bezier(0.4, 0, 0.2, 1) infinite',
-    willChange: 'transform',
-    opacity: 0.8,
-  },
-  gridPattern: {
-    position: 'absolute',
-    inset: 0,
-    backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.025) 1px, transparent 1px)',
-    backgroundSize: '32px 32px',
-    maskImage: 'radial-gradient(ellipse 70% 50% at 50% 30%, black 10%, transparent 65%)',
-    WebkitMaskImage: 'radial-gradient(ellipse 70% 50% at 50% 30%, black 10%, transparent 65%)',
-    opacity: 0.35,
-    animation: 'landing-grid-fade 2s ease both',
-  },
+  /* ---------- (Ambient Background removed — replaced by ParticleCanvas) ---------- */
 
   container: {
     maxWidth: 1140,

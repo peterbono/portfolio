@@ -145,30 +145,7 @@ textarea:focus {
 
 /* ===== Landing page premium animations ===== */
 
-/* Floating gradient orbs — slow, organic, breathing light */
-@keyframes landing-orb1 {
-  0%   { transform: translate(0, 0) scale(1); }
-  25%  { transform: translate(40px, -30px) scale(1.08); }
-  50%  { transform: translate(-20px, 20px) scale(0.95); }
-  75%  { transform: translate(30px, 40px) scale(1.05); }
-  100% { transform: translate(0, 0) scale(1); }
-}
-@keyframes landing-orb2 {
-  0%   { transform: translate(0, 0) scale(1); }
-  20%  { transform: translate(-30px, 25px) scale(1.1); }
-  40%  { transform: translate(20px, -40px) scale(0.92); }
-  60%  { transform: translate(-50px, -10px) scale(1.05); }
-  80%  { transform: translate(15px, 30px) scale(0.98); }
-  100% { transform: translate(0, 0) scale(1); }
-}
-@keyframes landing-orb3 {
-  0%   { transform: translate(0, 0) scale(1); }
-  30%  { transform: translate(35px, 35px) scale(0.9); }
-  60%  { transform: translate(-40px, -20px) scale(1.12); }
-  100% { transform: translate(0, 0) scale(1); }
-}
-
-/* (particle-rise removed — particles were too busy) */
+/* (Gradient orbs removed — replaced by interactive ParticleCanvas) */
 
 /* Scroll indicator bounce */
 @keyframes landing-scroll-bounce {
@@ -201,12 +178,6 @@ textarea:focus {
 @keyframes landing-border-rotate {
   0% { --angle: 0deg; }
   100% { --angle: 360deg; }
-}
-
-/* Grid fade-in */
-@keyframes landing-grid-fade {
-  from { opacity: 0; }
-  to { opacity: 0.35; }
 }
 
 /* Reduced motion: kill all ambient movement */
