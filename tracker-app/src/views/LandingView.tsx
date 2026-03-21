@@ -247,7 +247,7 @@ export function LandingView({ onGetStarted, onSignIn }: LandingViewProps) {
       {/* ============================================================ */}
       {/*  PARTICLE CANVAS — interactive neural constellation            */}
       {/* ============================================================ */}
-      <ParticleCanvas />
+      <AmbientBackground />
 
       {/* ============================================================ */}
       {/*  NAV                                                          */}
@@ -1779,245 +1779,17 @@ function FinalCTAContent({ onGetStarted }: { onGetStarted: () => void }) {
   )
 }
 
-/* ------------------------------------------------------------------ */
-/*  Interactive Particle Canvas — Neural Network Constellation          */
-/* ------------------------------------------------------------------ */
-
-interface Particle {
-  x: number
-  y: number
-  baseX: number
-  baseY: number
-  vx: number
-  vy: number
-  size: number
-  color: string
-  phase: number
-  phaseY: number
-  speed: number
-}
-
-const PARTICLE_COLORS = [
-  'rgba(52, 211, 153, 0.4)',
-  'rgba(6, 182, 212, 0.35)',
-  'rgba(139, 92, 246, 0.4)',
-  'rgba(52, 211, 153, 0.3)',
-  'rgba(6, 182, 212, 0.45)',
-  'rgba(139, 92, 246, 0.35)',
-]
-
-const PARTICLE_GLOW_COLORS = [
-  'rgba(52, 211, 153, 0.6)',
-  'rgba(6, 182, 212, 0.5)',
-  'rgba(139, 92, 246, 0.6)',
-  'rgba(52, 211, 153, 0.5)',
-  'rgba(6, 182, 212, 0.6)',
-  'rgba(139, 92, 246, 0.5)',
-]
-
-const PARTICLE_COUNT = 100
-const CONNECTION_DIST = 120
-const MOUSE_RADIUS = 200
-const MOUSE_ATTRACT_STRENGTH = 0.015
-const GRID_CELL_SIZE = 130
-
-function ParticleCanvas() {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const mouseRef = useRef({ x: -9999, y: -9999 })
-  const particlesRef = useRef<Particle[]>([])
-  const animFrameRef = useRef(0)
-  const timeRef = useRef(0)
-
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-
-    const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    if (prefersReduced) return
-
-    const ctx = canvas.getContext('2d', { alpha: true })
-    if (!ctx) return
-
-    const dpr = window.devicePixelRatio || 1
-
-    const resize = () => {
-      const w = window.innerWidth
-      const h = window.innerHeight
-      canvas.width = w * dpr
-      canvas.height = h * dpr
-      canvas.style.width = `${w}px`
-      canvas.style.height = `${h}px`
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    }
-    resize()
-
-    const initParticles = () => {
-      const w = window.innerWidth
-      const h = window.innerHeight
-      const particles: Particle[] = []
-      for (let i = 0; i < PARTICLE_COUNT; i++) {
-        const x = Math.random() * w
-        const y = Math.random() * h
-        particles.push({
-          x, y, baseX: x, baseY: y, vx: 0, vy: 0,
-          size: 1.5 + Math.random() * 2.5,
-          color: PARTICLE_COLORS[i % PARTICLE_COLORS.length],
-          phase: Math.random() * Math.PI * 2,
-          phaseY: Math.random() * Math.PI * 2,
-          speed: 0.15 + Math.random() * 0.25,
-        })
-      }
-      particlesRef.current = particles
-    }
-    initParticles()
-
-    const onMouseMove = (e: MouseEvent) => { mouseRef.current.x = e.clientX; mouseRef.current.y = e.clientY }
-    const onMouseLeave = () => { mouseRef.current.x = -9999; mouseRef.current.y = -9999 }
-    window.addEventListener('mousemove', onMouseMove, { passive: true })
-    document.addEventListener('mouseleave', onMouseLeave)
-
-    let resizeTimer = 0
-    const onResize = () => {
-      clearTimeout(resizeTimer)
-      resizeTimer = window.setTimeout(() => {
-        resize()
-        const w = window.innerWidth; const h = window.innerHeight
-        particlesRef.current.forEach(p => { p.baseX = Math.random() * w; p.baseY = Math.random() * h })
-      }, 150)
-    }
-    window.addEventListener('resize', onResize, { passive: true })
-
-    const buildGrid = (particles: Particle[], cellSize: number) => {
-      const grid: Map<string, number[]> = new Map()
-      for (let i = 0; i < particles.length; i++) {
-        const cx = Math.floor(particles[i].x / cellSize)
-        const cy = Math.floor(particles[i].y / cellSize)
-        const key = `${cx},${cy}`
-        const cell = grid.get(key)
-        if (cell) cell.push(i); else grid.set(key, [i])
-      }
-      return grid
-    }
-
-    const animate = (timestamp: number) => {
-      const w = window.innerWidth; const h = window.innerHeight
-      timeRef.current = timestamp * 0.001
-      ctx.clearRect(0, 0, w, h)
-
-      const particles = particlesRef.current
-      const t = timeRef.current
-      const mx = mouseRef.current.x; const my = mouseRef.current.y
-      const mouseActive = mx > -999
-
-      for (let i = 0; i < particles.length; i++) {
-        const p = particles[i]
-        const noiseX = Math.sin(t * p.speed + p.phase) * 30 + Math.sin(t * p.speed * 0.7 + p.phase * 1.3) * 15
-        const noiseY = Math.sin(t * p.speed * 0.8 + p.phaseY) * 25 + Math.cos(t * p.speed * 0.5 + p.phaseY * 1.5) * 18
-        let targetX = p.baseX + noiseX
-        let targetY = p.baseY + noiseY
-
-        if (mouseActive) {
-          const dx = mx - p.x; const dy = my - p.y
-          const dist = Math.sqrt(dx * dx + dy * dy)
-          if (dist < MOUSE_RADIUS && dist > 1) {
-            const force = MOUSE_ATTRACT_STRENGTH * (1 - dist / MOUSE_RADIUS)
-            targetX = p.x + dx * force * 8; targetY = p.y + dy * force * 8
-          }
-        }
-
-        p.vx += (targetX - p.x) * 0.04; p.vy += (targetY - p.y) * 0.04
-        p.vx *= 0.88; p.vy *= 0.88
-        p.x += p.vx; p.y += p.vy
-
-        if (p.x < -20) { p.x = w + 20; p.baseX = w + 20 }
-        else if (p.x > w + 20) { p.x = -20; p.baseX = -20 }
-        if (p.y < -20) { p.y = h + 20; p.baseY = h + 20 }
-        else if (p.y > h + 20) { p.y = -20; p.baseY = -20 }
-      }
-
-      const grid = buildGrid(particles, GRID_CELL_SIZE)
-      const connDist2 = CONNECTION_DIST * CONNECTION_DIST
-      const drawn = new Set<string>()
-
-      for (let i = 0; i < particles.length; i++) {
-        const a = particles[i]
-        const cx = Math.floor(a.x / GRID_CELL_SIZE); const cy = Math.floor(a.y / GRID_CELL_SIZE)
-        for (let dx = -1; dx <= 1; dx++) {
-          for (let dy = -1; dy <= 1; dy++) {
-            const cell = grid.get(`${cx + dx},${cy + dy}`)
-            if (!cell) continue
-            for (const j of cell) {
-              if (j <= i) continue
-              const pairKey = `${i},${j}`
-              if (drawn.has(pairKey)) continue
-              const b = particles[j]
-              const ddx = a.x - b.x; const ddy = a.y - b.y
-              const d2 = ddx * ddx + ddy * ddy
-              if (d2 > connDist2) continue
-              drawn.add(pairKey)
-              const dist = Math.sqrt(d2)
-              let alpha = (1 - dist / CONNECTION_DIST) * 0.06
-              if (mouseActive) {
-                const midX = (a.x + b.x) * 0.5; const midY = (a.y + b.y) * 0.5
-                const mDist = Math.sqrt((mx - midX) * (mx - midX) + (my - midY) * (my - midY))
-                if (mDist < MOUSE_RADIUS) alpha += (1 - mDist / MOUSE_RADIUS) * 0.12
-              }
-              ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y)
-              ctx.strokeStyle = `rgba(255, 255, 255, ${Math.min(alpha, 0.2)})`
-              ctx.lineWidth = 0.5; ctx.stroke()
-            }
-          }
-        }
-      }
-
-      if (mouseActive) {
-        const gradient = ctx.createRadialGradient(mx, my, 0, mx, my, MOUSE_RADIUS)
-        gradient.addColorStop(0, 'rgba(52, 211, 153, 0.06)')
-        gradient.addColorStop(1, 'rgba(52, 211, 153, 0)')
-        ctx.fillStyle = gradient; ctx.beginPath(); ctx.arc(mx, my, MOUSE_RADIUS, 0, Math.PI * 2); ctx.fill()
-      }
-
-      for (let i = 0; i < particles.length; i++) {
-        const p = particles[i]
-        const glowColor = PARTICLE_GLOW_COLORS[i % PARTICLE_GLOW_COLORS.length]
-        ctx.save(); ctx.shadowColor = glowColor; ctx.shadowBlur = p.size * 3
-        ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2)
-        ctx.fillStyle = p.color; ctx.fill(); ctx.restore()
-      }
-
-      animFrameRef.current = requestAnimationFrame(animate)
-    }
-
-    animFrameRef.current = requestAnimationFrame(animate)
-
-    return () => {
-      cancelAnimationFrame(animFrameRef.current)
-      window.removeEventListener('mousemove', onMouseMove)
-      document.removeEventListener('mouseleave', onMouseLeave)
-      window.removeEventListener('resize', onResize)
-      clearTimeout(resizeTimer)
-    }
-  }, [])
-
+function AmbientBackground() {
   return (
-    <canvas
-      ref={canvasRef}
-      aria-hidden="true"
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        width: '100vw',
-        height: '100vh',
-        zIndex: 0,
-        pointerEvents: 'none',
-      }}
-    />
+    <div style={s.ambientWrap} aria-hidden="true">
+      <div style={s.orb1} />
+      <div style={s.orb2} />
+      <div style={s.orb3} />
+      <div style={s.gridPattern} />
+    </div>
   )
 }
 
-/* ================================================================== */
-/*  STYLES                                                              */
 /* ================================================================== */
 
 const s: Record<string, React.CSSProperties> = {
@@ -2031,6 +1803,64 @@ const s: Record<string, React.CSSProperties> = {
   },
 
   /* ---------- (Ambient Background removed — replaced by ParticleCanvas) ---------- */
+
+  /* ---------- Ambient Background ---------- */
+  ambientWrap: {
+    position: 'fixed',
+    inset: 0,
+    zIndex: 0,
+    pointerEvents: 'none',
+    overflow: 'hidden',
+  } as React.CSSProperties,
+  orb1: {
+    position: 'absolute',
+    top: '-15%',
+    left: '-10%',
+    width: 500,
+    height: 500,
+    borderRadius: '50%',
+    background: 'radial-gradient(circle, rgba(52, 211, 153, 0.18) 0%, transparent 70%)',
+    filter: 'blur(120px)',
+    animation: 'landing-orb1 35s cubic-bezier(0.4, 0, 0.2, 1) infinite',
+    willChange: 'transform',
+    opacity: 0.9,
+  } as React.CSSProperties,
+  orb2: {
+    position: 'absolute',
+    top: '25%',
+    right: '-8%',
+    width: 450,
+    height: 450,
+    borderRadius: '50%',
+    background: 'radial-gradient(circle, rgba(6, 182, 212, 0.15) 0%, transparent 70%)',
+    filter: 'blur(130px)',
+    animation: 'landing-orb2 40s cubic-bezier(0.4, 0, 0.2, 1) infinite',
+    willChange: 'transform',
+    opacity: 0.85,
+  } as React.CSSProperties,
+  orb3: {
+    position: 'absolute',
+    bottom: '5%',
+    left: '25%',
+    width: 400,
+    height: 400,
+    borderRadius: '50%',
+    background: 'radial-gradient(circle, rgba(139, 92, 246, 0.14) 0%, transparent 70%)',
+    filter: 'blur(120px)',
+    animation: 'landing-orb3 30s cubic-bezier(0.4, 0, 0.2, 1) infinite',
+    willChange: 'transform',
+    opacity: 0.8,
+  } as React.CSSProperties,
+  gridPattern: {
+    position: 'absolute',
+    inset: 0,
+    backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.025) 1px, transparent 1px)',
+    backgroundSize: '32px 32px',
+    maskImage: 'radial-gradient(ellipse 70% 50% at 50% 30%, black 10%, transparent 65%)',
+    WebkitMaskImage: 'radial-gradient(ellipse 70% 50% at 50% 30%, black 10%, transparent 65%)',
+    opacity: 0.35,
+    animation: 'landing-grid-fade 2s ease both',
+  } as React.CSSProperties,
 
   container: {
     maxWidth: 1140,

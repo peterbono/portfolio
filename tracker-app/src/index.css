@@ -145,7 +145,32 @@ textarea:focus {
 
 /* ===== Landing page premium animations ===== */
 
-/* (Gradient orbs removed — replaced by interactive ParticleCanvas) */
+/* Ambient gradient orbs */
+@keyframes landing-orb1 {
+  0% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(30px, -20px) scale(1.05); }
+  50% { transform: translate(-15px, 25px) scale(0.95); }
+  75% { transform: translate(20px, 10px) scale(1.08); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+@keyframes landing-orb2 {
+  0% { transform: translate(0, 0) scale(1); }
+  20% { transform: translate(-25px, 15px) scale(1.06); }
+  40% { transform: translate(20px, -25px) scale(0.92); }
+  60% { transform: translate(-10px, -15px) scale(1.1); }
+  80% { transform: translate(15px, 20px) scale(0.96); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+@keyframes landing-orb3 {
+  0% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(25px, 15px) scale(1.04); }
+  66% { transform: translate(-20px, -10px) scale(0.94); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+@keyframes landing-grid-fade {
+  from { opacity: 0; }
+  to { opacity: 0.35; }
+}
 
 /* Scroll indicator bounce */
 @keyframes landing-scroll-bounce {
