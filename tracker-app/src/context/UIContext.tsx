@@ -10,8 +10,6 @@ export type ActiveView = 'table' | 'pipeline' | 'analytics' | 'coach' | 'setting
 export type TimeRange = 'all' | 'today' | 'week' | 'month' | '3months'
 export type AreaFilter = 'all' | 'apac' | 'emea' | 'americas'
 export type WorkMode = 'all' | 'remote' | 'onsite' | 'hybrid'
-export type DateMode = 'applied' | 'activity'
-
 interface UIContextValue {
   activeView: ActiveView
   sidebarCollapsed: boolean
@@ -20,7 +18,6 @@ interface UIContextValue {
   timeRange: TimeRange
   areaFilter: AreaFilter
   workMode: WorkMode
-  dateMode: DateMode
   setActiveView: (view: ActiveView) => void
   toggleSidebar: () => void
   selectJob: (id: string) => void
@@ -28,7 +25,6 @@ interface UIContextValue {
   setTimeRange: (range: TimeRange) => void
   setAreaFilter: (area: AreaFilter) => void
   setWorkMode: (mode: WorkMode) => void
-  setDateMode: (mode: DateMode) => void
 }
 
 const UIContext = createContext<UIContextValue | null>(null)
@@ -41,7 +37,6 @@ export function UIProvider({ children }: { children: ReactNode }) {
   const [timeRange, setTimeRange] = useState<TimeRange>('all')
   const [areaFilter, setAreaFilter] = useState<AreaFilter>('all')
   const [workMode, setWorkMode] = useState<WorkMode>('all')
-  const [dateMode, setDateMode] = useState<DateMode>('applied')
 
   const toggleSidebar = useCallback(() => {
     setSidebarCollapsed((prev) => !prev)
@@ -67,7 +62,6 @@ export function UIProvider({ children }: { children: ReactNode }) {
         timeRange,
         areaFilter,
         workMode,
-        dateMode,
         setActiveView,
         toggleSidebar,
         selectJob,
@@ -75,7 +69,6 @@ export function UIProvider({ children }: { children: ReactNode }) {
         setTimeRange,
         setAreaFilter,
         setWorkMode,
-        setDateMode,
       }}
     >
       {children}
