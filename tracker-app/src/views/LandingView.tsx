@@ -2938,6 +2938,7 @@ if (typeof document !== 'undefined' && !document.getElementById(RESPONSIVE_ID)) 
     [data-landing-page] button[style*="var(--accent)"]:hover {
       transform: translateY(-1px) scale(1.02) !important;
       box-shadow: 0 0 30px rgba(52, 211, 153, 0.35), 0 0 80px rgba(52, 211, 153, 0.12) !important;
+      color: #000 !important;
     }
     [data-landing-page] button[style*="var(--accent)"]:active {
       transform: translateY(0) scale(0.99) !important;
