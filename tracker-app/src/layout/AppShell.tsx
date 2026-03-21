@@ -1,6 +1,6 @@
 import { Sidebar } from './Sidebar'
 import { DetailDrawer } from './DetailDrawer'
-import { useUI, type TimeRange, type AreaFilter, type WorkMode } from '../context/UIContext'
+import { useUI, type TimeRange, type AreaFilter, type WorkMode, type DateMode } from '../context/UIContext'
 import { TableView } from '../views/TableView'
 import { PipelineView } from '../views/PipelineView'
 import { AnalyticsView } from '../views/AnalyticsView'
@@ -30,7 +30,7 @@ const MODE_OPTIONS: { value: WorkMode; label: string }[] = [
 ]
 
 function GlobalFilters() {
-  const { timeRange, setTimeRange, areaFilter, setAreaFilter, workMode, setWorkMode } = useUI()
+  const { timeRange, setTimeRange, areaFilter, setAreaFilter, workMode, setWorkMode, dateMode, setDateMode } = useUI()
   return (
     <div style={styles.timeBar}>
       {TIME_OPTIONS.map(opt => (
@@ -45,6 +45,37 @@ function GlobalFilters() {
           {opt.label}
         </button>
       ))}
+      {timeRange !== 'all' && (
+        <>
+          <div style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 4px' }} />
+          <div style={{ display: 'flex', borderRadius: 6, border: '1px solid var(--border)', overflow: 'hidden' }}>
+            <button
+              onClick={() => setDateMode('applied')}
+              style={{
+                ...styles.timeBtn,
+                borderRadius: 0,
+                fontSize: 11,
+                padding: '4px 10px',
+                ...(dateMode === 'applied' ? { background: 'var(--accent)', color: '#000', fontWeight: 600 } : {}),
+              }}
+            >
+              Applied
+            </button>
+            <button
+              onClick={() => setDateMode('activity')}
+              style={{
+                ...styles.timeBtn,
+                borderRadius: 0,
+                fontSize: 11,
+                padding: '4px 10px',
+                ...(dateMode === 'activity' ? { background: 'var(--accent)', color: '#000', fontWeight: 600 } : {}),
+              }}
+            >
+              Activity
+            </button>
+          </div>
+        </>
+      )}
       <div style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 8px' }} />
       <select
         value={areaFilter}

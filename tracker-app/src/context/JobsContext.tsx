@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from 'react'
 import type { Job, JobStatus, JobEvent, EventType } from '../types/job'
-import { useUI, type TimeRange, type AreaFilter, type WorkMode } from './UIContext'
+import { useUI, type TimeRange, type AreaFilter, type WorkMode, type DateMode } from './UIContext'
 import companyHQ from '../data/company-hq.json'
 const HQ_MAP: Record<string, string> = companyHQ as Record<string, string>
 import seedData from '../data/jobs.json'
@@ -98,16 +98,29 @@ const JobsContext = createContext<JobsContextValue | null>(null)
 
 export function JobsProvider({ children }: { children: ReactNode }) {
   const [overrides, setOverrides] = useState<Overrides>(loadOverrides)
-  const { timeRange, areaFilter, workMode } = useUI()
+  const { timeRange, areaFilter, workMode, dateMode } = useUI()
 
   const allJobs = useMemo(() => mergeJobs(seedJobs, overrides), [overrides])
 
   const jobs = useMemo(() => {
     let filtered = allJobs
 
-    // Time filter
+    // Time filter — use applied date or activity date based on dateMode
     const threshold = getTimeThreshold(timeRange)
-    if (threshold) filtered = filtered.filter(j => j.date >= threshold)
+    if (threshold) {
+      filtered = filtered.filter(j => {
+        if (dateMode === 'activity') {
+          // Use the most recent activity date: lastContactDate, latest event, or fall back to apply date
+          const activityDate = j.lastContactDate?.split('T')[0]
+            || (j.events && j.events.length > 0
+              ? [...j.events].sort((a, b) => b.date.localeCompare(a.date))[0].date.split('T')[0]
+              : null)
+            || j.date
+          return activityDate >= threshold
+        }
+        return j.date >= threshold
+      })
+    }
 
     // Area filter
     if (areaFilter !== 'all') {
@@ -138,7 +151,7 @@ export function JobsProvider({ children }: { children: ReactNode }) {
     }
 
     return filtered
-  }, [allJobs, timeRange, areaFilter, workMode])
+  }, [allJobs, timeRange, areaFilter, workMode, dateMode])
 
   useEffect(() => {
     saveOverrides(overrides)
