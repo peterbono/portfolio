@@ -32,10 +32,24 @@
 }
 
 html,
-body,
+body {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
 #root {
   height: 100%;
   width: 100%;
+}
+
+/* Landing page needs its own scroll; AppShell manages its own overflow */
+#root:has(> [data-landing-page]) {
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+#root:not(:has(> [data-landing-page])) {
   overflow: hidden;
 }
 
@@ -127,6 +141,86 @@ textarea:focus {
 @keyframes subtlePulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
+}
+
+/* ===== Landing page premium animations ===== */
+
+/* Floating gradient orbs */
+@keyframes landing-orb1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(80px, -60px) scale(1.1); }
+  50% { transform: translate(-40px, 40px) scale(0.95); }
+  75% { transform: translate(60px, 80px) scale(1.05); }
+}
+@keyframes landing-orb2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(-70px, 50px) scale(0.9); }
+  50% { transform: translate(50px, -80px) scale(1.15); }
+  75% { transform: translate(-90px, -20px) scale(1); }
+}
+@keyframes landing-orb3 {
+  0%, 100% { transform: translate(0, 0) scale(1.05); }
+  33% { transform: translate(60px, 70px) scale(0.9); }
+  66% { transform: translate(-80px, -40px) scale(1.1); }
+}
+
+/* Floating particles */
+@keyframes landing-particle-rise {
+  0% { transform: translateY(0) translateX(0); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translateY(-100vh) translateX(20px); opacity: 0; }
+}
+
+/* Scroll indicator bounce */
+@keyframes landing-scroll-bounce {
+  0%, 100% { transform: translateY(0); opacity: 0.6; }
+  50% { transform: translateY(8px); opacity: 1; }
+}
+
+/* CTA glow pulse */
+@keyframes landing-cta-glow {
+  0%, 100% { box-shadow: 0 0 20px rgba(52, 211, 153, 0.15), 0 0 60px rgba(52, 211, 153, 0.05); }
+  50% { box-shadow: 0 0 30px rgba(52, 211, 153, 0.3), 0 0 80px rgba(52, 211, 153, 0.1); }
+}
+
+/* Rotating conic gradient for Pro card border */
+@keyframes landing-border-rotate {
+  0% { --angle: 0deg; }
+  100% { --angle: 360deg; }
+}
+
+/* Grid fade-in */
+@keyframes landing-grid-fade {
+  from { opacity: 0; }
+  to { opacity: 0.4; }
+}
+
+/* Noise flicker */
+@keyframes landing-noise {
+  0% { transform: translate(0, 0); }
+  10% { transform: translate(-5%, -5%); }
+  20% { transform: translate(-10%, 5%); }
+  30% { transform: translate(5%, -10%); }
+  40% { transform: translate(-5%, 15%); }
+  50% { transform: translate(-10%, 5%); }
+  60% { transform: translate(15%, 0); }
+  70% { transform: translate(0, 10%); }
+  80% { transform: translate(-15%, 0); }
+  90% { transform: translate(10%, 5%); }
+  100% { transform: translate(5%, 0); }
+}
+
+/* Status dot blink for mockup */
+@keyframes landing-status-blink {
+  0%, 100% { opacity: 1; box-shadow: 0 0 4px rgba(52, 211, 153, 0.6); }
+  50% { opacity: 0.4; box-shadow: 0 0 2px rgba(52, 211, 153, 0.2); }
+}
+
+/* Counter increment illusion */
+@keyframes landing-number-tick {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
 }
 
 /* Utility */

@@ -16,6 +16,7 @@ import {
   Star,
   TrendingUp,
   Target,
+  ChevronDown,
 } from 'lucide-react'
 
 /* ------------------------------------------------------------------ */
@@ -161,6 +162,10 @@ function injectKeyframes() {
       90% { transform: translateX(0); opacity: 1; }
       100% { transform: translateX(10px); opacity: 0; }
     }
+    @keyframes landing-statusGlow {
+      0%, 100% { box-shadow: 0 0 4px rgba(52, 211, 153, 0.6); }
+      50% { box-shadow: 0 0 8px rgba(52, 211, 153, 0.9), 0 0 16px rgba(52, 211, 153, 0.3); }
+    }
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after {
         animation-duration: 0.01ms !important;
@@ -190,7 +195,12 @@ export function LandingView({ onGetStarted, onSignIn }: LandingViewProps) {
   }, [])
 
   return (
-    <div style={s.page}>
+    <div data-landing-page="" style={s.page}>
+      {/* ============================================================ */}
+      {/*  AMBIENT BACKGROUND — always visible behind all content       */}
+      {/* ============================================================ */}
+      <AmbientBackground />
+
       {/* ============================================================ */}
       {/*  NAV                                                          */}
       {/* ============================================================ */}
@@ -302,12 +312,23 @@ export function LandingView({ onGetStarted, onSignIn }: LandingViewProps) {
 
         {/* Hero product mockup */}
         <HeroMockup />
+
+        {/* Scroll indicator */}
+        <div style={s.scrollIndicator}>
+          <div style={s.scrollIndicatorMouse}>
+            <div style={s.scrollIndicatorDot} />
+          </div>
+          <ChevronDown size={14} color="var(--text-tertiary)" style={{ animation: 'landing-scroll-bounce 2s ease infinite 0.5s' }} />
+        </div>
       </section>
 
       {/* ============================================================ */}
       {/*  LOGO STRIP (Social Proof)                                    */}
       {/* ============================================================ */}
       <LogoStrip />
+
+      {/* Divider */}
+      <div data-landing-section-divider="" />
 
       {/* ============================================================ */}
       {/*  FEATURES                                                     */}
@@ -362,6 +383,9 @@ export function LandingView({ onGetStarted, onSignIn }: LandingViewProps) {
         </div>
       </section>
 
+      {/* Divider */}
+      <div data-landing-section-divider="" />
+
       {/* ============================================================ */}
       {/*  HOW IT WORKS                                                 */}
       {/* ============================================================ */}
@@ -385,6 +409,9 @@ export function LandingView({ onGetStarted, onSignIn }: LandingViewProps) {
       {/*  TESTIMONIAL                                                  */}
       {/* ============================================================ */}
       <TestimonialSection />
+
+      {/* Divider */}
+      <div data-landing-section-divider="" />
 
       {/* ============================================================ */}
       {/*  PRICING                                                      */}
@@ -487,6 +514,9 @@ export function LandingView({ onGetStarted, onSignIn }: LandingViewProps) {
         </div>
       </section>
 
+      {/* Divider */}
+      <div data-landing-section-divider="" />
+
       {/* ============================================================ */}
       {/*  FINAL CTA                                                    */}
       {/* ============================================================ */}
@@ -504,14 +534,19 @@ export function LandingView({ onGetStarted, onSignIn }: LandingViewProps) {
         <div style={s.footerInner}>
           <div style={s.footerLeft}>
             <div style={s.logoRow}>
-              <div style={{ ...s.logoMark, width: 24, height: 24 }}>
-                <Bot size={12} color="#000" />
+              <div style={{ ...s.logoMark, width: 28, height: 28 }}>
+                <Bot size={14} color="#000" />
               </div>
-              <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
+              <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
                 JobTracker
               </span>
             </div>
-            <p style={s.footerTagline}>AI-powered job search automation</p>
+            <p style={s.footerTagline}>AI-powered job search automation.<br />Apply smarter, not harder.</p>
+            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+              <a href="https://github.com" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--text-tertiary)', transition: 'color 150ms ease' }}>
+                <Github size={16} />
+              </a>
+            </div>
           </div>
           <div data-landing-footer-columns="" style={s.footerColumns}>
             <div style={s.footerCol}>
@@ -733,7 +768,7 @@ function HeroMockup() {
 
 function LogoStrip() {
   const { ref, isVisible } = useScrollReveal()
-  const companies = ['Stripe', 'Figma', 'Google', 'Meta', 'Shopify', 'Spotify', 'Linear', 'Vercel']
+  const tools = ['Claude AI', 'Supabase', 'Playwright', 'Vercel', 'React', 'TypeScript']
 
   return (
     <section
@@ -745,9 +780,9 @@ function LogoStrip() {
         transition: 'opacity 0.6s ease, transform 0.6s ease',
       }}
     >
-      <p style={s.logoSectionLabel}>Trusted by professionals hunting roles at</p>
+      <p style={s.logoSectionLabel}>Powered by industry-leading tools</p>
       <div data-landing-logo-grid="" style={s.logoGrid}>
-        {companies.map((name) => (
+        {tools.map((name) => (
           <div key={name} style={s.logoItem}>
             <span style={s.logoName}>{name}</span>
           </div>
@@ -1123,6 +1158,7 @@ function PricingCard({
   return (
     <div
       ref={ref}
+      {...(featured ? { 'data-landing-pricing-featured': '' } : {})}
       style={{
         ...s.pricingCard,
         ...(featured ? s.pricingCardFeatured : {}),
@@ -1192,6 +1228,48 @@ function FinalCTAContent({ onGetStarted }: { onGetStarted: () => void }) {
   )
 }
 
+/* ---------- Ambient Background ---------- */
+
+function AmbientBackground() {
+  return (
+    <div style={s.ambientWrap} aria-hidden="true">
+      {/* Gradient orbs */}
+      <div style={s.orb1} />
+      <div style={s.orb2} />
+      <div style={s.orb3} />
+
+      {/* Dot grid pattern */}
+      <div style={s.gridPattern} />
+
+      {/* Noise texture overlay */}
+      <div style={s.noiseOverlay} />
+
+      {/* Floating particles */}
+      {Array.from({ length: 20 }).map((_, i) => (
+        <div
+          key={i}
+          style={{
+            position: 'absolute' as const,
+            width: Math.random() > 0.5 ? 2 : 1,
+            height: Math.random() > 0.5 ? 2 : 1,
+            borderRadius: '50%',
+            background: i % 3 === 0
+              ? 'rgba(52, 211, 153, 0.6)'
+              : i % 3 === 1
+              ? 'rgba(96, 165, 250, 0.5)'
+              : 'rgba(167, 139, 250, 0.4)',
+            left: `${5 + (i * 4.7) % 90}%`,
+            top: `${60 + (i * 13) % 40}%`,
+            animation: `landing-particle-rise ${12 + (i % 8) * 2}s linear ${(i * 1.3) % 10}s infinite`,
+            pointerEvents: 'none' as const,
+            willChange: 'transform, opacity',
+          }}
+        />
+      ))}
+    </div>
+  )
+}
+
 /* ================================================================== */
 /*  STYLES                                                              */
 /* ================================================================== */
@@ -1203,8 +1281,76 @@ const s: Record<string, React.CSSProperties> = {
     minHeight: '100vh',
     background: '#09090b',
     overflowX: 'hidden',
-    overflowY: 'auto',
+    position: 'relative',
   },
+
+  /* ---------- Ambient Background ---------- */
+  ambientWrap: {
+    position: 'fixed',
+    inset: 0,
+    zIndex: 0,
+    pointerEvents: 'none',
+    overflow: 'hidden',
+  },
+  orb1: {
+    position: 'absolute',
+    top: '-10%',
+    left: '-5%',
+    width: 600,
+    height: 600,
+    borderRadius: '50%',
+    background: 'radial-gradient(circle, rgba(52, 211, 153, 0.07) 0%, transparent 70%)',
+    filter: 'blur(80px)',
+    animation: 'landing-orb1 25s ease-in-out infinite',
+    willChange: 'transform',
+  },
+  orb2: {
+    position: 'absolute',
+    top: '30%',
+    right: '-10%',
+    width: 500,
+    height: 500,
+    borderRadius: '50%',
+    background: 'radial-gradient(circle, rgba(96, 165, 250, 0.05) 0%, transparent 70%)',
+    filter: 'blur(80px)',
+    animation: 'landing-orb2 30s ease-in-out infinite',
+    willChange: 'transform',
+  },
+  orb3: {
+    position: 'absolute',
+    bottom: '10%',
+    left: '20%',
+    width: 450,
+    height: 450,
+    borderRadius: '50%',
+    background: 'radial-gradient(circle, rgba(167, 139, 250, 0.05) 0%, transparent 70%)',
+    filter: 'blur(80px)',
+    animation: 'landing-orb3 20s ease-in-out infinite',
+    willChange: 'transform',
+  },
+  gridPattern: {
+    position: 'absolute',
+    inset: 0,
+    backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.03) 1px, transparent 1px)',
+    backgroundSize: '32px 32px',
+    maskImage: 'radial-gradient(ellipse 80% 60% at 50% 30%, black 20%, transparent 70%)',
+    WebkitMaskImage: 'radial-gradient(ellipse 80% 60% at 50% 30%, black 20%, transparent 70%)',
+    opacity: 0.5,
+    animation: 'landing-grid-fade 1.5s ease both',
+  },
+  noiseOverlay: {
+    position: 'absolute',
+    inset: '-50%',
+    width: '200%',
+    height: '200%',
+    backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E")`,
+    backgroundRepeat: 'repeat',
+    backgroundSize: '128px 128px',
+    opacity: 0.4,
+    animation: 'landing-noise 8s steps(10) infinite',
+    mixBlendMode: 'overlay',
+  },
+
   container: {
     maxWidth: 1140,
     margin: '0 auto',
@@ -1216,9 +1362,9 @@ const s: Record<string, React.CSSProperties> = {
     position: 'sticky',
     top: 0,
     zIndex: 200,
-    background: 'rgba(9, 9, 11, 0.8)',
-    backdropFilter: 'blur(16px)',
-    WebkitBackdropFilter: 'blur(16px)',
+    background: 'rgba(9, 9, 11, 0.85)',
+    backdropFilter: 'blur(20px)',
+    WebkitBackdropFilter: 'blur(20px)',
     borderBottom: '1px solid rgba(255,255,255,0.06)',
   },
   navInner: {
@@ -1354,6 +1500,7 @@ const s: Record<string, React.CSSProperties> = {
   /* ---------- Hero ---------- */
   hero: {
     position: 'relative',
+    zIndex: 1,
     maxWidth: 1140,
     margin: '0 auto',
     padding: '80px 24px 40px',
@@ -1361,7 +1508,7 @@ const s: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     alignItems: 'center',
     textAlign: 'center',
-    overflow: 'hidden',
+    overflow: 'visible',
   },
   heroGlow: {
     position: 'absolute',
@@ -1438,6 +1585,33 @@ const s: Record<string, React.CSSProperties> = {
     animation: 'landing-fadeUp 0.6s ease 0.4s both',
   },
 
+  /* ---------- Scroll Indicator ---------- */
+  scrollIndicator: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 40,
+    animation: 'landing-fadeUp 0.6s ease 0.8s both',
+    zIndex: 1,
+  },
+  scrollIndicatorMouse: {
+    width: 20,
+    height: 32,
+    borderRadius: 10,
+    border: '1.5px solid rgba(255,255,255,0.15)',
+    display: 'flex',
+    justifyContent: 'center',
+    paddingTop: 6,
+  },
+  scrollIndicatorDot: {
+    width: 3,
+    height: 6,
+    borderRadius: 2,
+    background: 'var(--accent)',
+    animation: 'landing-scroll-bounce 2s ease infinite',
+  },
+
   /* ---------- Buttons ---------- */
   btnPrimary: {
     display: 'inline-flex',
@@ -1452,7 +1626,9 @@ const s: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     border: 'none',
     fontFamily: 'inherit',
-    transition: 'opacity 150ms ease, transform 100ms ease',
+    transition: 'all 200ms ease',
+    boxShadow: '0 0 20px rgba(52, 211, 153, 0.15), 0 0 60px rgba(52, 211, 153, 0.05)',
+    animation: 'landing-cta-glow 3s ease infinite',
   },
   btnPrimaryLarge: {
     display: 'inline-flex',
@@ -1467,7 +1643,9 @@ const s: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     border: 'none',
     fontFamily: 'inherit',
-    transition: 'opacity 150ms ease, transform 100ms ease',
+    transition: 'all 200ms ease',
+    boxShadow: '0 0 20px rgba(52, 211, 153, 0.15), 0 0 60px rgba(52, 211, 153, 0.05)',
+    animation: 'landing-cta-glow 3s ease infinite',
   },
   btnGhost: {
     display: 'inline-flex',
@@ -1477,12 +1655,14 @@ const s: Record<string, React.CSSProperties> = {
     fontSize: 15,
     fontWeight: 500,
     color: 'var(--text-secondary)',
-    background: 'transparent',
+    background: 'rgba(255,255,255,0.03)',
     border: '1px solid rgba(255,255,255,0.1)',
     borderRadius: 10,
     cursor: 'pointer',
     fontFamily: 'inherit',
-    transition: 'all 150ms ease',
+    transition: 'all 200ms ease',
+    backdropFilter: 'blur(8px)',
+    WebkitBackdropFilter: 'blur(8px)',
   },
 
   /* ---------- Hero Mockup ---------- */
@@ -1592,6 +1772,7 @@ const s: Record<string, React.CSSProperties> = {
     borderRadius: '50%',
     background: 'var(--accent)',
     animation: 'landing-pulse 2s ease infinite',
+    boxShadow: '0 0 4px rgba(52, 211, 153, 0.6)',
   },
   activityRow: {
     display: 'flex',
@@ -1605,6 +1786,8 @@ const s: Record<string, React.CSSProperties> = {
 
   /* ---------- Logo Strip ---------- */
   logoSection: {
+    position: 'relative',
+    zIndex: 1,
     padding: '40px 24px',
     borderBottom: '1px solid rgba(255,255,255,0.04)',
     borderTop: '1px solid rgba(255,255,255,0.04)',
@@ -1642,9 +1825,13 @@ const s: Record<string, React.CSSProperties> = {
 
   /* ---------- Sections ---------- */
   sectionDark: {
+    position: 'relative',
+    zIndex: 1,
     padding: '100px 24px',
   },
   sectionAlt: {
+    position: 'relative',
+    zIndex: 1,
     padding: '100px 24px',
     background: 'rgba(255,255,255,0.015)',
     borderTop: '1px solid rgba(255,255,255,0.04)',
@@ -1817,6 +2004,8 @@ const s: Record<string, React.CSSProperties> = {
 
   /* ---------- Stats ---------- */
   statsSection: {
+    position: 'relative',
+    zIndex: 1,
     padding: '64px 24px',
     background: 'linear-gradient(135deg, rgba(52, 211, 153, 0.04) 0%, rgba(96, 165, 250, 0.04) 100%)',
     borderTop: '1px solid rgba(255,255,255,0.04)',
@@ -1856,6 +2045,8 @@ const s: Record<string, React.CSSProperties> = {
 
   /* ---------- Testimonial ---------- */
   testimonialSection: {
+    position: 'relative',
+    zIndex: 1,
     padding: '80px 24px',
   },
   testimonialCard: {
@@ -1968,11 +2159,12 @@ const s: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     gap: 20,
     position: 'relative',
+    transition: 'border-color 300ms ease, box-shadow 300ms ease',
   },
   pricingCardFeatured: {
-    border: '1px solid rgba(52, 211, 153, 0.3)',
-    background: 'rgba(52, 211, 153, 0.03)',
-    boxShadow: '0 0 40px rgba(52, 211, 153, 0.06)',
+    border: '1px solid rgba(52, 211, 153, 0.4)',
+    background: 'linear-gradient(180deg, rgba(52, 211, 153, 0.06) 0%, rgba(52, 211, 153, 0.01) 100%)',
+    boxShadow: '0 0 40px rgba(52, 211, 153, 0.08), 0 0 80px rgba(52, 211, 153, 0.03), inset 0 1px 0 rgba(52, 211, 153, 0.1)',
     transform: 'scale(1.02)',
   },
   pricingRecommended: {
@@ -2072,6 +2264,7 @@ const s: Record<string, React.CSSProperties> = {
   /* ---------- Final CTA ---------- */
   finalCTA: {
     position: 'relative',
+    zIndex: 1,
     padding: '100px 24px',
     overflow: 'hidden',
     background: 'linear-gradient(180deg, #09090b 0%, #0a1a14 50%, #09090b 100%)',
@@ -2112,13 +2305,15 @@ const s: Record<string, React.CSSProperties> = {
 
   /* ---------- Footer ---------- */
   footer: {
-    borderTop: '1px solid rgba(255,255,255,0.04)',
-    background: '#09090b',
+    position: 'relative',
+    zIndex: 1,
+    borderTop: '1px solid rgba(255,255,255,0.06)',
+    background: 'linear-gradient(180deg, #09090b 0%, #060608 100%)',
   },
   footerInner: {
     maxWidth: 1140,
     margin: '0 auto',
-    padding: '48px 24px',
+    padding: '64px 24px 48px',
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
@@ -2133,6 +2328,7 @@ const s: Record<string, React.CSSProperties> = {
   footerTagline: {
     fontSize: 13,
     color: 'var(--text-tertiary)',
+    lineHeight: 1.6,
   },
   footerColumns: {
     display: 'flex',
@@ -2200,7 +2396,99 @@ if (typeof document !== 'undefined' && !document.getElementById(RESPONSIVE_ID)) 
   const style = document.createElement('style')
   style.id = RESPONSIVE_ID
   style.textContent = `
-    /* Mobile: hide desktop nav, show hamburger */
+    /* ===== Hover effects ===== */
+
+    /* Nav link hover */
+    [data-landing-page] nav button:hover {
+      color: #fff !important;
+    }
+
+    /* Primary CTA hover — scale + intensify glow */
+    [data-landing-page] button[style*="var(--accent)"] {
+      transition: all 200ms ease !important;
+    }
+    [data-landing-page] button[style*="var(--accent)"]:hover {
+      transform: translateY(-1px) scale(1.02) !important;
+      box-shadow: 0 0 30px rgba(52, 211, 153, 0.35), 0 0 80px rgba(52, 211, 153, 0.12) !important;
+    }
+    [data-landing-page] button[style*="var(--accent)"]:active {
+      transform: translateY(0) scale(0.99) !important;
+    }
+
+    /* Ghost button hover */
+    [data-landing-page] button[style*="rgba(255,255,255,0.1)"]:hover {
+      border-color: rgba(255,255,255,0.2) !important;
+      background: rgba(255,255,255,0.06) !important;
+      color: #fff !important;
+    }
+
+    /* Footer link hover */
+    [data-landing-page] footer button:hover,
+    [data-landing-page] footer a:hover {
+      color: var(--text-primary) !important;
+      text-decoration: none !important;
+    }
+
+    /* Logo name hover */
+    [data-landing-page] [data-landing-logo-grid] > div:hover span {
+      opacity: 0.8 !important;
+    }
+
+    /* Pricing card hover */
+    [data-landing-page] [data-landing-pricing-grid] > div:hover {
+      border-color: rgba(255,255,255,0.12) !important;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3) !important;
+    }
+
+    /* Featured pricing card animated glow border */
+    [data-landing-pricing-featured] {
+      position: relative !important;
+      overflow: visible !important;
+    }
+    [data-landing-pricing-featured]::before {
+      content: '';
+      position: absolute;
+      inset: -1px;
+      border-radius: 15px;
+      padding: 1px;
+      background: conic-gradient(
+        from var(--landing-glow-angle, 0deg),
+        rgba(52, 211, 153, 0.4),
+        rgba(96, 165, 250, 0.3),
+        rgba(167, 139, 250, 0.3),
+        rgba(52, 211, 153, 0.4)
+      );
+      -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      -webkit-mask-composite: xor;
+      mask-composite: exclude;
+      pointer-events: none;
+      opacity: 0.7;
+    }
+
+    /* Section gradient dividers */
+    [data-landing-section-divider] {
+      height: 1px;
+      background: linear-gradient(90deg,
+        transparent 0%,
+        rgba(52, 211, 153, 0.15) 20%,
+        rgba(96, 165, 250, 0.15) 50%,
+        rgba(167, 139, 250, 0.15) 80%,
+        transparent 100%
+      );
+      border: none;
+      margin: 0;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Mockup frame hover shimmer */
+    [data-landing-page] [style*="mockupFrame"]:hover {
+      box-shadow: 0 24px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(52, 211, 153, 0.08) !important;
+    }
+
+    /* ===== Responsive ===== */
+
     @media (max-width: 768px) {
       [data-landing-nav-center] { display: none !important; }
       [data-landing-nav-right] { display: none !important; }
@@ -2239,6 +2527,24 @@ if (typeof document !== 'undefined' && !document.getElementById(RESPONSIVE_ID)) 
         gap: 20px !important;
       }
     }
+
+    /* Reduced motion */
+    @media (prefers-reduced-motion: reduce) {
+      [data-landing-page] [style*="animation"] {
+        animation: none !important;
+      }
+    }
   `
   document.head.appendChild(style)
+
+  // Animate the conic-gradient border on the featured pricing card
+  if (typeof requestAnimationFrame !== 'undefined') {
+    let angle = 0
+    const animateBorder = () => {
+      angle = (angle + 0.5) % 360
+      document.documentElement.style.setProperty('--landing-glow-angle', angle + 'deg')
+      requestAnimationFrame(animateBorder)
+    }
+    requestAnimationFrame(animateBorder)
+  }
 }
