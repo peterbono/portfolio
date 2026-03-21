@@ -67,6 +67,13 @@ function mergeJobs(seed: Job[], overrides: Overrides): Job[] {
   return merged
 }
 
+function toLocalDateStr(d: Date): string {
+  const yyyy = d.getFullYear()
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd}`
+}
+
 function getTimeThreshold(range: TimeRange): string | null {
   if (range === 'all') return null
   const now = new Date()
@@ -78,7 +85,7 @@ function getTimeThreshold(range: TimeRange): string | null {
     case '3months': d = new Date(now.getFullYear(), now.getMonth() - 3, 1); break
     default: return null
   }
-  return d.toISOString().split('T')[0]
+  return toLocalDateStr(d)
 }
 
 interface JobsContextValue {
