@@ -1925,6 +1925,20 @@ function DotGridCanvas() {
       mouseY = e.clientY - rect.top
     }
 
+    function onTouchMove(e: TouchEvent) {
+      const rect = canvas!.getBoundingClientRect()
+      const touch = e.touches[0]
+      if (touch) {
+        mouseX = touch.clientX - rect.left
+        mouseY = touch.clientY - rect.top
+      }
+    }
+
+    function onTouchEnd() {
+      mouseX = -9999
+      mouseY = -9999
+    }
+
     function onResize() {
       buildGrid()
       if (prefersReduced) draw()
@@ -1936,6 +1950,9 @@ function DotGridCanvas() {
       draw()
     } else {
       window.addEventListener('mousemove', onMouseMove, { passive: true })
+      window.addEventListener('touchstart', onTouchMove, { passive: true })
+      window.addEventListener('touchmove', onTouchMove, { passive: true })
+      window.addEventListener('touchend', onTouchEnd, { passive: true })
       animId = requestAnimationFrame(draw)
     }
 
@@ -1944,6 +1961,9 @@ function DotGridCanvas() {
     return () => {
       cancelAnimationFrame(animId)
       window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('touchstart', onTouchMove)
+      window.removeEventListener('touchmove', onTouchMove)
+      window.removeEventListener('touchend', onTouchEnd)
       window.removeEventListener('resize', onResize)
     }
   }, [])
