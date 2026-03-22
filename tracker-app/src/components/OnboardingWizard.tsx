@@ -288,11 +288,25 @@ export function OnboardingWizard({ onComplete, defaultEmail, defaultName }: Onbo
     return () => clearTimeout(timer)
   }, [])
 
-  // City autocomplete via Teleport API
+  // City autocomplete via Teleport API + local fallback
   const debouncedLocationQuery = useDebounce(locationQuery, 300)
+
+  const POPULAR_CITIES = [
+    'Bangkok, Thailand', 'Singapore', 'Tokyo, Japan', 'Seoul, South Korea',
+    'Dubai, UAE', 'Mumbai, India', 'Bangalore, India', 'Sydney, Australia',
+    'Melbourne, Australia', 'Hong Kong', 'Berlin, Germany', 'London, UK',
+    'Paris, France', 'Amsterdam, Netherlands', 'Barcelona, Spain',
+    'New York, USA', 'San Francisco, USA', 'Toronto, Canada',
+    'Remote', 'Hybrid',
+  ]
 
   useEffect(() => {
     if (debouncedLocationQuery.length < 2) { setCitySuggestions([]); return }
+    const q = debouncedLocationQuery.toLowerCase()
+    // Local filter first (instant)
+    const localMatches = POPULAR_CITIES.filter(c => c.toLowerCase().includes(q))
+    if (localMatches.length >= 3) { setCitySuggestions(localMatches.slice(0, 6)); return }
+    // API for longer queries
     let cancelled = false
     setCityLoading(true)
     fetch(`https://api.teleport.org/api/cities/?search=${encodeURIComponent(debouncedLocationQuery)}&limit=6`)
@@ -301,9 +315,11 @@ export function OnboardingWizard({ onComplete, defaultEmail, defaultName }: Onbo
         if (cancelled) return
         const embedded = data?._embedded?.['city:search-results'] ?? []
         const names: string[] = embedded.map((c: { matching_full_name: string }) => c.matching_full_name).filter(Boolean)
-        setCitySuggestions(names)
+        // Merge local + API results, deduplicated
+        const merged = [...new Set([...localMatches, ...names])].slice(0, 6)
+        setCitySuggestions(merged)
       })
-      .catch(() => { if (!cancelled) setCitySuggestions([]) })
+      .catch(() => { if (!cancelled) setCitySuggestions(localMatches.slice(0, 6)) })
       .finally(() => { if (!cancelled) setCityLoading(false) })
     return () => { cancelled = true }
   }, [debouncedLocationQuery])
