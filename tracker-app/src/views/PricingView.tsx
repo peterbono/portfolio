@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Check, X, Zap, Crown, Shield } from 'lucide-react'
+import { Check, X, Zap, Flame, Shield, Clock } from 'lucide-react'
 import { PLAN_CONFIGS, type PlanConfig, createCheckoutSession } from '../lib/billing'
 import { usePlan } from '../hooks/usePlan'
 
@@ -26,7 +26,7 @@ if (typeof document !== 'undefined') {
 // ─── Main Component ──────────────────────────────────────────────────
 
 export function PricingViewWithResponsive() {
-  const [annual, setAnnual] = useState(false)
+  const [weekly, setWeekly] = useState(true)
   const { plan: currentPlan } = usePlan()
 
   return (
@@ -36,32 +36,38 @@ export function PricingViewWithResponsive() {
         <div style={styles.header}>
           <h1 style={styles.title}>Choose your plan</h1>
           <p style={styles.subtitle}>
-            Scale your job search with AI-powered automation
+            Job search takes 6-8 weeks, not a year. Pay only while you need it.
           </p>
+        </div>
+
+        {/* Social proof */}
+        <div style={styles.socialProof}>
+          <Clock size={14} color="var(--accent)" />
+          <span>Average user finds a job in 47 days</span>
         </div>
 
         {/* Billing toggle */}
         <div style={styles.toggleWrap}>
-          <span style={{ ...styles.toggleLabel, color: !annual ? 'var(--text-primary)' : 'var(--text-tertiary)' }}>
-            Monthly
+          <span style={{ ...styles.toggleLabel, color: weekly ? 'var(--text-primary)' : 'var(--text-tertiary)' }}>
+            Weekly
           </span>
           <button
-            onClick={() => setAnnual(a => !a)}
+            onClick={() => setWeekly(w => !w)}
             style={styles.toggleTrack}
-            aria-label="Toggle annual billing"
+            aria-label="Toggle billing period"
           >
             <div
               style={{
                 ...styles.toggleThumb,
-                transform: annual ? 'translateX(22px)' : 'translateX(2px)',
+                transform: weekly ? 'translateX(2px)' : 'translateX(22px)',
               }}
             />
           </button>
-          <span style={{ ...styles.toggleLabel, color: annual ? 'var(--text-primary)' : 'var(--text-tertiary)' }}>
-            Annual
+          <span style={{ ...styles.toggleLabel, color: !weekly ? 'var(--text-primary)' : 'var(--text-tertiary)' }}>
+            Monthly
           </span>
-          {annual && (
-            <span style={styles.saveBadge}>Save 20%</span>
+          {!weekly && (
+            <span style={styles.saveBadge}>Save ~20%</span>
           )}
         </div>
 
@@ -71,12 +77,18 @@ export function PricingViewWithResponsive() {
             <PricingCard
               key={config.tier}
               config={config}
-              annual={annual}
+              weekly={weekly}
               isCurrentPlan={config.tier === currentPlan}
               isHighlighted={config.tier === 'pro'}
+              isBoost={config.tier === 'boost'}
             />
           ))}
         </div>
+
+        {/* Pause message */}
+        <p style={styles.pauseMessage}>
+          Pause anytime — resume when you need it
+        </p>
 
         {/* FAQ section */}
         <div style={styles.faqSection}>
@@ -91,12 +103,12 @@ export function PricingViewWithResponsive() {
               a="You'll get a notification and can upgrade for more. Existing applications are never interrupted."
             />
             <FaqItem
-              q="Is my data safe?"
-              a="All data is encrypted at rest. We never share your information with third parties."
+              q="How does pausing work?"
+              a="Pause your subscription from Settings. Your data and progress stay safe. Resume anytime to pick up where you left off."
             />
             <FaqItem
-              q="Do unused credits roll over?"
-              a="Credits reset each billing cycle. Annual plans get the same monthly limits at a 20% discount."
+              q="What is Boost?"
+              a="A 2-week intensive sprint. Priority everything — your applications are processed first, with AI cover letters and phone support. Perfect when you need a job fast."
             />
           </div>
         </div>
@@ -115,20 +127,23 @@ export function PricingViewWithResponsive() {
 
 function PricingCard({
   config,
-  annual,
+  weekly,
   isCurrentPlan,
   isHighlighted,
+  isBoost,
 }: {
   config: PlanConfig
-  annual: boolean
+  weekly: boolean
   isCurrentPlan: boolean
   isHighlighted: boolean
+  isBoost: boolean
 }) {
   const [hovering, setHovering] = useState(false)
 
-  const price = annual
-    ? Math.round(config.priceAnnual / 12)
-    : config.priceMonthly
+  // Boost is always weekly; for others, show weekly or monthly
+  const showWeekly = weekly || config.weeklyOnly
+  const price = showWeekly ? config.priceWeekly : config.priceMonthly
+  const period = showWeekly ? '/wk' : '/mo'
 
   const handleUpgrade = async () => {
     if (isCurrentPlan || config.tier === 'free') return
@@ -137,24 +152,38 @@ function PricingCard({
     // TODO: redirect to Stripe checkout
   }
 
-  const tierIcon = config.tier === 'premium'
-    ? <Crown size={18} color="#f59e0b" />
+  const tierIcon = isBoost
+    ? <Flame size={18} color="#f59e0b" />
     : config.tier === 'pro'
       ? <Zap size={18} color="var(--accent)" />
       : null
 
+  const cardStyle = {
+    ...styles.card,
+    ...(isHighlighted ? styles.cardHighlighted : {}),
+    ...(isBoost ? styles.cardBoost : {}),
+    ...(hovering && !isHighlighted && !isBoost ? styles.cardHover : {}),
+  }
+
+  const ctaText = isCurrentPlan
+    ? 'Current Plan'
+    : config.tier === 'free'
+      ? 'Start free'
+      : isBoost
+        ? 'Start your sprint'
+        : 'Start this week'
+
   return (
     <div
-      style={{
-        ...styles.card,
-        ...(isHighlighted ? styles.cardHighlighted : {}),
-        ...(hovering && !isHighlighted ? styles.cardHover : {}),
-      }}
+      style={cardStyle}
       onMouseEnter={() => setHovering(true)}
       onMouseLeave={() => setHovering(false)}
     >
       {isHighlighted && (
         <div style={styles.popularBadge}>Most Popular</div>
+      )}
+      {isBoost && (
+        <div style={styles.boostBadge}>2-Week Sprint</div>
       )}
 
       <div style={styles.cardHeader}>
@@ -164,20 +193,28 @@ function PricingCard({
         </div>
 
         <div style={styles.priceRow}>
-          {config.priceMonthly === 0 ? (
+          {config.priceWeekly === 0 && config.priceMonthly === 0 ? (
             <span style={styles.priceAmount}>Free</span>
           ) : (
             <>
               <span style={styles.priceCurrency}>$</span>
               <span style={styles.priceAmount}>{price}</span>
-              <span style={styles.pricePeriod}>/mo</span>
+              <span style={styles.pricePeriod}>{period}</span>
             </>
           )}
         </div>
 
-        {annual && config.priceMonthly > 0 && (
-          <p style={styles.billedAnnually}>
-            ${config.priceAnnual}/year (billed annually)
+        {/* Weekly-only notice for Boost */}
+        {isBoost && (
+          <p style={styles.boostNote}>
+            Weekly billing only — sprint for 2 weeks, cancel anytime
+          </p>
+        )}
+
+        {/* Show monthly savings when on monthly view */}
+        {!weekly && !config.weeklyOnly && config.priceMonthly > 0 && (
+          <p style={styles.billedNote}>
+            vs ${config.priceWeekly * 4}/mo billed weekly
           </p>
         )}
       </div>
@@ -189,22 +226,24 @@ function PricingCard({
         style={{
           ...styles.ctaBtn,
           ...(isHighlighted ? styles.ctaBtnHighlighted : {}),
+          ...(isBoost ? styles.ctaBtnBoost : {}),
           ...(isCurrentPlan ? styles.ctaBtnCurrent : {}),
         }}
       >
-        {isCurrentPlan
-          ? 'Current Plan'
-          : config.tier === 'free'
-            ? 'Get Started'
-            : `Upgrade to ${config.name}`}
+        {ctaText}
       </button>
+
+      {/* Search duration estimate */}
+      <p style={styles.durationEstimate}>
+        Most users find a job in 6-8 weeks
+      </p>
 
       {/* Feature list */}
       <div style={styles.featureList}>
         {config.features.map((feat, i) => (
           <div key={i} style={styles.featureRow}>
             {feat.included ? (
-              <Check size={14} color="var(--accent)" style={{ flexShrink: 0 }} />
+              <Check size={14} color={isBoost ? '#f59e0b' : 'var(--accent)'} style={{ flexShrink: 0 }} />
             ) : (
               <X size={14} color="var(--text-tertiary)" style={{ flexShrink: 0, opacity: 0.4 }} />
             )}
@@ -253,7 +292,7 @@ const styles: Record<string, React.CSSProperties> = {
   // Header
   header: {
     textAlign: 'center' as const,
-    marginBottom: 24,
+    marginBottom: 12,
   },
   title: {
     fontSize: 28,
@@ -266,6 +305,18 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 15,
     color: 'var(--text-secondary)',
     lineHeight: 1.5,
+  },
+
+  // Social proof
+  socialProof: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 20,
+    fontSize: 13,
+    fontWeight: 500,
+    color: 'var(--accent)',
   },
 
   // Toggle
@@ -315,7 +366,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'grid',
     gridTemplateColumns: 'repeat(4, 1fr)',
     gap: 16,
-    marginBottom: 48,
+    marginBottom: 16,
   },
 
   // Card
@@ -335,6 +386,11 @@ const styles: Record<string, React.CSSProperties> = {
     transform: 'scale(1.02)',
     boxShadow: '0 0 40px rgba(52, 211, 153, 0.08)',
   },
+  cardBoost: {
+    border: '2px solid #f59e0b',
+    background: 'linear-gradient(180deg, rgba(245, 158, 11, 0.08) 0%, var(--bg-surface) 40%)',
+    boxShadow: '0 0 40px rgba(245, 158, 11, 0.06)',
+  },
   cardHover: {
     border: '1px solid var(--border-hover)',
     transform: 'translateY(-2px)',
@@ -346,6 +402,21 @@ const styles: Record<string, React.CSSProperties> = {
     left: '50%',
     transform: 'translateX(-50%)',
     background: 'var(--accent)',
+    color: '#09090b',
+    fontSize: 11,
+    fontWeight: 700,
+    padding: '4px 14px',
+    borderRadius: 20,
+    letterSpacing: '0.03em',
+    whiteSpace: 'nowrap' as const,
+    textTransform: 'uppercase' as const,
+  },
+  boostBadge: {
+    position: 'absolute' as const,
+    top: -12,
+    left: '50%',
+    transform: 'translateX(-50%)',
+    background: '#f59e0b',
     color: '#09090b',
     fontSize: 11,
     fontWeight: 700,
@@ -393,10 +464,16 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--text-tertiary)',
     marginLeft: 2,
   },
-  billedAnnually: {
+  billedNote: {
     fontSize: 11,
     color: 'var(--text-tertiary)',
     marginTop: 4,
+  },
+  boostNote: {
+    fontSize: 11,
+    color: '#f59e0b',
+    marginTop: 4,
+    fontWeight: 500,
   },
 
   // CTA button
@@ -411,16 +488,39 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     cursor: 'pointer',
     transition: 'all 0.15s',
-    marginBottom: 20,
+    marginBottom: 8,
   },
   ctaBtnHighlighted: {
     background: 'var(--accent)',
     color: '#09090b',
     border: '1px solid var(--accent)',
   },
+  ctaBtnBoost: {
+    background: '#f59e0b',
+    color: '#09090b',
+    border: '1px solid #f59e0b',
+  },
   ctaBtnCurrent: {
     opacity: 0.5,
     cursor: 'default',
+  },
+
+  // Duration estimate
+  durationEstimate: {
+    fontSize: 11,
+    color: 'var(--text-tertiary)',
+    textAlign: 'center' as const,
+    marginBottom: 16,
+    fontStyle: 'italic' as const,
+  },
+
+  // Pause message
+  pauseMessage: {
+    fontSize: 13,
+    color: 'var(--text-secondary)',
+    textAlign: 'center' as const,
+    marginBottom: 40,
+    fontWeight: 500,
   },
 
   // Features

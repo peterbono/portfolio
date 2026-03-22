@@ -62,7 +62,7 @@ export function UpgradePrompt({
           <p style={styles.bannerDesc}>
             {requiredPlan === 'starter' && 'Get 50 auto-applies/month, 2 ATS adapters, and basic AI coaching.'}
             {requiredPlan === 'pro' && 'Get 200 auto-applies/month, all ATS adapters, ghost detection, and AI cover letters.'}
-            {requiredPlan === 'premium' && 'Unlimited everything with priority support and early access to new features.'}
+            {requiredPlan === 'boost' && 'Sprint mode: unlimited everything with priority ATS, AI cover letters, and phone support.'}
           </p>
         </div>
         <button onClick={handleViewPlans} style={styles.bannerBtn}>

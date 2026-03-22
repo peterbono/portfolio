@@ -29,19 +29,19 @@ describe('getPlanLimits', () => {
 
   it('returns correct limits for starter tier', () => {
     const limits = getPlanLimits('starter')
-    expect(limits.botAppliesPerMonth).toBe(50)
-    expect(limits.coverLettersPerMonth).toBe(0)
-    expect(limits.hasGhostDetection).toBe(false)
+    expect(limits.botAppliesPerMonth).toBe(100)
+    expect(limits.coverLettersPerMonth).toBe(20)
+    expect(limits.hasGhostDetection).toBe(true)
     expect(limits.hasFullAnalytics).toBe(true)
     expect(limits.hasFeedbackLoop).toBe(false)
     expect(limits.hasPrioritySupport).toBe(false)
-    expect(limits.atsAdapters).toEqual(['Greenhouse', 'Lever'])
+    expect(limits.atsAdapters).toHaveLength(4)
   })
 
   it('returns correct limits for pro tier', () => {
     const limits = getPlanLimits('pro')
-    expect(limits.botAppliesPerMonth).toBe(200)
-    expect(limits.coverLettersPerMonth).toBe(50)
+    expect(limits.botAppliesPerMonth).toBe(Infinity)
+    expect(limits.coverLettersPerMonth).toBe(Infinity)
     expect(limits.hasGhostDetection).toBe(true)
     expect(limits.hasFeedbackLoop).toBe(true)
     expect(limits.hasFullAnalytics).toBe(true)
@@ -50,14 +50,16 @@ describe('getPlanLimits', () => {
     expect(limits.atsAdapters).toHaveLength(10)
   })
 
-  it('returns correct limits for premium tier', () => {
-    const limits = getPlanLimits('premium')
+  it('returns correct limits for boost tier', () => {
+    const limits = getPlanLimits('boost')
     expect(limits.botAppliesPerMonth).toBe(Infinity)
     expect(limits.coverLettersPerMonth).toBe(Infinity)
     expect(limits.hasGhostDetection).toBe(true)
     expect(limits.hasFeedbackLoop).toBe(true)
     expect(limits.hasFullAnalytics).toBe(true)
     expect(limits.hasPrioritySupport).toBe(true)
+    expect(limits.hasPhoneSupport).toBe(true)
+    expect(limits.hasPriorityATS).toBe(true)
     expect(limits.aiCoachLevel).toBe('full')
     expect(limits.atsAdapters).toHaveLength(10)
   })
@@ -68,20 +70,20 @@ describe('getPlanLimits', () => {
   })
 
   it('all four tiers have hasAICoach = true', () => {
-    const tiers: PlanTier[] = ['free', 'starter', 'pro', 'premium']
+    const tiers: PlanTier[] = ['free', 'starter', 'pro', 'boost']
     for (const tier of tiers) {
       expect(getPlanLimits(tier).hasAICoach).toBe(true)
     }
   })
 
-  it('pro and premium have all 10 ATS adapters', () => {
+  it('pro and boost have all 10 ATS adapters', () => {
     expect(getPlanLimits('pro').atsAdapters).toHaveLength(10)
-    expect(getPlanLimits('premium').atsAdapters).toHaveLength(10)
+    expect(getPlanLimits('boost').atsAdapters).toHaveLength(10)
   })
 
-  it('free and starter have exactly 2 ATS adapters', () => {
+  it('free has 2 ATS adapters, starter has 4', () => {
     expect(getPlanLimits('free').atsAdapters).toHaveLength(2)
-    expect(getPlanLimits('starter').atsAdapters).toHaveLength(2)
+    expect(getPlanLimits('starter').atsAdapters).toHaveLength(4)
   })
 })
 
@@ -94,28 +96,35 @@ describe('getPlanConfig', () => {
     expect(getPlanConfig('free').name).toBe('Free')
     expect(getPlanConfig('starter').name).toBe('Starter')
     expect(getPlanConfig('pro').name).toBe('Pro')
-    expect(getPlanConfig('premium').name).toBe('Premium')
+    expect(getPlanConfig('boost').name).toBe('Boost')
   })
 
-  it('free tier has price 0', () => {
+  it('free tier has price 0 for both weekly and monthly', () => {
     const config = getPlanConfig('free')
     expect(config.priceMonthly).toBe(0)
-    expect(config.priceAnnual).toBe(0)
+    expect(config.priceWeekly).toBe(0)
   })
 
-  it('annual price is 80% of monthly * 12', () => {
+  it('starter: $9/wk, $29/mo', () => {
     const starter = getPlanConfig('starter')
-    expect(starter.priceAnnual).toBe(Math.round(19 * 12 * 0.8))
+    expect(starter.priceWeekly).toBe(9)
+    expect(starter.priceMonthly).toBe(29)
+  })
 
+  it('pro: $15/wk, $49/mo', () => {
     const pro = getPlanConfig('pro')
-    expect(pro.priceAnnual).toBe(Math.round(39 * 12 * 0.8))
+    expect(pro.priceWeekly).toBe(15)
+    expect(pro.priceMonthly).toBe(49)
+  })
 
-    const premium = getPlanConfig('premium')
-    expect(premium.priceAnnual).toBe(Math.round(79 * 12 * 0.8))
+  it('boost: $25/wk, weekly only', () => {
+    const boost = getPlanConfig('boost')
+    expect(boost.priceWeekly).toBe(25)
+    expect(boost.weeklyOnly).toBe(true)
   })
 
   it('each config has features array', () => {
-    const tiers: PlanTier[] = ['free', 'starter', 'pro', 'premium']
+    const tiers: PlanTier[] = ['free', 'starter', 'pro', 'boost']
     for (const tier of tiers) {
       const config = getPlanConfig(tier)
       expect(Array.isArray(config.features)).toBe(true)
@@ -139,7 +148,7 @@ describe('canUseFeature', () => {
     expect(canUseFeature('free', 'bot-apply')).toBe(true)
     expect(canUseFeature('starter', 'bot-apply')).toBe(true)
     expect(canUseFeature('pro', 'bot-apply')).toBe(true)
-    expect(canUseFeature('premium', 'bot-apply')).toBe(true)
+    expect(canUseFeature('boost', 'bot-apply')).toBe(true)
   })
 
   // ai-coach: all tiers have it
@@ -147,7 +156,7 @@ describe('canUseFeature', () => {
     expect(canUseFeature('free', 'ai-coach')).toBe(true)
     expect(canUseFeature('starter', 'ai-coach')).toBe(true)
     expect(canUseFeature('pro', 'ai-coach')).toBe(true)
-    expect(canUseFeature('premium', 'ai-coach')).toBe(true)
+    expect(canUseFeature('boost', 'ai-coach')).toBe(true)
   })
 
   // full-analytics: not free, yes starter+
@@ -155,43 +164,43 @@ describe('canUseFeature', () => {
     expect(canUseFeature('free', 'full-analytics')).toBe(false)
     expect(canUseFeature('starter', 'full-analytics')).toBe(true)
     expect(canUseFeature('pro', 'full-analytics')).toBe(true)
-    expect(canUseFeature('premium', 'full-analytics')).toBe(true)
+    expect(canUseFeature('boost', 'full-analytics')).toBe(true)
   })
 
-  // feedback-loop: pro and premium only
-  it('feedback-loop is only on pro and premium', () => {
+  // feedback-loop: pro and boost only
+  it('feedback-loop is only on pro and boost', () => {
     expect(canUseFeature('free', 'feedback-loop')).toBe(false)
     expect(canUseFeature('starter', 'feedback-loop')).toBe(false)
     expect(canUseFeature('pro', 'feedback-loop')).toBe(true)
-    expect(canUseFeature('premium', 'feedback-loop')).toBe(true)
+    expect(canUseFeature('boost', 'feedback-loop')).toBe(true)
   })
 
-  // ghost-detection: free=yes, starter=no, pro=yes, premium=yes
-  it('ghost-detection follows the correct tier pattern', () => {
+  // ghost-detection: all tiers now have it
+  it('ghost-detection is available on all tiers', () => {
     expect(canUseFeature('free', 'ghost-detection')).toBe(true)
-    expect(canUseFeature('starter', 'ghost-detection')).toBe(false)
+    expect(canUseFeature('starter', 'ghost-detection')).toBe(true)
     expect(canUseFeature('pro', 'ghost-detection')).toBe(true)
-    expect(canUseFeature('premium', 'ghost-detection')).toBe(true)
+    expect(canUseFeature('boost', 'ghost-detection')).toBe(true)
   })
 
-  // cover-letter: free=10 (yes), starter=0 (no), pro=50 (yes), premium=Inf (yes)
-  it('cover-letter: free yes, starter no, pro/premium yes', () => {
+  // cover-letter: all tiers now have > 0
+  it('cover-letter is available on all tiers', () => {
     expect(canUseFeature('free', 'cover-letter')).toBe(true)
-    expect(canUseFeature('starter', 'cover-letter')).toBe(false)
+    expect(canUseFeature('starter', 'cover-letter')).toBe(true)
     expect(canUseFeature('pro', 'cover-letter')).toBe(true)
-    expect(canUseFeature('premium', 'cover-letter')).toBe(true)
+    expect(canUseFeature('boost', 'cover-letter')).toBe(true)
   })
 
-  // priority-support: premium only
-  it('priority-support is premium only', () => {
+  // priority-support: boost only
+  it('priority-support is boost only', () => {
     expect(canUseFeature('free', 'priority-support')).toBe(false)
     expect(canUseFeature('starter', 'priority-support')).toBe(false)
     expect(canUseFeature('pro', 'priority-support')).toBe(false)
-    expect(canUseFeature('premium', 'priority-support')).toBe(true)
+    expect(canUseFeature('boost', 'priority-support')).toBe(true)
   })
 
   it('returns false for unknown feature', () => {
-    expect(canUseFeature('premium', 'nonexistent' as any)).toBe(false)
+    expect(canUseFeature('boost', 'nonexistent' as any)).toBe(false)
   })
 })
 
@@ -224,8 +233,8 @@ describe('getMinimumPlan', () => {
     expect(getMinimumPlan('cover-letter')).toBe('free')
   })
 
-  it('priority-support minimum is premium', () => {
-    expect(getMinimumPlan('priority-support')).toBe('premium')
+  it('priority-support minimum is boost', () => {
+    expect(getMinimumPlan('priority-support')).toBe('boost')
   })
 })
 
@@ -246,32 +255,32 @@ describe('getRemainingQuota', () => {
     expect(getRemainingQuota('free', 30, 'bot-apply')).toBe(0)
   })
 
-  it('bot-apply: starter tier has 50 total', () => {
-    expect(getRemainingQuota('starter', 20, 'bot-apply')).toBe(30)
+  it('bot-apply: starter tier has 100 total', () => {
+    expect(getRemainingQuota('starter', 20, 'bot-apply')).toBe(80)
   })
 
-  it('bot-apply: pro tier has 200 total', () => {
-    expect(getRemainingQuota('pro', 150, 'bot-apply')).toBe(50)
+  it('bot-apply: pro tier returns Infinity', () => {
+    expect(getRemainingQuota('pro', 150, 'bot-apply')).toBe(Infinity)
   })
 
-  it('bot-apply: premium tier returns Infinity', () => {
-    expect(getRemainingQuota('premium', 9999, 'bot-apply')).toBe(Infinity)
+  it('bot-apply: boost tier returns Infinity', () => {
+    expect(getRemainingQuota('boost', 9999, 'bot-apply')).toBe(Infinity)
   })
 
   it('cover-letter: free tier has 10 total', () => {
     expect(getRemainingQuota('free', 5, 'cover-letter')).toBe(5)
   })
 
-  it('cover-letter: starter tier has 0 total = 0 remaining', () => {
-    expect(getRemainingQuota('starter', 0, 'cover-letter')).toBe(0)
+  it('cover-letter: starter tier has 20 total', () => {
+    expect(getRemainingQuota('starter', 10, 'cover-letter')).toBe(10)
   })
 
-  it('cover-letter: pro tier has 50 total', () => {
-    expect(getRemainingQuota('pro', 10, 'cover-letter')).toBe(40)
+  it('cover-letter: pro tier returns Infinity', () => {
+    expect(getRemainingQuota('pro', 10, 'cover-letter')).toBe(Infinity)
   })
 
-  it('cover-letter: premium tier returns Infinity', () => {
-    expect(getRemainingQuota('premium', 500, 'cover-letter')).toBe(Infinity)
+  it('cover-letter: boost tier returns Infinity', () => {
+    expect(getRemainingQuota('boost', 500, 'cover-letter')).toBe(Infinity)
   })
 
   it('0 used returns full quota', () => {
@@ -280,7 +289,7 @@ describe('getRemainingQuota', () => {
   })
 
   it('returns 0 for unknown feature', () => {
-    expect(getRemainingQuota('premium', 0, 'nonexistent' as any)).toBe(0)
+    expect(getRemainingQuota('boost', 0, 'nonexistent' as any)).toBe(0)
   })
 })
 
@@ -293,11 +302,11 @@ describe('PLAN_CONFIGS', () => {
     expect(PLAN_CONFIGS).toHaveLength(4)
   })
 
-  it('plans are in order: free, starter, pro, premium', () => {
+  it('plans are in order: free, starter, pro, boost', () => {
     expect(PLAN_CONFIGS[0].tier).toBe('free')
     expect(PLAN_CONFIGS[1].tier).toBe('starter')
     expect(PLAN_CONFIGS[2].tier).toBe('pro')
-    expect(PLAN_CONFIGS[3].tier).toBe('premium')
+    expect(PLAN_CONFIGS[3].tier).toBe('boost')
   })
 
   it('each plan config has a non-empty name', () => {
@@ -306,9 +315,9 @@ describe('PLAN_CONFIGS', () => {
     }
   })
 
-  it('prices increase from free to premium', () => {
+  it('weekly prices increase from free to boost', () => {
     for (let i = 1; i < PLAN_CONFIGS.length; i++) {
-      expect(PLAN_CONFIGS[i].priceMonthly).toBeGreaterThanOrEqual(PLAN_CONFIGS[i - 1].priceMonthly)
+      expect(PLAN_CONFIGS[i].priceWeekly).toBeGreaterThanOrEqual(PLAN_CONFIGS[i - 1].priceWeekly)
     }
   })
 

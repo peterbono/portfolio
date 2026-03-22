@@ -25,7 +25,7 @@ const PLAN_BADGE_COLORS: Record<PlanTier, { bg: string; color: string }> = {
   free: { bg: 'rgba(113, 113, 122, 0.15)', color: '#71717a' },
   starter: { bg: 'rgba(96, 165, 250, 0.15)', color: '#60a5fa' },
   pro: { bg: 'rgba(52, 211, 153, 0.15)', color: '#34d399' },
-  premium: { bg: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b' },
+  boost: { bg: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b' },
 }
 
 type NavEntry =

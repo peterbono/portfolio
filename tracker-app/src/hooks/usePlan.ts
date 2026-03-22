@@ -39,7 +39,7 @@ export function usePlan(): UsePlanReturn {
   const [plan, setPlan] = useState<PlanTier>(() => {
     try {
       const stored = localStorage.getItem(PLAN_STORAGE_KEY)
-      if (stored && ['free', 'starter', 'pro', 'premium'].includes(stored)) {
+      if (stored && ['free', 'starter', 'pro', 'boost'].includes(stored)) {
         return stored as PlanTier
       }
     } catch { /* ignore */ }

@@ -230,7 +230,7 @@ function injectKeyframes() {
 /* ------------------------------------------------------------------ */
 
 export function LandingView({ onGetStarted, onSignIn }: LandingViewProps) {
-  const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('monthly')
+  const [billingCycle, setBillingCycle] = useState<'weekly' | 'monthly'>('weekly')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   useEffect(() => {
@@ -477,11 +477,25 @@ export function LandingView({ onGetStarted, onSignIn }: LandingViewProps) {
           <SectionHeader
             label="Pricing"
             title="Start free, scale when ready"
-            subtitle="No hidden fees. No surprise charges. Cancel anytime."
+            subtitle="No hidden fees. Pause anytime — resume when you need it."
           />
+
+          {/* Social proof */}
+          <p style={{ textAlign: 'center', fontSize: 13, color: 'var(--accent)', marginBottom: 24, fontWeight: 500 }}>
+            Average user finds a job in 47 days
+          </p>
 
           {/* Billing toggle */}
           <div style={s.billingToggle}>
+            <button
+              onClick={() => setBillingCycle('weekly')}
+              style={{
+                ...s.billingBtn,
+                ...(billingCycle === 'weekly' ? s.billingBtnActive : {}),
+              }}
+            >
+              Weekly
+            </button>
             <button
               onClick={() => setBillingCycle('monthly')}
               style={{
@@ -490,16 +504,7 @@ export function LandingView({ onGetStarted, onSignIn }: LandingViewProps) {
               }}
             >
               Monthly
-            </button>
-            <button
-              onClick={() => setBillingCycle('annual')}
-              style={{
-                ...s.billingBtn,
-                ...(billingCycle === 'annual' ? s.billingBtnActive : {}),
-              }}
-            >
-              Annual
-              <span style={s.saveBadge}>-20%</span>
+              <span style={s.saveBadge}>Save ~20%</span>
             </button>
           </div>
 
@@ -508,63 +513,63 @@ export function LandingView({ onGetStarted, onSignIn }: LandingViewProps) {
               name="Free"
               price={0}
               period={billingCycle}
-              description="For getting started"
+              description="Try the product"
               features={[
-                '50 tracked jobs',
-                'Manual applications',
+                'Unlimited job tracking',
+                '25 auto-applies/month',
                 'Basic analytics',
-                'Email support',
+                'Ghost detection',
               ]}
-              cta="Get started"
+              cta="Start free"
               onCta={onGetStarted}
             />
             <PricingCard
               name="Starter"
-              price={billingCycle === 'monthly' ? 9 : 7}
+              price={billingCycle === 'weekly' ? 9 : 29}
               period={billingCycle}
               description="For active job seekers"
               features={[
-                '200 tracked jobs',
-                '10 auto-applies/month',
-                'Coach insights',
-                'Platform analytics',
-                'Priority support',
+                '100 auto-applies/month',
+                'Full analytics',
+                '4 ATS adapters',
+                '20 AI cover letters/mo',
+                'Ghost detection',
               ]}
-              cta="Start free trial"
+              cta="Start this week"
               onCta={onGetStarted}
             />
             <PricingCard
               name="Pro"
-              price={billingCycle === 'monthly' ? 29 : 23}
+              price={billingCycle === 'weekly' ? 15 : 49}
               period={billingCycle}
-              description="For serious applicants"
+              description="For serious seekers"
               features={[
-                'Unlimited jobs',
-                '100 auto-applies/month',
-                'Thompson Sampling AI',
+                'Unlimited auto-applies',
+                'All 10 ATS adapters',
+                'AI insights & coaching',
+                'Unlimited cover letters',
+                'Feedback loop',
                 'Ghost detection',
-                'Advanced analytics',
-                'Custom integrations',
               ]}
               featured
-              cta="Start free trial"
+              cta="Start this week"
               onCta={onGetStarted}
             />
             <PricingCard
-              name="Premium"
-              price={billingCycle === 'monthly' ? 79 : 63}
-              period={billingCycle}
-              description="For power users"
+              name="Boost"
+              price={25}
+              period={'weekly' as const}
+              description="Sprint mode"
               features={[
                 'Everything in Pro',
-                'Unlimited auto-applies',
-                'Priority AI processing',
-                'Custom ATS integrations',
-                'Dedicated support',
-                'API access',
+                'Priority ATS submission',
+                'Phone support',
+                'Your apps processed first',
+                '2-week intensive sprint',
               ]}
-              cta="Contact us"
+              cta="Start your sprint"
               onCta={onGetStarted}
+              boost
             />
           </div>
         </div>
@@ -1667,55 +1672,73 @@ function PricingCard({
   description,
   features,
   featured = false,
+  boost = false,
   cta,
   onCta,
 }: {
   name: string
   price: number
-  period: 'monthly' | 'annual'
+  period: 'weekly' | 'monthly'
   description: string
   features: string[]
   featured?: boolean
+  boost?: boolean
   cta: string
   onCta: () => void
 }) {
   const { ref, isVisible } = useScrollReveal()
 
+  const periodLabel = period === 'weekly' ? '/wk' : '/mo'
+
   return (
     <div
       ref={ref}
       {...(featured ? { 'data-landing-pricing-featured': '' } : {})}
+      {...(boost ? { 'data-landing-pricing-boost': '' } : {})}
       style={{
         ...s.pricingCard,
         ...(featured ? s.pricingCardFeatured : {}),
+        ...(boost ? s.pricingCardBoost : {}),
         opacity: isVisible ? 1 : 0,
         transform: isVisible ? 'translateY(0) scale(1)' : 'translateY(16px) scale(0.98)',
         transition: 'opacity 0.5s ease, transform 0.5s ease',
       }}
     >
       {featured && (
-        <div style={s.pricingRecommended}>Recommended</div>
+        <div style={s.pricingRecommended}>Most Popular</div>
+      )}
+      {boost && (
+        <div style={s.pricingBoostBadge}>2-Week Sprint</div>
       )}
       <div>
         <h3 style={s.pricingName}>{name}</h3>
         <p style={s.pricingDescription}>{description}</p>
       </div>
       <div style={s.pricingPriceRow}>
-        <span style={s.pricingCurrency}>$</span>
-        <span style={s.pricingAmount}>{price}</span>
-        <span style={s.pricingPeriod}>/{period === 'monthly' ? 'mo' : 'mo'}</span>
+        {price === 0 ? (
+          <span style={s.pricingAmount}>Free</span>
+        ) : (
+          <>
+            <span style={s.pricingCurrency}>$</span>
+            <span style={s.pricingAmount}>{price}</span>
+            <span style={s.pricingPeriod}>{periodLabel}</span>
+          </>
+        )}
       </div>
       <button
         onClick={onCta}
-        style={featured ? s.pricingCTAFeatured : s.pricingCTA}
+        style={boost ? s.pricingCTABoost : featured ? s.pricingCTAFeatured : s.pricingCTA}
       >
         {cta}
         <ArrowRight size={14} />
       </button>
+      <p style={{ fontSize: 11, color: 'var(--text-tertiary)', fontStyle: 'italic', textAlign: 'center', margin: '0 0 8px' }}>
+        Most users find a job in 6-8 weeks
+      </p>
       <ul style={s.pricingFeatures}>
         {features.map((f, i) => (
           <li key={i} style={s.pricingFeatureItem}>
-            <Check size={14} color="var(--accent)" style={{ flexShrink: 0 }} />
+            <Check size={14} color={boost ? '#f59e0b' : 'var(--accent)'} style={{ flexShrink: 0 }} />
             <span>{f}</span>
           </li>
         ))}
@@ -2888,6 +2911,11 @@ const s: Record<string, React.CSSProperties> = {
     boxShadow: '0 0 40px rgba(52, 211, 153, 0.08), 0 0 80px rgba(52, 211, 153, 0.03), inset 0 1px 0 rgba(52, 211, 153, 0.1)',
     transform: 'scale(1.02)',
   },
+  pricingCardBoost: {
+    border: '1px solid rgba(245, 158, 11, 0.4)',
+    background: 'linear-gradient(180deg, rgba(245, 158, 11, 0.08) 0%, rgba(245, 158, 11, 0.01) 100%)',
+    boxShadow: '0 0 40px rgba(245, 158, 11, 0.06), 0 0 80px rgba(245, 158, 11, 0.03)',
+  },
   pricingRecommended: {
     position: 'absolute',
     top: -11,
@@ -2896,6 +2924,21 @@ const s: Record<string, React.CSSProperties> = {
     padding: '4px 14px',
     borderRadius: 20,
     background: 'var(--accent)',
+    color: '#000',
+    fontSize: 11,
+    fontWeight: 700,
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.04em',
+    whiteSpace: 'nowrap',
+  },
+  pricingBoostBadge: {
+    position: 'absolute',
+    top: -11,
+    left: '50%',
+    transform: 'translateX(-50%)',
+    padding: '4px 14px',
+    borderRadius: 20,
+    background: '#f59e0b',
     color: '#000',
     fontSize: 11,
     fontWeight: 700,
@@ -2960,6 +3003,22 @@ const s: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     color: '#000',
     background: 'var(--accent)',
+    border: 'none',
+    borderRadius: 8,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    transition: 'all 150ms ease',
+  },
+  pricingCTABoost: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    padding: '10px 20px',
+    fontSize: 14,
+    fontWeight: 600,
+    color: '#000',
+    background: '#f59e0b',
     border: 'none',
     borderRadius: 8,
     cursor: 'pointer',
