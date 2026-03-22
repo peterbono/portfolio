@@ -9,7 +9,6 @@ import {
   Search,
   MapPin,
   DollarSign,
-  Wifi,
   Building2,
   Trash2,
   Sparkles,
@@ -24,6 +23,8 @@ import {
   X,
   Check,
   Shield,
+  Globe,
+  ChevronDown,
 } from 'lucide-react'
 import { useBotActivity } from '../hooks/useBotActivity'
 import type { BotActivityItem, BotRunStatus } from '../hooks/useBotActivity'
@@ -37,16 +38,81 @@ import CompanyChipInput from '../components/CompanyChipInput'
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
+interface LocationRule {
+  id: string
+  type: 'zone' | 'city' | 'country'
+  value: string
+  workArrangement: 'remote' | 'hybrid' | 'onsite' | 'any'
+}
+
 interface SearchProfile {
   id: string
   name: string
   keywords: string[]
-  location: string
+  location: string // legacy, kept for backward compat
   minSalary: number
-  remoteOnly: boolean
+  remoteOnly: boolean // legacy, kept for backward compat
+  locationRules?: LocationRule[]
   excludedCompanies: string[]
   dailyLimit: number
   createdAt: string
+}
+
+const ZONES: Record<string, { label: string; countries: string[] }> = {
+  'APAC': { label: 'Asia-Pacific', countries: ['Thailand', 'Singapore', 'Japan', 'South Korea', 'Australia', 'New Zealand', 'India', 'Philippines', 'Vietnam', 'Indonesia', 'Malaysia', 'Taiwan', 'Hong Kong', 'China'] },
+  'EMEA': { label: 'Europe, Middle East & Africa', countries: ['UK', 'Germany', 'France', 'Netherlands', 'Spain', 'Italy', 'Sweden', 'Denmark', 'Norway', 'Finland', 'Switzerland', 'Ireland', 'Belgium', 'Portugal', 'Poland', 'Czech Republic', 'Austria', 'UAE', 'Saudi Arabia', 'Israel', 'South Africa', 'Nigeria', 'Kenya', 'Egypt'] },
+  'Americas': { label: 'North & South America', countries: ['USA', 'Canada', 'Mexico', 'Brazil', 'Argentina', 'Colombia', 'Chile'] },
+  'Middle East': { label: 'Middle East', countries: ['UAE', 'Saudi Arabia', 'Qatar', 'Bahrain', 'Kuwait', 'Oman', 'Israel', 'Turkey'] },
+  'Global': { label: 'Worldwide (Remote Only)', countries: [] },
+}
+
+const ZONE_NAMES = Object.keys(ZONES)
+
+// All unique countries extracted from ZONES for country autocomplete
+const ALL_COUNTRIES = Array.from(
+  new Set(Object.values(ZONES).flatMap((z) => z.countries))
+).sort()
+
+const WORK_ARRANGEMENTS = [
+  { value: 'remote' as const, label: 'Remote' },
+  { value: 'hybrid' as const, label: 'Hybrid' },
+  { value: 'onsite' as const, label: 'On-site' },
+  { value: 'any' as const, label: 'Any' },
+]
+
+function getLocationRuleIcon(rule: LocationRule): string {
+  if (rule.type === 'zone') return '\u{1F30F}'
+  if (rule.workArrangement === 'onsite') return '\u{1F3E2}'
+  return '\u{1F4CD}'
+}
+
+function getLocationRuleLabel(rule: LocationRule): string {
+  const arrangement = rule.workArrangement === 'any' ? 'Any' :
+    rule.workArrangement === 'remote' ? 'Remote' :
+    rule.workArrangement === 'hybrid' ? 'Hybrid' : 'On-site'
+  return `${rule.value} (${arrangement})`
+}
+
+/** Migrate old profiles: if no locationRules, create one from legacy fields */
+function migrateProfileLocationRules(p: SearchProfile): LocationRule[] {
+  if (p.locationRules && p.locationRules.length > 0) return p.locationRules
+  const rules: LocationRule[] = []
+  if (p.location) {
+    rules.push({
+      id: crypto.randomUUID(),
+      type: 'city',
+      value: p.location,
+      workArrangement: p.remoteOnly ? 'remote' : 'any',
+    })
+  } else if (p.remoteOnly) {
+    rules.push({
+      id: crypto.randomUUID(),
+      type: 'zone',
+      value: 'Global',
+      workArrangement: 'remote',
+    })
+  }
+  return rules
 }
 
 const LS_KEY = 'tracker_v2_search_profiles'
@@ -719,6 +785,585 @@ function LocationAutocomplete({
 }
 
 /* ------------------------------------------------------------------ */
+/*  LocationRuleEditor — inline form to add a location rule             */
+/* ------------------------------------------------------------------ */
+function LocationRuleEditor({
+  onAdd,
+  onCancel,
+}: {
+  onAdd: (rule: LocationRule) => void
+  onCancel: () => void
+}) {
+  const [ruleType, setRuleType] = useState<'zone' | 'country' | 'city'>('zone')
+  const [zoneValue, setZoneValue] = useState(ZONE_NAMES[0])
+  const [countryQuery, setCountryQuery] = useState('')
+  const [countryValue, setCountryValue] = useState('')
+  const [showCountryDrop, setShowCountryDrop] = useState(false)
+  const [cityValue, setCityValue] = useState('')
+  const [arrangement, setArrangement] = useState<'remote' | 'hybrid' | 'onsite' | 'any'>('remote')
+  const countryWrapRef = useRef<HTMLDivElement>(null)
+
+  // City autocomplete state
+  const [cityResults, setCityResults] = useState<CityResult[]>([])
+  const [cityLoading, setCityLoading] = useState(false)
+  const [showCityDrop, setShowCityDrop] = useState(false)
+  const [cityHighlight, setCityHighlight] = useState(-1)
+  const cityDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const cityWrapRef = useRef<HTMLDivElement>(null)
+
+  // Force remote for Global zone
+  useEffect(() => {
+    if (ruleType === 'zone' && zoneValue === 'Global') {
+      setArrangement('remote')
+    }
+  }, [ruleType, zoneValue])
+
+  // Country filtering
+  const filteredCountries = countryQuery.length >= 1
+    ? ALL_COUNTRIES.filter((c) => c.toLowerCase().includes(countryQuery.toLowerCase())).slice(0, 8)
+    : []
+
+  // Close country dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (countryWrapRef.current && !countryWrapRef.current.contains(e.target as Node)) {
+        setShowCountryDrop(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  // Close city dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (cityWrapRef.current && !cityWrapRef.current.contains(e.target as Node)) {
+        setShowCityDrop(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const handleCityChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value
+    setCityValue(val)
+    setCityHighlight(-1)
+    if (cityDebounceRef.current) clearTimeout(cityDebounceRef.current)
+    if (val.length < 2) {
+      setCityResults([])
+      setShowCityDrop(false)
+      setCityLoading(false)
+      return
+    }
+    setCityLoading(true)
+    setShowCityDrop(true)
+    cityDebounceRef.current = setTimeout(async () => {
+      const cities = await searchCities(val)
+      setCityResults(cities)
+      setCityLoading(false)
+    }, 300)
+  }, [])
+
+  const selectCityResult = useCallback((city: CityResult) => {
+    setCityValue(city.fullName)
+    setShowCityDrop(false)
+    setCityResults([])
+  }, [])
+
+  const handleCityKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setCityHighlight((prev) => Math.min(prev + 1, cityResults.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setCityHighlight((prev) => Math.max(prev - 1, 0))
+    } else if (e.key === 'Enter' && cityHighlight >= 0 && cityResults[cityHighlight]) {
+      e.preventDefault()
+      selectCityResult(cityResults[cityHighlight])
+    } else if (e.key === 'Escape') {
+      setShowCityDrop(false)
+    }
+  }, [cityResults, cityHighlight, selectCityResult])
+
+  const currentValue =
+    ruleType === 'zone' ? zoneValue :
+    ruleType === 'country' ? countryValue :
+    cityValue
+
+  const canAdd = currentValue.trim().length > 0
+
+  const handleAdd = () => {
+    if (!canAdd) return
+    onAdd({
+      id: crypto.randomUUID(),
+      type: ruleType,
+      value: currentValue.trim(),
+      workArrangement: arrangement,
+    })
+  }
+
+  const pillBase: React.CSSProperties = {
+    padding: '5px 12px',
+    fontSize: 12,
+    fontWeight: 600,
+    borderRadius: 16,
+    border: '1px solid var(--border)',
+    background: 'var(--bg-surface)',
+    color: 'var(--text-secondary)',
+    cursor: 'pointer',
+    transition: 'all 0.15s',
+    whiteSpace: 'nowrap',
+  }
+  const pillActive: React.CSSProperties = {
+    ...pillBase,
+    background: 'rgba(96, 165, 250, 0.15)',
+    border: '1px solid rgba(96, 165, 250, 0.4)',
+    color: '#93c5fd',
+  }
+
+  const arrangePillBase: React.CSSProperties = {
+    padding: '4px 10px',
+    fontSize: 11,
+    fontWeight: 600,
+    borderRadius: 12,
+    border: '1px solid var(--border)',
+    background: 'var(--bg-surface)',
+    color: 'var(--text-secondary)',
+    cursor: 'pointer',
+    transition: 'all 0.15s',
+    whiteSpace: 'nowrap',
+  }
+  const arrangePillActive: React.CSSProperties = {
+    ...arrangePillBase,
+    background: 'rgba(52, 211, 153, 0.12)',
+    border: '1px solid rgba(52, 211, 153, 0.35)',
+    color: '#34d399',
+  }
+
+  return (
+    <div style={{
+      background: 'var(--bg-surface)',
+      border: '1px solid var(--border)',
+      borderRadius: 'var(--radius-md)',
+      padding: 14,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 12,
+    }}>
+      {/* Type selector pills */}
+      <div style={{ display: 'flex', gap: 6 }}>
+        {(['zone', 'country', 'city'] as const).map((t) => (
+          <button
+            key={t}
+            type="button"
+            style={ruleType === t ? pillActive : pillBase}
+            onClick={() => setRuleType(t)}
+          >
+            {t === 'zone' && <>{'\u{1F30F}'} Zone</>}
+            {t === 'country' && <>{'\u{1F1FA}\u{1F1F3}'} Country</>}
+            {t === 'city' && <>{'\u{1F4CD}'} City</>}
+          </button>
+        ))}
+      </div>
+
+      {/* Value selector */}
+      {ruleType === 'zone' && (
+        <div style={{ position: 'relative' }}>
+          <select
+            value={zoneValue}
+            onChange={(e) => setZoneValue(e.target.value)}
+            style={{
+              width: '100%',
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-md)',
+              padding: '8px 32px 8px 12px',
+              color: 'var(--text-primary)',
+              fontSize: 13,
+              outline: 'none',
+              appearance: 'none',
+              cursor: 'pointer',
+            }}
+          >
+            {ZONE_NAMES.map((z) => (
+              <option key={z} value={z}>{z} — {ZONES[z].label}</option>
+            ))}
+          </select>
+          <ChevronDown size={14} color="var(--text-tertiary)" style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+        </div>
+      )}
+
+      {ruleType === 'country' && (
+        <div ref={countryWrapRef} style={{ position: 'relative' }}>
+          <input
+            value={countryQuery}
+            onChange={(e) => {
+              setCountryQuery(e.target.value)
+              setCountryValue(e.target.value)
+              setShowCountryDrop(e.target.value.length >= 1)
+            }}
+            onFocus={() => { if (countryQuery.length >= 1) setShowCountryDrop(true) }}
+            placeholder="Search country..."
+            style={{
+              width: '100%',
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-md)',
+              padding: '8px 12px',
+              color: 'var(--text-primary)',
+              fontSize: 13,
+              outline: 'none',
+              boxSizing: 'border-box',
+            }}
+          />
+          {showCountryDrop && filteredCountries.length > 0 && (
+            <div style={{
+              position: 'absolute',
+              top: '100%',
+              left: 0,
+              right: 0,
+              marginTop: 4,
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-md)',
+              zIndex: 50,
+              maxHeight: 180,
+              overflowY: 'auto',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+            }}>
+              {filteredCountries.map((c) => (
+                <div
+                  key={c}
+                  style={{
+                    padding: '8px 12px',
+                    fontSize: 13,
+                    color: 'var(--text-primary)',
+                    cursor: 'pointer',
+                    transition: 'background 0.1s',
+                  }}
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    setCountryQuery(c)
+                    setCountryValue(c)
+                    setShowCountryDrop(false)
+                  }}
+                  onMouseEnter={(e) => {
+                    (e.currentTarget as HTMLDivElement).style.background = 'rgba(96, 165, 250, 0.1)'
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLDivElement).style.background = 'transparent'
+                  }}
+                >
+                  {c}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {ruleType === 'city' && (
+        <div ref={cityWrapRef} style={{ position: 'relative' }}>
+          <input
+            value={cityValue}
+            onChange={handleCityChange}
+            onKeyDown={handleCityKeyDown}
+            onFocus={() => { if (cityResults.length > 0) setShowCityDrop(true) }}
+            placeholder="Search city..."
+            style={{
+              width: '100%',
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-md)',
+              padding: '8px 12px',
+              paddingRight: 32,
+              color: 'var(--text-primary)',
+              fontSize: 13,
+              outline: 'none',
+              boxSizing: 'border-box',
+            }}
+          />
+          {cityLoading && (
+            <Loader2
+              size={14}
+              color="var(--text-tertiary)"
+              style={{ animation: 'spin 1s linear infinite', position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)' }}
+            />
+          )}
+          {showCityDrop && (cityResults.length > 0 || cityLoading || (cityValue.length >= 2 && !cityLoading && cityResults.length === 0)) && (
+            <div style={{
+              position: 'absolute',
+              top: '100%',
+              left: 0,
+              right: 0,
+              marginTop: 4,
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-md)',
+              zIndex: 50,
+              maxHeight: 180,
+              overflowY: 'auto',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+            }}>
+              {cityLoading && cityResults.length === 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', fontSize: 12, color: 'var(--text-tertiary)' }}>
+                  <Loader2 size={12} color="var(--text-tertiary)" style={{ animation: 'spin 1s linear infinite' }} />
+                  <span>Searching cities...</span>
+                </div>
+              )}
+              {!cityLoading && cityResults.length === 0 && cityValue.length >= 2 && (
+                <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--text-tertiary)', textAlign: 'center' }}>
+                  No cities found
+                </div>
+              )}
+              {cityResults.map((city, idx) => (
+                <div
+                  key={city.fullName}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    padding: '8px 12px',
+                    fontSize: 13,
+                    color: 'var(--text-primary)',
+                    cursor: 'pointer',
+                    transition: 'background 0.1s',
+                    background: idx === cityHighlight ? 'rgba(96, 165, 250, 0.1)' : 'transparent',
+                  }}
+                  onMouseEnter={() => setCityHighlight(idx)}
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    selectCityResult(city)
+                  }}
+                >
+                  <MapPin size={12} color="var(--text-tertiary)" style={{ flexShrink: 0, marginRight: 6 }} />
+                  {city.fullName}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Work arrangement pills */}
+      <div>
+        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 6, display: 'block' }}>
+          Work arrangement
+        </span>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {WORK_ARRANGEMENTS.map((wa) => {
+            const disabled = ruleType === 'zone' && zoneValue === 'Global' && wa.value !== 'remote'
+            return (
+              <button
+                key={wa.value}
+                type="button"
+                style={{
+                  ...(arrangement === wa.value ? arrangePillActive : arrangePillBase),
+                  ...(disabled ? { opacity: 0.35, cursor: 'not-allowed' } : {}),
+                }}
+                onClick={() => { if (!disabled) setArrangement(wa.value) }}
+                disabled={disabled}
+              >
+                {wa.label}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Action row */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+        <button
+          type="button"
+          onClick={onCancel}
+          style={{
+            padding: '6px 14px',
+            fontSize: 12,
+            fontWeight: 500,
+            borderRadius: 'var(--radius-md)',
+            border: '1px solid var(--border)',
+            background: 'var(--bg-surface)',
+            color: 'var(--text-secondary)',
+            cursor: 'pointer',
+          }}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={handleAdd}
+          disabled={!canAdd}
+          style={{
+            padding: '6px 14px',
+            fontSize: 12,
+            fontWeight: 600,
+            borderRadius: 'var(--radius-md)',
+            border: 'none',
+            background: canAdd ? 'var(--accent)' : 'var(--bg-surface)',
+            color: canAdd ? '#09090b' : 'var(--text-tertiary)',
+            cursor: canAdd ? 'pointer' : 'not-allowed',
+            opacity: canAdd ? 1 : 0.5,
+          }}
+        >
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <Plus size={12} />
+            Add Rule
+          </span>
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/*  LocationRuleChips — display rules as compact chips                  */
+/* ------------------------------------------------------------------ */
+function LocationRuleChips({
+  rules,
+  onRemove,
+  compact,
+}: {
+  rules: LocationRule[]
+  onRemove?: (id: string) => void
+  compact?: boolean
+}) {
+  if (rules.length === 0) return null
+
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: compact ? 4 : 6 }}>
+      {rules.map((rule) => {
+        const icon = getLocationRuleIcon(rule)
+        const arrangement = rule.workArrangement === 'any' ? 'Any' :
+          rule.workArrangement === 'remote' ? 'Remote' :
+          rule.workArrangement === 'hybrid' ? 'Hybrid' : 'On-site'
+        const arrangementColor =
+          rule.workArrangement === 'remote' ? '#34d399' :
+          rule.workArrangement === 'hybrid' ? '#fbbf24' :
+          rule.workArrangement === 'onsite' ? '#f97316' : '#93c5fd'
+
+        return (
+          <span
+            key={rule.id}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: compact ? 3 : 5,
+              padding: compact ? '2px 6px' : '3px 8px 3px 10px',
+              borderRadius: 14,
+              background: 'rgba(96, 165, 250, 0.08)',
+              border: '1px solid rgba(96, 165, 250, 0.18)',
+              fontSize: compact ? 11 : 12,
+              color: 'var(--text-primary)',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <span>{icon}</span>
+            <span style={{ fontWeight: 500 }}>{rule.value}</span>
+            <span style={{
+              fontSize: compact ? 10 : 11,
+              color: arrangementColor,
+              fontWeight: 600,
+              padding: '0 4px',
+              borderRadius: 8,
+              background: `${arrangementColor}15`,
+            }}>
+              {arrangement}
+            </span>
+            {onRemove && (
+              <button
+                type="button"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--text-tertiary)',
+                  cursor: 'pointer',
+                  padding: 1,
+                  borderRadius: '50%',
+                  flexShrink: 0,
+                }}
+                onClick={() => onRemove(rule.id)}
+                aria-label={`Remove ${rule.value}`}
+              >
+                <X size={10} />
+              </button>
+            )}
+          </span>
+        )
+      })}
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/*  LocationRulesField — full field: chips + add button + editor         */
+/* ------------------------------------------------------------------ */
+function LocationRulesField({
+  rules,
+  onChange,
+}: {
+  rules: LocationRule[]
+  onChange: (rules: LocationRule[]) => void
+}) {
+  const [showEditor, setShowEditor] = useState(false)
+
+  const handleAdd = useCallback((rule: LocationRule) => {
+    onChange([...rules, rule])
+    setShowEditor(false)
+  }, [rules, onChange])
+
+  const handleRemove = useCallback((id: string) => {
+    onChange(rules.filter((r) => r.id !== id))
+  }, [rules, onChange])
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {/* Existing rules as chips */}
+      <LocationRuleChips rules={rules} onRemove={handleRemove} />
+
+      {/* Editor or add button */}
+      {showEditor ? (
+        <LocationRuleEditor
+          onAdd={handleAdd}
+          onCancel={() => setShowEditor(false)}
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setShowEditor(true)}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '7px 14px',
+            fontSize: 12,
+            fontWeight: 500,
+            borderRadius: 'var(--radius-md)',
+            border: '1px dashed var(--border)',
+            background: 'transparent',
+            color: 'var(--text-secondary)',
+            cursor: 'pointer',
+            transition: 'all 0.15s',
+            alignSelf: 'flex-start',
+          }}
+        >
+          <Plus size={12} />
+          Add Location Rule
+        </button>
+      )}
+
+      {rules.length === 0 && !showEditor && (
+        <p style={{ fontSize: 12, color: 'var(--text-tertiary)', margin: 0 }}>
+          No location rules yet. Add zones, countries, or cities with work arrangements.
+        </p>
+      )}
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
 /*  ChipInput + Dropdown styles                                        */
 /* ------------------------------------------------------------------ */
 const chipStyles: Record<string, React.CSSProperties> = {
@@ -1251,18 +1896,16 @@ const previewStyles: Record<string, React.CSSProperties> = {
 function SearchProfileForm({
   formName, setFormName,
   formKeywords, setFormKeywords,
-  formLocation, setFormLocation,
+  formLocationRules, setFormLocationRules,
   formSalary, setFormSalary,
-  formRemote, setFormRemote,
   formExcluded, setFormExcluded,
   formDailyLimit, setFormDailyLimit,
   onSave, onCancel,
 }: {
   formName: string; setFormName: (v: string) => void
   formKeywords: string[]; setFormKeywords: React.Dispatch<React.SetStateAction<string[]>>
-  formLocation: string; setFormLocation: (v: string) => void
+  formLocationRules: LocationRule[]; setFormLocationRules: (v: LocationRule[]) => void
   formSalary: string; setFormSalary: (v: string) => void
-  formRemote: boolean; setFormRemote: (v: boolean) => void
   formExcluded: string[]; setFormExcluded: React.Dispatch<React.SetStateAction<string[]>>
   formDailyLimit: number; setFormDailyLimit: (v: number) => void
   onSave: () => void; onCancel: () => void
@@ -1294,33 +1937,21 @@ function SearchProfileForm({
         />
       </div>
 
-      <div style={styles.fieldRow}>
-        <div style={{ flex: 1 }}>
-          <label style={styles.label}>Location</label>
-          <LocationAutocomplete value={formLocation} onChange={setFormLocation} />
-        </div>
-        <div style={{ flex: 1 }}>
-          <label style={styles.label}>Min Salary (EUR)</label>
-          <input
-            style={styles.input}
-            type="number"
-            value={formSalary}
-            onChange={(e) => setFormSalary(e.target.value)}
-            placeholder="70000"
-          />
-        </div>
+      <div style={styles.fieldGroup}>
+        <label style={styles.label}>Location Rules</label>
+        <p style={styles.hint}>Add zones, countries, or cities with work arrangement preferences</p>
+        <LocationRulesField rules={formLocationRules} onChange={setFormLocationRules} />
       </div>
 
       <div style={styles.fieldGroup}>
-        <label style={styles.toggleRow}>
-          <input
-            type="checkbox"
-            checked={formRemote}
-            onChange={(e) => setFormRemote(e.target.checked)}
-            style={styles.checkbox}
-          />
-          <span style={styles.toggleLabel}>Remote only</span>
-        </label>
+        <label style={styles.label}>Min Salary (EUR)</label>
+        <input
+          style={{ ...styles.input, maxWidth: 200 }}
+          type="number"
+          value={formSalary}
+          onChange={(e) => setFormSalary(e.target.value)}
+          placeholder="70000"
+        />
       </div>
 
       <div style={styles.fieldGroup}>
@@ -1498,9 +2129,8 @@ export function AutopilotView() {
   // Form state
   const [formName, setFormName] = useState('')
   const [formKeywords, setFormKeywords] = useState<string[]>([])
-  const [formLocation, setFormLocation] = useState('')
+  const [formLocationRules, setFormLocationRules] = useState<LocationRule[]>([])
   const [formSalary, setFormSalary] = useState('')
-  const [formRemote, setFormRemote] = useState(false)
   const [formExcluded, setFormExcluded] = useState<string[]>([])
   const [formDailyLimit, setFormDailyLimit] = useState(15)
 
@@ -1512,9 +2142,8 @@ export function AutopilotView() {
   const resetForm = useCallback(() => {
     setFormName('')
     setFormKeywords([])
-    setFormLocation('')
+    setFormLocationRules([])
     setFormSalary('')
-    setFormRemote(false)
     setFormExcluded([])
     setFormDailyLimit(15)
   }, [])
@@ -1525,9 +2154,10 @@ export function AutopilotView() {
       id: crypto.randomUUID(),
       name: formName.trim(),
       keywords: [...formKeywords],
-      location: formLocation.trim(),
+      location: '', // legacy field, kept empty for new profiles
       minSalary: parseInt(formSalary) || 0,
-      remoteOnly: formRemote,
+      remoteOnly: false, // legacy field, replaced by locationRules
+      locationRules: [...formLocationRules],
       excludedCompanies: [...formExcluded],
       dailyLimit: formDailyLimit,
       createdAt: new Date().toISOString(),
@@ -1535,7 +2165,7 @@ export function AutopilotView() {
     setProfiles((prev) => [...prev, newProfile])
     resetForm()
     setShowForm(false)
-  }, [formName, formKeywords, formLocation, formSalary, formRemote, formExcluded, formDailyLimit, resetForm])
+  }, [formName, formKeywords, formLocationRules, formSalary, formExcluded, formDailyLimit, resetForm])
 
   const handleDelete = useCallback((id: string) => {
     setProfiles((prev) => prev.filter((p) => p.id !== id))
@@ -1650,22 +2280,16 @@ export function AutopilotView() {
                           <span style={styles.metaText}>{p.keywords.join(', ')}</span>
                         </div>
                       )}
-                      {p.location && (
+                      {migrateProfileLocationRules(p).length > 0 && (
                         <div style={styles.metaItem}>
-                          <MapPin size={12} color="var(--text-tertiary)" />
-                          <span style={styles.metaText}>{p.location}</span>
+                          <Globe size={12} color="var(--text-tertiary)" />
+                          <LocationRuleChips rules={migrateProfileLocationRules(p)} compact />
                         </div>
                       )}
                       {p.minSalary > 0 && (
                         <div style={styles.metaItem}>
                           <DollarSign size={12} color="var(--text-tertiary)" />
                           <span style={styles.metaText}>{p.minSalary.toLocaleString()} EUR min</span>
-                        </div>
-                      )}
-                      {p.remoteOnly && (
-                        <div style={styles.metaItem}>
-                          <Wifi size={12} color="var(--text-tertiary)" />
-                          <span style={styles.metaText}>Remote only</span>
                         </div>
                       )}
                     </div>
@@ -1704,9 +2328,8 @@ export function AutopilotView() {
           {showForm && <SearchProfileForm
             formName={formName} setFormName={setFormName}
             formKeywords={formKeywords} setFormKeywords={setFormKeywords}
-            formLocation={formLocation} setFormLocation={setFormLocation}
+            formLocationRules={formLocationRules} setFormLocationRules={setFormLocationRules}
             formSalary={formSalary} setFormSalary={setFormSalary}
-            formRemote={formRemote} setFormRemote={setFormRemote}
             formExcluded={formExcluded} setFormExcluded={setFormExcluded}
             formDailyLimit={formDailyLimit} setFormDailyLimit={setFormDailyLimit}
             onSave={handleSave} onCancel={() => { resetForm(); setShowForm(false) }}
@@ -1886,10 +2509,10 @@ export function AutopilotView() {
                       </span>
                     </div>
                   )}
-                  {p.location && (
+                  {migrateProfileLocationRules(p).length > 0 && (
                     <div style={styles.metaItem}>
-                      <MapPin size={12} color="var(--text-tertiary)" />
-                      <span style={styles.metaText}>{p.location}</span>
+                      <Globe size={12} color="var(--text-tertiary)" />
+                      <LocationRuleChips rules={migrateProfileLocationRules(p)} compact />
                     </div>
                   )}
                   {p.minSalary > 0 && (
@@ -1898,12 +2521,6 @@ export function AutopilotView() {
                       <span style={styles.metaText}>
                         {p.minSalary.toLocaleString()} EUR min
                       </span>
-                    </div>
-                  )}
-                  {p.remoteOnly && (
-                    <div style={styles.metaItem}>
-                      <Wifi size={12} color="var(--text-tertiary)" />
-                      <span style={styles.metaText}>Remote only</span>
                     </div>
                   )}
                   {p.excludedCompanies.length > 0 && (
@@ -1950,9 +2567,8 @@ export function AutopilotView() {
         {showForm && <SearchProfileForm
           formName={formName} setFormName={setFormName}
           formKeywords={formKeywords} setFormKeywords={setFormKeywords}
-          formLocation={formLocation} setFormLocation={setFormLocation}
+          formLocationRules={formLocationRules} setFormLocationRules={setFormLocationRules}
           formSalary={formSalary} setFormSalary={setFormSalary}
-          formRemote={formRemote} setFormRemote={setFormRemote}
           formExcluded={formExcluded} setFormExcluded={setFormExcluded}
           formDailyLimit={formDailyLimit} setFormDailyLimit={setFormDailyLimit}
           onSave={handleSave} onCancel={() => { resetForm(); setShowForm(false) }}
