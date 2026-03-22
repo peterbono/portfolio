@@ -57,7 +57,9 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '48px 32px',
     borderRadius: 16,
     border: '1px solid var(--border)',
-    background: 'var(--bg-surface)',
+    background: 'rgba(17, 17, 19, 0.85)',
+    backdropFilter: 'blur(12px)',
+    WebkitBackdropFilter: 'blur(12px)',
   },
   iconWrap: {
     width: 56,

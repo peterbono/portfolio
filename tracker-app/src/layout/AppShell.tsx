@@ -123,7 +123,7 @@ function ActiveViewContent({ view }: { view: string }) {
         <div style={{ opacity: 0.6, pointerEvents: 'none', overflow: 'hidden', maxHeight: '100%' }}>
           <SkeletonForView view={view} />
         </div>
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent' }}>
           <EmptyState icon={emptyConfig.icon} title={emptyConfig.title} description={emptyConfig.description} ctaLabel={emptyConfig.ctaLabel} />
         </div>
       </div>
