@@ -122,7 +122,7 @@ export function TrustIndicator() {
         <div style={styles.panel}>
           <div style={styles.panelHeader}>
             <span style={styles.panelTitle}>Bot Activity</span>
-            <button onClick={handleDismiss} style={styles.closeBtn}>
+            <button onClick={handleDismiss} style={styles.closeBtn} aria-label="Dismiss bot activity panel">
               <X size={14} />
             </button>
           </div>
@@ -166,6 +166,8 @@ export function TrustIndicator() {
       {/* Pill */}
       <button
         onClick={() => setExpanded(!expanded)}
+        aria-label={`${config.label} — ${expanded ? 'collapse' : 'expand'} activity panel`}
+        aria-expanded={expanded}
         style={{
           ...styles.pill,
           border: `1px solid ${config.color}33`,

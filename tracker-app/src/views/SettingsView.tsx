@@ -19,12 +19,15 @@ export function SettingsView() {
     catch { return '' }
   })
   const [apiKeySaved, setApiKeySaved] = useState(false)
+  const [apiKeyError, setApiKeyError] = useState<string | null>(null)
 
   const handleSaveApiKey = useCallback(() => {
     try {
+      setApiKeyError(null)
       // Basic validation: Anthropic keys start with sk-ant-
       if (apiKey && !apiKey.startsWith('sk-ant-')) {
-        return // silently reject invalid keys
+        setApiKeyError('Invalid key format. Anthropic API keys start with sk-ant-')
+        return
       }
       if (apiKey) localStorage.setItem('tracker_anthropic_key', apiKey)
       else localStorage.removeItem('tracker_anthropic_key')
@@ -254,16 +257,24 @@ export function SettingsView() {
           <p style={styles.hint}>Required for AI-powered coaching. Uses Claude Sonnet (~$0.03/briefing).</p>
           <div style={styles.inputRow}>
             <input
-              style={styles.input}
+              style={{
+                ...styles.input,
+                ...(apiKeyError ? { borderColor: '#f43f5e' } : {}),
+              }}
               type="password"
               value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
+              onChange={(e) => { setApiKey(e.target.value); setApiKeyError(null) }}
               placeholder="sk-ant-api03-..."
+              aria-label="Anthropic API Key"
+              aria-invalid={!!apiKeyError}
             />
             <button style={styles.btnPrimary} onClick={handleSaveApiKey}>
               {apiKeySaved ? 'Saved!' : 'Save'}
             </button>
           </div>
+          {apiKeyError && (
+            <span style={styles.errorText}>{apiKeyError}</span>
+          )}
         </div>
       </section>
 

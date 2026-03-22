@@ -18,7 +18,7 @@ import { DemoBanner } from '../components/DemoBanner'
 import { SunkCostNudge } from '../components/SunkCostNudge'
 import { EmptyState } from '../components/EmptyState'
 import { SkeletonForView } from '../components/SkeletonView'
-import { LayoutList, Kanban, BarChart3, Flame, Brain } from 'lucide-react'
+import { LayoutList, Kanban, BarChart3, Flame, Brain, Bot } from 'lucide-react'
 
 const TIME_OPTIONS: { value: TimeRange; label: string }[] = [
   { value: 'all', label: 'All time' },
@@ -45,7 +45,7 @@ const MODE_OPTIONS: { value: WorkMode; label: string }[] = [
 function GlobalFilters() {
   const { timeRange, setTimeRange, areaFilter, setAreaFilter, workMode, setWorkMode } = useUI()
   return (
-    <div style={styles.timeBar}>
+    <div style={styles.timeBar} data-filter-bar>
       {TIME_OPTIONS.map(opt => (
         <button
           key={opt.value}
@@ -63,6 +63,7 @@ function GlobalFilters() {
         value={areaFilter}
         onChange={e => setAreaFilter(e.target.value as AreaFilter)}
         style={styles.filterSelect}
+        aria-label="Filter by region"
       >
         {AREA_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
@@ -70,6 +71,7 @@ function GlobalFilters() {
         value={workMode}
         onChange={e => setWorkMode(e.target.value as WorkMode)}
         style={styles.filterSelect}
+        aria-label="Filter by work mode"
       >
         {MODE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
@@ -106,6 +108,7 @@ export function AppShell({ onBackToLanding }: { onBackToLanding?: () => void }) 
 }
 
 const EMPTY_STATES: Record<string, { icon: typeof LayoutList; title: string; description: string; ctaLabel: string }> = {
+  autopilot: { icon: Bot, title: 'Auto-apply on autopilot', description: 'Sign up to configure search profiles and let the bot apply to jobs while you sleep.', ctaLabel: 'Get started' },
   table: { icon: LayoutList, title: 'No applications yet', description: 'Start the auto-apply bot or add jobs manually to begin tracking your job search.', ctaLabel: 'Go to Autopilot' },
   pipeline: { icon: Kanban, title: 'Your pipeline is empty', description: 'Applications will flow through stages as you apply and hear back from companies.', ctaLabel: 'Start applying' },
   analytics: { icon: BarChart3, title: 'No data to analyze yet', description: 'Analytics charts will populate as your application history grows. Start applying to unlock insights.', ctaLabel: 'Start the bot' },
@@ -132,7 +135,12 @@ function ActiveViewContent({ view }: { view: string }) {
     )
   }
 
-  const fallback = <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '50vh' }}><div style={{ width: 20, height: 20, border: '2px solid var(--border)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} /></div>
+  const fallback = (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '50vh', gap: 12 }}>
+      <div style={{ width: 24, height: 24, border: '2px solid var(--border)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+      <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Loading...</span>
+    </div>
+  )
 
   switch (view) {
     case 'table': return <TableView />
@@ -145,15 +153,6 @@ function ActiveViewContent({ view }: { view: string }) {
     case 'pricing': return <Suspense fallback={fallback}><LazyPricingView /></Suspense>
     default: return null
   }
-}
-
-function ViewPlaceholder({ name, description }: { name: string; description: string }) {
-  return (
-    <div style={styles.placeholder}>
-      <h1 style={styles.placeholderTitle}>{name}</h1>
-      <p style={styles.placeholderDesc}>{description}</p>
-    </div>
-  )
 }
 
 const styles: Record<string, React.CSSProperties> = {
@@ -179,6 +178,8 @@ const styles: Record<string, React.CSSProperties> = {
     borderBottom: '1px solid var(--border)',
     background: 'var(--bg-elevated)',
     flexShrink: 0,
+    flexWrap: 'wrap',
+    alignItems: 'center',
   },
   timeBtn: {
     padding: '5px 14px',
@@ -207,23 +208,5 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: 'inherit',
     cursor: 'pointer',
     outline: 'none',
-  },
-  placeholder: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: '100%',
-    gap: 8,
-    opacity: 0.5,
-  },
-  placeholderTitle: {
-    fontSize: 24,
-    fontWeight: 600,
-    color: 'var(--text-primary)',
-  },
-  placeholderDesc: {
-    fontSize: 14,
-    color: 'var(--text-tertiary)',
   },
 }

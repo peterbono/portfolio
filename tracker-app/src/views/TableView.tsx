@@ -471,7 +471,7 @@ function AddJobModal({ onClose }: { onClose: () => void }) {
     setForm(prev => ({ ...prev, [field]: e.target.value }))
 
   const handleSubmit = () => {
-    if (!form.company && !form.role) return
+    if (!form.company.trim()) return
     const id = `manual-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
     addJob({
       id,
@@ -492,13 +492,13 @@ function AddJobModal({ onClose }: { onClose: () => void }) {
   }
 
   const fields = [
-    { key: 'company', label: 'Company', placeholder: 'e.g. Spotify' },
-    { key: 'role', label: 'Role', placeholder: 'e.g. Senior Product Designer' },
-    { key: 'location', label: 'Location', placeholder: 'e.g. Remote, EMEA' },
-    { key: 'salary', label: 'Salary', placeholder: 'e.g. 80-100k EUR' },
-    { key: 'ats', label: 'ATS', placeholder: 'e.g. Greenhouse' },
-    { key: 'link', label: 'Job URL', placeholder: 'https://...' },
-    { key: 'notes', label: 'Notes', placeholder: 'Any notes...' },
+    { key: 'company', label: 'Company *', placeholder: 'e.g. Spotify', required: true },
+    { key: 'role', label: 'Role', placeholder: 'e.g. Senior Product Designer', required: false },
+    { key: 'location', label: 'Location', placeholder: 'e.g. Remote, EMEA', required: false },
+    { key: 'salary', label: 'Salary', placeholder: 'e.g. 80-100k EUR', required: false },
+    { key: 'ats', label: 'ATS', placeholder: 'e.g. Greenhouse', required: false },
+    { key: 'link', label: 'Job URL', placeholder: 'https://...', required: false },
+    { key: 'notes', label: 'Notes', placeholder: 'Any notes...', required: false },
   ]
 
   const inputStyle: React.CSSProperties = {
@@ -551,7 +551,7 @@ function AddJobModal({ onClose }: { onClose: () => void }) {
           <button onClick={onClose} style={{ padding: '8px 16px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 6, fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer' }}>
             Cancel
           </button>
-          <button onClick={handleSubmit} style={{ padding: '8px 16px', background: 'var(--accent)', border: 'none', borderRadius: 6, fontSize: 13, color: '#000', fontWeight: 600, cursor: 'pointer', opacity: form.company || form.role ? 1 : 0.4 }}>
+          <button onClick={handleSubmit} style={{ padding: '8px 16px', background: 'var(--accent)', border: 'none', borderRadius: 6, fontSize: 13, color: '#000', fontWeight: 600, cursor: form.company.trim() ? 'pointer' : 'not-allowed', opacity: form.company.trim() ? 1 : 0.4 }}>
             Add Job
           </button>
         </div>

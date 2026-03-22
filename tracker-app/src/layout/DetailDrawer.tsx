@@ -171,6 +171,7 @@ export function DetailDrawer() {
             </div>
             <button
               onClick={closeDrawer}
+              aria-label="Close detail panel"
               style={{
                 padding: 6,
                 borderRadius: 'var(--radius-md)',
@@ -534,8 +535,11 @@ function EditableDetailRow({
 function ToggleDetailRow({ label, value, onToggle }: { label: string; value: boolean; onToggle: (v: boolean) => void }) {
   return (
     <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-      <span style={detailLabelStyle}>{label}</span>
+      <span style={detailLabelStyle} id={`toggle-label-${label.toLowerCase()}`}>{label}</span>
       <button
+        role="switch"
+        aria-checked={value}
+        aria-labelledby={`toggle-label-${label.toLowerCase()}`}
         onClick={() => onToggle(!value)}
         style={{
           width: 40, height: 22, borderRadius: 11, border: 'none', cursor: 'pointer',

@@ -49,7 +49,7 @@ const NAV_ITEMS: NavEntry[] = [
 ]
 
 /** Views that require auth — show lock icon for anonymous users */
-const LOCKED_VIEWS = new Set<ActiveView>(['table', 'pipeline', 'analytics', 'coach', 'insights'])
+const LOCKED_VIEWS = new Set<ActiveView>(['autopilot', 'table', 'pipeline', 'analytics', 'coach', 'insights'])
 
 export function Sidebar({ onBackToLanding }: { onBackToLanding?: () => void }) {
   const { activeView, setActiveView, sidebarCollapsed, toggleSidebar } = useUI()
@@ -81,7 +81,7 @@ export function Sidebar({ onBackToLanding }: { onBackToLanding?: () => void }) {
         width,
         minWidth: width,
         height: '100vh',
-        background: '#0c0c0e',
+        background: 'var(--sidebar-bg)',
         borderRight: '1px solid var(--border)',
         display: 'flex',
         flexDirection: 'column',
@@ -101,7 +101,7 @@ export function Sidebar({ onBackToLanding }: { onBackToLanding?: () => void }) {
           minHeight: 64,
         }}
       >
-        <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(52, 211, 153, 0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(52, 211, 153, 0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} aria-hidden="true">
           <Bot size={16} color="var(--accent)" />
         </div>
         {!sidebarCollapsed && (
@@ -162,13 +162,15 @@ export function Sidebar({ onBackToLanding }: { onBackToLanding?: () => void }) {
           }
           const { view, label, icon: Icon } = entry
           const isActive = activeView === view
-          const isAutopilotHighlight = view === 'autopilot' && !user
+          const isAutopilotHighlight = view === 'autopilot' && !user && !LOCKED_VIEWS.has(view)
           const isLocked = !user && LOCKED_VIEWS.has(view)
           return (
             <button
               key={view}
               onClick={() => setActiveView(view)}
               title={sidebarCollapsed ? (isLocked ? `${label} (Sign up to unlock)` : label) : undefined}
+              aria-label={isLocked ? `${label} (Sign up to unlock)` : label}
+              aria-current={isActive ? 'page' : undefined}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -246,12 +248,13 @@ export function Sidebar({ onBackToLanding }: { onBackToLanding?: () => void }) {
               )}
               {sidebarCollapsed && isLocked && (
                 <Lock
-                  size={8}
+                  size={10}
+                  aria-hidden="true"
                   style={{
                     position: 'absolute',
                     top: 8,
-                    right: 12,
-                    opacity: 0.3,
+                    right: 10,
+                    opacity: 0.35,
                   }}
                 />
               )}
@@ -339,6 +342,7 @@ export function Sidebar({ onBackToLanding }: { onBackToLanding?: () => void }) {
             <button
               onClick={signOut}
               title="Sign out"
+              aria-label="Sign out"
               style={{
                 display: 'flex',
                 alignItems: 'center',
