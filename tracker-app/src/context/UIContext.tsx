@@ -42,7 +42,7 @@ export function UIProvider({ children }: { children: ReactNode }) {
     } catch { /* ignore */ }
     return 'autopilot'
   })
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768)
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [timeRange, setTimeRange] = useState<TimeRange>('all')

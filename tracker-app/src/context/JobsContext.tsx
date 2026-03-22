@@ -155,16 +155,19 @@ export function JobsProvider({ children }: { children: ReactNode }) {
   const jobs = useMemo(() => {
     let filtered = allJobs
 
-    // Time filter — use most recent activity date (apply, event, or rejection)
+    // Time filter — use MAX date across apply, lastContact, and latest event
     const threshold = getTimeThreshold(timeRange)
     if (threshold) {
       filtered = filtered.filter(j => {
-        const activityDate = j.lastContactDate?.split('T')[0]
-          || (j.events && j.events.length > 0
-            ? [...j.events].sort((a, b) => b.date.localeCompare(a.date))[0].date.split('T')[0]
-            : null)
-          || j.date
-        return activityDate >= threshold
+        const candidates = [j.date]
+        if (j.lastContactDate) candidates.push(j.lastContactDate.split('T')[0])
+        if (j.events && j.events.length > 0) {
+          for (const ev of j.events) {
+            if (ev.date) candidates.push(ev.date.split('T')[0])
+          }
+        }
+        const latestActivity = candidates.reduce((a, b) => a > b ? a : b)
+        return latestActivity >= threshold
       })
     }
 
@@ -223,7 +226,7 @@ export function JobsProvider({ children }: { children: ReactNode }) {
       const events = [...(existing.events ?? []), event]
       return {
         ...prev,
-        [id]: { ...existing, events, lastContactDate: event.date },
+        [id]: { ...existing, events, lastContactDate: event.date.split('T')[0] },
       }
     })
   }, [])
