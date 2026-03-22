@@ -1,3 +1,4 @@
+import React, { Suspense } from 'react'
 import { Sidebar } from './Sidebar'
 import { DetailDrawer } from './DetailDrawer'
 import { useUI, type TimeRange, type AreaFilter, type WorkMode } from '../context/UIContext'
@@ -5,12 +6,13 @@ import { useJobs } from '../context/JobsContext'
 import { useSupabase } from '../context/SupabaseContext'
 import { TableView } from '../views/TableView'
 import { PipelineView } from '../views/PipelineView'
-import { AnalyticsView } from '../views/AnalyticsView'
-import { SettingsView } from '../views/SettingsView'
-import { CoachView } from '../views/CoachView'
 import { AutopilotView } from '../views/AutopilotView'
-import { InsightsView } from '../views/InsightsView'
-import { PricingViewWithResponsive } from '../views/PricingView'
+import { SettingsView } from '../views/SettingsView'
+
+const LazyAnalyticsView = React.lazy(() => import('../views/AnalyticsView').then(m => ({ default: m.AnalyticsView })))
+const LazyCoachView = React.lazy(() => import('../views/CoachView').then(m => ({ default: m.CoachView })))
+const LazyInsightsView = React.lazy(() => import('../views/InsightsView').then(m => ({ default: m.InsightsView })))
+const LazyPricingView = React.lazy(() => import('../views/PricingView').then(m => ({ default: m.PricingViewWithResponsive })))
 import { TrustIndicator } from '../components/TrustIndicator'
 import { DemoBanner } from '../components/DemoBanner'
 import { SunkCostNudge } from '../components/SunkCostNudge'
@@ -130,15 +132,17 @@ function ActiveViewContent({ view }: { view: string }) {
     )
   }
 
+  const fallback = <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '50vh' }}><div style={{ width: 20, height: 20, border: '2px solid var(--border)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} /></div>
+
   switch (view) {
     case 'table': return <TableView />
     case 'pipeline': return <PipelineView />
-    case 'analytics': return <AnalyticsView />
-    case 'coach': return <CoachView />
-    case 'insights': return <InsightsView />
+    case 'analytics': return <Suspense fallback={fallback}><LazyAnalyticsView /></Suspense>
+    case 'coach': return <Suspense fallback={fallback}><LazyCoachView /></Suspense>
+    case 'insights': return <Suspense fallback={fallback}><LazyInsightsView /></Suspense>
     case 'autopilot': return <AutopilotView />
     case 'settings': return <SettingsView />
-    case 'pricing': return <PricingViewWithResponsive />
+    case 'pricing': return <Suspense fallback={fallback}><LazyPricingView /></Suspense>
     default: return null
   }
 }

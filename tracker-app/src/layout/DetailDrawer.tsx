@@ -18,6 +18,32 @@ function isValidUrl(url: string): boolean {
   }
 }
 
+/** Format an ISO date string (YYYY-MM-DD) into "16 Mar 2026" style */
+function formatDateNice(iso: string): string {
+  if (!iso) return ''
+  const d = new Date(iso + 'T00:00:00')
+  if (isNaN(d.getTime())) return iso
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+/** Get the rejection date from lastContactDate or most recent rejection event */
+function getRejectionDate(job: { lastContactDate?: string; date: string; events?: JobEvent[] }, events: JobEvent[]): string | null {
+  // Priority 1: lastContactDate on a rejected job
+  if (job.lastContactDate) {
+    const d = job.lastContactDate.includes('T') ? job.lastContactDate.split('T')[0] : job.lastContactDate
+    if (d && !isNaN(new Date(d + 'T00:00:00').getTime())) return d
+  }
+  // Priority 2: most recent rejection event
+  const rejectionEvents = events.filter(e => e.type === 'rejection')
+  if (rejectionEvents.length > 0) {
+    // events are already sorted desc by date
+    const latest = rejectionEvents[0]
+    const d = latest.date.includes('T') ? latest.date.split('T')[0] : latest.date
+    if (d && !isNaN(new Date(d + 'T00:00:00').getTime())) return d
+  }
+  return null
+}
+
 // Only statuses that appear in the pipeline — no Easy Apply, no saved
 const ALLOWED_STATUSES: JobStatus[] = [
   'manual', 'submitted', 'screening', 'interviewing', 'challenge',
@@ -168,26 +194,49 @@ export function DetailDrawer() {
             </button>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <StatusBadge status={job.status} />
-            <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
-              Applied {job.date}
-            </span>
-            {job.status === 'rejected' && job.lastContactDate && (() => {
-              const rejDate = job.lastContactDate.split('T')[0]
-              if (rejDate === job.date) return null
-              const days = Math.floor((new Date(rejDate).getTime() - new Date(job.date).getTime()) / 86400000)
-              return (
-                <span style={{ fontSize: 12, color: '#a855f7' }}>
-                  Rejected {rejDate} ({days}d)
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <StatusBadge status={job.status} />
+              <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
+                Applied {formatDateNice(job.date)}
+              </span>
+              {job.location && (
+                <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
+                  {job.location}
                 </span>
+              )}
+            </div>
+            {job.status === 'rejected' && (() => {
+              const rejDate = getRejectionDate(job, allEvents)
+              if (!rejDate) return null
+              const rejD = new Date(rejDate + 'T00:00:00')
+              if (isNaN(rejD.getTime())) return null
+              const formatted = rejD.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+              const nowMs = new Date().setHours(0,0,0,0)
+              const diffDays = Math.round((nowMs - rejD.getTime()) / 86400000)
+              const ago = diffDays === 0 ? 'today' : diffDays === 1 ? '1d ago' : `${diffDays}d ago`
+              // Response time
+              const applyD = new Date(job.date + 'T00:00:00')
+              const responseDays = Math.round((rejD.getTime() - applyD.getTime()) / 86400000)
+              const responseText = responseDays <= 0 ? 'same day' : responseDays === 1 ? '1 day' : `${responseDays} days`
+              return (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 12, color: '#a855f7', fontWeight: 500 }}>
+                    Rejected {formatted} ({ago})
+                  </span>
+                  <span style={{
+                    fontSize: 11,
+                    color: 'var(--text-tertiary)',
+                    background: 'rgba(168, 85, 247, 0.1)',
+                    padding: '1px 8px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(168, 85, 247, 0.2)',
+                  }}>
+                    Response time: {responseText}
+                  </span>
+                </div>
               )
             })()}
-            {job.location && (
-              <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
-                {job.location}
-              </span>
-            )}
           </div>
         </div>
 
@@ -246,7 +295,19 @@ export function DetailDrawer() {
             <AutocompleteDetailRow label="Location" value={job.location} onSave={(v) => updateJobField(job.id, 'location', v)} suggestions={locationSuggestions} placeholder="e.g. Remote, EMEA" />
             <EditableDetailRow label="Salary" value={job.salary} onSave={(v) => updateJobField(job.id, 'salary', v)} placeholder="e.g. 80-100k EUR" />
             <AutocompleteDetailRow label="ATS" value={job.ats} onSave={(v) => updateJobField(job.id, 'ats', v)} suggestions={atsSuggestions} placeholder="e.g. Greenhouse" />
-            <DateDetailRow label="Date" value={job.date} onSave={(v) => updateJobField(job.id, 'date', v)} />
+            <DateDetailRow label="Applied" value={job.date} onSave={(v) => updateJobField(job.id, 'date', v)} formatted={formatDateNice(job.date)} />
+            {job.status === 'rejected' && (() => {
+              const rejDate = getRejectionDate(job, allEvents)
+              if (!rejDate) return null
+              return (
+                <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                  <span style={{ ...detailLabelStyle, color: '#a855f7' }}>Rejected</span>
+                  <span style={{ fontSize: 13, color: '#a855f7', fontWeight: 500 }}>
+                    {formatDateNice(rejDate)}
+                  </span>
+                </div>
+              )
+            })()}
             <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
               <span style={detailLabelStyle}>Link</span>
               <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -498,7 +559,7 @@ function ToggleDetailRow({ label, value, onToggle }: { label: string; value: boo
 }
 
 /* ── Date Picker Row ── */
-function DateDetailRow({ label, value, onSave }: { label: string; value: string; onSave: (v: string) => void }) {
+function DateDetailRow({ label, value, onSave, formatted }: { label: string; value: string; onSave: (v: string) => void; formatted?: string }) {
   return (
     <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
       <span style={detailLabelStyle}>{label}</span>
@@ -520,6 +581,9 @@ function DateDetailRow({ label, value, onSave }: { label: string; value: string;
         onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--accent)' }}
         onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border)' }}
       />
+      {formatted && (
+        <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{formatted}</span>
+      )}
     </div>
   )
 }

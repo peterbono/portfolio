@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import React, { useState, useCallback, Suspense } from 'react'
 import { SupabaseProvider, useSupabase } from './context/SupabaseContext'
 import { JobsProvider } from './context/JobsContext'
 import { UIProvider } from './context/UIContext'
@@ -7,9 +7,10 @@ import { AuthWallProvider } from './context/AuthWallContext'
 import { AppShell } from './layout/AppShell'
 import { GmailSyncBridge } from './components/GmailSyncBridge'
 import { AuthWall } from './components/AuthWall'
-import { LandingView } from './views/LandingView'
 import { AuthView } from './views/AuthView'
 import { OnboardingWizard } from './components/OnboardingWizard'
+
+const LandingView = React.lazy(() => import('./views/LandingView').then(m => ({ default: m.LandingView })))
 
 const ONBOARDING_KEY = 'tracker_v2_onboarding_done'
 const VISITED_KEY = 'tracker_v2_visited'
@@ -77,7 +78,7 @@ function AppContent() {
     if (showAuthModal) {
       return <AuthView onBack={() => setShowAuthModal(false)} />
     }
-    return <LandingView onGetStarted={handleGetStarted} onSignIn={handleSignIn} />
+    return <Suspense fallback={<div style={{ width: '100vw', height: '100vh', background: '#09090b' }} />}><LandingView onGetStarted={handleGetStarted} onSignIn={handleSignIn} /></Suspense>
   }
 
   // Authenticated but onboarding not done: show wizard over dashboard

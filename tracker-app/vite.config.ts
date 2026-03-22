@@ -8,6 +8,14 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          recharts: ['recharts'],
+          supabase: ['@supabase/supabase-js'],
+        },
+      },
+    },
   },
   resolve: {
     dedupe: ['react', 'react-dom'],
