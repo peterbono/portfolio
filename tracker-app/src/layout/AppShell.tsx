@@ -15,6 +15,7 @@ import { TrustIndicator } from '../components/TrustIndicator'
 import { DemoBanner } from '../components/DemoBanner'
 import { SunkCostNudge } from '../components/SunkCostNudge'
 import { EmptyState } from '../components/EmptyState'
+import { SkeletonForView } from '../components/SkeletonView'
 import { LayoutList, Kanban, BarChart3, Flame, Brain } from 'lucide-react'
 
 const TIME_OPTIONS: { value: TimeRange; label: string }[] = [
@@ -111,23 +112,13 @@ function ActiveViewContent({ view }: { view: string }) {
   const { session } = useSupabase()
   const isAnonymous = !session
 
-  // Show view skeleton + empty state overlay for anonymous users on gated views
+  // Show skeleton placeholder + empty state overlay for anonymous users on gated views
   const emptyConfig = EMPTY_STATES[view]
   if (isAnonymous && emptyConfig) {
-    const ViewComponent = (() => {
-      switch (view) {
-        case 'table': return <TableView />
-        case 'pipeline': return <PipelineView />
-        case 'analytics': return <AnalyticsView />
-        case 'coach': return <CoachView />
-        case 'insights': return <InsightsView />
-        default: return null
-      }
-    })()
     return (
       <div style={{ position: 'relative', flex: 1, overflow: 'hidden' }}>
-        <div style={{ opacity: 0.15, pointerEvents: 'none', filter: 'grayscale(0.5)', overflow: 'hidden', maxHeight: '100%' }}>
-          {ViewComponent}
+        <div style={{ opacity: 0.6, pointerEvents: 'none', overflow: 'hidden', maxHeight: '100%' }}>
+          <SkeletonForView view={view} />
         </div>
         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <EmptyState icon={emptyConfig.icon} title={emptyConfig.title} description={emptyConfig.description} ctaLabel={emptyConfig.ctaLabel} />
