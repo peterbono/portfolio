@@ -1,5 +1,5 @@
 // ─── Plan & Billing Utilities ────────────────────────────────────────
-// Stub layer — ready for Stripe integration. All gating logic is real.
+// Stripe-integrated billing via Payment Links. All gating logic is real.
 
 export type PlanTier = 'free' | 'starter' | 'pro' | 'boost'
 
@@ -243,24 +243,174 @@ export function getRemainingQuota(plan: PlanTier, used: number, feature: QuotaFe
   return Math.max(0, max - used)
 }
 
-// ─── Stripe Stubs (to be implemented when Stripe is set up) ─────────
+// ─── Stripe Integration ─────────────────────────────────────────────
+//
+// Architecture: Client-only via Stripe Payment Links.
+//
+// Stripe.js v8 removed client-side `redirectToCheckout`.
+// For an SPA without a backend, the simplest approach is Payment Links:
+// - Create Payment Links in Stripe Dashboard (one per plan/interval)
+// - Paste the URLs below
+// - On click, redirect to the Payment Link
+// - Stripe handles checkout, then redirects back to our success URL
+//
+// When you add a backend (Vercel API routes / Supabase Edge Functions),
+// upgrade to server-side Checkout Sessions for more control.
 
-/** Creates a Stripe Checkout session — returns redirect URL */
-export async function createCheckoutSession(plan: PlanTier): Promise<string> {
-  // TODO: Call /api/stripe/checkout with plan tier
-  console.log(`[billing] createCheckoutSession called for plan: ${plan}`)
-  return `/pricing?checkout=pending&plan=${plan}`
+/**
+ * Stripe Payment Link lookup table.
+ *
+ * Create Payment Links in Stripe Dashboard:
+ *   Products → create product → create price → Payment Links → + New
+ *
+ * For each link, configure "After payment" to redirect to your success URL.
+ * Payment Link URLs (buy.stripe.com/...) are public checkout URLs, not secrets.
+ */
+export const STRIPE_PAYMENT_LINKS: Record<string, { weekly?: string; monthly?: string }> = {
+  starter: {
+    weekly:  '', // e.g. 'https://buy.stripe.com/test_XXXXXXXX'  — $9/week
+    monthly: '', // e.g. 'https://buy.stripe.com/test_XXXXXXXX'  — $29/month
+  },
+  pro: {
+    weekly:  '', // e.g. 'https://buy.stripe.com/test_XXXXXXXX'  — $15/week
+    monthly: '', // e.g. 'https://buy.stripe.com/test_XXXXXXXX'  — $49/month
+  },
+  boost: {
+    weekly:  '', // e.g. 'https://buy.stripe.com/test_XXXXXXXX'  — $25/week
+  },
 }
 
-/** Creates a Stripe Customer Portal session — returns redirect URL */
+/** Returns true if at least one plan has payment links configured */
+export function isStripeConfigured(): boolean {
+  return Object.values(STRIPE_PAYMENT_LINKS).some(
+    links => !!(links.weekly || links.monthly)
+  )
+}
+
+/** Returns true if a specific plan has at least one payment link */
+export function hasPriceIds(plan: PlanTier): boolean {
+  const links = STRIPE_PAYMENT_LINKS[plan]
+  if (!links) return false
+  return !!(links.weekly || links.monthly)
+}
+
+export type BillingInterval = 'weekly' | 'monthly'
+
+/**
+ * Redirects the user to Stripe Checkout via a Payment Link.
+ *
+ * Flow:
+ * 1. User clicks "Subscribe" on PricingView
+ * 2. This function navigates to the Stripe Payment Link
+ * 3. Stripe handles the entire checkout (hosted page)
+ * 4. On success, Stripe redirects to /settings?checkout=success&plan=X
+ * 5. handleCheckoutSuccess() picks up the plan from URL params
+ */
+export async function redirectToCheckout(
+  plan: PlanTier,
+  interval: BillingInterval = 'weekly',
+): Promise<void> {
+  if (plan === 'free') {
+    console.log('[billing] Free plan — no checkout needed')
+    return
+  }
+
+  const links = STRIPE_PAYMENT_LINKS[plan]
+  if (!links) {
+    throw new Error(`[billing] No Payment Links configured for plan: ${plan}`)
+  }
+
+  const effectiveInterval = plan === 'boost' ? 'weekly' : interval
+  const paymentLink = effectiveInterval === 'weekly' ? links.weekly : links.monthly
+
+  if (!paymentLink) {
+    throw new Error(
+      `[billing] No ${effectiveInterval} Payment Link for plan: ${plan}. ` +
+      `Create one in Stripe Dashboard and paste it in STRIPE_PAYMENT_LINKS.`
+    )
+  }
+
+  // Redirect to Stripe Payment Link
+  window.location.href = paymentLink
+}
+
+/**
+ * Legacy alias — kept for backward compatibility.
+ */
+export async function createCheckoutSession(
+  plan: PlanTier,
+  interval: BillingInterval = 'weekly',
+): Promise<string> {
+  if (!hasPriceIds(plan)) {
+    console.warn(`[billing] Stripe not configured for ${plan} — returning stub URL`)
+    return `/pricing?checkout=pending&plan=${plan}`
+  }
+  await redirectToCheckout(plan, interval)
+  return ''
+}
+
+/**
+ * Opens the Stripe Customer Portal for managing subscriptions.
+ *
+ * Customer Portal requires a server-side call to create a session.
+ * For MVP, this calls a backend endpoint (Supabase Edge Function or
+ * Vercel API route) that runs stripe.billingPortal.sessions.create().
+ */
 export async function createPortalSession(): Promise<string> {
-  // TODO: Call /api/stripe/portal
-  console.log('[billing] createPortalSession called')
-  return '/pricing?portal=pending'
+  const portalEndpoint = import.meta.env.VITE_STRIPE_PORTAL_URL
+  if (portalEndpoint) {
+    try {
+      const res = await fetch(portalEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+      })
+      if (res.ok) {
+        const { url } = await res.json()
+        return url
+      }
+      console.error('[billing] Portal session creation failed:', res.status)
+    } catch (err) {
+      console.error('[billing] Portal session error:', err)
+    }
+  }
+  console.warn('[billing] No VITE_STRIPE_PORTAL_URL configured')
+  return '/settings?portal=unavailable'
 }
 
 /** Gets current month usage from backend */
 export async function getCurrentUsage(): Promise<{ applies: number; coverLetters: number }> {
-  // TODO: Fetch from /api/usage
+  // TODO: Fetch from Supabase or /api/usage when usage tracking is implemented
   return { applies: 0, coverLetters: 0 }
+}
+
+/**
+ * Parse the checkout success callback and update the local plan.
+ * Call this on any page load after Stripe redirects back.
+ *
+ * Payment Links redirect to the "After payment" URL you configure.
+ * Set that to: https://your-app.vercel.app/settings?checkout=success&plan={PLAN}
+ */
+export function handleCheckoutSuccess(): { plan: PlanTier; sessionId: string } | null {
+  const params = new URLSearchParams(window.location.search)
+  const checkout = params.get('checkout')
+  const plan = params.get('plan') as PlanTier | null
+  const sessionId = params.get('session_id') || 'payment-link'
+
+  if (checkout === 'success' && plan && ['starter', 'pro', 'boost'].includes(plan)) {
+    // Store plan locally — webhook/backend confirms later
+    try {
+      localStorage.setItem('tracker_user_plan', plan)
+    } catch { /* ignore */ }
+
+    // Clean up the URL
+    const url = new URL(window.location.href)
+    url.searchParams.delete('checkout')
+    url.searchParams.delete('plan')
+    url.searchParams.delete('session_id')
+    window.history.replaceState({}, '', url.toString())
+
+    return { plan, sessionId }
+  }
+  return null
 }

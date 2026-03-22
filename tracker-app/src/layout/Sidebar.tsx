@@ -177,9 +177,9 @@ export function Sidebar({ onBackToLanding }: { onBackToLanding?: () => void }) {
                 gap: 10,
                 padding: sidebarCollapsed ? '10px 0' : '10px 16px',
                 justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
-                borderLeft: isActive ? '2px solid var(--accent)' : '2px solid transparent',
+                borderLeft: isActive ? '3px solid var(--accent)' : '3px solid transparent',
                 background: isActive
-                  ? 'rgba(52, 211, 153, 0.08)'
+                  ? 'rgba(52, 211, 153, 0.12)'
                   : isAutopilotHighlight && !isActive
                     ? 'rgba(52, 211, 153, 0.04)'
                     : 'transparent',

@@ -6,7 +6,7 @@
   --border-hover: #2a2a35;
   --text-primary: #e0e0e0;
   --text-secondary: #a1a1aa;
-  --text-tertiary: #71717a;
+  --text-tertiary: #8a8a94;
   --accent: #34d399;
 
   --sidebar-bg: #0c0c0e;
@@ -18,6 +18,11 @@
   --radius-md: 6px;
   --radius-lg: 8px;
   --radius-xl: 12px;
+
+  --tooltip-bg: #1a1a1f;
+  --tooltip-border: #2a2a35;
+  --tooltip-text: #e0e0e0;
+  --tooltip-label: #a1a1aa;
 
   --transition-fast: 150ms ease;
   --transition-normal: 250ms ease;
@@ -266,5 +271,19 @@ textarea:focus {
   main > div {
     padding-left: 12px !important;
     padding-right: 12px !important;
+  }
+
+  /* MOBILE-02: Show close bar on mobile drawer */
+  .drawer-mobile-close {
+    display: flex !important;
+  }
+
+  /* MOBILE-03: Pipeline kanban smooth scroll-snap */
+  [data-pipeline-scroll] {
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+  }
+  [data-pipeline-scroll] > div > div {
+    scroll-snap-align: start;
   }
 }

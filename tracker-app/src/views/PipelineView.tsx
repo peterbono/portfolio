@@ -273,9 +273,12 @@ export function PipelineView() {
 
       {/* Kanban grid */}
       <div
+        data-pipeline-scroll
         style={{
           flex: 1,
           overflow: 'auto',
+          overflowX: 'auto',
+          WebkitOverflowScrolling: 'touch',
           padding: 16,
         }}
       >

@@ -34,14 +34,14 @@ const DARK = {
 
 const tooltipStyle = {
   contentStyle: {
-    background: DARK.bg,
-    border: `1px solid ${DARK.border}`,
+    background: 'var(--tooltip-bg)',
+    border: '1px solid var(--tooltip-border)',
     borderRadius: 6,
-    color: DARK.textBright,
+    color: 'var(--tooltip-text)',
     fontSize: 12,
   },
-  itemStyle: { color: DARK.textBright },
-  labelStyle: { color: DARK.text, marginBottom: 4 },
+  itemStyle: { color: 'var(--tooltip-text)' },
+  labelStyle: { color: 'var(--tooltip-label)', marginBottom: 4 },
 }
 
 const cardStyle: React.CSSProperties = {

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, Suspense } from 'react'
+import React, { useState, useCallback, Suspense, Component, type ReactNode } from 'react'
 import { SupabaseProvider, useSupabase } from './context/SupabaseContext'
 import { JobsProvider } from './context/JobsContext'
 import { UIProvider } from './context/UIContext'
@@ -9,6 +9,107 @@ import { GmailSyncBridge } from './components/GmailSyncBridge'
 import { AuthWall } from './components/AuthWall'
 import { AuthView } from './views/AuthView'
 import { OnboardingWizard } from './components/OnboardingWizard'
+
+/* ── App-level error boundary (EDGE-03) ── */
+interface ErrorBoundaryState {
+  hasError: boolean
+  error: Error | null
+}
+
+class AppErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryState> {
+  constructor(props: { children: ReactNode }) {
+    super(props)
+    this.state = { hasError: false, error: null }
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      const isNetwork = this.state.error?.message?.toLowerCase().includes('fetch') ||
+        this.state.error?.message?.toLowerCase().includes('network') ||
+        this.state.error?.message?.toLowerCase().includes('supabase')
+      return (
+        <div
+          style={{
+            width: '100vw',
+            height: '100vh',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: '#09090b',
+            color: '#e0e0e0',
+            fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
+          }}
+        >
+          <div style={{ textAlign: 'center', maxWidth: 420, padding: 32 }}>
+            <div
+              style={{
+                width: 56,
+                height: 56,
+                borderRadius: 14,
+                background: 'rgba(244, 63, 94, 0.1)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 20px',
+                fontSize: 24,
+              }}
+            >
+              {isNetwork ? '\u{1F50C}' : '\u{26A0}\u{FE0F}'}
+            </div>
+            <h1 style={{ fontSize: 20, fontWeight: 600, marginBottom: 8 }}>
+              {isNetwork ? 'Connection lost' : 'Something went wrong'}
+            </h1>
+            <p style={{ fontSize: 13, color: '#8a8a94', lineHeight: 1.6, marginBottom: 24 }}>
+              {isNetwork
+                ? 'Unable to reach the server. Check your internet connection and try again.'
+                : 'An unexpected error occurred. Try refreshing the page.'}
+            </p>
+            <button
+              onClick={() => window.location.reload()}
+              style={{
+                padding: '10px 24px',
+                borderRadius: 10,
+                border: 'none',
+                background: '#34d399',
+                color: '#000',
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Refresh page
+            </button>
+            {this.state.error && (
+              <pre
+                style={{
+                  marginTop: 20,
+                  padding: 12,
+                  background: '#111113',
+                  border: '1px solid #1e1e24',
+                  borderRadius: 8,
+                  fontSize: 10,
+                  color: '#8a8a94',
+                  textAlign: 'left',
+                  overflow: 'auto',
+                  maxHeight: 100,
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-all',
+                }}
+              >
+                {this.state.error.message}
+              </pre>
+            )}
+          </div>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 const LandingView = React.lazy(() => import('./views/LandingView').then(m => ({ default: m.LandingView })))
 
@@ -109,8 +210,10 @@ function AppContent() {
 
 export default function App() {
   return (
-    <SupabaseProvider>
-      <AppContent />
-    </SupabaseProvider>
+    <AppErrorBoundary>
+      <SupabaseProvider>
+        <AppContent />
+      </SupabaseProvider>
+    </AppErrorBoundary>
   )
 }

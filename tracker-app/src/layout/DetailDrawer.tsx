@@ -144,6 +144,30 @@ export function DetailDrawer() {
           overflow: 'hidden',
         }}
       >
+        {/* Mobile close bar — visible only on small screens */}
+        <button
+          onClick={closeDrawer}
+          aria-label="Close drawer"
+          className="drawer-mobile-close"
+          style={{
+            display: 'none', // shown via CSS media query
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6,
+            padding: '10px 0',
+            background: 'var(--bg-elevated)',
+            borderBottom: '1px solid var(--border)',
+            color: 'var(--text-secondary)',
+            fontSize: 12,
+            fontWeight: 500,
+            cursor: 'pointer',
+            width: '100%',
+            flexShrink: 0,
+          }}
+        >
+          <span style={{ width: 36, height: 4, borderRadius: 2, background: 'var(--text-tertiary)', opacity: 0.5 }} />
+        </button>
+
         {/* ── Header ── */}
         <div
           style={{
@@ -571,6 +595,7 @@ function DateDetailRow({ label, value, onSave, formatted }: { label: string; val
         type="date"
         value={value}
         onChange={(e) => onSave(e.target.value)}
+        aria-label={`${label} date`}
         style={{
           background: 'var(--bg-elevated)',
           border: '1px solid var(--border)',

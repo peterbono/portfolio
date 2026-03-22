@@ -1,6 +1,12 @@
 import { useState } from 'react'
 import { Check, X, Zap, Flame, Shield, Clock } from 'lucide-react'
-import { PLAN_CONFIGS, type PlanConfig, createCheckoutSession } from '../lib/billing'
+import {
+  PLAN_CONFIGS,
+  type PlanConfig,
+  redirectToCheckout,
+  isStripeConfigured,
+  hasPriceIds,
+} from '../lib/billing'
 import { usePlan } from '../hooks/usePlan'
 
 // ─── Responsive CSS injection ────────────────────────────────────────
@@ -139,17 +145,30 @@ function PricingCard({
   isBoost: boolean
 }) {
   const [hovering, setHovering] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   // Boost is always weekly; for others, show weekly or monthly
   const showWeekly = weekly || config.weeklyOnly
   const price = showWeekly ? config.priceWeekly : config.priceMonthly
   const period = showWeekly ? '/wk' : '/mo'
 
+  const stripeReady = isStripeConfigured() && hasPriceIds(config.tier)
+
   const handleUpgrade = async () => {
     if (isCurrentPlan || config.tier === 'free') return
-    const url = await createCheckoutSession(config.tier)
-    console.log('Checkout URL:', url)
-    // TODO: redirect to Stripe checkout
+    setError(null)
+    setLoading(true)
+    try {
+      const interval = showWeekly ? 'weekly' as const : 'monthly' as const
+      await redirectToCheckout(config.tier, interval)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Checkout failed'
+      setError(msg)
+      console.error('[pricing] checkout error:', err)
+    } finally {
+      setLoading(false)
+    }
   }
 
   const tierIcon = isBoost
@@ -167,11 +186,15 @@ function PricingCard({
 
   const ctaText = isCurrentPlan
     ? 'Current Plan'
-    : config.tier === 'free'
-      ? 'Start free'
-      : isBoost
-        ? 'Start your sprint'
-        : 'Start this week'
+    : loading
+      ? 'Redirecting...'
+      : config.tier === 'free'
+        ? 'Start free'
+        : isBoost
+          ? 'Start your sprint'
+          : 'Start this week'
+
+  const isDisabled = isCurrentPlan || loading || (config.tier !== 'free' && !stripeReady)
 
   return (
     <div
@@ -222,16 +245,21 @@ function PricingCard({
       {/* CTA */}
       <button
         onClick={handleUpgrade}
-        disabled={isCurrentPlan}
+        disabled={isDisabled}
         style={{
           ...styles.ctaBtn,
           ...(isHighlighted ? styles.ctaBtnHighlighted : {}),
           ...(isBoost ? styles.ctaBtnBoost : {}),
-          ...(isCurrentPlan ? styles.ctaBtnCurrent : {}),
+          ...(isDisabled ? styles.ctaBtnCurrent : {}),
         }}
       >
         {ctaText}
       </button>
+
+      {/* Error message */}
+      {error && (
+        <p style={styles.errorText}>{error}</p>
+      )}
 
       {/* Search duration estimate */}
       <p style={styles.durationEstimate}>
@@ -503,6 +531,15 @@ const styles: Record<string, React.CSSProperties> = {
   ctaBtnCurrent: {
     opacity: 0.5,
     cursor: 'default',
+  },
+
+  // Error
+  errorText: {
+    fontSize: 11,
+    color: '#ef4444',
+    textAlign: 'center' as const,
+    marginBottom: 4,
+    padding: '0 4px',
   },
 
   // Duration estimate

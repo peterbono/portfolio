@@ -12,7 +12,8 @@ export function SettingsView() {
   const { requireAuth } = useAuthWall()
 
   const [importStatus, setImportStatus] = useState<string | null>(null)
-  const { supabase } = useSupabase()
+  const { supabase, user } = useSupabase()
+  const isAuthenticated = !!user
 
   const [apiKey, setApiKey] = useState(() => {
     try { return localStorage.getItem('tracker_anthropic_key') || '' }
@@ -132,116 +133,118 @@ export function SettingsView() {
         <p style={styles.subtitle}>Manage sync, data, and preferences</p>
       </div>
 
-      {/* Gmail Sync */}
-      <section style={styles.section}>
-        <h2 style={styles.sectionTitle}>Gmail Sync</h2>
+      {/* Gmail Sync — only for authenticated users */}
+      {isAuthenticated && (
+        <section style={styles.section}>
+          <h2 style={styles.sectionTitle}>Gmail Sync</h2>
 
-        {gmailConnected ? (
-          <>
-            {/* Connection status */}
-            <div style={styles.fieldGroup}>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '10px 14px',
-                borderRadius: 'var(--radius-md)',
-                background: 'rgba(52, 211, 153, 0.08)',
-                border: '1px solid rgba(52, 211, 153, 0.2)',
-                fontSize: 13,
-                color: '#34d399',
-              }}>
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#34d399', flexShrink: 0 }} />
-                Gmail connected{gmailEmail ? ` as ${gmailEmail}` : ''}
-              </div>
-            </div>
-
-            {/* Last scan info */}
-            <div style={styles.fieldGroup}>
-              <label style={styles.label}>Last Scan</label>
-              <span style={styles.value}>
-                {gmailLastScan ? (
-                  <>
-                    {new Date(gmailLastScan).toLocaleString()}
-                    {gmailEvents.length > 0 && (
-                      <span style={{ color: 'var(--text-tertiary)', marginLeft: 8 }}>
-                        — Found {gmailEvents.length} event{gmailEvents.length !== 1 ? 's' : ''}
-                      </span>
-                    )}
-                  </>
-                ) : 'Never'}
-              </span>
-            </div>
-
-            {/* Scan + Disconnect buttons */}
-            <div style={{ ...styles.fieldGroup, display: 'flex', gap: 8 }}>
-              <button
-                style={{ ...styles.btnPrimary, opacity: gmailScanning ? 0.6 : 1 }}
-                onClick={() => {
-                  if (!requireAuth('sync_gmail', () => gmailScanNow())) return
-                  gmailScanNow()
-                }}
-                disabled={gmailScanning}
-              >
-                {gmailScanning ? 'Scanning...' : 'Scan Now'}
-              </button>
-              <button style={styles.btnSecondary} onClick={handleDisconnectGmail}>
-                Disconnect
-              </button>
-            </div>
-
-            {gmailError && (
+          {gmailConnected ? (
+            <>
+              {/* Connection status */}
               <div style={styles.fieldGroup}>
-                <span style={styles.errorText}>{gmailError}</span>
-              </div>
-            )}
-
-            {gmailNeedsReauth && (
-              <div style={styles.fieldGroup}>
-                <button style={styles.btnPrimary} onClick={handleConnectGmail}>
-                  Reconnect Gmail
-                </button>
-              </div>
-            )}
-
-            {/* Recent events */}
-            {gmailEvents.length > 0 && (
-              <div style={styles.fieldGroup}>
-                <label style={styles.label}>Recent Events ({gmailEvents.length})</label>
-                <div style={styles.rejectionList}>
-                  {gmailEvents.slice(0, 10).map((evt, i) => (
-                    <div key={i} style={styles.rejectionItem}>
-                      <span style={{
-                        ...styles.rejectionCompany,
-                        color: evt.type === 'rejection' ? '#a855f7'
-                          : evt.type === 'interview' ? '#60a5fa'
-                            : evt.type === 'offer' ? '#fbbf24'
-                              : 'var(--text-primary)',
-                      }}>
-                        {evt.type}
-                      </span>
-                      <span style={styles.rejectionRole}>{evt.company}</span>
-                      <span style={styles.rejectionDate}>{evt.date}</span>
-                    </div>
-                  ))}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '10px 14px',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'rgba(52, 211, 153, 0.08)',
+                  border: '1px solid rgba(52, 211, 153, 0.2)',
+                  fontSize: 13,
+                  color: '#34d399',
+                }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#34d399', flexShrink: 0 }} />
+                  Gmail connected{gmailEmail ? ` as ${gmailEmail}` : ''}
                 </div>
               </div>
-            )}
-          </>
-        ) : (
-          <div style={styles.fieldGroup}>
-            <p style={styles.hint}>
-              Connect your Gmail to automatically detect rejections, interviews, and offers.
-            </p>
-            <button style={styles.btnPrimary} onClick={() => {
-              if (!requireAuth('sync_gmail', () => handleConnectGmail())) return
-              handleConnectGmail()
-            }}>
-              Connect Gmail
-            </button>
-          </div>
-        )}
-      </section>
+
+              {/* Last scan info */}
+              <div style={styles.fieldGroup}>
+                <label style={styles.label}>Last Scan</label>
+                <span style={styles.value}>
+                  {gmailLastScan ? (
+                    <>
+                      {new Date(gmailLastScan).toLocaleString()}
+                      {gmailEvents.length > 0 && (
+                        <span style={{ color: 'var(--text-tertiary)', marginLeft: 8 }}>
+                          — Found {gmailEvents.length} event{gmailEvents.length !== 1 ? 's' : ''}
+                        </span>
+                      )}
+                    </>
+                  ) : 'Never'}
+                </span>
+              </div>
+
+              {/* Scan + Disconnect buttons */}
+              <div style={{ ...styles.fieldGroup, display: 'flex', gap: 8 }}>
+                <button
+                  style={{ ...styles.btnPrimary, opacity: gmailScanning ? 0.6 : 1 }}
+                  onClick={() => {
+                    if (!requireAuth('sync_gmail', () => gmailScanNow())) return
+                    gmailScanNow()
+                  }}
+                  disabled={gmailScanning}
+                >
+                  {gmailScanning ? 'Scanning...' : 'Scan Now'}
+                </button>
+                <button style={styles.btnSecondary} onClick={handleDisconnectGmail}>
+                  Disconnect
+                </button>
+              </div>
+
+              {gmailError && (
+                <div style={styles.fieldGroup}>
+                  <span style={styles.errorText}>{gmailError}</span>
+                </div>
+              )}
+
+              {gmailNeedsReauth && (
+                <div style={styles.fieldGroup}>
+                  <button style={styles.btnPrimary} onClick={handleConnectGmail}>
+                    Reconnect Gmail
+                  </button>
+                </div>
+              )}
+
+              {/* Recent events */}
+              {gmailEvents.length > 0 && (
+                <div style={styles.fieldGroup}>
+                  <label style={styles.label}>Recent Events ({gmailEvents.length})</label>
+                  <div style={styles.rejectionList}>
+                    {gmailEvents.slice(0, 10).map((evt, i) => (
+                      <div key={i} style={styles.rejectionItem}>
+                        <span style={{
+                          ...styles.rejectionCompany,
+                          color: evt.type === 'rejection' ? '#a855f7'
+                            : evt.type === 'interview' ? '#60a5fa'
+                              : evt.type === 'offer' ? '#fbbf24'
+                                : 'var(--text-primary)',
+                        }}>
+                          {evt.type}
+                        </span>
+                        <span style={styles.rejectionRole}>{evt.company}</span>
+                        <span style={styles.rejectionDate}>{evt.date}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <div style={styles.fieldGroup}>
+              <p style={styles.hint}>
+                Connect your Gmail to automatically detect rejections, interviews, and offers.
+              </p>
+              <button style={styles.btnPrimary} onClick={() => {
+                if (!requireAuth('sync_gmail', () => handleConnectGmail())) return
+                handleConnectGmail()
+              }}>
+                Connect Gmail
+              </button>
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Cloud Sync */}
       <section style={styles.section}>
@@ -249,34 +252,36 @@ export function SettingsView() {
         <MigrationBanner />
       </section>
 
-      {/* AI Coach */}
-      <section style={styles.section}>
-        <h2 style={styles.sectionTitle}>AI Coach</h2>
-        <div style={styles.fieldGroup}>
-          <label style={styles.label}>Anthropic API Key</label>
-          <p style={styles.hint}>Required for AI-powered coaching. Uses Claude Sonnet (~$0.03/briefing).</p>
-          <div style={styles.inputRow}>
-            <input
-              style={{
-                ...styles.input,
-                ...(apiKeyError ? { borderColor: '#f43f5e' } : {}),
-              }}
-              type="password"
-              value={apiKey}
-              onChange={(e) => { setApiKey(e.target.value); setApiKeyError(null) }}
-              placeholder="sk-ant-api03-..."
-              aria-label="Anthropic API Key"
-              aria-invalid={!!apiKeyError}
-            />
-            <button style={styles.btnPrimary} onClick={handleSaveApiKey}>
-              {apiKeySaved ? 'Saved!' : 'Save'}
-            </button>
+      {/* AI Coach — only for authenticated users */}
+      {isAuthenticated && (
+        <section style={styles.section}>
+          <h2 style={styles.sectionTitle}>AI Coach</h2>
+          <div style={styles.fieldGroup}>
+            <label style={styles.label}>Anthropic API Key</label>
+            <p style={styles.hint}>Required for AI-powered coaching. Uses Claude Sonnet (~$0.03/briefing).</p>
+            <div style={styles.inputRow}>
+              <input
+                style={{
+                  ...styles.input,
+                  ...(apiKeyError ? { borderColor: '#f43f5e' } : {}),
+                }}
+                type="password"
+                value={apiKey}
+                onChange={(e) => { setApiKey(e.target.value); setApiKeyError(null) }}
+                placeholder="sk-ant-api03-..."
+                aria-label="Anthropic API Key"
+                aria-invalid={!!apiKeyError}
+              />
+              <button style={styles.btnPrimary} onClick={handleSaveApiKey}>
+                {apiKeySaved ? 'Saved!' : 'Save'}
+              </button>
+            </div>
+            {apiKeyError && (
+              <span style={styles.errorText}>{apiKeyError}</span>
+            )}
           </div>
-          {apiKeyError && (
-            <span style={styles.errorText}>{apiKeyError}</span>
-          )}
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* Data Management */}
       <section style={styles.section}>

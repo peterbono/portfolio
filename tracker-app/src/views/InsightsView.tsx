@@ -35,14 +35,14 @@ const RechartsBarChart = lazy(() =>
 
 const tooltipStyle = {
   contentStyle: {
-    background: '#1a1a1f',
-    border: '1px solid #2a2a35',
+    background: 'var(--tooltip-bg)',
+    border: '1px solid var(--tooltip-border)',
     borderRadius: 6,
-    color: '#e0e0e0',
+    color: 'var(--tooltip-text)',
     fontSize: 12,
   },
-  itemStyle: { color: '#e0e0e0' },
-  labelStyle: { color: '#a1a1aa', marginBottom: 4 },
+  itemStyle: { color: 'var(--tooltip-text)' },
+  labelStyle: { color: 'var(--tooltip-label)', marginBottom: 4 },
 }
 
 function ChartLoader() {
@@ -371,7 +371,7 @@ function QualityImpactCard() {
                 color: '#34d399',
               }}
             >
-              Always include your {bestFactor.label.toLowerCase()} -- {bestFactor.multiplier}x better response rate.
+              Always include your {bestFactor.label.toLowerCase()} — {bestFactor.multiplier}x better response rate.
             </div>
           )}
         </>
@@ -684,7 +684,7 @@ export function InsightsView() {
     <div style={styles.container}>
       <div style={styles.header}>
         <h1 style={styles.title}>Insights</h1>
-        <p style={styles.subtitle}>Thompson Sampling feedback loop -- learns from every application outcome</p>
+        <p style={styles.subtitle}>Thompson Sampling feedback loop — learns from every application outcome</p>
       </div>
 
       <InsightsBanner />

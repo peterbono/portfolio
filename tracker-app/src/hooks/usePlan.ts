@@ -7,6 +7,7 @@ import {
   getRemainingQuota,
   getCurrentUsage,
   getMinimumPlan,
+  handleCheckoutSuccess,
 } from '../lib/billing'
 
 const PLAN_STORAGE_KEY = 'tracker_user_plan'
@@ -32,8 +33,9 @@ interface UsePlanReturn {
 
 /**
  * Hook providing current user's plan, feature gating, and quota tracking.
- * For MVP: reads plan from localStorage (defaults to 'free').
- * When Supabase auth is wired, will read from profiles.plan column.
+ * Reads plan from localStorage (defaults to 'free').
+ * On mount, checks URL params for Stripe checkout success callback.
+ * When Supabase auth is wired, will also read from profiles.plan column.
  */
 export function usePlan(): UsePlanReturn {
   const [plan, setPlan] = useState<PlanTier>(() => {
@@ -48,6 +50,16 @@ export function usePlan(): UsePlanReturn {
 
   const [usage, setUsage] = useState({ applies: 0, coverLetters: 0 })
   const [loading, setLoading] = useState(false)
+
+  // Check for Stripe checkout success on mount
+  useEffect(() => {
+    const result = handleCheckoutSuccess()
+    if (result) {
+      console.log(`[usePlan] Checkout success — plan upgraded to ${result.plan} (session: ${result.sessionId})`)
+      setPlan(result.plan)
+      // TODO: Also update Supabase profiles.plan when auth is wired
+    }
+  }, [])
 
   // Fetch usage on mount and when plan changes
   useEffect(() => {

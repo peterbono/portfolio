@@ -32,14 +32,14 @@ import {
 /* ------------------------------------------------------------------ */
 const tooltipStyle = {
   contentStyle: {
-    background: '#1a1a1f',
-    border: '1px solid #2a2a35',
+    background: 'var(--tooltip-bg)',
+    border: '1px solid var(--tooltip-border)',
     borderRadius: 6,
-    color: '#e0e0e0',
+    color: 'var(--tooltip-text)',
     fontSize: 12,
   },
-  itemStyle: { color: '#e0e0e0' },
-  labelStyle: { color: '#a1a1aa', marginBottom: 4 },
+  itemStyle: { color: 'var(--tooltip-text)' },
+  labelStyle: { color: 'var(--tooltip-label)', marginBottom: 4 },
 }
 
 /* ------------------------------------------------------------------ */

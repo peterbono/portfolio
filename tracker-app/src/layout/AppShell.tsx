@@ -108,12 +108,12 @@ export function AppShell({ onBackToLanding }: { onBackToLanding?: () => void }) 
 }
 
 const EMPTY_STATES: Record<string, { icon: typeof LayoutList; title: string; description: string; ctaLabel: string }> = {
-  autopilot: { icon: Bot, title: 'Auto-apply on autopilot', description: 'Sign up to configure search profiles and let the bot apply to jobs while you sleep.', ctaLabel: 'Get started' },
-  table: { icon: LayoutList, title: 'No applications yet', description: 'Start the auto-apply bot or add jobs manually to begin tracking your job search.', ctaLabel: 'Go to Autopilot' },
-  pipeline: { icon: Kanban, title: 'Your pipeline is empty', description: 'Applications will flow through stages as you apply and hear back from companies.', ctaLabel: 'Start applying' },
-  analytics: { icon: BarChart3, title: 'No data to analyze yet', description: 'Analytics charts will populate as your application history grows. Start applying to unlock insights.', ctaLabel: 'Start the bot' },
-  coach: { icon: Flame, title: 'Your coach needs data', description: 'Apply to a few jobs and your AI coach will start giving personalized advice and daily goals.', ctaLabel: 'Go to Autopilot' },
-  insights: { icon: Brain, title: 'The AI brain is waiting', description: 'The feedback engine learns from your applications — response rates, best ATS platforms, ghost detection.', ctaLabel: 'Start applying' },
+  autopilot: { icon: Bot, title: 'Auto-apply on autopilot', description: 'Sign up to configure search profiles and let the bot apply to jobs while you sleep.', ctaLabel: 'Sign up to get started' },
+  table: { icon: LayoutList, title: 'No applications yet', description: 'Start the auto-apply bot or add jobs manually to begin tracking your job search.', ctaLabel: 'Set up Autopilot' },
+  pipeline: { icon: Kanban, title: 'Your pipeline is empty', description: 'Applications will flow through stages as you apply and hear back from companies.', ctaLabel: 'Configure Autopilot' },
+  analytics: { icon: BarChart3, title: 'No data to analyze yet', description: 'Analytics charts will populate as your application history grows. Start applying to unlock insights.', ctaLabel: 'Launch Autopilot' },
+  coach: { icon: Flame, title: 'Your coach needs data', description: 'Apply to a few jobs and your AI coach will start giving personalized advice and daily goals.', ctaLabel: 'Set up Autopilot' },
+  insights: { icon: Brain, title: 'The AI brain is waiting', description: 'The feedback engine learns from your applications — response rates, best ATS platforms, ghost detection.', ctaLabel: 'Configure Autopilot' },
 }
 
 function ActiveViewContent({ view }: { view: string }) {
