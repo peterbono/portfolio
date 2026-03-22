@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, type CSSProperties, type ReactNode } from 'react'
+import { useState, useCallback, useRef, useEffect, type CSSProperties, type ReactNode } from 'react'
 import {
   User,
   Search,
@@ -394,6 +394,16 @@ export function SettingsView() {
   const [deleteConfirm, setDeleteConfirm] = useState(false)
 
   /* ================================================================== */
+  /*  Responsive                                                          */
+  /* ================================================================== */
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  /* ================================================================== */
   /*  Render                                                              */
   /* ================================================================== */
   return (
@@ -402,6 +412,13 @@ export function SettingsView() {
         <h1 style={s.pageTitle}>Settings</h1>
         <p style={s.pageSubtitle}>Manage your account, preferences, and integrations</p>
       </div>
+
+      <div style={{
+        ...s.columnsGrid,
+        gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+      }}>
+      {/* ═══════════════ LEFT COLUMN ═══════════════ */}
+      <div style={s.column}>
 
       {/* ─────────────── 1. Profile ─────────────── */}
       <AccordionSection
@@ -412,7 +429,7 @@ export function SettingsView() {
         openSections={openSections}
         toggle={toggleSection}
       >
-        <div style={s.fieldGrid}>
+        <div style={s.profileGrid}>
           <div style={s.fieldGroup}>
             <label style={s.label}>Display Name</label>
             <input
@@ -433,15 +450,6 @@ export function SettingsView() {
             />
           </div>
           <div style={s.fieldGroup}>
-            <label style={s.label}><MapPin size={12} style={{ marginRight: 4 }} />Location</label>
-            <input
-              style={s.input}
-              value={profile.location}
-              onChange={e => updateProfile({ location: e.target.value })}
-              placeholder="Bangkok, Thailand"
-            />
-          </div>
-          <div style={s.fieldGroup}>
             <label style={s.label}><Clock size={12} style={{ marginRight: 4 }} />Timezone</label>
             <select
               style={s.select}
@@ -452,6 +460,15 @@ export function SettingsView() {
                 <option key={tz} value={tz}>{tz.replace(/_/g, ' ')}</option>
               ))}
             </select>
+          </div>
+          <div style={s.fieldGroup}>
+            <label style={s.label}><MapPin size={12} style={{ marginRight: 4 }} />Location</label>
+            <input
+              style={s.input}
+              value={profile.location}
+              onChange={e => updateProfile({ location: e.target.value })}
+              placeholder="Bangkok, Thailand"
+            />
           </div>
           <div style={s.fieldGroup}>
             <label style={s.label}><Briefcase size={12} style={{ marginRight: 4 }} />Current Role</label>
@@ -474,10 +491,10 @@ export function SettingsView() {
               ))}
             </select>
           </div>
-          <div style={s.fieldGroup}>
+          <div style={{ ...s.fieldGroup, gridColumn: '1 / -1' }}>
             <label style={s.label}>Years of Experience</label>
             <input
-              style={{ ...s.input, maxWidth: 100 }}
+              style={{ ...s.input, maxWidth: 120 }}
               type="number"
               min={0}
               max={50}
@@ -744,37 +761,47 @@ export function SettingsView() {
         openSections={openSections}
         toggle={toggleSection}
       >
-        {([
-          { key: 'applicationsSubmitted' as const, label: 'Applications Submitted', desc: 'Get notified when the bot submits an application' },
-          { key: 'rejectionsReceived' as const, label: 'Rejections Received', desc: 'Get notified when a rejection email is detected' },
-          { key: 'interviewsScheduled' as const, label: 'Interviews Scheduled', desc: 'Get notified when an interview invitation is detected' },
-          { key: 'weeklyDigest' as const, label: 'Weekly Digest', desc: 'A summary of your job search progress every Monday' },
-          { key: 'botErrors' as const, label: 'Bot Errors', desc: 'Get notified when the bot encounters an error' },
-        ]).map(item => (
-          <div key={item.key} style={s.toggleRow}>
-            <div>
-              <div style={s.toggleLabel}>{item.label}</div>
-              <div style={s.toggleDesc}>{item.desc}</div>
+        <div style={s.toggleList}>
+          {([
+            { key: 'applicationsSubmitted' as const, label: 'Applications Submitted', desc: 'Get notified when the bot submits an application' },
+            { key: 'rejectionsReceived' as const, label: 'Rejections Received', desc: 'Get notified when a rejection email is detected' },
+            { key: 'interviewsScheduled' as const, label: 'Interviews Scheduled', desc: 'Get notified when an interview invitation is detected' },
+            { key: 'weeklyDigest' as const, label: 'Weekly Digest', desc: 'A summary of your job search progress every Monday' },
+            { key: 'botErrors' as const, label: 'Bot Errors', desc: 'Get notified when the bot encounters an error' },
+          ]).map((item, idx, arr) => (
+            <div key={item.key} style={{
+              ...s.toggleRow,
+              borderBottom: idx < arr.length - 1 ? '1px solid var(--border)' : 'none',
+            }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={s.toggleLabel}>{item.label}</div>
+                <div style={s.toggleDesc}>{item.desc}</div>
+              </div>
+              <button
+                style={{
+                  ...s.toggle,
+                  background: notifPrefs[item.key] ? 'var(--accent)' : 'var(--bg-elevated)',
+                  border: notifPrefs[item.key] ? '1px solid var(--accent)' : '1px solid var(--border)',
+                }}
+                onClick={() => toggleNotif(item.key)}
+                role="switch"
+                aria-checked={notifPrefs[item.key]}
+                aria-label={item.label}
+              >
+                <div style={{
+                  ...s.toggleKnob,
+                  transform: notifPrefs[item.key] ? 'translateX(16px)' : 'translateX(2px)',
+                }} />
+              </button>
             </div>
-            <button
-              style={{
-                ...s.toggle,
-                background: notifPrefs[item.key] ? 'var(--accent)' : 'var(--bg-elevated)',
-                border: notifPrefs[item.key] ? '1px solid var(--accent)' : '1px solid var(--border)',
-              }}
-              onClick={() => toggleNotif(item.key)}
-              role="switch"
-              aria-checked={notifPrefs[item.key]}
-              aria-label={item.label}
-            >
-              <div style={{
-                ...s.toggleKnob,
-                transform: notifPrefs[item.key] ? 'translateX(16px)' : 'translateX(2px)',
-              }} />
-            </button>
-          </div>
-        ))}
+          ))}
+        </div>
       </AccordionSection>
+
+      </div>{/* END LEFT COLUMN */}
+
+      {/* ═══════════════ RIGHT COLUMN ═══════════════ */}
+      <div style={s.column}>
 
       {/* ─────────────── 5. Gmail Sync ─────────────── */}
       {isAuthenticated && (
@@ -904,6 +931,14 @@ export function SettingsView() {
         {/* Current Plan */}
         <div style={s.planCard}>
           <div style={s.planCardLeft}>
+            <span style={{
+              ...s.planBadge,
+              background: plan === 'free'
+                ? 'rgba(148, 163, 184, 0.12)'
+                : 'linear-gradient(135deg, rgba(139,92,246,0.15), rgba(168,85,247,0.25))',
+              color: plan === 'free' ? 'var(--text-secondary)' : '#a855f7',
+              borderColor: plan === 'free' ? 'var(--border)' : 'rgba(139,92,246,0.3)',
+            }}>{planConfig.name}</span>
             <div style={s.planName}>{planConfig.name} Plan</div>
             <div style={s.planPrice}>
               {plan === 'free' ? 'Free forever' : `$${planConfig.priceWeekly}/week`}
@@ -1066,12 +1101,12 @@ export function SettingsView() {
           </div>
         )}
 
-        {/* Delete Account */}
-        <div style={s.fieldGroup}>
-          <label style={{ ...s.label, color: '#f43f5e' }}>
-            <Trash2 size={12} style={{ marginRight: 4 }} />
-            Delete Account
-          </label>
+        {/* Delete Account — Danger Zone */}
+        <div style={s.dangerZone}>
+          <div style={s.dangerZoneHeader}>
+            <Trash2 size={14} color="#f43f5e" />
+            <span style={s.dangerZoneTitle}>Danger Zone</span>
+          </div>
           <p style={s.hint}>
             Permanently delete your account and all associated data. This action cannot be undone.
           </p>
@@ -1113,6 +1148,9 @@ export function SettingsView() {
           )}
         </div>
       </AccordionSection>
+
+      </div>{/* END RIGHT COLUMN */}
+      </div>{/* END COLUMNS GRID */}
     </div>
   )
 }
@@ -1125,7 +1163,6 @@ const s: Record<string, CSSProperties> = {
     height: '100%',
     overflow: 'auto',
     padding: 24,
-    maxWidth: 720,
   },
   header: {
     marginBottom: 24,
@@ -1139,6 +1176,18 @@ const s: Record<string, CSSProperties> = {
   pageSubtitle: {
     fontSize: 13,
     color: 'var(--text-tertiary)',
+  },
+
+  /* ── Two-Column Grid ─── */
+  columnsGrid: {
+    display: 'grid',
+    gap: 20,
+    alignItems: 'start',
+  },
+  column: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 0,
   },
 
   /* ── Accordion Section ─── */
@@ -1203,9 +1252,14 @@ const s: Record<string, CSSProperties> = {
   },
 
   /* ── Form Elements ─── */
+  profileGrid: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '12px 16px',
+  },
   fieldGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+    gridTemplateColumns: '1fr 1fr',
     gap: 16,
   },
   fieldGroup: {
@@ -1394,12 +1448,15 @@ const s: Record<string, CSSProperties> = {
   },
 
   /* ── Toggle Switch ─── */
+  toggleList: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+  },
   toggleRow: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: '12px 0',
-    borderBottom: '1px solid var(--border)',
     gap: 16,
   },
   toggleLabel: {
@@ -1508,6 +1565,18 @@ const s: Record<string, CSSProperties> = {
     fontSize: 13,
     color: 'var(--text-tertiary)',
   },
+  planBadge: {
+    display: 'inline-block',
+    fontSize: 11,
+    fontWeight: 700,
+    padding: '3px 10px',
+    borderRadius: 999,
+    border: '1px solid',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.05em',
+    marginBottom: 6,
+    width: 'fit-content',
+  },
   usageGrid: {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr',
@@ -1609,6 +1678,27 @@ const s: Record<string, CSSProperties> = {
     color: 'var(--text-tertiary)',
     lineHeight: 1.4,
     marginTop: 2,
+  },
+  /* ── Danger Zone ─── */
+  dangerZone: {
+    marginTop: 4,
+    padding: 16,
+    borderRadius: 'var(--radius-md)',
+    background: 'rgba(244, 63, 94, 0.04)',
+    border: '1px solid rgba(244, 63, 94, 0.2)',
+  },
+  dangerZoneHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  dangerZoneTitle: {
+    fontSize: 13,
+    fontWeight: 700,
+    color: '#f43f5e',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.03em',
   },
   deleteConfirmBox: {
     padding: 16,
