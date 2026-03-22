@@ -105,6 +105,8 @@ export function AuthView({ onBack }: AuthViewProps = {}) {
       provider: 'google',
       options: {
         redirectTo: window.location.origin,
+        scopes: 'https://www.googleapis.com/auth/gmail.readonly',
+        queryParams: { access_type: 'offline', prompt: 'consent' },
       },
     })
     if (oauthError) setError(oauthError.message)

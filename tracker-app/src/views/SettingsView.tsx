@@ -1,27 +1,18 @@
 import { useState, useCallback, useRef } from 'react'
 import { useJobs } from '../context/JobsContext'
-import { useGmailSync } from '../hooks/useGmailSync'
+import { useGmailAPI } from '../hooks/useGmailAPI'
+import { useSupabase } from '../context/SupabaseContext'
 import { STATUS_CONFIG, type JobStatus, type Job } from '../types/job'
 import { MigrationBanner } from '../components/MigrationBanner'
 import { useAuthWall } from '../hooks/useAuthWall'
-
-const GMAIL_URL_KEY = 'tracker_v2_gmail_url'
-const DEFAULT_GMAIL_URL = ''
 
 export function SettingsView() {
   const { jobs, counts, addJob } = useJobs()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { requireAuth } = useAuthWall()
 
-  const [gmailUrl, setGmailUrl] = useState(() => {
-    try {
-      return localStorage.getItem(GMAIL_URL_KEY) || DEFAULT_GMAIL_URL
-    } catch {
-      return DEFAULT_GMAIL_URL
-    }
-  })
-  const [urlSaved, setUrlSaved] = useState(false)
   const [importStatus, setImportStatus] = useState<string | null>(null)
+  const { supabase } = useSupabase()
 
   const [apiKey, setApiKey] = useState(() => {
     try { return localStorage.getItem('tracker_anthropic_key') || '' }
@@ -42,26 +33,32 @@ export function SettingsView() {
     } catch { /* ignore */ }
   }, [apiKey])
 
-  const { lastSync, rejections, isLoading, error, syncNow } = useGmailSync()
+  const {
+    isConnected: gmailConnected,
+    isScanning: gmailScanning,
+    lastScanAt: gmailLastScan,
+    events: gmailEvents,
+    error: gmailError,
+    userEmail: gmailEmail,
+    scanNow: gmailScanNow,
+    needsReauth: gmailNeedsReauth,
+  } = useGmailAPI()
 
-  const handleSaveUrl = useCallback(() => {
-    try {
-      // Validate URL format: only allow https URLs to Google Scripts
-      if (gmailUrl) {
-        try {
-          const parsed = new URL(gmailUrl)
-          if (parsed.protocol !== 'https:') return
-        } catch {
-          return // invalid URL
-        }
-      }
-      localStorage.setItem(GMAIL_URL_KEY, gmailUrl)
-      setUrlSaved(true)
-      setTimeout(() => setUrlSaved(false), 2000)
-    } catch {
-      // ignore
-    }
-  }, [gmailUrl])
+  const handleConnectGmail = useCallback(async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin,
+        scopes: 'https://www.googleapis.com/auth/gmail.readonly',
+        queryParams: { access_type: 'offline', prompt: 'consent' },
+      },
+    })
+  }, [supabase.auth])
+
+  const handleDisconnectGmail = useCallback(async () => {
+    // Sign out and sign back in without Gmail scope
+    await supabase.auth.signOut()
+  }, [supabase.auth])
 
   const handleExport = useCallback(() => {
     const blob = new Blob([JSON.stringify(jobs, null, 2)], { type: 'application/json' })
@@ -135,55 +132,110 @@ export function SettingsView() {
       {/* Gmail Sync */}
       <section style={styles.section}>
         <h2 style={styles.sectionTitle}>Gmail Sync</h2>
-        <div style={styles.fieldGroup}>
-          <label style={styles.label}>Sync URL</label>
-          <div style={styles.inputRow}>
-            <input
-              style={styles.input}
-              type="url"
-              value={gmailUrl}
-              onChange={(e) => setGmailUrl(e.target.value)}
-              placeholder="Google Apps Script URL"
-            />
-            <button style={styles.btnPrimary} onClick={handleSaveUrl}>
-              {urlSaved ? 'Saved!' : 'Save'}
-            </button>
-          </div>
-        </div>
 
-        <div style={styles.fieldGroup}>
-          <label style={styles.label}>Last Sync</label>
-          <span style={styles.value}>
-            {lastSync ? new Date(lastSync).toLocaleString() : 'Never'}
-          </span>
-        </div>
-
-        <div style={styles.fieldGroup}>
-          <button
-            style={{ ...styles.btnPrimary, opacity: isLoading ? 0.6 : 1 }}
-            onClick={() => {
-              if (!requireAuth('sync_gmail', () => syncNow())) return
-              syncNow()
-            }}
-            disabled={isLoading}
-          >
-            {isLoading ? 'Syncing...' : 'Sync Now'}
-          </button>
-          {error && <span style={styles.errorText}>{error}</span>}
-        </div>
-
-        {rejections.length > 0 && (
-          <div style={styles.fieldGroup}>
-            <label style={styles.label}>Recent Rejections ({rejections.length})</label>
-            <div style={styles.rejectionList}>
-              {rejections.slice(0, 10).map((r, i) => (
-                <div key={i} style={styles.rejectionItem}>
-                  <span style={styles.rejectionCompany}>{r.company}</span>
-                  <span style={styles.rejectionRole}>{r.role}</span>
-                  <span style={styles.rejectionDate}>{r.date}</span>
-                </div>
-              ))}
+        {gmailConnected ? (
+          <>
+            {/* Connection status */}
+            <div style={styles.fieldGroup}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '10px 14px',
+                borderRadius: 'var(--radius-md)',
+                background: 'rgba(52, 211, 153, 0.08)',
+                border: '1px solid rgba(52, 211, 153, 0.2)',
+                fontSize: 13,
+                color: '#34d399',
+              }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#34d399', flexShrink: 0 }} />
+                Gmail connected{gmailEmail ? ` as ${gmailEmail}` : ''}
+              </div>
             </div>
+
+            {/* Last scan info */}
+            <div style={styles.fieldGroup}>
+              <label style={styles.label}>Last Scan</label>
+              <span style={styles.value}>
+                {gmailLastScan ? (
+                  <>
+                    {new Date(gmailLastScan).toLocaleString()}
+                    {gmailEvents.length > 0 && (
+                      <span style={{ color: 'var(--text-tertiary)', marginLeft: 8 }}>
+                        — Found {gmailEvents.length} event{gmailEvents.length !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                  </>
+                ) : 'Never'}
+              </span>
+            </div>
+
+            {/* Scan + Disconnect buttons */}
+            <div style={{ ...styles.fieldGroup, display: 'flex', gap: 8 }}>
+              <button
+                style={{ ...styles.btnPrimary, opacity: gmailScanning ? 0.6 : 1 }}
+                onClick={() => {
+                  if (!requireAuth('sync_gmail', () => gmailScanNow())) return
+                  gmailScanNow()
+                }}
+                disabled={gmailScanning}
+              >
+                {gmailScanning ? 'Scanning...' : 'Scan Now'}
+              </button>
+              <button style={styles.btnSecondary} onClick={handleDisconnectGmail}>
+                Disconnect
+              </button>
+            </div>
+
+            {gmailError && (
+              <div style={styles.fieldGroup}>
+                <span style={styles.errorText}>{gmailError}</span>
+              </div>
+            )}
+
+            {gmailNeedsReauth && (
+              <div style={styles.fieldGroup}>
+                <button style={styles.btnPrimary} onClick={handleConnectGmail}>
+                  Reconnect Gmail
+                </button>
+              </div>
+            )}
+
+            {/* Recent events */}
+            {gmailEvents.length > 0 && (
+              <div style={styles.fieldGroup}>
+                <label style={styles.label}>Recent Events ({gmailEvents.length})</label>
+                <div style={styles.rejectionList}>
+                  {gmailEvents.slice(0, 10).map((evt, i) => (
+                    <div key={i} style={styles.rejectionItem}>
+                      <span style={{
+                        ...styles.rejectionCompany,
+                        color: evt.type === 'rejection' ? '#a855f7'
+                          : evt.type === 'interview' ? '#60a5fa'
+                            : evt.type === 'offer' ? '#fbbf24'
+                              : 'var(--text-primary)',
+                      }}>
+                        {evt.type}
+                      </span>
+                      <span style={styles.rejectionRole}>{evt.company}</span>
+                      <span style={styles.rejectionDate}>{evt.date}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        ) : (
+          <div style={styles.fieldGroup}>
+            <p style={styles.hint}>
+              Connect your Gmail to automatically detect rejections, interviews, and offers.
+            </p>
+            <button style={styles.btnPrimary} onClick={() => {
+              if (!requireAuth('sync_gmail', () => handleConnectGmail())) return
+              handleConnectGmail()
+            }}>
+              Connect Gmail
+            </button>
           </div>
         )}
       </section>

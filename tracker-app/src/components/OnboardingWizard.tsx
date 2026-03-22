@@ -13,24 +13,23 @@ import {
   Check,
   Loader2,
   Search,
-  ChevronDown,
   Globe,
   Lock,
   Unplug,
-  HelpCircle,
   AlertCircle,
 } from 'lucide-react'
 import confetti from 'canvas-confetti'
 import CompanyChipInput from './CompanyChipInput'
 import { WORLD_CITIES } from '../data/cities'
 import { JOB_TITLES as IMPORTED_JOB_TITLES } from '../data/job-titles'
+import { useSupabase } from '../context/SupabaseContext'
+import { useGmailAPI } from '../hooks/useGmailAPI'
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
 const ONBOARDING_KEY = 'tracker_v2_onboarding_done'
-const GMAIL_URL_KEY = 'tracker_v2_gmail_url'
 
 /** Maps common IANA timezones to human-readable city labels. */
 const TIMEZONE_TO_CITY: Record<string, string> = {
@@ -287,11 +286,10 @@ export function OnboardingWizard({ onComplete, defaultEmail, defaultName }: Onbo
   const [tzQuery, setTzQuery] = useState('')
   const [excludedCompanies, setExcludedCompanies] = useState<string[]>([])
 
-  // Step 3 — Gmail
-  const [gmailUrl, setGmailUrl] = useState('')
-  const [gmailTestStatus, setGmailTestStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
-  const [gmailTestMsg, setGmailTestMsg] = useState('')
-  const [showGmailHelp, setShowGmailHelp] = useState(false)
+  // Step 3 — Gmail API
+  const { supabase } = useSupabase()
+  const { isConnected: gmailConnected, isScanning: gmailScanning, events: gmailEvents, error: gmailError, scanNow: gmailScanNow, userEmail: gmailEmail } = useGmailAPI({ autoScan: false })
+  const [gmailTestDone, setGmailTestDone] = useState(false)
 
   // Attempted to proceed (for validation display)
   const [attemptedNext, setAttemptedNext] = useState(false)
@@ -470,27 +468,21 @@ export function OnboardingWizard({ onComplete, defaultEmail, defaultName }: Onbo
     setSelectedRoles(prev => prev.filter(r => r !== role))
   }, [])
 
-  const testGmailConnection = useCallback(async () => {
-    if (!gmailUrl.trim()) return
-    setGmailTestStatus('loading')
-    setGmailTestMsg('')
-    try {
-      const res = await fetch(gmailUrl.trim())
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json()
-      if (data && (Array.isArray(data.rejections) || Array.isArray(data.events) || data.lastScan)) {
-        setGmailTestStatus('success')
-        setGmailTestMsg('Connected! Gmail sync is working.')
-        localStorage.setItem(GMAIL_URL_KEY, gmailUrl.trim())
-      } else {
-        setGmailTestStatus('error')
-        setGmailTestMsg('Response received but format unexpected. Check your script.')
-      }
-    } catch (err) {
-      setGmailTestStatus('error')
-      setGmailTestMsg(err instanceof Error ? err.message : 'Connection failed')
-    }
-  }, [gmailUrl])
+  const handleConnectGmail = useCallback(async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin,
+        scopes: 'https://www.googleapis.com/auth/gmail.readonly',
+        queryParams: { access_type: 'offline', prompt: 'consent' },
+      },
+    })
+  }, [supabase.auth])
+
+  const handleTestGmailScan = useCallback(async () => {
+    await gmailScanNow()
+    setGmailTestDone(true)
+  }, [gmailScanNow])
 
   const handleComplete = useCallback(() => {
     localStorage.setItem(ONBOARDING_KEY, 'true')
@@ -508,10 +500,6 @@ export function OnboardingWizard({ onComplete, defaultEmail, defaultName }: Onbo
     }
     localStorage.setItem('tracker_v2_user_profile', JSON.stringify(profile))
 
-    if (gmailUrl.trim()) {
-      localStorage.setItem(GMAIL_URL_KEY, gmailUrl.trim())
-    }
-
     // Confetti
     const end = Date.now() + 1200
     const fire = () => {
@@ -521,7 +509,7 @@ export function OnboardingWizard({ onComplete, defaultEmail, defaultName }: Onbo
     }
     fire()
     setTimeout(onComplete, 1500)
-  }, [name, email, location, selectedRoles, experience, remoteOnly, salaryMin, timezone, excludedCompanies, gmailUrl, onComplete])
+  }, [name, email, location, selectedRoles, experience, remoteOnly, salaryMin, timezone, excludedCompanies, onComplete])
 
   // ---------------------------------------------------------------------------
   // Render helpers
@@ -835,7 +823,7 @@ export function OnboardingWizard({ onComplete, defaultEmail, defaultName }: Onbo
         )}
 
         {/* ================================================================ */}
-        {/* Step 3: Gmail Sync                                               */}
+        {/* Step 3: Gmail Sync (API)                                         */}
         {/* ================================================================ */}
         {step === 3 && (
           <div style={stepContentStyle}>
@@ -861,108 +849,88 @@ export function OnboardingWizard({ onComplete, defaultEmail, defaultName }: Onbo
               </span>
             </div>
 
-            {/* URL Input */}
             <div style={{ width: '100%' }}>
-              <div style={styles.field}>
-                <label style={styles.label}>Apps Script URL</label>
-                <input
-                  type="url"
-                  value={gmailUrl}
-                  onChange={e => { setGmailUrl(e.target.value); setGmailTestStatus('idle') }}
-                  placeholder="Paste your Google Apps Script URL"
-                  style={styles.input}
-                />
-              </div>
-
-              {/* Test result */}
-              {gmailTestStatus !== 'idle' && (
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  marginTop: 8,
-                  padding: '8px 12px',
-                  borderRadius: 'var(--radius-md)',
-                  fontSize: 13,
-                  background: gmailTestStatus === 'success'
-                    ? 'rgba(52, 211, 153, 0.1)'
-                    : gmailTestStatus === 'error'
-                      ? 'rgba(239, 68, 68, 0.1)'
-                      : 'var(--bg-elevated)',
-                  color: gmailTestStatus === 'success'
-                    ? '#34d399'
-                    : gmailTestStatus === 'error'
-                      ? '#ef4444'
-                      : 'var(--text-secondary)',
-                }}>
-                  {gmailTestStatus === 'loading' && <Loader2 size={14} style={{ animation: 'spin 0.8s linear infinite' }} />}
-                  {gmailTestStatus === 'success' && <Check size={14} />}
-                  {gmailTestStatus === 'error' && <AlertCircle size={14} />}
-                  <span>{gmailTestStatus === 'loading' ? 'Testing connection...' : gmailTestMsg}</span>
-                </div>
-              )}
-
-              {/* Test button */}
-              <button
-                onClick={testGmailConnection}
-                disabled={!gmailUrl.trim() || gmailTestStatus === 'loading'}
-                style={{
-                  ...styles.outlineBtn,
-                  marginTop: 10,
-                  opacity: gmailUrl.trim() ? 1 : 0.4,
-                  pointerEvents: gmailUrl.trim() ? 'auto' : 'none',
-                }}
-              >
-                {gmailTestStatus === 'loading' ? (
-                  <><Loader2 size={14} style={{ animation: 'spin 0.8s linear infinite' }} /> Testing...</>
-                ) : (
-                  <><Zap size={14} /> Test Connection</>
-                )}
-              </button>
-
-              {/* Help accordion */}
-              <button
-                onClick={() => setShowGmailHelp(!showGmailHelp)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  fontSize: 12,
-                  color: 'var(--text-tertiary)',
-                  marginTop: 12,
-                  cursor: 'pointer',
-                  padding: 0,
-                  background: 'none',
-                  border: 'none',
-                }}
-              >
-                <HelpCircle size={14} />
-                How to set this up
-                <ChevronDown
-                  size={14}
-                  style={{
-                    transform: showGmailHelp ? 'rotate(180deg)' : 'rotate(0)',
-                    transition: 'transform 200ms ease',
-                  }}
-                />
-              </button>
-              {showGmailHelp && (
-                <div style={styles.helpBox}>
-                  <div style={styles.helpStep}>
-                    <span style={styles.helpNum}>1</span>
-                    <span>Open <strong>Google Apps Script</strong> at script.google.com</span>
+              {gmailConnected ? (
+                <>
+                  {/* Connected state */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '12px 16px',
+                    borderRadius: 'var(--radius-md)',
+                    fontSize: 13,
+                    background: 'rgba(52, 211, 153, 0.1)',
+                    border: '1px solid rgba(52, 211, 153, 0.25)',
+                    color: '#34d399',
+                    marginBottom: 12,
+                  }}>
+                    <Check size={16} />
+                    <span>Gmail connected{gmailEmail ? ` as ${gmailEmail}` : ''}</span>
                   </div>
-                  <div style={styles.helpStep}>
-                    <span style={styles.helpNum}>2</span>
-                    <span>Copy our template script (handles Gmail label scanning)</span>
-                  </div>
-                  <div style={styles.helpStep}>
-                    <span style={styles.helpNum}>3</span>
-                    <span>
-                      Click <strong>Deploy &gt; New deployment</strong>, choose "Web app", then paste the URL here
-                    </span>
-                  </div>
-                </div>
+
+                  {/* Test scan button */}
+                  <button
+                    onClick={handleTestGmailScan}
+                    disabled={gmailScanning}
+                    style={{
+                      ...styles.outlineBtn,
+                      opacity: gmailScanning ? 0.6 : 1,
+                    }}
+                  >
+                    {gmailScanning ? (
+                      <><Loader2 size={14} style={{ animation: 'spin 0.8s linear infinite' }} /> Scanning...</>
+                    ) : (
+                      <><Zap size={14} /> Test Scan</>
+                    )}
+                  </button>
+
+                  {/* Scan results */}
+                  {gmailTestDone && !gmailScanning && (
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      marginTop: 8,
+                      padding: '8px 12px',
+                      borderRadius: 'var(--radius-md)',
+                      fontSize: 13,
+                      background: gmailError ? 'rgba(239, 68, 68, 0.1)' : 'rgba(52, 211, 153, 0.1)',
+                      color: gmailError ? '#ef4444' : '#34d399',
+                    }}>
+                      {gmailError ? (
+                        <><AlertCircle size={14} /> <span>{gmailError}</span></>
+                      ) : (
+                        <><Check size={14} /> <span>Found {gmailEvents.length} job event{gmailEvents.length !== 1 ? 's' : ''}</span></>
+                      )}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  {/* Not connected — show Connect button */}
+                  <button
+                    onClick={handleConnectGmail}
+                    style={{
+                      ...styles.outlineBtn,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 10,
+                    }}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                      <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 01-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/>
+                      <path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 009 18z" fill="#34A853"/>
+                      <path d="M3.964 10.71A5.41 5.41 0 013.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.997 8.997 0 000 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" fill="#FBBC05"/>
+                      <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 00.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z" fill="#EA4335"/>
+                    </svg>
+                    Connect Gmail
+                  </button>
+                  <p style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 8, textAlign: 'center' as const }}>
+                    Sign in with Google to grant read-only Gmail access
+                  </p>
+                </>
               )}
             </div>
 

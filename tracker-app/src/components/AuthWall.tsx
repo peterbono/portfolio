@@ -144,7 +144,11 @@ export function AuthWall() {
     setError(null)
     const { error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: window.location.origin },
+      options: {
+        redirectTo: window.location.origin,
+        scopes: 'https://www.googleapis.com/auth/gmail.readonly',
+        queryParams: { access_type: 'offline', prompt: 'consent' },
+      },
     })
     if (oauthError) setError(oauthError.message)
   }
