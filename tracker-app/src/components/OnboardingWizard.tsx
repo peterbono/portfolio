@@ -22,6 +22,8 @@ import {
 } from 'lucide-react'
 import confetti from 'canvas-confetti'
 import CompanyChipInput from './CompanyChipInput'
+import { WORLD_CITIES } from '../data/cities'
+import { JOB_TITLES as IMPORTED_JOB_TITLES } from '../data/job-titles'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -76,47 +78,8 @@ const TIMEZONE_TO_CITY: Record<string, string> = {
 
 const EXPERIENCE_LEVELS = ['Junior', 'Mid', 'Senior', 'Lead', 'Principal']
 
-const JOB_TITLES = [
-  'Software Engineer', 'Frontend Developer', 'Backend Developer', 'Full Stack Developer',
-  'Mobile Developer', 'iOS Developer', 'Android Developer', 'React Developer',
-  'Node.js Developer', 'Python Developer', 'Java Developer', 'Go Developer',
-  'Rust Developer', 'DevOps Engineer', 'SRE / Site Reliability Engineer',
-  'Cloud Engineer', 'Platform Engineer', 'Infrastructure Engineer',
-  'Data Engineer', 'Data Scientist', 'Data Analyst', 'Machine Learning Engineer',
-  'AI Engineer', 'ML Ops Engineer', 'Business Intelligence Analyst',
-  'Product Designer', 'UX Designer', 'UI Designer', 'UX Researcher',
-  'Visual Designer', 'Interaction Designer', 'Design Systems Designer',
-  'Brand Designer', 'Motion Designer', 'Graphic Designer',
-  'Product Manager', 'Technical Program Manager', 'Engineering Manager',
-  'Project Manager', 'Scrum Master', 'Agile Coach',
-  'QA Engineer', 'SDET', 'Test Automation Engineer', 'Quality Assurance Lead',
-  'Security Engineer', 'Cybersecurity Analyst', 'Penetration Tester',
-  'Solutions Architect', 'Enterprise Architect', 'Technical Architect',
-  'Technical Writer', 'Documentation Engineer',
-  'Marketing Manager', 'Growth Marketing Manager', 'Content Marketing Manager',
-  'SEO Specialist', 'PPC Specialist', 'Social Media Manager',
-  'Digital Marketing Manager', 'Performance Marketing Manager',
-  'Sales Representative', 'Account Executive', 'Business Development Rep',
-  'Sales Engineer', 'Solutions Consultant',
-  'Customer Success Manager', 'Customer Support Engineer', 'Technical Support',
-  'Business Analyst', 'Systems Analyst', 'Operations Manager',
-  'HR Manager', 'Recruiter', 'Technical Recruiter', 'People Operations',
-  'Finance Manager', 'Financial Analyst', 'Accounting Manager',
-  'Legal Counsel', 'Compliance Officer',
-  'CTO', 'VP Engineering', 'VP Product', 'VP Design',
-  'Head of Engineering', 'Head of Product', 'Head of Design',
-  'Director of Engineering', 'Director of Product', 'Director of Design',
-  'Staff Engineer', 'Principal Engineer', 'Distinguished Engineer',
-  'Staff Designer', 'Principal Designer', 'Lead Designer',
-  'Game Developer', 'Game Designer', 'Unity Developer', 'Unreal Developer',
-  'Blockchain Developer', 'Smart Contract Engineer', 'Web3 Developer',
-  'Embedded Systems Engineer', 'Firmware Engineer', 'Hardware Engineer',
-  'Network Engineer', 'Database Administrator', 'Systems Administrator',
-  'Salesforce Developer', 'SAP Consultant', 'ERP Consultant',
-  'Supply Chain Analyst', 'Operations Analyst', 'Strategy Consultant',
-  'Executive Assistant', 'Office Manager', 'Administrative Assistant',
-  'Content Creator', 'Copywriter', 'Video Producer', 'Photographer',
-]
+// 200+ job titles from dataset (imported)
+const JOB_TITLES = IMPORTED_JOB_TITLES
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -396,25 +359,14 @@ export function OnboardingWizard({ onComplete, defaultEmail, defaultName }: Onbo
   }, [])
 
   // City autocomplete — instant local + debounced API
-  const POPULAR_CITIES = [
-    'Bangkok, Thailand', 'Singapore', 'Tokyo, Japan', 'Seoul, South Korea',
-    'Dubai, UAE', 'Mumbai, India', 'Bangalore, India', 'Sydney, Australia',
-    'Melbourne, Australia', 'Hong Kong', 'Berlin, Germany', 'London, UK',
-    'Paris, France', 'Amsterdam, Netherlands', 'Barcelona, Spain',
-    'New York, USA', 'San Francisco, USA', 'Toronto, Canada',
-    'Jakarta, Indonesia', 'Kuala Lumpur, Malaysia', 'Ho Chi Minh, Vietnam',
-    'Taipei, Taiwan', 'Shanghai, China', 'Lisbon, Portugal', 'Dublin, Ireland',
-    'Stockholm, Sweden', 'Copenhagen, Denmark', 'Tel Aviv, Israel',
-    'Cairo, Egypt', 'Lagos, Nigeria', 'Nairobi, Kenya',
-    'São Paulo, Brazil', 'Mexico City, Mexico', 'Buenos Aires, Argentina',
-    'Remote', 'Hybrid',
-  ]
+  // 600+ cities from dataset — instant local filter
+  const CITY_LIST = WORLD_CITIES
 
   // Instant local filter (no debounce)
   const localCityMatches = useMemo(() => {
     if (locationQuery.length < 2) return []
     const q = locationQuery.toLowerCase()
-    return POPULAR_CITIES.filter(c => c.toLowerCase().includes(q)).slice(0, 6)
+    return CITY_LIST.filter(c => c.toLowerCase().includes(q)).slice(0, 6)
   }, [locationQuery])
 
   // Show local results immediately
