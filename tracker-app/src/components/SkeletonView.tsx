@@ -1,31 +1,7 @@
-import { useEffect, useRef } from 'react'
-
-// ─── Shimmer animation (injected once) ──────────────────────────────
-const SHIMMER_ID = 'skeleton-shimmer-style'
-
-function useShimmerStyle() {
-  const injected = useRef(false)
-  useEffect(() => {
-    if (injected.current || document.getElementById(SHIMMER_ID)) return
-    injected.current = true
-    const style = document.createElement('style')
-    style.id = SHIMMER_ID
-    style.textContent = `
-      @keyframes skeleton-shimmer {
-        0% { background-position: -400px 0; }
-        100% { background-position: 400px 0; }
-      }
-    `
-    document.head.appendChild(style)
-  }, [])
-}
-
 // ─── Primitives ─────────────────────────────────────────────────────
 
-const shimmerBase: React.CSSProperties = {
-  background: 'linear-gradient(90deg, rgba(255,255,255,0.06) 25%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0.06) 75%)',
-  backgroundSize: '800px 100%',
-  animation: 'skeleton-shimmer 1.8s ease-in-out infinite',
+const staticBase: React.CSSProperties = {
+  background: 'rgba(255,255,255,0.06)',
 }
 
 function SkeletonBar({ width = '100%', height = 12, radius = 6, style }: {
@@ -37,7 +13,7 @@ function SkeletonBar({ width = '100%', height = 12, radius = 6, style }: {
   return (
     <div
       style={{
-        ...shimmerBase,
+        ...staticBase,
         width,
         height,
         borderRadius: radius,
@@ -52,7 +28,7 @@ function SkeletonCircle({ size = 32, style }: { size?: number; style?: React.CSS
   return (
     <div
       style={{
-        ...shimmerBase,
+        ...staticBase,
         width: size,
         height: size,
         borderRadius: '50%',
@@ -84,7 +60,7 @@ function SkeletonCard({ children, style }: { children?: React.ReactNode; style?:
 // ─── Table Skeleton ─────────────────────────────────────────────────
 
 export function TableSkeleton() {
-  useShimmerStyle()
+
   return (
     <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 0 }}>
       {/* Stat cards row */}
@@ -162,7 +138,7 @@ function PipelineColumn({ cards }: { cards: number }) {
 }
 
 export function PipelineSkeleton() {
-  useShimmerStyle()
+
   return (
     <div style={{ padding: '20px 24px' }}>
       {/* Search bar */}
@@ -184,7 +160,7 @@ export function PipelineSkeleton() {
 // ─── Analytics Skeleton ─────────────────────────────────────────────
 
 export function AnalyticsSkeleton() {
-  useShimmerStyle()
+
   return (
     <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 20 }}>
       {/* Stat cards */}
@@ -265,7 +241,7 @@ export function AnalyticsSkeleton() {
 // ─── Coach Skeleton ─────────────────────────────────────────────────
 
 export function CoachSkeleton() {
-  useShimmerStyle()
+
   return (
     <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Streak card */}
@@ -329,7 +305,7 @@ export function CoachSkeleton() {
 // ─── Insights Skeleton ──────────────────────────────────────────────
 
 export function InsightsSkeleton() {
-  useShimmerStyle()
+
   return (
     <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Bot IQ header */}

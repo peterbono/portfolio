@@ -80,6 +80,9 @@ const VIEWS_WITH_FILTERS = new Set(['table', 'pipeline', 'analytics'])
 export function AppShell({ onBackToLanding }: { onBackToLanding?: () => void }) {
   const { activeView, drawerOpen, selectedJobId } = useUI()
   const { isDemo, clearDemoData } = useJobs()
+  const { session } = useSupabase()
+  const isAnonymous = !session
+  const isGatedView = activeView in EMPTY_STATES
 
   return (
     <div style={styles.container}>
@@ -90,7 +93,7 @@ export function AppShell({ onBackToLanding }: { onBackToLanding?: () => void }) 
             <DemoBanner onClearDemo={clearDemoData} />
           </div>
         )}
-        {VIEWS_WITH_FILTERS.has(activeView) && <GlobalFilters />}
+        {VIEWS_WITH_FILTERS.has(activeView) && !(isAnonymous && isGatedView) && <GlobalFilters />}
         <ActiveViewContent view={activeView} />
       </main>
       {drawerOpen && selectedJobId && <DetailDrawer />}
