@@ -11,10 +11,12 @@ import {
   Download,
   Shield,
   Zap,
+  CheckCircle,
 } from 'lucide-react'
 import { useSupabase } from '../context/SupabaseContext'
 import { useAuthWallContext, type AuthWallTrigger } from '../context/AuthWallContext'
 import { useJobs } from '../context/JobsContext'
+import { validateEmailFormat, getPasswordStrength } from '../utils/email-validation'
 
 /* ------------------------------------------------------------------ */
 /*  Trigger content config                                             */
@@ -100,6 +102,16 @@ export function AuthWall() {
   const [fullName, setFullName] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [confirmationSent, setConfirmationSent] = useState(false)
+
+  // Inline validation state
+  const [emailTouched, setEmailTouched] = useState(false)
+  const [nameTouched, setNameTouched] = useState(false)
+
+  // Inline errors
+  const emailError = emailTouched ? validateEmailFormat(email) : ''
+  const nameError = nameTouched && !fullName.trim() ? 'Name is required' : ''
+  const pwStrength = getPasswordStrength(password)
 
   // When auth succeeds externally (e.g. Google OAuth redirect), auto-complete
   useEffect(() => {
@@ -117,6 +129,9 @@ export function AuthWall() {
       setFullName('')
       setError(null)
       setLoading(false)
+      setConfirmationSent(false)
+      setEmailTouched(false)
+      setNameTouched(false)
     }
   }, [authWall.trigger])
 
@@ -137,6 +152,16 @@ export function AuthWall() {
   const handleEmailSignUp = async (e: FormEvent) => {
     e.preventDefault()
     setError(null)
+    setConfirmationSent(false)
+
+    // Trigger inline validation
+    setNameTouched(true)
+    setEmailTouched(true)
+
+    if (!fullName.trim()) return
+    const emailErr = validateEmailFormat(email)
+    if (emailErr) return
+
     if (password.length < 8) {
       setError('Password must be at least 8 characters')
       return
@@ -147,13 +172,18 @@ export function AuthWall() {
     }
     setLoading(true)
     try {
-      const { error: signUpError } = await supabase.auth.signUp({
+      const { data, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
         options: { data: { full_name: fullName } },
       })
-      if (signUpError) setError(signUpError.message)
-      // Success handled by session listener
+      if (signUpError) {
+        setError(signUpError.message)
+      } else if (data.user && !data.session) {
+        // Email confirmation required
+        setConfirmationSent(true)
+      }
+      // If session exists, success is handled by session listener
     } catch {
       setError('An unexpected error occurred')
     } finally {
@@ -164,6 +194,9 @@ export function AuthWall() {
   const handleEmailSignIn = async (e: FormEvent) => {
     e.preventDefault()
     setError(null)
+    setEmailTouched(true)
+    const emailErr = validateEmailFormat(email)
+    if (emailErr) return
     setLoading(true)
     try {
       const { error: signInError } = await supabase.auth.signInWithPassword({
@@ -211,8 +244,21 @@ export function AuthWall() {
         {/* Error display */}
         {error && <div style={styles.error}>{error}</div>}
 
+        {/* Email confirmation sent */}
+        {confirmationSent && (
+          <div style={styles.confirmationBox}>
+            <Mail size={20} color="var(--accent)" style={{ flexShrink: 0, marginTop: 2 }} />
+            <div>
+              <strong style={{ display: 'block', marginBottom: 4 }}>Check your email for a confirmation link</strong>
+              <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                We sent a verification email to <strong>{email}</strong>. Click the link inside to activate your account.
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* Auth options */}
-        {mode === 'options' && (
+        {mode === 'options' && !confirmationSent && (
           <div style={styles.authSection}>
             <button style={styles.googleBtn} onClick={handleGoogleOAuth}>
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
@@ -256,48 +302,87 @@ export function AuthWall() {
         )}
 
         {/* Email sign-up form */}
-        {mode === 'email-signup' && (
+        {mode === 'email-signup' && !confirmationSent && (
           <form onSubmit={handleEmailSignUp} style={styles.form}>
-            <div style={styles.inputGroup}>
-              <User size={16} color="var(--text-tertiary)" style={styles.inputIcon} />
-              <input
-                type="text"
-                placeholder="Full name"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                required
-                maxLength={100}
-                autoComplete="name"
-                style={styles.input}
-              />
+            {/* Name */}
+            <div style={{ width: '100%' }}>
+              <div style={styles.inputGroup}>
+                <User size={16} color="var(--text-tertiary)" style={styles.inputIcon} />
+                <input
+                  type="text"
+                  placeholder="Full name"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  onBlur={() => setNameTouched(true)}
+                  required
+                  maxLength={100}
+                  autoComplete="name"
+                  style={{
+                    ...styles.input,
+                    ...(nameError ? styles.inputErrorBorder : {}),
+                  }}
+                />
+              </div>
+              {nameError && <div style={styles.inlineError}>{nameError}</div>}
             </div>
-            <div style={styles.inputGroup}>
-              <Mail size={16} color="var(--text-tertiary)" style={styles.inputIcon} />
-              <input
-                type="email"
-                placeholder="Email address"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                maxLength={254}
-                autoComplete="email"
-                style={styles.input}
-              />
+
+            {/* Email */}
+            <div style={{ width: '100%' }}>
+              <div style={styles.inputGroup}>
+                <Mail size={16} color="var(--text-tertiary)" style={styles.inputIcon} />
+                <input
+                  type="email"
+                  placeholder="Email address"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  onBlur={() => setEmailTouched(true)}
+                  required
+                  maxLength={254}
+                  autoComplete="email"
+                  style={{
+                    ...styles.input,
+                    ...(emailError ? styles.inputErrorBorder : {}),
+                  }}
+                />
+              </div>
+              {emailError && <div style={styles.inlineError}>{emailError}</div>}
             </div>
-            <div style={styles.inputGroup}>
-              <Lock size={16} color="var(--text-tertiary)" style={styles.inputIcon} />
-              <input
-                type="password"
-                placeholder="Password (min 8 characters)"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                minLength={8}
-                maxLength={128}
-                autoComplete="new-password"
-                style={styles.input}
-              />
+
+            {/* Password */}
+            <div style={{ width: '100%' }}>
+              <div style={styles.inputGroup}>
+                <Lock size={16} color="var(--text-tertiary)" style={styles.inputIcon} />
+                <input
+                  type="password"
+                  placeholder="Password (min 8 characters)"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  minLength={8}
+                  maxLength={128}
+                  autoComplete="new-password"
+                  style={styles.input}
+                />
+              </div>
+              {/* Password strength indicator */}
+              {password.length > 0 && (
+                <div style={{ marginTop: 6 }}>
+                  <div style={styles.strengthBarBg}>
+                    <div style={{
+                      height: '100%',
+                      borderRadius: 2,
+                      background: pwStrength.color,
+                      width: `${pwStrength.percent}%`,
+                      transition: 'width 200ms ease, background 200ms ease',
+                    }} />
+                  </div>
+                  <span style={{ fontSize: 11, color: pwStrength.color, marginTop: 2, display: 'block' }}>
+                    {pwStrength.label}
+                  </span>
+                </div>
+              )}
             </div>
+
             <button
               type="submit"
               disabled={loading}
@@ -317,20 +402,27 @@ export function AuthWall() {
         )}
 
         {/* Email sign-in form */}
-        {mode === 'email-signin' && (
+        {mode === 'email-signin' && !confirmationSent && (
           <form onSubmit={handleEmailSignIn} style={styles.form}>
-            <div style={styles.inputGroup}>
-              <Mail size={16} color="var(--text-tertiary)" style={styles.inputIcon} />
-              <input
-                type="email"
-                placeholder="Email address"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                maxLength={254}
-                autoComplete="email"
-                style={styles.input}
-              />
+            <div style={{ width: '100%' }}>
+              <div style={styles.inputGroup}>
+                <Mail size={16} color="var(--text-tertiary)" style={styles.inputIcon} />
+                <input
+                  type="email"
+                  placeholder="Email address"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  onBlur={() => setEmailTouched(true)}
+                  required
+                  maxLength={254}
+                  autoComplete="email"
+                  style={{
+                    ...styles.input,
+                    ...(emailError ? styles.inputErrorBorder : {}),
+                  }}
+                />
+              </div>
+              {emailError && <div style={styles.inlineError}>{emailError}</div>}
             </div>
             <div style={styles.inputGroup}>
               <Lock size={16} color="var(--text-tertiary)" style={styles.inputIcon} />
@@ -368,6 +460,20 @@ export function AuthWall() {
               Back to options
             </button>
           </form>
+        )}
+
+        {/* Back to sign-in after confirmation */}
+        {confirmationSent && (
+          <button
+            onClick={() => { setConfirmationSent(false); setMode('email-signin') }}
+            style={{
+              ...styles.primaryBtn,
+              marginTop: 8,
+            }}
+          >
+            <CheckCircle size={16} />
+            Back to Sign In
+          </button>
         )}
       </div>
     </div>
@@ -478,6 +584,21 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: 16,
   },
 
+  /* Confirmation box */
+  confirmationBox: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 12,
+    background: 'rgba(52, 211, 153, 0.08)',
+    border: '1px solid rgba(52, 211, 153, 0.25)',
+    borderRadius: 8,
+    padding: '14px 16px',
+    fontSize: 13,
+    color: 'var(--text-primary)',
+    marginBottom: 16,
+    lineHeight: 1.4,
+  },
+
   /* Auth section */
   authSection: {
     display: 'flex',
@@ -564,6 +685,23 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--text-primary)',
     outline: 'none',
     transition: 'border-color 150ms ease',
+  },
+  inputErrorBorder: {
+    borderColor: '#ef4444',
+    boxShadow: '0 0 0 2px rgba(239, 68, 68, 0.15)',
+  },
+  inlineError: {
+    fontSize: 12,
+    color: '#ef4444',
+    marginTop: 4,
+    paddingLeft: 2,
+  },
+  strengthBarBg: {
+    width: '100%',
+    height: 4,
+    borderRadius: 2,
+    background: 'var(--bg-elevated)',
+    overflow: 'hidden' as const,
   },
   primaryBtn: {
     display: 'flex',

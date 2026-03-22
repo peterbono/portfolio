@@ -21,6 +21,7 @@ import {
   AlertCircle,
 } from 'lucide-react'
 import confetti from 'canvas-confetti'
+import CompanyChipInput from './CompanyChipInput'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -28,6 +29,50 @@ import confetti from 'canvas-confetti'
 
 const ONBOARDING_KEY = 'tracker_v2_onboarding_done'
 const GMAIL_URL_KEY = 'tracker_v2_gmail_url'
+
+/** Maps common IANA timezones to human-readable city labels. */
+const TIMEZONE_TO_CITY: Record<string, string> = {
+  'Asia/Bangkok': 'Bangkok, Thailand',
+  'Asia/Singapore': 'Singapore',
+  'Asia/Tokyo': 'Tokyo, Japan',
+  'Asia/Seoul': 'Seoul, South Korea',
+  'Asia/Shanghai': 'Shanghai, China',
+  'Asia/Hong_Kong': 'Hong Kong',
+  'Asia/Kolkata': 'Mumbai, India',
+  'Asia/Calcutta': 'Mumbai, India',
+  'Asia/Dubai': 'Dubai, UAE',
+  'Asia/Jakarta': 'Jakarta, Indonesia',
+  'Asia/Manila': 'Manila, Philippines',
+  'Asia/Taipei': 'Taipei, Taiwan',
+  'Asia/Kuala_Lumpur': 'Kuala Lumpur, Malaysia',
+  'Asia/Ho_Chi_Minh': 'Ho Chi Minh City, Vietnam',
+  'Australia/Sydney': 'Sydney, Australia',
+  'Australia/Melbourne': 'Melbourne, Australia',
+  'Pacific/Auckland': 'Auckland, New Zealand',
+  'Europe/Paris': 'Paris, France',
+  'Europe/London': 'London, UK',
+  'Europe/Berlin': 'Berlin, Germany',
+  'Europe/Amsterdam': 'Amsterdam, Netherlands',
+  'Europe/Madrid': 'Madrid, Spain',
+  'Europe/Rome': 'Rome, Italy',
+  'Europe/Zurich': 'Zurich, Switzerland',
+  'Europe/Stockholm': 'Stockholm, Sweden',
+  'Europe/Lisbon': 'Lisbon, Portugal',
+  'Europe/Warsaw': 'Warsaw, Poland',
+  'Europe/Istanbul': 'Istanbul, Turkey',
+  'America/New_York': 'New York, USA',
+  'America/Los_Angeles': 'Los Angeles, USA',
+  'America/Chicago': 'Chicago, USA',
+  'America/Denver': 'Denver, USA',
+  'America/Toronto': 'Toronto, Canada',
+  'America/Vancouver': 'Vancouver, Canada',
+  'America/Sao_Paulo': 'Sao Paulo, Brazil',
+  'America/Mexico_City': 'Mexico City, Mexico',
+  'America/Argentina/Buenos_Aires': 'Buenos Aires, Argentina',
+  'Africa/Cairo': 'Cairo, Egypt',
+  'Africa/Lagos': 'Lagos, Nigeria',
+  'Africa/Johannesburg': 'Johannesburg, South Africa',
+}
 
 const EXPERIENCE_LEVELS = ['Junior', 'Mid', 'Senior', 'Lead', 'Principal']
 
@@ -252,7 +297,16 @@ export function OnboardingWizard({ onComplete, defaultEmail, defaultName }: Onbo
   const [email, setEmail] = useState(defaultEmail ?? '')
   const [emailTouched, setEmailTouched] = useState(false)
   const [nameTouched, setNameTouched] = useState(false)
-  const [location, setLocation] = useState('')
+  // Auto-detect location from timezone
+  const [locationAutoDetected, setLocationAutoDetected] = useState(false)
+  const [location, setLocation] = useState(() => {
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+      const city = TIMEZONE_TO_CITY[tz]
+      if (city) return city
+    } catch { /* ignore */ }
+    return ''
+  })
   const [locationQuery, setLocationQuery] = useState('')
   const [citySuggestions, setCitySuggestions] = useState<string[]>([])
   const [cityLoading, setCityLoading] = useState(false)
@@ -268,7 +322,7 @@ export function OnboardingWizard({ onComplete, defaultEmail, defaultName }: Onbo
   })
   const [showTzPicker, setShowTzPicker] = useState(false)
   const [tzQuery, setTzQuery] = useState('')
-  const [excludedCompanies, setExcludedCompanies] = useState('')
+  const [excludedCompanies, setExcludedCompanies] = useState<string[]>([])
 
   // Step 3 — Gmail
   const [gmailUrl, setGmailUrl] = useState('')
@@ -286,6 +340,59 @@ export function OnboardingWizard({ onComplete, defaultEmail, defaultName }: Onbo
   useEffect(() => {
     const timer = setTimeout(() => setBotAnimating(false), 2000)
     return () => clearTimeout(timer)
+  }, [])
+
+  // Mark location as auto-detected if we got it from timezone
+  useEffect(() => {
+    if (location && !locationAutoDetected) {
+      try {
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+        if (TIMEZONE_TO_CITY[tz] && location === TIMEZONE_TO_CITY[tz]) {
+          setLocationAutoDetected(true)
+        }
+      } catch { /* ignore */ }
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Geolocation API as a secondary/bonus source
+  useEffect(() => {
+    if (!navigator.geolocation) return
+    let cancelled = false
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        if (cancelled) return
+        try {
+          const { latitude, longitude } = pos.coords
+          const res = await fetch(
+            `https://geocode.maps.co/reverse?lat=${latitude}&lon=${longitude}`
+          )
+          if (cancelled) return
+          const data = await res.json()
+          const city = data?.address?.city || data?.address?.town || data?.address?.village
+          const country = data?.address?.country
+          if (city && country) {
+            const geoCity = `${city}, ${country}`
+            // Only override if no timezone-based detection or if user hasn't manually changed it
+            setLocation((prev: string) => {
+              // If we already have a timezone-detected city, geolocation is more precise
+              if (prev && prev !== geoCity) {
+                // Geolocation is more precise, use it
+                setLocationAutoDetected(true)
+                return geoCity
+              }
+              if (!prev) {
+                setLocationAutoDetected(true)
+                return geoCity
+              }
+              return prev
+            })
+          }
+        } catch { /* geocoding failed, no big deal */ }
+      },
+      () => { /* user denied or unavailable, timezone fallback is fine */ },
+      { timeout: 5000, maximumAge: 300000 }
+    )
+    return () => { cancelled = true }
   }, [])
 
   // City autocomplete via Teleport API + local fallback
@@ -434,7 +541,7 @@ export function OnboardingWizard({ onComplete, defaultEmail, defaultName }: Onbo
       remoteOnly,
       salaryMin,
       timezone,
-      excludedCompanies: excludedCompanies.split(',').map(s => s.trim()).filter(Boolean),
+      excludedCompanies: [...excludedCompanies],
     }
     localStorage.setItem('tracker_v2_user_profile', JSON.stringify(profile))
 
@@ -552,14 +659,19 @@ export function OnboardingWizard({ onComplete, defaultEmail, defaultName }: Onbo
                     <MapPin size={14} />
                     Current Location
                   </span>
+                  {locationAutoDetected && location && (
+                    <span style={{ fontSize: 11, color: 'var(--accent)', padding: '2px 6px', borderRadius: 4, background: 'rgba(52,211,153,0.1)' }}>
+                      Auto-detected
+                    </span>
+                  )}
                 </label>
                 <AutocompleteInput
                   value={locationQuery || location}
-                  onChange={v => { setLocationQuery(v); setLocation(v) }}
+                  onChange={v => { setLocationQuery(v); setLocation(v); setLocationAutoDetected(false) }}
                   placeholder="Start typing a city..."
                   suggestions={citySuggestions}
                   loading={cityLoading}
-                  onSelect={v => { setLocation(v); setLocationQuery('') }}
+                  onSelect={v => { setLocation(v); setLocationQuery(''); setLocationAutoDetected(false) }}
                   icon={<Globe size={14} />}
                 />
               </div>
@@ -747,14 +859,13 @@ export function OnboardingWizard({ onComplete, defaultEmail, defaultName }: Onbo
               {/* Excluded companies */}
               <div style={styles.field}>
                 <label style={styles.label}>Excluded Companies</label>
-                <input
-                  type="text"
-                  value={excludedCompanies}
-                  onChange={e => setExcludedCompanies(e.target.value)}
-                  placeholder="Company A, Company B"
-                  style={styles.input}
+                <CompanyChipInput
+                  chips={excludedCompanies}
+                  onAdd={(val) => setExcludedCompanies((prev) => [...prev, val])}
+                  onRemove={(idx) => setExcludedCompanies((prev) => prev.filter((_, i) => i !== idx))}
+                  placeholder="Search companies..."
                 />
-                <span style={styles.hint}>Comma-separated list</span>
+                <span style={styles.hint}>Search or type a name and press Enter</span>
               </div>
             </div>
           </div>

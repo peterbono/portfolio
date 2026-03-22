@@ -30,6 +30,7 @@ import { supabase } from '../lib/supabase'
 import { useAuthWall } from '../hooks/useAuthWall'
 import { useSupabase } from '../context/SupabaseContext'
 import { useAuthWallContext } from '../context/AuthWallContext'
+import CompanyChipInput from '../components/CompanyChipInput'
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -883,12 +884,12 @@ function SearchProfileForm({
 
       <div style={styles.fieldGroup}>
         <label style={styles.label}>Excluded Companies</label>
-        <p style={styles.hint}>Type a company name and press Enter to add</p>
-        <ChipInput
+        <p style={styles.hint}>Search for a company or type a name and press Enter</p>
+        <CompanyChipInput
           chips={formExcluded}
           onAdd={(val) => setFormExcluded((prev) => [...prev, val])}
           onRemove={(idx) => setFormExcluded((prev) => prev.filter((_, i) => i !== idx))}
-          placeholder="Type company name..."
+          placeholder="Search companies..."
         />
       </div>
 
