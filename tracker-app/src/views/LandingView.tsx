@@ -1805,8 +1805,8 @@ function DotGridCanvas() {
 
     const SPACING = 28
     const BASE_RADIUS = 1
-    const BASE_OPACITY = 0.12
-    const GLOBAL_OPACITY = 0.55 // matches old CSS opacity
+    const BASE_OPACITY = 0.18
+    const GLOBAL_OPACITY = 0.7
     const WAVE_RADIUS = 150
     const WAVE_STRENGTH = 15
     const GLOW_RADIUS = 100
