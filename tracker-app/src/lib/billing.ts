@@ -268,15 +268,15 @@ export function getRemainingQuota(plan: PlanTier, used: number, feature: QuotaFe
  */
 export const STRIPE_PAYMENT_LINKS: Record<string, { weekly?: string; monthly?: string }> = {
   starter: {
-    weekly:  '', // e.g. 'https://buy.stripe.com/test_XXXXXXXX'  — $9/week
-    monthly: '', // e.g. 'https://buy.stripe.com/test_XXXXXXXX'  — $29/month
+    weekly:  'https://buy.stripe.com/fZufZhdLX8oFgRvat53VC01',
+    monthly: 'https://buy.stripe.com/7sY14n4bn48p0Sx6cP3VC02',
   },
   pro: {
-    weekly:  '', // e.g. 'https://buy.stripe.com/test_XXXXXXXX'  — $15/week
-    monthly: '', // e.g. 'https://buy.stripe.com/test_XXXXXXXX'  — $49/month
+    weekly:  'https://buy.stripe.com/aFa3cvgY96gx30F9p13VC03',
+    monthly: 'https://buy.stripe.com/4gMfZh9vHeN36cR58L3VC04',
   },
   boost: {
-    weekly:  '', // e.g. 'https://buy.stripe.com/test_XXXXXXXX'  — $25/week
+    weekly:  'https://buy.stripe.com/dRmbJ1eQ120h6cR8kX3VC00',
   },
 }
 
