@@ -111,10 +111,29 @@ function ActiveViewContent({ view }: { view: string }) {
   const { session } = useSupabase()
   const isAnonymous = !session
 
-  // Show empty state for anonymous users on gated views
+  // Show view skeleton + empty state overlay for anonymous users on gated views
   const emptyConfig = EMPTY_STATES[view]
   if (isAnonymous && emptyConfig) {
-    return <EmptyState icon={emptyConfig.icon} title={emptyConfig.title} description={emptyConfig.description} ctaLabel={emptyConfig.ctaLabel} />
+    const ViewComponent = (() => {
+      switch (view) {
+        case 'table': return <TableView />
+        case 'pipeline': return <PipelineView />
+        case 'analytics': return <AnalyticsView />
+        case 'coach': return <CoachView />
+        case 'insights': return <InsightsView />
+        default: return null
+      }
+    })()
+    return (
+      <div style={{ position: 'relative', flex: 1, overflow: 'hidden' }}>
+        <div style={{ opacity: 0.15, pointerEvents: 'none', filter: 'grayscale(0.5)', overflow: 'hidden', maxHeight: '100%' }}>
+          {ViewComponent}
+        </div>
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <EmptyState icon={emptyConfig.icon} title={emptyConfig.title} description={emptyConfig.description} ctaLabel={emptyConfig.ctaLabel} />
+        </div>
+      </div>
+    )
   }
 
   switch (view) {
