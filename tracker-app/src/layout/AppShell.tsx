@@ -14,7 +14,8 @@ import { PricingViewWithResponsive } from '../views/PricingView'
 import { TrustIndicator } from '../components/TrustIndicator'
 import { DemoBanner } from '../components/DemoBanner'
 import { SunkCostNudge } from '../components/SunkCostNudge'
-import { BlurredOverlay } from '../components/BlurredOverlay'
+import { EmptyState } from '../components/EmptyState'
+import { LayoutList, Kanban, BarChart3, Flame, Brain } from 'lucide-react'
 
 const TIME_OPTIONS: { value: TimeRange; label: string }[] = [
   { value: 'all', label: 'All time' },
@@ -98,56 +99,35 @@ export function AppShell({ onBackToLanding }: { onBackToLanding?: () => void }) 
   )
 }
 
-/** Views that are blurred for anonymous users (no session) */
-const BLURRED_VIEWS: Record<string, { feature: string; previewRows: number }> = {
-  table: { feature: 'table', previewRows: 3 },
-  pipeline: { feature: 'pipeline', previewRows: 2 },
-  analytics: { feature: 'analytics', previewRows: 1 },
-  coach: { feature: 'coach', previewRows: 2 },
-  insights: { feature: 'insights', previewRows: 1 },
+const EMPTY_STATES: Record<string, { icon: typeof LayoutList; title: string; description: string; ctaLabel: string }> = {
+  table: { icon: LayoutList, title: 'No applications yet', description: 'Start the auto-apply bot or add jobs manually to begin tracking your job search.', ctaLabel: 'Go to Autopilot' },
+  pipeline: { icon: Kanban, title: 'Your pipeline is empty', description: 'Applications will flow through stages as you apply and hear back from companies.', ctaLabel: 'Start applying' },
+  analytics: { icon: BarChart3, title: 'No data to analyze yet', description: 'Analytics charts will populate as your application history grows. Start applying to unlock insights.', ctaLabel: 'Start the bot' },
+  coach: { icon: Flame, title: 'Your coach needs data', description: 'Apply to a few jobs and your AI coach will start giving personalized advice and daily goals.', ctaLabel: 'Go to Autopilot' },
+  insights: { icon: Brain, title: 'The AI brain is waiting', description: 'The feedback engine learns from your applications — response rates, best ATS platforms, ghost detection.', ctaLabel: 'Start applying' },
 }
 
 function ActiveViewContent({ view }: { view: string }) {
   const { session } = useSupabase()
   const isAnonymous = !session
 
-  const viewElement = (() => {
-    switch (view) {
-      case 'table':
-        return <TableView />
-      case 'pipeline':
-        return <PipelineView />
-      case 'analytics':
-        return <AnalyticsView />
-      case 'coach':
-        return <CoachView />
-      case 'insights':
-        return <InsightsView />
-      case 'autopilot':
-        return <AutopilotView />
-      case 'settings':
-        return <SettingsView />
-      case 'pricing':
-        return <PricingViewWithResponsive />
-      default:
-        return null
-    }
-  })()
-
-  // Wrap locked views in BlurredOverlay for anonymous users
-  const blurConfig = BLURRED_VIEWS[view]
-  if (isAnonymous && blurConfig) {
-    return (
-      <BlurredOverlay
-        feature={blurConfig.feature}
-        previewRows={blurConfig.previewRows}
-      >
-        {viewElement}
-      </BlurredOverlay>
-    )
+  // Show empty state for anonymous users on gated views
+  const emptyConfig = EMPTY_STATES[view]
+  if (isAnonymous && emptyConfig) {
+    return <EmptyState icon={emptyConfig.icon} title={emptyConfig.title} description={emptyConfig.description} ctaLabel={emptyConfig.ctaLabel} />
   }
 
-  return viewElement
+  switch (view) {
+    case 'table': return <TableView />
+    case 'pipeline': return <PipelineView />
+    case 'analytics': return <AnalyticsView />
+    case 'coach': return <CoachView />
+    case 'insights': return <InsightsView />
+    case 'autopilot': return <AutopilotView />
+    case 'settings': return <SettingsView />
+    case 'pricing': return <PricingViewWithResponsive />
+    default: return null
+  }
 }
 
 function ViewPlaceholder({ name, description }: { name: string; description: string }) {
