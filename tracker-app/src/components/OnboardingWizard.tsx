@@ -395,25 +395,38 @@ export function OnboardingWizard({ onComplete, defaultEmail, defaultName }: Onbo
     return () => { cancelled = true }
   }, [])
 
-  // City autocomplete via Teleport API + local fallback
-  const debouncedLocationQuery = useDebounce(locationQuery, 300)
-
+  // City autocomplete — instant local + debounced API
   const POPULAR_CITIES = [
     'Bangkok, Thailand', 'Singapore', 'Tokyo, Japan', 'Seoul, South Korea',
     'Dubai, UAE', 'Mumbai, India', 'Bangalore, India', 'Sydney, Australia',
     'Melbourne, Australia', 'Hong Kong', 'Berlin, Germany', 'London, UK',
     'Paris, France', 'Amsterdam, Netherlands', 'Barcelona, Spain',
     'New York, USA', 'San Francisco, USA', 'Toronto, Canada',
+    'Jakarta, Indonesia', 'Kuala Lumpur, Malaysia', 'Ho Chi Minh, Vietnam',
+    'Taipei, Taiwan', 'Shanghai, China', 'Lisbon, Portugal', 'Dublin, Ireland',
+    'Stockholm, Sweden', 'Copenhagen, Denmark', 'Tel Aviv, Israel',
+    'Cairo, Egypt', 'Lagos, Nigeria', 'Nairobi, Kenya',
+    'São Paulo, Brazil', 'Mexico City, Mexico', 'Buenos Aires, Argentina',
     'Remote', 'Hybrid',
   ]
 
+  // Instant local filter (no debounce)
+  const localCityMatches = useMemo(() => {
+    if (locationQuery.length < 2) return []
+    const q = locationQuery.toLowerCase()
+    return POPULAR_CITIES.filter(c => c.toLowerCase().includes(q)).slice(0, 6)
+  }, [locationQuery])
+
+  // Show local results immediately
   useEffect(() => {
-    if (debouncedLocationQuery.length < 2) { setCitySuggestions([]); return }
-    const q = debouncedLocationQuery.toLowerCase()
-    // Local filter first (instant)
-    const localMatches = POPULAR_CITIES.filter(c => c.toLowerCase().includes(q))
-    if (localMatches.length >= 3) { setCitySuggestions(localMatches.slice(0, 6)); return }
-    // API for longer queries
+    if (locationQuery.length < 2) { setCitySuggestions([]); return }
+    setCitySuggestions(localCityMatches)
+  }, [localCityMatches, locationQuery])
+
+  // API supplement (debounced, only if local has < 3 results)
+  const debouncedLocationQuery = useDebounce(locationQuery, 400)
+  useEffect(() => {
+    if (debouncedLocationQuery.length < 3 || localCityMatches.length >= 3) return
     let cancelled = false
     setCityLoading(true)
     fetch(`https://api.teleport.org/api/cities/?search=${encodeURIComponent(debouncedLocationQuery)}&limit=6`)
@@ -422,14 +435,12 @@ export function OnboardingWizard({ onComplete, defaultEmail, defaultName }: Onbo
         if (cancelled) return
         const embedded = data?._embedded?.['city:search-results'] ?? []
         const names: string[] = embedded.map((c: { matching_full_name: string }) => c.matching_full_name).filter(Boolean)
-        // Merge local + API results, deduplicated
-        const merged = [...new Set([...localMatches, ...names])].slice(0, 6)
-        setCitySuggestions(merged)
+        setCitySuggestions(prev => [...new Set([...prev, ...names])].slice(0, 6))
       })
-      .catch(() => { if (!cancelled) setCitySuggestions(localMatches.slice(0, 6)) })
+      .catch(() => {})
       .finally(() => { if (!cancelled) setCityLoading(false) })
     return () => { cancelled = true }
-  }, [debouncedLocationQuery])
+  }, [debouncedLocationQuery, localCityMatches.length])
 
   // Role autocomplete — filter inline list
   const roleSuggestions = useMemo(() => {
