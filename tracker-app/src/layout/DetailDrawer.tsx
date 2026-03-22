@@ -1,5 +1,5 @@
 import { useEffect, useRef, useMemo, useState } from 'react'
-import { X, ExternalLink } from 'lucide-react'
+import { X, ExternalLink, ChevronRight } from 'lucide-react'
 import { useUI } from '../context/UIContext'
 import { useJobs } from '../context/JobsContext'
 import { StatusBadge } from '../components/StatusBadge'
@@ -319,7 +319,6 @@ export function DetailDrawer() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 32 }}>
             <AutocompleteDetailRow label="Location" value={job.location} onSave={(v) => updateJobField(job.id, 'location', v)} suggestions={locationSuggestions} placeholder="e.g. Remote, EMEA" />
             <EditableDetailRow label="Salary" value={job.salary} onSave={(v) => updateJobField(job.id, 'salary', v)} placeholder="e.g. 80-100k EUR" />
-            <AutocompleteDetailRow label="ATS" value={job.ats} onSave={(v) => updateJobField(job.id, 'ats', v)} suggestions={atsSuggestions} placeholder="e.g. Greenhouse" />
             <DateDetailRow label="Applied" value={job.date} onSave={(v) => updateJobField(job.id, 'date', v)} formatted={formatDateNice(job.date)} />
             {job.status === 'rejected' && (() => {
               const rejDate = getRejectionDate(job, allEvents)
@@ -350,9 +349,14 @@ export function DetailDrawer() {
               </div>
             </div>
             <EditableDetailRow label="Notes" value={job.notes} onSave={(v) => updateJobField(job.id, 'notes', v)} placeholder="Any notes..." />
-            <ToggleDetailRow label="CV" value={job.cv === '✓' || job.cv === 'Yes' || job.cv === 'yes'} onToggle={(v) => updateJobField(job.id, 'cv', v ? '✓' : '')} />
-            <ToggleDetailRow label="Folio" value={job.portfolio === '✓' || job.portfolio === 'Yes' || job.portfolio === 'yes'} onToggle={(v) => updateJobField(job.id, 'portfolio', v ? '✓' : '')} />
           </div>
+
+          {/* ── Technical Details (collapsible) ── */}
+          <TechnicalDetails
+            job={job}
+            atsSuggestions={atsSuggestions}
+            onUpdateField={(field, value) => updateJobField(job.id, field, value)}
+          />
 
           {/* ── Event Timeline ── */}
           <div style={{ marginBottom: 24 }}>
@@ -404,6 +408,54 @@ export function DetailDrawer() {
         }
       `}</style>
     </>
+  )
+}
+
+/* ── Technical Details (collapsible) ── */
+function TechnicalDetails({ job, atsSuggestions, onUpdateField }: {
+  job: { id: string; ats: string; cv: string; portfolio: string }
+  atsSuggestions: string[]
+  onUpdateField: (field: string, value: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <div style={{ marginBottom: 24 }}>
+      <button
+        onClick={() => setOpen(!open)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          background: 'none',
+          border: 'none',
+          cursor: 'pointer',
+          padding: '4px 0',
+          fontSize: 13,
+          fontWeight: 600,
+          color: 'var(--text-secondary)',
+          textTransform: 'uppercase',
+          letterSpacing: '0.05em',
+          width: '100%',
+        }}
+      >
+        <ChevronRight
+          size={14}
+          style={{
+            transition: 'transform 0.2s',
+            transform: open ? 'rotate(90deg)' : 'rotate(0deg)',
+          }}
+        />
+        Technical Details
+      </button>
+      {open && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 10, paddingLeft: 4 }}>
+          <AutocompleteDetailRow label="ATS" value={job.ats} onSave={(v) => onUpdateField('ats', v)} suggestions={atsSuggestions} placeholder="e.g. Greenhouse" />
+          <ToggleDetailRow label="CV" value={job.cv === '\u2713' || job.cv === 'Yes' || job.cv === 'yes'} onToggle={(v) => onUpdateField('cv', v ? '\u2713' : '')} />
+          <ToggleDetailRow label="Folio" value={job.portfolio === '\u2713' || job.portfolio === 'Yes' || job.portfolio === 'yes'} onToggle={(v) => onUpdateField('portfolio', v ? '\u2713' : '')} />
+        </div>
+      )}
+    </div>
   )
 }
 

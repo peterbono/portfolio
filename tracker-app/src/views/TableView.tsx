@@ -8,7 +8,7 @@ import {
 } from '@tanstack/react-table'
 
 const PAGE_SIZE = 50
-import { ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, MoreHorizontal, Plus } from 'lucide-react'
+import { ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, MoreHorizontal, Plus, Trash2, Download, X, CheckSquare, Square, Check } from 'lucide-react'
 import { format, parseISO, isValid } from 'date-fns'
 
 import { useJobs } from '../context/JobsContext'
@@ -338,6 +338,25 @@ function ActionMenu({ job }: { job: Job }) {
   )
 }
 
+// ─── Row Checkbox ────────────────────────────────────────────────────
+function RowCheckbox({ checked, onChange }: { checked: boolean; onChange: () => void }) {
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onChange() }}
+      style={{
+        background: 'transparent', border: 'none', cursor: 'pointer',
+        padding: 2, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        color: checked ? 'var(--accent)' : 'var(--text-tertiary)',
+        transition: 'color 0.1s',
+      }}
+      onMouseEnter={(e) => { if (!checked) e.currentTarget.style.color = 'var(--text-secondary)' }}
+      onMouseLeave={(e) => { if (!checked) e.currentTarget.style.color = 'var(--text-tertiary)' }}
+    >
+      {checked ? <CheckSquare size={15} /> : <Square size={15} />}
+    </button>
+  )
+}
+
 const columns: ColumnDef<Job, unknown>[] = [
   {
     accessorKey: 'date',
@@ -407,24 +426,6 @@ const columns: ColumnDef<Job, unknown>[] = [
     header: 'Salary',
     size: 100,
     cell: ({ row }) => <EditableCell value={row.original.salary} field="salary" jobId={row.original.id} />,
-  },
-  {
-    accessorKey: 'ats',
-    header: 'ATS',
-    size: 90,
-    cell: ({ row }) => <EditableCell value={row.original.ats} field="ats" jobId={row.original.id} />,
-  },
-  {
-    accessorKey: 'cv',
-    header: 'CV',
-    size: 40,
-    cell: ({ getValue }) => <CellCheck value={getValue<string>()} />,
-  },
-  {
-    accessorKey: 'portfolio',
-    header: 'Folio',
-    size: 40,
-    cell: ({ getValue }) => <CellCheck value={getValue<string>()} />,
   },
   {
     accessorKey: 'link',
@@ -560,12 +561,187 @@ function AddJobModal({ onClose }: { onClose: () => void }) {
   )
 }
 
+// ─── Bulk Status Dropdown ────────────────────────────────────────────
+function BulkStatusDropdown({ onSelect, onClose }: { onSelect: (status: JobStatus) => void; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const allStatuses: JobStatus[] = [
+    'submitted', 'manual', 'screening', 'interviewing', 'challenge',
+    'offer', 'negotiation', 'rejected', 'withdrawn', 'ghosted', 'skipped',
+  ]
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [onClose])
+
+  return (
+    <div ref={ref} style={{
+      position: 'absolute', top: '100%', left: 0, marginTop: 4, zIndex: 60,
+      background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+      borderRadius: 8, padding: '4px 0', minWidth: 170,
+      boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+    }}>
+      {allStatuses.map(s => {
+        const cfg = STATUS_CONFIG[s]
+        return (
+          <button
+            key={s}
+            onClick={() => { onSelect(s); onClose() }}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              width: '100%', padding: '6px 12px',
+              background: 'transparent', border: 'none', cursor: 'pointer',
+              fontSize: 12, color: cfg.color, textAlign: 'left',
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)' }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+          >
+            <span style={{ width: 16, textAlign: 'center' }}>{cfg.icon}</span>
+            {cfg.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// ─── Bulk Action Bar ────────────────────────────────────────────────
+function BulkActionBar({ selectedCount, onChangeStatus, onDelete, onExport, onDeselectAll }: {
+  selectedCount: number
+  onChangeStatus: (status: JobStatus) => void
+  onDelete: () => void
+  onExport: () => void
+  onDeselectAll: () => void
+}) {
+  const [showStatusDropdown, setShowStatusDropdown] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+
+  const btnStyle: React.CSSProperties = {
+    display: 'flex', alignItems: 'center', gap: 5,
+    padding: '5px 10px', borderRadius: 6,
+    border: '1px solid var(--border)', background: 'var(--bg-surface)',
+    fontSize: 12, color: 'var(--text-secondary)', cursor: 'pointer',
+    whiteSpace: 'nowrap', transition: 'background 0.1s',
+  }
+
+  return (
+    <div style={{
+      position: 'sticky', top: 0, zIndex: 10,
+      display: 'flex', alignItems: 'center', gap: 10,
+      padding: '8px 14px', marginTop: 4,
+      background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+      borderRadius: 8,
+    }}>
+      <span style={{
+        fontSize: 12, fontWeight: 600, color: 'var(--accent)',
+        display: 'flex', alignItems: 'center', gap: 5,
+      }}>
+        <CheckSquare size={14} />
+        {selectedCount} selected
+      </span>
+
+      <div style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 2px' }} />
+
+      {/* Change Status */}
+      <div style={{ position: 'relative' }}>
+        <button
+          onClick={() => setShowStatusDropdown(v => !v)}
+          style={btnStyle}
+          onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-elevated)' }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--bg-surface)' }}
+        >
+          <Check size={13} /> Status
+        </button>
+        {showStatusDropdown && (
+          <BulkStatusDropdown
+            onSelect={onChangeStatus}
+            onClose={() => setShowStatusDropdown(false)}
+          />
+        )}
+      </div>
+
+      {/* Delete */}
+      <div style={{ position: 'relative' }}>
+        <button
+          onClick={() => setShowDeleteConfirm(true)}
+          style={{ ...btnStyle, color: '#ef4444', borderColor: 'rgba(239,68,68,0.3)' }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(239,68,68,0.1)' }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--bg-surface)' }}
+        >
+          <Trash2 size={13} /> Delete
+        </button>
+        {showDeleteConfirm && (
+          <div style={{
+            position: 'absolute', top: '100%', left: 0, marginTop: 4, zIndex: 60,
+            background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+            borderRadius: 8, padding: 14, minWidth: 240,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+          }}>
+            <p style={{ margin: '0 0 10px', fontSize: 13, color: 'var(--text-primary)' }}>
+              Delete {selectedCount} job{selectedCount !== 1 ? 's' : ''}? This cannot be undone.
+            </p>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                style={{
+                  padding: '5px 12px', borderRadius: 6, fontSize: 12,
+                  background: 'transparent', border: '1px solid var(--border)',
+                  color: 'var(--text-secondary)', cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => { onDelete(); setShowDeleteConfirm(false) }}
+                style={{
+                  padding: '5px 12px', borderRadius: 6, fontSize: 12,
+                  background: '#ef4444', border: 'none',
+                  color: '#fff', fontWeight: 600, cursor: 'pointer',
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Export */}
+      <button
+        onClick={onExport}
+        style={btnStyle}
+        onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-elevated)' }}
+        onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--bg-surface)' }}
+      >
+        <Download size={13} /> Export
+      </button>
+
+      <div style={{ flex: 1 }} />
+
+      {/* Deselect All */}
+      <button
+        onClick={onDeselectAll}
+        style={{ ...btnStyle, border: 'none', background: 'transparent', color: 'var(--text-tertiary)' }}
+        onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)' }}
+        onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-tertiary)' }}
+      >
+        <X size={13} /> Deselect
+      </button>
+    </div>
+  )
+}
+
 // ─── Main TableView ─────────────────────────────────────────────────
 export function TableView() {
-  const { jobs, counts } = useJobs()
+  const { jobs, counts, updateJobStatus, deleteJob } = useJobs()
   const { selectJob } = useUI()
   const filters = useFilters()
   const [showAddModal, setShowAddModal] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const tableWrapperRef = useRef<HTMLDivElement>(null)
 
   const { statusFilter, searchQuery, companyFilter, sortColumn, sortDirection } = filters
   const allFiltered = useMemo(
@@ -586,6 +762,18 @@ export function TableView() {
   const totalPages = Math.ceil(allFiltered.length / PAGE_SIZE)
   const filteredData = useMemo(() => allFiltered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [allFiltered, page])
 
+  // Clean up selected IDs when filtered data changes (remove stale selections)
+  useEffect(() => {
+    const visibleIds = new Set(filteredData.map(j => j.id))
+    setSelectedIds(prev => {
+      const next = new Set<string>()
+      for (const id of prev) {
+        if (visibleIds.has(id)) next.add(id)
+      }
+      return next.size === prev.size ? prev : next
+    })
+  }, [filteredData])
+
   const submittedPct = useMemo(() => {
     const excluded = (counts.skipped ?? 0) + (counts.saved ?? 0)
     const actionable = jobs.length - excluded
@@ -595,6 +783,86 @@ export function TableView() {
       + (counts.rejected ?? 0) + (counts.withdrawn ?? 0) + (counts.ghosted ?? 0)
     return Math.min(100, Math.round((applied / actionable) * 100))
   }, [counts, jobs.length])
+
+  // ─── Bulk action handlers ──────────────────────────────────────────
+  const toggleSelectAll = useCallback(() => {
+    setSelectedIds(prev => {
+      const allPageIds = filteredData.map(j => j.id)
+      const allSelected = allPageIds.length > 0 && allPageIds.every(id => prev.has(id))
+      if (allSelected) {
+        return new Set<string>()
+      } else {
+        return new Set(allPageIds)
+      }
+    })
+  }, [filteredData])
+
+  const toggleSelectOne = useCallback((id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }, [])
+
+  const deselectAll = useCallback(() => {
+    setSelectedIds(new Set())
+  }, [])
+
+  const handleBulkChangeStatus = useCallback((status: JobStatus) => {
+    for (const id of selectedIds) {
+      updateJobStatus(id, status)
+    }
+    setSelectedIds(new Set())
+  }, [selectedIds, updateJobStatus])
+
+  const handleBulkDelete = useCallback(() => {
+    for (const id of selectedIds) {
+      deleteJob(id)
+    }
+    setSelectedIds(new Set())
+  }, [selectedIds, deleteJob])
+
+  const handleBulkExport = useCallback(() => {
+    const selectedJobs = filteredData.filter(j => selectedIds.has(j.id))
+    const json = JSON.stringify(selectedJobs, null, 2)
+    const blob = new Blob([json], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `jobs-export-${selectedIds.size}.json`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }, [selectedIds, filteredData])
+
+  // ─── Keyboard shortcuts ────────────────────────────────────────────
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      // Cmd+A / Ctrl+A: select all visible rows (only when table area is focused)
+      if ((e.metaKey || e.ctrlKey) && e.key === 'a') {
+        const wrapper = tableWrapperRef.current
+        if (wrapper && (wrapper.contains(document.activeElement) || document.activeElement === document.body)) {
+          e.preventDefault()
+          setSelectedIds(new Set(filteredData.map(j => j.id)))
+        }
+      }
+      // Escape: deselect all
+      if (e.key === 'Escape' && selectedIds.size > 0) {
+        setSelectedIds(new Set())
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [filteredData, selectedIds.size])
+
+  const allPageSelected = filteredData.length > 0 && filteredData.every(j => selectedIds.has(j.id))
+  const someSelected = selectedIds.size > 0
 
   // tanstack table requires sorting state even though we handle sorting ourselves
   const sorting: SortingState = []
@@ -651,12 +919,45 @@ export function TableView() {
         </button>
       </div>
 
+      {/* Bulk Action Bar */}
+      {someSelected && (
+        <BulkActionBar
+          selectedCount={selectedIds.size}
+          onChangeStatus={handleBulkChangeStatus}
+          onDelete={handleBulkDelete}
+          onExport={handleBulkExport}
+          onDeselectAll={deselectAll}
+        />
+      )}
+
       {/* Table */}
-      <div style={styles.tableWrapper}>
+      <div ref={tableWrapperRef} style={styles.tableWrapper} tabIndex={-1}>
         <table style={styles.table}>
           <thead>
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
+                {/* Checkbox header */}
+                <th
+                  style={{
+                    ...styles.th,
+                    width: 40,
+                    minWidth: 40,
+                    maxWidth: 40,
+                    cursor: 'pointer',
+                    textAlign: 'center',
+                    padding: '8px 4px',
+                  }}
+                  onClick={(e) => { e.stopPropagation(); toggleSelectAll() }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {allPageSelected
+                      ? <CheckSquare size={14} color="var(--accent)" />
+                      : someSelected
+                        ? <CheckSquare size={14} color="var(--text-tertiary)" style={{ opacity: 0.5 }} />
+                        : <Square size={14} color="var(--text-tertiary)" />
+                    }
+                  </div>
+                </th>
                 {headerGroup.headers.map((header) => {
                   const colId = header.column.id
                   return (
@@ -687,7 +988,7 @@ export function TableView() {
             {table.getRowModel().rows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={columns.length}
+                  colSpan={columns.length + 1}
                   style={styles.emptyCell}
                 >
                   No jobs match current filters
@@ -696,6 +997,7 @@ export function TableView() {
             ) : (
               table.getRowModel().rows.map((row) => {
                 let clickTimer: ReturnType<typeof setTimeout> | null = null
+                const isSelected = selectedIds.has(row.original.id)
                 return (
                 <tr
                   key={row.id}
@@ -705,14 +1007,24 @@ export function TableView() {
                   onDoubleClick={() => {
                     if (clickTimer) { clearTimeout(clickTimer); clickTimer = null }
                   }}
-                  style={styles.tr}
+                  style={{
+                    ...styles.tr,
+                    background: isSelected ? 'rgba(52, 211, 153, 0.06)' : undefined,
+                  }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'var(--bg-elevated)'
+                    if (!isSelected) e.currentTarget.style.background = 'var(--bg-elevated)'
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'transparent'
+                    e.currentTarget.style.background = isSelected ? 'rgba(52, 211, 153, 0.06)' : 'transparent'
                   }}
                 >
+                  {/* Checkbox cell */}
+                  <td style={{ ...styles.td, width: 40, minWidth: 40, maxWidth: 40, textAlign: 'center', padding: '7px 4px' }}>
+                    <RowCheckbox
+                      checked={isSelected}
+                      onChange={() => toggleSelectOne(row.original.id)}
+                    />
+                  </td>
                   {row.getVisibleCells().map((cell) => (
                     <td
                       key={cell.id}
@@ -798,12 +1110,13 @@ const styles: Record<string, React.CSSProperties> = {
     border: '1px solid var(--border)',
     background: 'var(--bg-surface)',
     marginTop: 4,
+    outline: 'none',
   },
   table: {
     width: '100%',
     borderCollapse: 'collapse',
     tableLayout: 'fixed',
-    minWidth: 1100,
+    minWidth: 1140,
   },
   th: {
     position: 'sticky',

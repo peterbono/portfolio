@@ -22,6 +22,8 @@ import {
   History,
   Loader2,
   X,
+  Check,
+  Shield,
 } from 'lucide-react'
 import { useBotActivity } from '../hooks/useBotActivity'
 import type { BotActivityItem, BotRunStatus } from '../hooks/useBotActivity'
@@ -43,6 +45,7 @@ interface SearchProfile {
   minSalary: number
   remoteOnly: boolean
   excludedCompanies: string[]
+  dailyLimit: number
   createdAt: string
 }
 
@@ -100,6 +103,72 @@ function formatRunDate(iso: string | null): string {
   }
 }
 
+/* ------------------------------------------------------------------ */
+/*  Preview Queue types + persistence                                  */
+/* ------------------------------------------------------------------ */
+interface PreviewQueueItem {
+  id: string
+  company: string
+  role: string
+  matchScore: number
+  matchReasons: string[]
+  cvName: string
+  coverLetterSnippet: string
+  status: 'pending' | 'approved' | 'skipped'
+}
+
+const PREVIEW_LS_KEY = 'tracker_v2_preview_queue'
+
+function loadPreviewQueue(): PreviewQueueItem[] {
+  try {
+    const raw = localStorage.getItem(PREVIEW_LS_KEY)
+    return raw ? JSON.parse(raw) : []
+  } catch {
+    return []
+  }
+}
+
+function savePreviewQueue(queue: PreviewQueueItem[]) {
+  try {
+    localStorage.setItem(PREVIEW_LS_KEY, JSON.stringify(queue))
+  } catch {
+    /* ignore */
+  }
+}
+
+const MOCK_PREVIEW_QUEUE: PreviewQueueItem[] = [
+  {
+    id: 'preview-1',
+    company: 'Canva',
+    role: 'Senior Product Designer',
+    matchScore: 88,
+    matchReasons: ['Remote APAC', 'Design Systems keyword', 'Salary > 80k EUR'],
+    cvName: 'cvflo.pdf',
+    coverLetterSnippet: 'With 7+ years of experience in product design and design systems, I am excited to bring my expertise to Canva...',
+    status: 'pending',
+  },
+  {
+    id: 'preview-2',
+    company: 'Wise',
+    role: 'Product Designer',
+    matchScore: 62,
+    matchReasons: ['Fintech SaaS match', 'Location: Singapore (GMT+8)'],
+    cvName: 'cvflo.pdf',
+    coverLetterSnippet: 'I bring deep experience in complex B2B product architecture and regulated industries, making me a strong fit...',
+    status: 'pending',
+  },
+  {
+    id: 'preview-3',
+    company: 'Agoda',
+    role: 'UX/UI Designer',
+    matchScore: 41,
+    matchReasons: ['Bangkok on-site', 'Salary below threshold'],
+    cvName: 'cvflo.pdf',
+    coverLetterSnippet: 'Having lived and worked in Bangkok for several years, I understand the local market and would bring a unique...',
+    status: 'pending',
+  },
+]
+
 const RUN_STATUS_COLORS: Record<string, string> = {
   completed: '#34d399',
   running: '#60a5fa',
@@ -108,31 +177,6 @@ const RUN_STATUS_COLORS: Record<string, string> = {
   cancelled: '#6b7280',
 }
 
-/* ------------------------------------------------------------------ */
-/*  Mock activity data (fallback when no real data)                     */
-/* ------------------------------------------------------------------ */
-const MOCK_ACTIVITY = [
-  {
-    time: '10:23',
-    text: 'Applied to "Senior Product Designer" at Canva via Greenhouse',
-    status: 'success' as const,
-  },
-  {
-    time: '10:21',
-    text: 'Skipped "UX Lead" at Meta \u2014 timezone incompatible (PST)',
-    status: 'skipped' as const,
-  },
-  {
-    time: '10:19',
-    text: 'Applied to "Product Designer" at Wise via Lever',
-    status: 'success' as const,
-  },
-  {
-    time: '10:15',
-    text: 'Error: CV upload failed at Ashby \u2014 marked "\u00c0 soumettre"',
-    status: 'error' as const,
-  },
-]
 
 const STATUS_ICON: Record<string, typeof CheckCircle2> = {
   success: CheckCircle2,
@@ -223,9 +267,6 @@ function getStatusConfig(run: BotRunStatus | null): StatusConfig {
       description: 'Set up your search profile to get started',
       dotColor: '#6b7280',
       pulsing: false,
-      badgeLabel: 'Coming Soon',
-      badgeColor: '#fbbf24',
-      badgeBg: 'rgba(251, 191, 36, 0.12)',
     }
   }
 
@@ -807,6 +848,404 @@ const chipStyles: Record<string, React.CSSProperties> = {
 }
 
 /* ------------------------------------------------------------------ */
+/*  ApplicationPreviewCard                                             */
+/* ------------------------------------------------------------------ */
+function ApplicationPreviewCard({
+  item,
+  onApprove,
+  onSkip,
+}: {
+  item: PreviewQueueItem
+  onApprove: (id: string) => void
+  onSkip: (id: string) => void
+}) {
+  const scoreColor =
+    item.matchScore > 70 ? '#34d399' : item.matchScore >= 50 ? '#fbbf24' : '#f43f5e'
+  const scoreBg =
+    item.matchScore > 70
+      ? 'rgba(52, 211, 153, 0.12)'
+      : item.matchScore >= 50
+        ? 'rgba(251, 191, 36, 0.12)'
+        : 'rgba(244, 63, 94, 0.12)'
+
+  return (
+    <div style={previewStyles.card}>
+      {/* Top row: company + score */}
+      <div style={previewStyles.cardTop}>
+        <div style={previewStyles.cardInfo}>
+          <span style={previewStyles.cardCompany}>{item.company}</span>
+          <span style={previewStyles.cardRole}>{item.role}</span>
+        </div>
+        <div
+          style={{
+            ...previewStyles.scoreBadge,
+            color: scoreColor,
+            background: scoreBg,
+            border: `1px solid ${scoreColor}33`,
+          }}
+        >
+          <Shield size={12} />
+          <span>{item.matchScore}</span>
+        </div>
+      </div>
+
+      {/* Match reasons */}
+      <div style={previewStyles.reasonsWrap}>
+        {item.matchReasons.map((reason, i) => (
+          <span key={i} style={previewStyles.reasonChip}>{reason}</span>
+        ))}
+      </div>
+
+      {/* What will be sent */}
+      <div style={previewStyles.sentSection}>
+        <div style={previewStyles.sentRow}>
+          <span style={previewStyles.sentLabel}>CV:</span>
+          <span style={previewStyles.sentValue}>{item.cvName}</span>
+        </div>
+        <div style={previewStyles.sentRow}>
+          <span style={previewStyles.sentLabel}>Cover:</span>
+          <span style={previewStyles.sentCover}>{item.coverLetterSnippet}</span>
+        </div>
+      </div>
+
+      {/* Actions */}
+      {item.status === 'pending' && (
+        <div style={previewStyles.cardActions}>
+          <button
+            style={previewStyles.btnApprove}
+            onClick={() => onApprove(item.id)}
+            title="Approve this application"
+          >
+            <Check size={14} />
+            <span>Approve</span>
+          </button>
+          <button
+            style={previewStyles.btnSkip}
+            onClick={() => onSkip(item.id)}
+            title="Skip this application"
+          >
+            <X size={14} />
+            <span>Skip</span>
+          </button>
+        </div>
+      )}
+      {item.status === 'approved' && (
+        <div style={previewStyles.statusLabel}>
+          <CheckCircle2 size={12} color="#34d399" />
+          <span style={{ color: '#34d399', fontSize: 12, fontWeight: 600 }}>Approved</span>
+        </div>
+      )}
+      {item.status === 'skipped' && (
+        <div style={previewStyles.statusLabel}>
+          <XCircle size={12} color="#6b7280" />
+          <span style={{ color: '#6b7280', fontSize: 12, fontWeight: 600 }}>Skipped</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/*  PreviewQueue                                                       */
+/* ------------------------------------------------------------------ */
+function PreviewQueue() {
+  const [queue, setQueue] = useState<PreviewQueueItem[]>(() => {
+    const saved = loadPreviewQueue()
+    return saved.length > 0 ? saved : MOCK_PREVIEW_QUEUE
+  })
+  const [isDemo] = useState(() => loadPreviewQueue().length === 0)
+
+  // Persist on every change (but not the initial mock load)
+  useEffect(() => {
+    if (!isDemo) savePreviewQueue(queue)
+  }, [queue, isDemo])
+
+  const pendingCount = queue.filter((i) => i.status === 'pending').length
+  if (queue.length === 0) return null
+
+  const handleApprove = (id: string) => {
+    setQueue((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, status: 'approved' as const } : item))
+    )
+  }
+
+  const handleSkip = (id: string) => {
+    setQueue((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, status: 'skipped' as const } : item))
+    )
+  }
+
+  const handleApproveAll = () => {
+    setQueue((prev) =>
+      prev.map((item) =>
+        item.status === 'pending' ? { ...item, status: 'approved' as const } : item
+      )
+    )
+  }
+
+  const handleSkipAll = () => {
+    setQueue((prev) =>
+      prev.map((item) =>
+        item.status === 'pending' ? { ...item, status: 'skipped' as const } : item
+      )
+    )
+  }
+
+  return (
+    <section style={previewStyles.queueSection}>
+      {/* Header */}
+      <div style={previewStyles.queueHeader}>
+        <div style={previewStyles.queueTitleRow}>
+          <Eye size={16} color="var(--accent)" />
+          <h2 style={previewStyles.queueTitle}>
+            {pendingCount > 0
+              ? `${pendingCount} application${pendingCount !== 1 ? 's' : ''} ready to send`
+              : 'All applications reviewed'}
+          </h2>
+          {isDemo && (
+            <span style={previewStyles.demoBadge}>Preview mode — sample data</span>
+          )}
+        </div>
+        {pendingCount > 0 && (
+          <div style={previewStyles.queueBulkActions}>
+            <button style={previewStyles.btnApproveAll} onClick={handleApproveAll}>
+              <Check size={12} />
+              <span>Approve All</span>
+            </button>
+            <button style={previewStyles.btnSkipAll} onClick={handleSkipAll}>
+              <X size={12} />
+              <span>Skip All</span>
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Scrollable list */}
+      <div style={previewStyles.queueList}>
+        {queue.map((item) => (
+          <ApplicationPreviewCard
+            key={item.id}
+            item={item}
+            onApprove={handleApprove}
+            onSkip={handleSkip}
+          />
+        ))}
+      </div>
+    </section>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/*  PreviewQueue + Card styles                                         */
+/* ------------------------------------------------------------------ */
+const previewStyles: Record<string, React.CSSProperties> = {
+  queueSection: {
+    background: 'var(--bg-surface)',
+    border: '1px solid rgba(96, 165, 250, 0.25)',
+    borderRadius: 'var(--radius-lg)',
+    padding: 20,
+  },
+  queueHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+    gap: 12,
+    flexWrap: 'wrap' as const,
+  },
+  queueTitleRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+  },
+  queueTitle: {
+    fontSize: 14,
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+    margin: 0,
+  },
+  demoBadge: {
+    fontSize: 10,
+    fontWeight: 500,
+    padding: '2px 8px',
+    borderRadius: 6,
+    background: 'rgba(139, 92, 246, 0.12)',
+    color: '#a78bfa',
+    whiteSpace: 'nowrap' as const,
+    letterSpacing: '0.02em',
+  },
+  queueBulkActions: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+  },
+  btnApproveAll: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    background: 'rgba(52, 211, 153, 0.12)',
+    color: '#34d399',
+    fontWeight: 600,
+    fontSize: 12,
+    padding: '6px 12px',
+    borderRadius: 6,
+    border: '1px solid rgba(52, 211, 153, 0.25)',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap' as const,
+    transition: 'background 0.15s',
+  },
+  btnSkipAll: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    background: 'rgba(107, 114, 128, 0.12)',
+    color: '#9ca3af',
+    fontWeight: 600,
+    fontSize: 12,
+    padding: '6px 12px',
+    borderRadius: 6,
+    border: '1px solid rgba(107, 114, 128, 0.25)',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap' as const,
+    transition: 'background 0.15s',
+  },
+  queueList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 10,
+    maxHeight: 480,
+    overflowY: 'auto',
+  },
+  card: {
+    background: 'var(--bg-elevated)',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-md)',
+    padding: '14px 16px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 10,
+  },
+  cardTop: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  cardInfo: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 2,
+  },
+  cardCompany: {
+    fontSize: 14,
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+  },
+  cardRole: {
+    fontSize: 13,
+    color: 'var(--text-secondary)',
+  },
+  scoreBadge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    fontSize: 14,
+    fontWeight: 700,
+    padding: '4px 10px',
+    borderRadius: 8,
+    flexShrink: 0,
+  },
+  reasonsWrap: {
+    display: 'flex',
+    flexWrap: 'wrap' as const,
+    gap: 4,
+  },
+  reasonChip: {
+    fontSize: 11,
+    padding: '2px 8px',
+    borderRadius: 12,
+    background: 'rgba(96, 165, 250, 0.10)',
+    color: '#93c5fd',
+    border: '1px solid rgba(96, 165, 250, 0.15)',
+    whiteSpace: 'nowrap' as const,
+  },
+  sentSection: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 4,
+    padding: '8px 10px',
+    background: 'rgba(255,255,255,0.02)',
+    borderRadius: 6,
+    border: '1px solid var(--border)',
+  },
+  sentRow: {
+    display: 'flex',
+    alignItems: 'baseline',
+    gap: 6,
+  },
+  sentLabel: {
+    fontSize: 11,
+    fontWeight: 600,
+    color: 'var(--text-tertiary)',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.03em',
+    flexShrink: 0,
+  },
+  sentValue: {
+    fontSize: 12,
+    color: 'var(--text-secondary)',
+  },
+  sentCover: {
+    fontSize: 12,
+    color: 'var(--text-tertiary)',
+    lineHeight: 1.4,
+    display: '-webkit-box',
+    WebkitLineClamp: 2,
+    WebkitBoxOrient: 'vertical' as const,
+    overflow: 'hidden',
+  },
+  cardActions: {
+    display: 'flex',
+    gap: 8,
+    marginTop: 2,
+  },
+  btnApprove: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    background: '#34d399',
+    color: '#09090b',
+    fontWeight: 600,
+    fontSize: 12,
+    padding: '6px 14px',
+    borderRadius: 6,
+    border: 'none',
+    cursor: 'pointer',
+    transition: 'opacity 0.15s',
+  },
+  btnSkip: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    background: 'transparent',
+    color: '#9ca3af',
+    fontWeight: 500,
+    fontSize: 12,
+    padding: '6px 14px',
+    borderRadius: 6,
+    border: '1px solid var(--border)',
+    cursor: 'pointer',
+    transition: 'border-color 0.15s',
+  },
+  statusLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+  },
+}
+
+/* ------------------------------------------------------------------ */
 /*  Extracted SearchProfileForm (shared by anon + auth)                 */
 /* ------------------------------------------------------------------ */
 function SearchProfileForm({
@@ -816,6 +1255,7 @@ function SearchProfileForm({
   formSalary, setFormSalary,
   formRemote, setFormRemote,
   formExcluded, setFormExcluded,
+  formDailyLimit, setFormDailyLimit,
   onSave, onCancel,
 }: {
   formName: string; setFormName: (v: string) => void
@@ -824,6 +1264,7 @@ function SearchProfileForm({
   formSalary: string; setFormSalary: (v: string) => void
   formRemote: boolean; setFormRemote: (v: boolean) => void
   formExcluded: string[]; setFormExcluded: React.Dispatch<React.SetStateAction<string[]>>
+  formDailyLimit: number; setFormDailyLimit: (v: number) => void
   onSave: () => void; onCancel: () => void
 }) {
   return (
@@ -893,6 +1334,33 @@ function SearchProfileForm({
         />
       </div>
 
+      {/* Daily Limit */}
+      <div style={styles.fieldGroup}>
+        <label style={styles.label}>Max Applications Per Day</label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <input
+            style={{ ...styles.input, width: 100, flex: 'none' }}
+            type="number"
+            min={1}
+            max={50}
+            value={formDailyLimit}
+            onChange={(e) => {
+              const val = Math.max(1, Math.min(50, parseInt(e.target.value) || 1))
+              setFormDailyLimit(val)
+            }}
+          />
+          {formDailyLimit > 25 && (
+            <div style={dailyLimitStyles.warning}>
+              <AlertTriangle size={14} color="#f97316" />
+              <span style={dailyLimitStyles.warningText}>
+                Higher limits increase the risk of account restrictions
+              </span>
+            </div>
+          )}
+        </div>
+        <p style={styles.hint}>Recommended: 10-20 per day to avoid platform restrictions</p>
+      </div>
+
       <div style={styles.formActions}>
         <button style={styles.btnSecondary} onClick={onCancel}>
           Cancel
@@ -910,6 +1378,26 @@ function SearchProfileForm({
       </div>
     </div>
   )
+}
+
+/* ------------------------------------------------------------------ */
+/*  Daily Limit warning styles                                         */
+/* ------------------------------------------------------------------ */
+const dailyLimitStyles: Record<string, React.CSSProperties> = {
+  warning: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    padding: '4px 10px',
+    borderRadius: 6,
+    background: 'rgba(249, 115, 22, 0.08)',
+    border: '1px solid rgba(249, 115, 22, 0.2)',
+  },
+  warningText: {
+    fontSize: 12,
+    color: '#f97316',
+    lineHeight: 1.3,
+  },
 }
 
 /* ------------------------------------------------------------------ */
@@ -1014,6 +1502,7 @@ export function AutopilotView() {
   const [formSalary, setFormSalary] = useState('')
   const [formRemote, setFormRemote] = useState(false)
   const [formExcluded, setFormExcluded] = useState<string[]>([])
+  const [formDailyLimit, setFormDailyLimit] = useState(15)
 
   // Persist on change
   useEffect(() => {
@@ -1027,6 +1516,7 @@ export function AutopilotView() {
     setFormSalary('')
     setFormRemote(false)
     setFormExcluded([])
+    setFormDailyLimit(15)
   }, [])
 
   const handleSave = useCallback(() => {
@@ -1039,12 +1529,13 @@ export function AutopilotView() {
       minSalary: parseInt(formSalary) || 0,
       remoteOnly: formRemote,
       excludedCompanies: [...formExcluded],
+      dailyLimit: formDailyLimit,
       createdAt: new Date().toISOString(),
     }
     setProfiles((prev) => [...prev, newProfile])
     resetForm()
     setShowForm(false)
-  }, [formName, formKeywords, formLocation, formSalary, formRemote, formExcluded, resetForm])
+  }, [formName, formKeywords, formLocation, formSalary, formRemote, formExcluded, formDailyLimit, resetForm])
 
   const handleDelete = useCallback((id: string) => {
     setProfiles((prev) => prev.filter((p) => p.id !== id))
@@ -1105,49 +1596,23 @@ export function AutopilotView() {
           </button>
         </div>
 
+        {/* Preview Queue */}
+        <PreviewQueue />
+
         {/* Live Activity Feed (the hook) */}
         <section style={styles.section}>
           <div style={styles.sectionHeader}>
             <div>
               <h2 style={styles.sectionTitle}>Bot Activity</h2>
               <p style={styles.sectionSubtitle}>
-                What the bot does in a typical run
+                Activity from bot runs will appear here
               </p>
             </div>
-            <span style={styles.liveIndicator}>
-              <span style={styles.liveIndicatorDot} />
-              Live Demo
-            </span>
           </div>
           <div style={styles.timeline}>
-            {MOCK_ACTIVITY.map((item, i) => {
-              const Icon = STATUS_ICON[item.status]
-              const color = STATUS_COLOR[item.status]
-              return (
-                <div key={i} style={styles.timelineItem}>
-                  <div style={styles.timelineIconWrap}>
-                    <Icon size={14} color={color} />
-                    {i < MOCK_ACTIVITY.length - 1 && (
-                      <div style={styles.timelineLine} />
-                    )}
-                  </div>
-                  <div style={styles.timelineContent}>
-                    <span style={styles.timelineTime}>
-                      <Clock size={10} color="var(--text-tertiary)" />
-                      {item.time}
-                    </span>
-                    <span
-                      style={{
-                        ...styles.timelineText,
-                        color: item.status === 'error' ? '#f87171' : 'var(--text-primary)',
-                      }}
-                    >
-                      {item.text}
-                    </span>
-                  </div>
-                </div>
-              )
-            })}
+            <p style={styles.emptyTimelineText}>
+              No activity yet — start the bot to see results here
+            </p>
           </div>
         </section>
 
@@ -1243,6 +1708,7 @@ export function AutopilotView() {
             formSalary={formSalary} setFormSalary={setFormSalary}
             formRemote={formRemote} setFormRemote={setFormRemote}
             formExcluded={formExcluded} setFormExcluded={setFormExcluded}
+            formDailyLimit={formDailyLimit} setFormDailyLimit={setFormDailyLimit}
             onSave={handleSave} onCancel={() => { resetForm(); setShowForm(false) }}
           />}
         </section>
@@ -1374,6 +1840,9 @@ export function AutopilotView() {
         )}
       </section>
 
+      {/* 1.5 -- Preview Queue */}
+      <PreviewQueue />
+
       {/* 2 -- Search Profiles */}
       <section style={styles.section}>
         <div style={styles.sectionHeader}>
@@ -1445,6 +1914,12 @@ export function AutopilotView() {
                       </span>
                     </div>
                   )}
+                  {p.dailyLimit && (
+                    <div style={styles.metaItem}>
+                      <Shield size={12} color="var(--text-tertiary)" />
+                      <span style={styles.metaText}>{p.dailyLimit}/day limit</span>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -1479,6 +1954,7 @@ export function AutopilotView() {
           formSalary={formSalary} setFormSalary={setFormSalary}
           formRemote={formRemote} setFormRemote={setFormRemote}
           formExcluded={formExcluded} setFormExcluded={setFormExcluded}
+          formDailyLimit={formDailyLimit} setFormDailyLimit={setFormDailyLimit}
           onSave={handleSave} onCancel={() => { resetForm(); setShowForm(false) }}
         />}
       </section>
@@ -1542,39 +2018,11 @@ export function AutopilotView() {
             )}
           </div>
         ) : (
-          /* Mock fallback */
+          /* Empty state when no real activity */
           <div style={styles.timeline}>
-            {MOCK_ACTIVITY.map((item, i) => {
-              const Icon = STATUS_ICON[item.status]
-              const color = STATUS_COLOR[item.status]
-              return (
-                <div key={i} style={styles.timelineItem}>
-                  <div style={styles.timelineIconWrap}>
-                    <Icon size={14} color={color} />
-                    {i < MOCK_ACTIVITY.length - 1 && (
-                      <div style={styles.timelineLine} />
-                    )}
-                  </div>
-                  <div style={styles.timelineContent}>
-                    <span style={{ ...styles.timelineTime }}>
-                      <Clock size={10} color="var(--text-tertiary)" />
-                      {item.time}
-                    </span>
-                    <span
-                      style={{
-                        ...styles.timelineText,
-                        color:
-                          item.status === 'error'
-                            ? '#f87171'
-                            : 'var(--text-primary)',
-                      }}
-                    >
-                      {item.text}
-                    </span>
-                  </div>
-                </div>
-              )
-            })}
+            <p style={styles.emptyTimelineText}>
+              No activity yet — start the bot to see results here
+            </p>
           </div>
         )}
       </section>

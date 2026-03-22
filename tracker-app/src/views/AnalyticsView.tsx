@@ -1,7 +1,7 @@
 import { useMemo, useState, lazy, Suspense } from 'react'
 import { useJobs } from '../context/JobsContext'
 import { STATUS_CONFIG, type JobStatus } from '../types/job'
-import { computeIntelligenceSummary, computeATSStats } from '../utils/intelligence'
+import { computeIntelligenceSummary } from '../utils/intelligence'
 
 const RechartsBarChart = lazy(() =>
   import('recharts').then((m) => ({ default: m.BarChart }))
@@ -9,16 +9,12 @@ const RechartsBarChart = lazy(() =>
 const RechartsAreaChart = lazy(() =>
   import('recharts').then((m) => ({ default: m.AreaChart }))
 )
-const RechartsPieChart = lazy(() =>
-  import('recharts').then((m) => ({ default: m.PieChart }))
-)
 
 // We need the sub-components synchronously once the chunk loads, so import
 // them eagerly alongside the lazy charts via a single recharts import.
 import {
   Bar,
   Area,
-  Pie,
   XAxis,
   YAxis,
   Tooltip,
@@ -160,116 +156,6 @@ function ApplicationsOverTime() {
                 name="Total Applications"
               />
             </RechartsAreaChart>
-          </ResponsiveContainer>
-        </Suspense>
-      </div>
-    </div>
-  )
-}
-
-/* ------------------------------------------------------------------ */
-/*  TopATSPlatforms — pie chart                                        */
-/* ------------------------------------------------------------------ */
-const ATS_COLORS = [
-  '#34d399', '#60a5fa', '#fb923c', '#a855f7', '#f43f5e',
-  '#38bdf8', '#fbbf24', '#c084fc', '#4ade80', '#818cf8',
-]
-
-function TopATSPlatforms() {
-  const { jobs } = useJobs()
-
-  const data = useMemo(() => {
-    // Normalize ATS names and exclude non-ATS values
-    const EXCLUDE = new Set([
-      'unknown', 'soumise', 'à soumettre', 'a soumettre', 'manual', 'custom',
-      'email', 'direct', '—', '', 'recruiter', 'aggregator', 'various',
-      'skip (us only)', 'trop long', 'external', 'custom (remote.com)',
-      'wwr (paywall)', 'buscojobs',
-    ])
-    const NORMALIZE: Record<string, string> = {
-      'linkedin ea': 'Easy Apply LinkedIn',
-      'easy apply': 'Easy Apply LinkedIn',
-      'linkedin easy apply': 'Easy Apply LinkedIn',
-      'linkedin easy apply (workable)': 'Workable',
-      'linkedin': 'Easy Apply LinkedIn',
-      'greenhouse': 'Greenhouse',
-      'greenhouse (embedded)': 'Greenhouse',
-      'custom (greenhouse)': 'Greenhouse',
-      'lever': 'Lever',
-      'lever eu': 'Lever',
-      'ashby': 'Ashby',
-      'ashby hq': 'Ashby',
-      'workable': 'Workable',
-      'teamtailor': 'Teamtailor',
-      'breezy hr': 'Breezy HR',
-      'breezy': 'Breezy HR',
-      'smartrecruiters': 'SmartRecruiters',
-      'smartrecruiters (own)': 'SmartRecruiters',
-      'recruitee': 'Recruitee',
-      'careers-page.com': 'Manatal',
-      'manatal': 'Manatal',
-      'workday': 'Workday',
-      'indeed': 'Indeed',
-      'glassdoor': 'Indeed',
-      'dribbble': 'Dribbble',
-      'netflix custom': 'Netflix',
-      'jazzhr': 'JazzHR',
-      'authenticjobs': 'AuthenticJobs',
-      'deel_careers': 'Deel Careers',
-      'wellfound': 'Wellfound',
-      'jobvite': 'Jobvite',
-      'oracle hcm': 'Oracle HCM',
-      'rippling': 'Rippling',
-      'gupy': 'Gupy',
-      'bamboohr': 'BambooHR',
-      'notion form': 'Notion Form',
-      'notion forms': 'Notion Form',
-      'canonical ats': 'Canonical',
-      'pinpoint hq': 'Pinpoint',
-      'gem': 'Gem',
-    }
-    const atsMap = new Map<string, number>()
-    for (const job of jobs) {
-      if (!job.ats) continue
-      const raw = job.ats.trim().toLowerCase()
-      if (EXCLUDE.has(raw)) continue
-      const name = NORMALIZE[raw] || job.ats.trim()
-      atsMap.set(name, (atsMap.get(name) ?? 0) + 1)
-    }
-    return [...atsMap.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10)
-      .map(([name, value]) => ({ name, value }))
-  }, [jobs])
-
-  return (
-    <div style={styles.card}>
-      <h3 style={styles.cardTitle}>Top ATS Platforms</h3>
-      <div style={{ width: '100%', height: 280 }}>
-        <Suspense fallback={<ChartLoader />}>
-          <ResponsiveContainer width="100%" height="100%">
-            <RechartsPieChart>
-              <Pie
-                data={data}
-                cx="50%"
-                cy="50%"
-                innerRadius={50}
-                outerRadius={90}
-                paddingAngle={2}
-                dataKey="value"
-                nameKey="name"
-                label={({ name, percent }) =>
-                  `${name} ${(percent * 100).toFixed(0)}%`
-                }
-                labelLine={{ stroke: '#52525b' }}
-                fontSize={10}
-              >
-                {data.map((_, i) => (
-                  <Cell key={i} fill={ATS_COLORS[i % ATS_COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip {...tooltipStyle} />
-            </RechartsPieChart>
           </ResponsiveContainer>
         </Suspense>
       </div>
@@ -545,8 +431,6 @@ function IntelligenceCards() {
 
   const intel = useMemo(() => computeIntelligenceSummary(allJobs), [allJobs])
 
-  const atsStats = useMemo(() => computeATSStats(allJobs), [allJobs])
-
   // Ghost rate display
   const ghostPct = Math.round(intel.ghostRate * 100)
   const submittedCount = allJobs.filter(
@@ -554,27 +438,15 @@ function IntelligenceCards() {
   ).length
   const ghostColor = ghostPct > 30 ? '#fb923c' : ghostPct < 15 ? '#34d399' : '#fbbf24'
 
-  // Best ATS: highest response rate with >= 5 applications
-  const bestATS = intel.bestATS
-  const bestATSName = bestATS ? bestATS.ats : '—'
-  const bestATSRate = bestATS ? `${Math.round(bestATS.responseRate * 100)}%` : '—'
-
-  // Average quality score
+  // Completeness score (formerly "Avg Quality")
   const avgQ = intel.avgQualityScore
   const qualityColor = avgQ > 70 ? '#34d399' : avgQ >= 50 ? '#fbbf24' : '#f43f5e'
 
-  // Average response time: weighted across all ATS
-  const avgResponseTime = useMemo(() => {
-    let totalDays = 0
-    let totalResponses = 0
-    for (const s of atsStats) {
-      if (s.avgDaysToResponse > 0 && s.gotResponse > 0) {
-        totalDays += s.avgDaysToResponse * s.gotResponse
-        totalResponses += s.gotResponse
-      }
-    }
-    return totalResponses > 0 ? Math.round((totalDays / totalResponses) * 10) / 10 : 0
-  }, [atsStats])
+  // Response rate
+  const responseStatuses = ['screening', 'interviewing', 'challenge', 'offer', 'negotiation', 'rejected', 'withdrawn']
+  const gotResponse = allJobs.filter(j => responseStatuses.includes(j.status)).length
+  const responseRate = submittedCount > 0 ? Math.round((gotResponse / submittedCount) * 100) : 0
+  const responseColor = responseRate > 20 ? '#34d399' : responseRate >= 10 ? '#fbbf24' : '#f43f5e'
 
   return (
     <div style={intelStyles.row}>
@@ -585,25 +457,25 @@ function IntelligenceCards() {
         <span style={intelStyles.sub}>{intel.totalGhosts} of {submittedCount} applications</span>
       </div>
 
-      {/* Best ATS */}
+      {/* Response Rate */}
       <div style={intelStyles.card}>
-        <span style={{ ...intelStyles.value, color: '#60a5fa' }}>{bestATSName}</span>
-        <span style={intelStyles.label}>Best ATS</span>
-        <span style={intelStyles.sub}>{bestATSRate} response rate</span>
+        <span style={{ ...intelStyles.value, color: responseColor }}>{responseRate}%</span>
+        <span style={intelStyles.label}>Response Rate</span>
+        <span style={intelStyles.sub}>{gotResponse} of {submittedCount} got a reply</span>
       </div>
 
-      {/* Avg Quality */}
+      {/* Completeness */}
       <div style={intelStyles.card}>
         <span style={{ ...intelStyles.value, color: qualityColor }}>{avgQ}</span>
-        <span style={intelStyles.label}>Avg Quality</span>
+        <span style={intelStyles.label}>Completeness</span>
         <span style={intelStyles.sub}>out of 100</span>
       </div>
 
-      {/* Avg Response Time */}
+      {/* Total Applied */}
       <div style={intelStyles.card}>
-        <span style={{ ...intelStyles.value, color: '#a78bfa' }}>{avgResponseTime > 0 ? `${avgResponseTime}d` : '—'}</span>
-        <span style={intelStyles.label}>Avg Response</span>
-        <span style={intelStyles.sub}>days to first reply</span>
+        <span style={{ ...intelStyles.value, color: '#a78bfa' }}>{submittedCount}</span>
+        <span style={intelStyles.label}>Total Applied</span>
+        <span style={intelStyles.sub}>across all channels</span>
       </div>
     </div>
   )
@@ -650,7 +522,7 @@ const intelStyles: Record<string, React.CSSProperties> = {
 /*  AnalyticsView                                                      */
 /* ------------------------------------------------------------------ */
 // Import new chart components
-import { ManualVsBotFunnel, ATSConversionComparison, TimeToResponse, PipelineHealth, VelocityVsQuality } from './AnalyticsCharts'
+import { ManualVsBotFunnel, TimeToResponse, PipelineHealth, VelocityVsQuality } from './AnalyticsCharts'
 import { WeeklyCadenceHeatmap, RoleCategoryPerformance, GeographicPerformance } from './AnalyticsCharts2'
 
 export function AnalyticsView() {
@@ -665,10 +537,8 @@ export function AnalyticsView() {
         <ResponseRate />
         <ManualVsBotFunnel />
         <StatusDistribution />
-        <ATSConversionComparison />
         <ApplicationsOverTime />
         <VelocityVsQuality />
-        <TopATSPlatforms />
         <TimeToResponse />
         <PipelineHealth />
         <TopRejectors />

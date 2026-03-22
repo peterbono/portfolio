@@ -1,17 +1,11 @@
 import { useMemo, lazy, Suspense } from 'react'
 import {
   Brain,
-  TrendingUp,
-  TrendingDown,
-  Minus,
   Ghost,
   Zap,
   Clock,
   FileCheck,
   Calendar,
-  ArrowUpRight,
-  ArrowDownRight,
-  Shield,
 } from 'lucide-react'
 import { useFeedbackLoop } from '../hooks/useFeedbackLoop'
 import { useJobs } from '../context/JobsContext'
@@ -54,92 +48,7 @@ function ChartLoader() {
 }
 
 // ---------------------------------------------------------------------------
-//  Card 1: Bot IQ Score
-// ---------------------------------------------------------------------------
-
-function BotIQCard() {
-  const { botIQ } = useFeedbackLoop()
-
-  const color = botIQ >= 70 ? '#34d399' : botIQ >= 40 ? '#fbbf24' : '#f43f5e'
-  const circumference = 2 * Math.PI * 54
-  const strokeDashoffset = circumference - (botIQ / 100) * circumference
-
-  return (
-    <div style={styles.card}>
-      <div style={styles.cardHeader}>
-        <Brain size={16} color="#a78bfa" />
-        <h3 style={styles.cardTitle}>Bot IQ Score</h3>
-      </div>
-      <p style={styles.cardSubtitle}>How smart the feedback loop is getting</p>
-
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 0' }}>
-        <div style={{ position: 'relative', width: 128, height: 128 }}>
-          {/* Background ring */}
-          <svg width={128} height={128} viewBox="0 0 128 128" style={{ transform: 'rotate(-90deg)' }}>
-            <circle
-              cx="64" cy="64" r="54"
-              fill="none"
-              stroke="#1e1e24"
-              strokeWidth="8"
-            />
-            <circle
-              cx="64" cy="64" r="54"
-              fill="none"
-              stroke={color}
-              strokeWidth="8"
-              strokeLinecap="round"
-              strokeDasharray={circumference}
-              strokeDashoffset={strokeDashoffset}
-              style={{ transition: 'stroke-dashoffset 0.6s ease' }}
-            />
-          </svg>
-          {/* Number */}
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <span style={{ fontSize: 36, fontWeight: 700, color, lineHeight: 1 }}>{botIQ}</span>
-            <span style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>/ 100</span>
-          </div>
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 11, color: 'var(--text-tertiary)' }}>
-        <IQFactorRow label="Data volume" progress={Math.min(100, botIQ > 0 ? 60 : 0)} />
-        <IQFactorRow label="ATS diversity" progress={Math.min(100, botIQ > 0 ? 70 : 0)} />
-        <IQFactorRow label="Outcome tracking" progress={Math.min(100, botIQ > 0 ? 50 : 0)} />
-      </div>
-    </div>
-  )
-}
-
-function IQFactorRow({ label, progress }: { label: string; progress: number }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      <span style={{ width: 100, flexShrink: 0 }}>{label}</span>
-      <div style={{ flex: 1, height: 4, background: '#1e1e24', borderRadius: 2, overflow: 'hidden' }}>
-        <div
-          style={{
-            width: `${progress}%`,
-            height: '100%',
-            background: progress > 70 ? '#34d399' : progress > 40 ? '#fbbf24' : '#f43f5e',
-            borderRadius: 2,
-            transition: 'width 0.5s ease',
-          }}
-        />
-      </div>
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-//  Card 2: ATS Playbook
+//  Card: What's Working (formerly ATS Playbook)
 // ---------------------------------------------------------------------------
 
 function ATSPlaybookCard() {
@@ -173,9 +82,9 @@ function ATSPlaybookCard() {
     <div style={styles.card}>
       <div style={styles.cardHeader}>
         <Zap size={16} color="#fbbf24" />
-        <h3 style={styles.cardTitle}>ATS Playbook</h3>
+        <h3 style={styles.cardTitle}>What's Working</h3>
       </div>
-      <p style={styles.cardSubtitle}>Thompson Sampling ranks your platforms by response rate</p>
+      <p style={styles.cardSubtitle}>Platforms ranked by response rate from your applications</p>
 
       <div style={{ marginTop: 12 }}>
         {recommendations.length === 0 && (
@@ -508,82 +417,6 @@ function TimingAnalysisCard() {
 }
 
 // ---------------------------------------------------------------------------
-//  Card 6: Weekly Report
-// ---------------------------------------------------------------------------
-
-function DeltaArrow({ value }: { value: number }) {
-  if (value > 0) return <ArrowUpRight size={14} color="#34d399" />
-  if (value < 0) return <ArrowDownRight size={14} color="#f43f5e" />
-  return <Minus size={12} color="#71717a" />
-}
-
-function deltaColor(v: number): string {
-  if (v > 0) return '#34d399'
-  if (v < 0) return '#f43f5e'
-  return '#71717a'
-}
-
-function WeeklyReportCard() {
-  const { weeklyReport } = useFeedbackLoop()
-
-  const metrics = [
-    { label: 'Applications Sent', value: weeklyReport.sent, delta: weeklyReport.sentDelta, color: '#34d399' },
-    { label: 'Responses Received', value: weeklyReport.responses, delta: weeklyReport.responsesDelta, color: '#60a5fa' },
-    { label: 'Interviews Scheduled', value: weeklyReport.interviews, delta: weeklyReport.interviewsDelta, color: '#fbbf24' },
-  ]
-
-  return (
-    <div style={styles.card}>
-      <div style={styles.cardHeader}>
-        <Shield size={16} color="#34d399" />
-        <h3 style={styles.cardTitle}>Weekly Report</h3>
-      </div>
-      <p style={styles.cardSubtitle}>Last 7 days vs prior 7 days</p>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 16 }}>
-        {metrics.map((m) => (
-          <div key={m.label}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-              <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{m.label}</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <DeltaArrow value={m.delta} />
-                <span style={{ fontSize: 11, color: deltaColor(m.delta) }}>
-                  {m.delta > 0 ? '+' : ''}{m.delta}
-                </span>
-              </div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-              <span style={{ fontSize: 32, fontWeight: 700, color: m.color, lineHeight: 1 }}>{m.value}</span>
-              <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>this week</span>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Quick summary */}
-      <div
-        style={{
-          marginTop: 20,
-          padding: '10px 12px',
-          borderRadius: 6,
-          background: 'var(--bg-elevated)',
-          border: '1px solid var(--border)',
-          fontSize: 12,
-          color: 'var(--text-secondary)',
-          lineHeight: 1.5,
-        }}
-      >
-        {weeklyReport.sentDelta > 0
-          ? 'Activity is trending up. Keep the momentum going.'
-          : weeklyReport.sentDelta < 0
-            ? 'Activity dipped this week. Consider scheduling a sprint session.'
-            : 'Steady pace this week. Consistency is key.'}
-      </div>
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
 //  Active Insights Banner
 // ---------------------------------------------------------------------------
 
@@ -684,18 +517,16 @@ export function InsightsView() {
     <div style={styles.container}>
       <div style={styles.header}>
         <h1 style={styles.title}>Insights</h1>
-        <p style={styles.subtitle}>Thompson Sampling feedback loop — learns from every application outcome</p>
+        <p style={styles.subtitle}>Personalized recommendations based on your results</p>
       </div>
 
       <InsightsBanner />
 
       <div style={styles.grid}>
-        <BotIQCard />
         <ATSPlaybookCard />
         <GhostRadarCard />
         <QualityImpactCard />
         <TimingAnalysisCard />
-        <WeeklyReportCard />
       </div>
     </div>
   )

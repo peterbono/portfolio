@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useMemo, Component, type ErrorInfo, type R
 import { useCoach, type GoalMode, type PersonalRank } from '../context/CoachContext'
 import { useJobs } from '../context/JobsContext'
 import { celebrate } from '../hooks/useCelebration'
-import { detectGhosts, computeATSStats, computeQualityScore, computeIntelligenceSummary } from '../utils/intelligence'
 import {
   Flame,
   Target,
@@ -17,8 +16,6 @@ import {
   Bot,
   Loader2,
   X,
-  BarChart3,
-  Star,
 } from 'lucide-react'
 
 const RANK_CONFIG: Record<PersonalRank, { label: string; color: string; icon: string }> = {
@@ -97,7 +94,6 @@ function CoachViewContent() {
           <StreakCard />
           <DailyGoalCard />
           <FocusTasksCard />
-          <IntelligenceInsightsCard />
           <PacingCard />
         </div>
         <div style={styles.rightCol}>
@@ -378,244 +374,6 @@ function FocusTasksCard() {
           )
         })}
       </div>
-    </Card>
-  )
-}
-
-/* ── Intelligence Insights Card ── */
-function IntelligenceInsightsCard() {
-  const { allJobs, updateJobStatus } = useJobs()
-
-  const ghosts = useMemo(() => detectGhosts(allJobs), [allJobs])
-  const atsStats = useMemo(() => computeATSStats(allJobs), [allJobs])
-  const summary = useMemo(() => computeIntelligenceSummary(allJobs), [allJobs])
-
-  const avgQuality = useMemo(() => {
-    const submitted = allJobs.filter(j => !['skipped', 'saved'].includes(j.status))
-    if (submitted.length === 0) return 0
-    const total = submitted.reduce((sum, j) => sum + computeQualityScore(j), 0)
-    return Math.round(total / submitted.length)
-  }, [allJobs])
-
-  // ATS: top 3 best and worst (min 5 applications to qualify)
-  const qualifiedATS = useMemo(() => atsStats.filter(s => s.totalApplied >= 5), [atsStats])
-  const bestATS = qualifiedATS.slice(0, 3)
-  const worstATS = qualifiedATS.length > 3
-    ? qualifiedATS.slice(-3).reverse()
-    : qualifiedATS.length > 1
-      ? qualifiedATS.slice(-1)
-      : []
-
-  // Pick the most impactful insight
-  const smartTip = summary.topInsights.length > 0 ? summary.topInsights[0] : null
-
-  // Quality tip
-  const qualityTip = useMemo(() => {
-    // Find the most common missing element
-    const submitted = allJobs.filter(j => !['skipped', 'saved'].includes(j.status))
-    let noCv = 0, noPortfolio = 0, noSalary = 0, noNotes = 0
-    for (const j of submitted) {
-      if (!j.cv || j.cv.trim().length === 0 || j.cv.toLowerCase() === 'no') noCv++
-      if (!j.portfolio || j.portfolio.trim().length === 0 || j.portfolio.toLowerCase() === 'no') noPortfolio++
-      if (!j.salary || j.salary.trim().length === 0) noSalary++
-      if (!j.notes || j.notes.trim().length === 0) noNotes++
-    }
-    const max = Math.max(noCv, noPortfolio, noSalary, noNotes)
-    if (max === 0) return 'Your applications are well-documented. Keep it up.'
-    if (max === noCv) return 'Adding your CV to more applications could improve your score.'
-    if (max === noPortfolio) return 'Including your portfolio link in more applications could improve your score.'
-    if (max === noSalary) return 'Adding salary expectations to more applications could improve your score.'
-    return 'Adding notes to more applications could improve your score.'
-  }, [allJobs])
-
-  // Color for quality score ring
-  const qualityColor = avgQuality >= 75 ? '#34d399' : avgQuality >= 50 ? '#fbbf24' : '#f87171'
-
-  return (
-    <Card>
-      <div style={styles.cardHeader}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <BarChart3 size={18} color="#818cf8" />
-          <span style={styles.cardTitle}>Intelligence Insights</span>
-        </div>
-      </div>
-
-      {/* Ghost Alert */}
-      {ghosts.length > 0 && (
-        <div style={{
-          padding: '10px 12px', borderRadius: 8, marginBottom: 10,
-          background: 'rgba(249, 115, 22, 0.06)',
-          border: '1px solid rgba(249, 115, 22, 0.15)',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-            <AlertTriangle size={14} color="#f97316" />
-            <span style={{ fontSize: 12, fontWeight: 600, color: '#f97316' }}>
-              {ghosts.length} application{ghosts.length > 1 ? 's' : ''} likely ghosted
-            </span>
-            <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
-              (no response &gt;21 days)
-            </span>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {ghosts.slice(0, 3).map(ghost => (
-              <div key={ghost.jobId} style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '6px 8px', borderRadius: 6,
-                background: 'rgba(255,255,255,0.02)',
-              }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 500 }}>
-                    {ghost.company}
-                  </span>
-                  <span style={{ fontSize: 10, color: 'var(--text-tertiary)', marginLeft: 6 }}>
-                    {ghost.daysSinceApply}d ago
-                  </span>
-                </div>
-                <button
-                  onClick={() => updateJobStatus(ghost.jobId, 'ghosted')}
-                  style={{
-                    padding: '3px 8px', borderRadius: 4,
-                    background: 'rgba(63, 63, 70, 0.2)',
-                    border: '1px solid rgba(63, 63, 70, 0.3)',
-                    color: 'var(--text-tertiary)',
-                    fontSize: 10, fontWeight: 500,
-                    cursor: 'pointer',
-                    transition: 'all 0.15s',
-                    flexShrink: 0,
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'rgba(63, 63, 70, 0.4)'
-                    e.currentTarget.style.color = 'var(--text-secondary)'
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'rgba(63, 63, 70, 0.2)'
-                    e.currentTarget.style.color = 'var(--text-tertiary)'
-                  }}
-                >
-                  Mark Ghosted
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ATS Performance */}
-      {qualifiedATS.length >= 2 && (
-        <div style={{
-          padding: '10px 12px', borderRadius: 8, marginBottom: 10,
-          background: 'rgba(129, 140, 248, 0.04)',
-          border: '1px solid rgba(129, 140, 248, 0.1)',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-            <BarChart3 size={14} color="#818cf8" />
-            <span style={{ fontSize: 12, fontWeight: 600, color: '#818cf8' }}>ATS Performance</span>
-          </div>
-
-          {bestATS.length > 0 && (
-            <div style={{ marginBottom: 6 }}>
-              <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>
-                Best
-              </div>
-              {bestATS.map(ats => {
-                const pct = Math.round(ats.responseRate * 100)
-                return (
-                  <div key={ats.ats} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-                    <span style={{ fontSize: 11, color: 'var(--text-secondary)', width: 80, textTransform: 'capitalize', flexShrink: 0 }}>
-                      {ats.ats}
-                    </span>
-                    <div style={{ flex: 1, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.06)', overflow: 'hidden' }}>
-                      <div style={{
-                        height: '100%', borderRadius: 2, width: `${Math.max(pct, 2)}%`,
-                        background: 'linear-gradient(90deg, #34d399, #6ee7b7)',
-                        transition: 'width 0.5s ease',
-                      }} />
-                    </div>
-                    <span style={{ fontSize: 10, color: '#34d399', fontWeight: 600, width: 32, textAlign: 'right', flexShrink: 0 }}>
-                      {pct}%
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-
-          {worstATS.length > 0 && (
-            <div>
-              <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>
-                Worst
-              </div>
-              {worstATS.map(ats => {
-                const pct = Math.round(ats.responseRate * 100)
-                return (
-                  <div key={ats.ats} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-                    <span style={{ fontSize: 11, color: 'var(--text-secondary)', width: 80, textTransform: 'capitalize', flexShrink: 0 }}>
-                      {ats.ats}
-                    </span>
-                    <div style={{ flex: 1, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.06)', overflow: 'hidden' }}>
-                      <div style={{
-                        height: '100%', borderRadius: 2, width: `${Math.max(pct, 2)}%`,
-                        background: 'linear-gradient(90deg, #f87171, #fca5a5)',
-                        transition: 'width 0.5s ease',
-                      }} />
-                    </div>
-                    <span style={{ fontSize: 10, color: '#f87171', fontWeight: 600, width: 32, textAlign: 'right', flexShrink: 0 }}>
-                      {pct}%
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Quality Score */}
-      <div style={{
-        padding: '10px 12px', borderRadius: 8, marginBottom: 10,
-        background: `${qualityColor}06`,
-        border: `1px solid ${qualityColor}15`,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-          <Star size={14} color={qualityColor} />
-          <span style={{ fontSize: 12, fontWeight: 600, color: qualityColor }}>Quality Score</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{
-            fontSize: 28, fontWeight: 700, color: qualityColor, lineHeight: 1,
-          }}>
-            {avgQuality}
-            <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-tertiary)' }}>/100</span>
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ width: '100%', height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.06)', overflow: 'hidden' }}>
-              <div style={{
-                height: '100%', borderRadius: 2, width: `${avgQuality}%`,
-                background: qualityColor,
-                transition: 'width 0.5s ease',
-              }} />
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4, lineHeight: 1.4 }}>
-              {qualityTip}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Smart Tip */}
-      {smartTip && (
-        <div style={{
-          padding: '10px 12px', borderRadius: 8,
-          background: 'rgba(251, 191, 36, 0.04)',
-          border: '1px solid rgba(251, 191, 36, 0.1)',
-          display: 'flex', alignItems: 'flex-start', gap: 8,
-        }}>
-          <Lightbulb size={14} color="#fbbf24" style={{ flexShrink: 0, marginTop: 1 }} />
-          <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-            {smartTip}
-          </div>
-        </div>
-      )}
     </Card>
   )
 }

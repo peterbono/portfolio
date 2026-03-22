@@ -69,12 +69,8 @@ function getRecentActivity(): ActivityEntry[] {
     }
   } catch { /* ignore */ }
 
-  // Fallback mock data
-  return [
-    { time: '2m ago', text: 'Applied to Product Designer at Wise', type: 'success' },
-    { time: '5m ago', text: 'Skipped UX Lead at Meta (TZ mismatch)', type: 'skip' },
-    { time: '8m ago', text: 'Applied to Senior Designer at Canva', type: 'success' },
-  ]
+  // No real activity found
+  return []
 }
 
 function getBotStatus(): BotStatus {
@@ -129,25 +125,31 @@ export function TrustIndicator() {
 
           {/* Activity list */}
           <div style={styles.activityList}>
-            {activities.map((activity, i) => {
-              const Icon = ACTIVITY_ICON[activity.type] ?? Clock
-              const color = ACTIVITY_COLOR[activity.type] ?? 'var(--text-tertiary)'
-              return (
-                <div key={i} style={styles.activityItem}>
-                  <Icon size={14} color={color} style={{ flexShrink: 0, marginTop: 2 }} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={styles.activityText}>{activity.text}</p>
-                    <span style={styles.activityTime}>{activity.time}</span>
+            {activities.length === 0 ? (
+              <div style={{ padding: '12px 14px', fontSize: 12, color: 'var(--text-tertiary)', textAlign: 'center' }}>
+                No recent activity
+              </div>
+            ) : (
+              activities.map((activity, i) => {
+                const Icon = ACTIVITY_ICON[activity.type] ?? Clock
+                const color = ACTIVITY_COLOR[activity.type] ?? 'var(--text-tertiary)'
+                return (
+                  <div key={i} style={styles.activityItem}>
+                    <Icon size={14} color={color} style={{ flexShrink: 0, marginTop: 2 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={styles.activityText}>{activity.text}</p>
+                      <span style={styles.activityTime}>{activity.time}</span>
+                    </div>
                   </div>
-                </div>
-              )
-            })}
+                )
+              })
+            )}
           </div>
 
           {/* Trust message */}
           <div style={styles.trustMessage}>
             <Shield size={12} color="var(--accent)" />
-            <span>The bot never submits without your approval</span>
+            <span>The bot applies within your configured rules</span>
           </div>
 
           {/* Link to full log */}
