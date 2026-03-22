@@ -1,7 +1,7 @@
 // ─── Primitives ─────────────────────────────────────────────────────
 
 const staticBase: React.CSSProperties = {
-  background: 'rgba(255,255,255,0.06)',
+  background: 'rgba(255,255,255,0.12)',
 }
 
 function SkeletonBar({ width = '100%', height = 12, radius = 6, style }: {

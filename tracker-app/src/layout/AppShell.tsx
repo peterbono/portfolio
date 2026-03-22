@@ -120,7 +120,7 @@ function ActiveViewContent({ view }: { view: string }) {
   if (isAnonymous && emptyConfig) {
     return (
       <div style={{ position: 'relative', flex: 1, overflow: 'hidden' }}>
-        <div style={{ opacity: 0.6, pointerEvents: 'none', overflow: 'hidden', maxHeight: '100%' }}>
+        <div style={{ opacity: 0.8, pointerEvents: 'none', overflow: 'hidden', maxHeight: '100%' }}>
           <SkeletonForView view={view} />
         </div>
         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent' }}>
