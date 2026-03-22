@@ -2,7 +2,7 @@ import { defineConfig } from "@trigger.dev/sdk/v3"
 import { playwright } from "@trigger.dev/build/extensions/playwright"
 
 export default defineConfig({
-  project: "job-tracker-oSgf",
+  project: "proj_tnxarbbygyqjddsnteoj",
   runtime: "node",
   logLevel: "log",
   // Tell Trigger.dev where to find task files
