@@ -25,6 +25,10 @@ import {
   Shield,
   Globe,
   ChevronDown,
+  SlidersHorizontal,
+  ChevronLeft,
+  Save,
+  Tag,
 } from 'lucide-react'
 import { useBotActivity } from '../hooks/useBotActivity'
 import type { BotActivityItem, BotRunStatus } from '../hooks/useBotActivity'
@@ -43,6 +47,25 @@ interface LocationRule {
   type: 'zone' | 'city' | 'country'
   value: string
   workArrangement: 'remote' | 'hybrid' | 'onsite' | 'any'
+  minSalary?: number
+  currency?: string
+}
+
+const CURRENCY_OPTIONS = [
+  { value: 'EUR', symbol: '\u20AC', label: 'EUR' },
+  { value: 'USD', symbol: '$', label: 'USD' },
+  { value: 'GBP', symbol: '\u00A3', label: 'GBP' },
+  { value: 'SGD', symbol: 'S$', label: 'SGD' },
+  { value: 'AUD', symbol: 'A$', label: 'AUD' },
+  { value: 'THB', symbol: '\u0E3F', label: 'THB' },
+  { value: 'JPY', symbol: '\u00A5', label: 'JPY' },
+  { value: 'INR', symbol: '\u20B9', label: 'INR' },
+  { value: 'AED', symbol: 'AED', label: 'AED' },
+]
+
+function getCurrencySymbol(code?: string): string {
+  if (!code) return '\u20AC'
+  return CURRENCY_OPTIONS.find(c => c.value === code)?.symbol || code
 }
 
 interface SearchProfile {
@@ -90,7 +113,10 @@ function getLocationRuleLabel(rule: LocationRule): string {
   const arrangement = rule.workArrangement === 'any' ? 'Any' :
     rule.workArrangement === 'remote' ? 'Remote' :
     rule.workArrangement === 'hybrid' ? 'Hybrid' : 'On-site'
-  return `${rule.value} (${arrangement})`
+  const salaryPart = rule.minSalary
+    ? ` ${getCurrencySymbol(rule.currency)}${(rule.minSalary / 1000).toFixed(0)}k+`
+    : ''
+  return `${rule.value} ${arrangement}${salaryPart}`
 }
 
 /** Migrate old profiles: if no locationRules, create one from legacy fields */
@@ -801,6 +827,8 @@ function LocationRuleEditor({
   const [showCountryDrop, setShowCountryDrop] = useState(false)
   const [cityValue, setCityValue] = useState('')
   const [arrangement, setArrangement] = useState<'remote' | 'hybrid' | 'onsite' | 'any'>('remote')
+  const [ruleSalary, setRuleSalary] = useState('')
+  const [ruleCurrency, setRuleCurrency] = useState('EUR')
   const countryWrapRef = useRef<HTMLDivElement>(null)
 
   // City autocomplete state
@@ -895,11 +923,13 @@ function LocationRuleEditor({
 
   const handleAdd = () => {
     if (!canAdd) return
+    const salaryNum = parseInt(ruleSalary) || 0
     onAdd({
       id: crypto.randomUUID(),
       type: ruleType,
       value: currentValue.trim(),
       workArrangement: arrangement,
+      ...(salaryNum > 0 ? { minSalary: salaryNum, currency: ruleCurrency } : {}),
     })
   }
 
@@ -1171,6 +1201,56 @@ function LocationRuleEditor({
         </div>
       </div>
 
+      {/* Salary for this location */}
+      <div>
+        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 6, display: 'block' }}>
+          Min salary (optional)
+        </span>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <select
+            value={ruleCurrency}
+            onChange={(e) => setRuleCurrency(e.target.value)}
+            style={{
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-md)',
+              padding: '6px 8px',
+              color: 'var(--text-primary)',
+              fontSize: 12,
+              outline: 'none',
+              width: 72,
+              cursor: 'pointer',
+            }}
+          >
+            {CURRENCY_OPTIONS.map(c => (
+              <option key={c.value} value={c.value}>{c.symbol} {c.label}</option>
+            ))}
+          </select>
+          <input
+            type="number"
+            value={ruleSalary}
+            onChange={(e) => setRuleSalary(e.target.value)}
+            placeholder="e.g. 80000"
+            style={{
+              flex: 1,
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-md)',
+              padding: '6px 10px',
+              color: 'var(--text-primary)',
+              fontSize: 12,
+              outline: 'none',
+              boxSizing: 'border-box' as const,
+            }}
+          />
+          {ruleSalary && parseInt(ruleSalary) > 0 && (
+            <span style={{ fontSize: 11, color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>
+              {getCurrencySymbol(ruleCurrency)}{(parseInt(ruleSalary) / 1000).toFixed(0)}k+
+            </span>
+          )}
+        </div>
+      </div>
+
       {/* Action row */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
         <button
@@ -1269,6 +1349,15 @@ function LocationRuleChips({
             }}>
               {arrangement}
             </span>
+            {rule.minSalary && rule.minSalary > 0 && (
+              <span style={{
+                fontSize: compact ? 10 : 11,
+                color: '#34d399',
+                fontWeight: 600,
+              }}>
+                {getCurrencySymbol(rule.currency)}{(rule.minSalary / 1000).toFixed(0)}k+
+              </span>
+            )}
             {onRemove && (
               <button
                 type="button"
@@ -1897,22 +1986,22 @@ function SearchProfileForm({
   formName, setFormName,
   formKeywords, setFormKeywords,
   formLocationRules, setFormLocationRules,
-  formSalary, setFormSalary,
   formExcluded, setFormExcluded,
   formDailyLimit, setFormDailyLimit,
   onSave, onCancel,
+  compact,
 }: {
   formName: string; setFormName: (v: string) => void
   formKeywords: string[]; setFormKeywords: React.Dispatch<React.SetStateAction<string[]>>
   formLocationRules: LocationRule[]; setFormLocationRules: (v: LocationRule[]) => void
-  formSalary: string; setFormSalary: (v: string) => void
   formExcluded: string[]; setFormExcluded: React.Dispatch<React.SetStateAction<string[]>>
   formDailyLimit: number; setFormDailyLimit: (v: number) => void
   onSave: () => void; onCancel: () => void
+  compact?: boolean
 }) {
   return (
-    <div style={styles.formCard}>
-      <h3 style={styles.formTitle}>New Search Profile</h3>
+    <div style={compact ? sidebarFormStyles.card : styles.formCard}>
+      {!compact && <h3 style={styles.formTitle}>New Search Profile</h3>}
 
       <div style={styles.fieldGroup}>
         <label style={styles.label}>Profile Name</label>
@@ -1927,7 +2016,7 @@ function SearchProfileForm({
 
       <div style={styles.fieldGroup}>
         <label style={styles.label}>Keywords</label>
-        <p style={styles.hint}>Search or type a keyword and press Enter</p>
+        <p style={styles.hint}>Type a keyword and press Enter</p>
         <ChipInput
           chips={formKeywords}
           onAdd={(val) => setFormKeywords((prev) => [...prev, val])}
@@ -1939,24 +2028,12 @@ function SearchProfileForm({
 
       <div style={styles.fieldGroup}>
         <label style={styles.label}>Location Rules</label>
-        <p style={styles.hint}>Add zones, countries, or cities with work arrangement preferences</p>
+        <p style={styles.hint}>Set salary per location — different markets, different expectations</p>
         <LocationRulesField rules={formLocationRules} onChange={setFormLocationRules} />
       </div>
 
       <div style={styles.fieldGroup}>
-        <label style={styles.label}>Min Salary (EUR)</label>
-        <input
-          style={{ ...styles.input, maxWidth: 200 }}
-          type="number"
-          value={formSalary}
-          onChange={(e) => setFormSalary(e.target.value)}
-          placeholder="70000"
-        />
-      </div>
-
-      <div style={styles.fieldGroup}>
         <label style={styles.label}>Excluded Companies</label>
-        <p style={styles.hint}>Search for a company or type a name and press Enter</p>
         <CompanyChipInput
           chips={formExcluded}
           onAdd={(val) => setFormExcluded((prev) => [...prev, val])}
@@ -1967,10 +2044,10 @@ function SearchProfileForm({
 
       {/* Daily Limit */}
       <div style={styles.fieldGroup}>
-        <label style={styles.label}>Max Applications Per Day</label>
+        <label style={styles.label}>Daily Cap</label>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <input
-            style={{ ...styles.input, width: 100, flex: 'none' }}
+            style={{ ...styles.input, width: 80, flex: 'none' }}
             type="number"
             min={1}
             max={50}
@@ -1980,16 +2057,14 @@ function SearchProfileForm({
               setFormDailyLimit(val)
             }}
           />
+          <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>/day</span>
           {formDailyLimit > 25 && (
             <div style={dailyLimitStyles.warning}>
               <AlertTriangle size={14} color="#f97316" />
-              <span style={dailyLimitStyles.warningText}>
-                Higher limits increase the risk of account restrictions
-              </span>
+              <span style={dailyLimitStyles.warningText}>Risk of restrictions</span>
             </div>
           )}
         </div>
-        <p style={styles.hint}>Recommended: 10-20 per day to avoid platform restrictions</p>
       </div>
 
       <div style={styles.formActions}>
@@ -2004,11 +2079,410 @@ function SearchProfileForm({
           onClick={onSave}
           disabled={!formName.trim()}
         >
+          <Save size={12} />
           Save Profile
         </button>
       </div>
     </div>
   )
+}
+
+/* ------------------------------------------------------------------ */
+/*  Sidebar-specific form styles                                        */
+/* ------------------------------------------------------------------ */
+const sidebarFormStyles: Record<string, React.CSSProperties> = {
+  card: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 2,
+  },
+}
+
+/* ------------------------------------------------------------------ */
+/*  ActiveFilterTags — compact summary tags for the right panel         */
+/* ------------------------------------------------------------------ */
+function ActiveFilterTags({ profile }: { profile: SearchProfile | null }) {
+  if (!profile) return null
+  const rules = migrateProfileLocationRules(profile)
+
+  return (
+    <div style={filterTagStyles.bar}>
+      <Tag size={12} color="var(--text-tertiary)" style={{ flexShrink: 0 }} />
+      {/* Profile name */}
+      <span style={filterTagStyles.profileName}>{profile.name}</span>
+      <span style={filterTagStyles.divider} />
+
+      {/* Keywords as tags */}
+      {profile.keywords.map((kw, i) => (
+        <span key={`kw-${i}`} style={filterTagStyles.tag}>
+          <Search size={10} />
+          {kw}
+        </span>
+      ))}
+
+      {/* Location rules as tags */}
+      {rules.map((rule) => {
+        const icon = getLocationRuleIcon(rule)
+        const salaryPart = rule.minSalary && rule.minSalary > 0
+          ? ` ${getCurrencySymbol(rule.currency)}${(rule.minSalary / 1000).toFixed(0)}k+`
+          : ''
+        const arrangement = rule.workArrangement === 'any' ? '' :
+          rule.workArrangement === 'remote' ? ' Remote' :
+          rule.workArrangement === 'hybrid' ? ' Hybrid' : ' On-site'
+        return (
+          <span key={rule.id} style={filterTagStyles.tagLocation}>
+            {icon} {rule.value}{arrangement}{salaryPart}
+          </span>
+        )
+      })}
+
+      {/* Excluded count */}
+      {profile.excludedCompanies.length > 0 && (
+        <span style={filterTagStyles.tagExcluded}>
+          <Building2 size={10} />
+          {profile.excludedCompanies.length} excluded
+        </span>
+      )}
+
+      {/* Daily cap */}
+      {profile.dailyLimit && (
+        <span style={filterTagStyles.tagCap}>
+          <Shield size={10} />
+          {profile.dailyLimit}/day
+        </span>
+      )}
+    </div>
+  )
+}
+
+const filterTagStyles: Record<string, React.CSSProperties> = {
+  bar: {
+    display: 'flex',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+    padding: '10px 14px',
+    background: 'rgba(96, 165, 250, 0.04)',
+    border: '1px solid rgba(96, 165, 250, 0.12)',
+    borderRadius: 'var(--radius-md)',
+  },
+  profileName: {
+    fontSize: 13,
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+    whiteSpace: 'nowrap',
+  },
+  divider: {
+    width: 1,
+    height: 16,
+    background: 'var(--border)',
+    flexShrink: 0,
+  },
+  tag: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    padding: '2px 8px',
+    fontSize: 11,
+    fontWeight: 500,
+    borderRadius: 12,
+    background: 'rgba(96, 165, 250, 0.10)',
+    color: '#93c5fd',
+    border: '1px solid rgba(96, 165, 250, 0.18)',
+    whiteSpace: 'nowrap',
+  },
+  tagLocation: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 3,
+    padding: '2px 8px',
+    fontSize: 11,
+    fontWeight: 500,
+    borderRadius: 12,
+    background: 'rgba(52, 211, 153, 0.08)',
+    color: '#6ee7b7',
+    border: '1px solid rgba(52, 211, 153, 0.18)',
+    whiteSpace: 'nowrap',
+  },
+  tagExcluded: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    padding: '2px 8px',
+    fontSize: 11,
+    fontWeight: 500,
+    borderRadius: 12,
+    background: 'rgba(244, 63, 94, 0.08)',
+    color: '#fda4af',
+    border: '1px solid rgba(244, 63, 94, 0.15)',
+    whiteSpace: 'nowrap',
+  },
+  tagCap: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    padding: '2px 8px',
+    fontSize: 11,
+    fontWeight: 500,
+    borderRadius: 12,
+    background: 'rgba(251, 191, 36, 0.08)',
+    color: '#fcd34d',
+    border: '1px solid rgba(251, 191, 36, 0.15)',
+    whiteSpace: 'nowrap',
+  },
+}
+
+/* ------------------------------------------------------------------ */
+/*  FilterSidebar — collapsible left panel (LinkedIn/Airbnb pattern)    */
+/* ------------------------------------------------------------------ */
+function FilterSidebar({
+  profiles, activeProfile, onSelectProfile, onDeleteProfile,
+  showForm, setShowForm,
+  formName, setFormName,
+  formKeywords, setFormKeywords,
+  formLocationRules, setFormLocationRules,
+  formExcluded, setFormExcluded,
+  formDailyLimit, setFormDailyLimit,
+  onSave, resetForm,
+}: {
+  profiles: SearchProfile[]
+  activeProfile: SearchProfile | null
+  onSelectProfile: (id: string) => void
+  onDeleteProfile: (id: string) => void
+  showForm: boolean; setShowForm: (v: boolean) => void
+  formName: string; setFormName: (v: string) => void
+  formKeywords: string[]; setFormKeywords: React.Dispatch<React.SetStateAction<string[]>>
+  formLocationRules: LocationRule[]; setFormLocationRules: (v: LocationRule[]) => void
+  formExcluded: string[]; setFormExcluded: React.Dispatch<React.SetStateAction<string[]>>
+  formDailyLimit: number; setFormDailyLimit: (v: number) => void
+  onSave: () => void; resetForm: () => void
+}) {
+  return (
+    <div style={sidebarStyles.inner}>
+      {/* Sidebar header */}
+      <div style={sidebarStyles.header}>
+        <SlidersHorizontal size={16} color="var(--accent)" />
+        <h2 style={sidebarStyles.title}>Search Profiles</h2>
+      </div>
+
+      {/* Profile list as selectable cards */}
+      {profiles.length > 0 && !showForm && (
+        <div style={sidebarStyles.profileList}>
+          {profiles.map((p) => {
+            const isActive = activeProfile?.id === p.id
+            const rules = migrateProfileLocationRules(p)
+            return (
+              <div
+                key={p.id}
+                style={{
+                  ...sidebarStyles.profileCard,
+                  ...(isActive ? sidebarStyles.profileCardActive : {}),
+                }}
+                onClick={() => onSelectProfile(p.id)}
+              >
+                <div style={sidebarStyles.profileTop}>
+                  <span style={sidebarStyles.profileName}>{p.name}</span>
+                  <button
+                    style={styles.deleteBtn}
+                    onClick={(e) => { e.stopPropagation(); onDeleteProfile(p.id) }}
+                    title="Delete profile"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+                {/* Compact meta */}
+                <div style={sidebarStyles.meta}>
+                  {p.keywords.length > 0 && (
+                    <span style={sidebarStyles.metaChip}>
+                      <Search size={10} /> {p.keywords.length} keywords
+                    </span>
+                  )}
+                  {rules.length > 0 && (
+                    <span style={sidebarStyles.metaChip}>
+                      <Globe size={10} /> {rules.length} location{rules.length > 1 ? 's' : ''}
+                    </span>
+                  )}
+                  {p.excludedCompanies.length > 0 && (
+                    <span style={sidebarStyles.metaChip}>
+                      <Building2 size={10} /> {p.excludedCompanies.length} excluded
+                    </span>
+                  )}
+                  {p.dailyLimit && (
+                    <span style={sidebarStyles.metaChip}>
+                      <Shield size={10} /> {p.dailyLimit}/day
+                    </span>
+                  )}
+                </div>
+                {/* Show location rules with salary */}
+                {rules.length > 0 && (
+                  <div style={{ marginTop: 6 }}>
+                    {rules.map((rule) => {
+                      const icon = getLocationRuleIcon(rule)
+                      const arr = rule.workArrangement === 'any' ? '' :
+                        rule.workArrangement === 'remote' ? ' Remote' :
+                        rule.workArrangement === 'hybrid' ? ' Hybrid' : ' On-site'
+                      const sal = rule.minSalary && rule.minSalary > 0
+                        ? ` \u2014 ${getCurrencySymbol(rule.currency)}${(rule.minSalary / 1000).toFixed(0)}k+`
+                        : ''
+                      return (
+                        <div key={rule.id} style={sidebarStyles.locationLine}>
+                          <span>{icon}</span>
+                          <span>{rule.value}{arr}{sal}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* New profile button */}
+      {!showForm && (
+        <button
+          style={sidebarStyles.addBtn}
+          onClick={() => setShowForm(true)}
+        >
+          <Plus size={14} />
+          {profiles.length === 0 ? 'Create search profile' : 'Add profile'}
+        </button>
+      )}
+
+      {/* Inline form */}
+      {showForm && (
+        <div style={sidebarStyles.formWrap}>
+          <SearchProfileForm
+            formName={formName} setFormName={setFormName}
+            formKeywords={formKeywords} setFormKeywords={setFormKeywords}
+            formLocationRules={formLocationRules} setFormLocationRules={setFormLocationRules}
+            formExcluded={formExcluded} setFormExcluded={setFormExcluded}
+            formDailyLimit={formDailyLimit} setFormDailyLimit={setFormDailyLimit}
+            onSave={onSave}
+            onCancel={() => { resetForm(); setShowForm(false) }}
+            compact
+          />
+        </div>
+      )}
+
+      {profiles.length === 0 && !showForm && (
+        <div style={sidebarStyles.emptyHint}>
+          <Sparkles size={20} color="var(--text-tertiary)" strokeWidth={1.2} />
+          <p style={{ fontSize: 12, color: 'var(--text-tertiary)', margin: 0, textAlign: 'center' as const }}>
+            Create a profile to tell the bot what jobs to search for
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+const sidebarStyles: Record<string, React.CSSProperties> = {
+  inner: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 12,
+    height: '100%',
+    overflowY: 'auto',
+    overflowX: 'hidden',
+    padding: '16px 14px',
+  },
+  header: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  title: {
+    fontSize: 13,
+    fontWeight: 700,
+    color: 'var(--text-primary)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+    margin: 0,
+  },
+  profileList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 6,
+  },
+  profileCard: {
+    background: 'var(--bg-elevated)',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-md)',
+    padding: '10px 12px',
+    cursor: 'pointer',
+    transition: 'all 0.15s',
+  },
+  profileCardActive: {
+    border: '1px solid rgba(96, 165, 250, 0.4)',
+    background: 'rgba(96, 165, 250, 0.06)',
+  },
+  profileTop: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  profileName: {
+    fontSize: 13,
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+  },
+  meta: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: 4,
+  },
+  metaChip: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 3,
+    padding: '1px 6px',
+    fontSize: 10,
+    fontWeight: 500,
+    borderRadius: 8,
+    background: 'rgba(255,255,255,0.04)',
+    color: 'var(--text-tertiary)',
+    whiteSpace: 'nowrap',
+  },
+  locationLine: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 4,
+    fontSize: 11,
+    color: 'var(--text-secondary)',
+    lineHeight: 1.6,
+  },
+  addBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    width: '100%',
+    padding: '8px 12px',
+    fontSize: 12,
+    fontWeight: 600,
+    borderRadius: 'var(--radius-md)',
+    border: '1px dashed var(--border)',
+    background: 'transparent',
+    color: 'var(--text-secondary)',
+    cursor: 'pointer',
+    transition: 'all 0.15s',
+  },
+  formWrap: {
+    maxHeight: 'calc(100vh - 200px)',
+    overflowY: 'auto',
+    overflowX: 'hidden',
+  },
+  emptyHint: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 8,
+    padding: '20px 8px',
+  },
 }
 
 /* ------------------------------------------------------------------ */
@@ -2037,6 +2511,35 @@ const dailyLimitStyles: Record<string, React.CSSProperties> = {
 export function AutopilotView() {
   const [profiles, setProfiles] = useState<SearchProfile[]>(loadProfiles)
   const [showForm, setShowForm] = useState(false)
+
+  // Sidebar state
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [activeProfileId, setActiveProfileId] = useState<string | null>(() => {
+    const saved = loadProfiles()
+    return saved.length > 0 ? saved[0].id : null
+  })
+
+  // Derived active profile
+  const activeProfile = profiles.find(p => p.id === activeProfileId) || profiles[0] || null
+
+  // Handle profile selection
+  const handleSelectProfile = useCallback((id: string) => {
+    setActiveProfileId(id)
+  }, [])
+
+  // Mobile detection (simple)
+  const [isMobile, setIsMobile] = useState(false)
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
+
+  // On mobile, sidebar starts closed
+  useEffect(() => {
+    if (isMobile) setSidebarOpen(false)
+  }, [isMobile])
 
   // Realtime bot data
   const { activities, currentRun, isLive } = useBotActivity()
@@ -2130,7 +2633,6 @@ export function AutopilotView() {
   const [formName, setFormName] = useState('')
   const [formKeywords, setFormKeywords] = useState<string[]>([])
   const [formLocationRules, setFormLocationRules] = useState<LocationRule[]>([])
-  const [formSalary, setFormSalary] = useState('')
   const [formExcluded, setFormExcluded] = useState<string[]>([])
   const [formDailyLimit, setFormDailyLimit] = useState(15)
 
@@ -2139,11 +2641,20 @@ export function AutopilotView() {
     saveProfiles(profiles)
   }, [profiles])
 
+  // Keep activeProfileId in sync when profiles change
+  useEffect(() => {
+    if (profiles.length > 0 && !profiles.find(p => p.id === activeProfileId)) {
+      setActiveProfileId(profiles[0].id)
+    }
+    if (profiles.length === 0) {
+      setActiveProfileId(null)
+    }
+  }, [profiles, activeProfileId])
+
   const resetForm = useCallback(() => {
     setFormName('')
     setFormKeywords([])
     setFormLocationRules([])
-    setFormSalary('')
     setFormExcluded([])
     setFormDailyLimit(15)
   }, [])
@@ -2155,7 +2666,7 @@ export function AutopilotView() {
       name: formName.trim(),
       keywords: [...formKeywords],
       location: '', // legacy field, kept empty for new profiles
-      minSalary: parseInt(formSalary) || 0,
+      minSalary: 0, // legacy — salary is now per LocationRule
       remoteOnly: false, // legacy field, replaced by locationRules
       locationRules: [...formLocationRules],
       excludedCompanies: [...formExcluded],
@@ -2163,9 +2674,10 @@ export function AutopilotView() {
       createdAt: new Date().toISOString(),
     }
     setProfiles((prev) => [...prev, newProfile])
+    setActiveProfileId(newProfile.id)
     resetForm()
     setShowForm(false)
-  }, [formName, formKeywords, formLocationRules, formSalary, formExcluded, formDailyLimit, resetForm])
+  }, [formName, formKeywords, formLocationRules, formExcluded, formDailyLimit, resetForm])
 
   const handleDelete = useCallback((id: string) => {
     setProfiles((prev) => prev.filter((p) => p.id !== id))
@@ -2329,7 +2841,6 @@ export function AutopilotView() {
             formName={formName} setFormName={setFormName}
             formKeywords={formKeywords} setFormKeywords={setFormKeywords}
             formLocationRules={formLocationRules} setFormLocationRules={setFormLocationRules}
-            formSalary={formSalary} setFormSalary={setFormSalary}
             formExcluded={formExcluded} setFormExcluded={setFormExcluded}
             formDailyLimit={formDailyLimit} setFormDailyLimit={setFormDailyLimit}
             onSave={handleSave} onCancel={() => { resetForm(); setShowForm(false) }}
@@ -2363,346 +2874,291 @@ export function AutopilotView() {
   }
 
   /* ------------------------------------------------------------------ */
-  /*  AUTHENTICATED USER: Full dashboard (existing behavior)             */
+  /*  AUTHENTICATED USER: 2-panel layout (filter sidebar + main)         */
   /* ------------------------------------------------------------------ */
   return (
-    <div style={styles.container}>
-      {/* Header */}
-      <div style={styles.header}>
-        <h1 style={styles.title}>Autopilot</h1>
-        <p style={styles.subtitle}>Automated job search and application bot</p>
-      </div>
-
-      {/* 1 -- Status Banner */}
-      <section style={styles.statusBanner}>
-        <div style={styles.statusRow}>
-          <div style={styles.statusLeft}>
-            <div style={styles.botIconWrap}>
-              <Bot size={24} color="var(--text-secondary)" />
-            </div>
-            <div>
-              <div style={styles.statusTitle}>
-                <span
-                  style={{
-                    ...styles.statusDot,
-                    background: statusCfg.dotColor,
-                    ...(statusCfg.pulsing
-                      ? {
-                          animation: 'pulseGlow 1.5s ease-in-out infinite',
-                          boxShadow: `0 0 6px ${statusCfg.dotColor}`,
-                        }
-                      : {}),
-                  }}
-                />
-                {statusCfg.label}
-                {isLive && (
-                  <span style={styles.liveBadge}>
-                    <span style={styles.liveDot} />
-                    LIVE
-                  </span>
-                )}
-              </div>
-              <p style={styles.statusDesc}>{statusCfg.description}</p>
-            </div>
-          </div>
-          <div style={styles.statusActions}>
-            {profiles.length > 0 && !isBotActive && !isTriggering && (
-              <>
-                <button
-                  style={styles.btnStartBot}
-                  onClick={handleStartBot}
-                  title="Start the bot pipeline"
-                >
-                  <Play size={14} />
-                  <span>Start Bot</span>
-                </button>
-                <button
-                  style={styles.btnDryRun}
-                  onClick={handleDryRun}
-                  title="Run without submitting applications"
-                >
-                  <FlaskConical size={14} />
-                  <span>Dry Run</span>
-                </button>
-              </>
-            )}
-            {isTriggering && (
-              <span style={styles.triggeringBadge}>
-                <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
-                Triggering...
-              </span>
-            )}
-            {isBotActive && !isTriggering && (
-              <button
-                style={styles.btnStopBot}
-                onClick={() => {/* future: cancel run */}}
-                title="Stop the bot (coming soon)"
-              >
-                <Square size={14} />
-                <span>Stop Bot</span>
-              </button>
-            )}
-            {profiles.length === 0 && !isBotActive && statusCfg.badgeLabel && (
-              <span
-                style={{
-                  ...styles.comingSoonBadge,
-                  color: statusCfg.badgeColor,
-                  background: statusCfg.badgeBg,
-                }}
-              >
-                {statusCfg.badgeLabel}
-              </span>
-            )}
-          </div>
-        </div>
-        {triggerError && (
-          <div style={styles.triggerErrorRow}>
-            <XCircle size={14} color="#f43f5e" />
-            <span style={styles.triggerErrorText}>{triggerError}</span>
-          </div>
-        )}
-      </section>
-
-      {/* 1.5 -- Preview Queue */}
-      <PreviewQueue />
-
-      {/* 2 -- Search Profiles */}
-      <section style={styles.section}>
-        <div style={styles.sectionHeader}>
-          <div>
-            <h2 style={styles.sectionTitle}>Search Profiles</h2>
-            <p style={styles.sectionSubtitle}>
-              Define what jobs the bot should look for
-            </p>
-          </div>
-          {profiles.length > 0 && !showForm && (
-            <button
-              style={styles.btnPrimary}
-              onClick={() => setShowForm(true)}
-            >
-              <Plus size={14} />
-              <span>New Profile</span>
-            </button>
-          )}
-        </div>
-
-        {profiles.length > 0 && (
-          <div style={styles.profileList}>
-            {profiles.map((p) => (
-              <div key={p.id} style={styles.profileCard}>
-                <div style={styles.profileTop}>
-                  <span style={styles.profileName}>{p.name}</span>
-                  <button
-                    style={styles.deleteBtn}
-                    onClick={() => handleDelete(p.id)}
-                    title="Delete profile"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-                <div style={styles.profileMeta}>
-                  {p.keywords.length > 0 && (
-                    <div style={styles.metaItem}>
-                      <Search size={12} color="var(--text-tertiary)" />
-                      <span style={styles.metaText}>
-                        {p.keywords.join(', ')}
-                      </span>
-                    </div>
-                  )}
-                  {migrateProfileLocationRules(p).length > 0 && (
-                    <div style={styles.metaItem}>
-                      <Globe size={12} color="var(--text-tertiary)" />
-                      <LocationRuleChips rules={migrateProfileLocationRules(p)} compact />
-                    </div>
-                  )}
-                  {p.minSalary > 0 && (
-                    <div style={styles.metaItem}>
-                      <DollarSign size={12} color="var(--text-tertiary)" />
-                      <span style={styles.metaText}>
-                        {p.minSalary.toLocaleString()} EUR min
-                      </span>
-                    </div>
-                  )}
-                  {p.excludedCompanies.length > 0 && (
-                    <div style={styles.metaItem}>
-                      <Building2 size={12} color="var(--text-tertiary)" />
-                      <span style={styles.metaText}>
-                        {p.excludedCompanies.length} excluded
-                      </span>
-                    </div>
-                  )}
-                  {p.dailyLimit && (
-                    <div style={styles.metaItem}>
-                      <Shield size={12} color="var(--text-tertiary)" />
-                      <span style={styles.metaText}>{p.dailyLimit}/day limit</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {profiles.length === 0 && !showForm && (
-          <div style={styles.emptyState}>
-            <div style={styles.emptyIllustration}>
-              <Sparkles size={40} color="var(--text-tertiary)" strokeWidth={1.2} />
-            </div>
-            <p style={styles.emptyText}>
-              No search profiles yet
-            </p>
-            <p style={styles.emptyHint}>
-              Create a profile to tell the bot what to search for
-            </p>
-            <button
-              style={styles.btnPrimary}
-              onClick={() => setShowForm(true)}
-            >
-              <Plus size={14} />
-              <span>Create your first search profile</span>
-            </button>
-          </div>
-        )}
-
-        {showForm && <SearchProfileForm
-          formName={formName} setFormName={setFormName}
-          formKeywords={formKeywords} setFormKeywords={setFormKeywords}
-          formLocationRules={formLocationRules} setFormLocationRules={setFormLocationRules}
-          formSalary={formSalary} setFormSalary={setFormSalary}
-          formExcluded={formExcluded} setFormExcluded={setFormExcluded}
-          formDailyLimit={formDailyLimit} setFormDailyLimit={setFormDailyLimit}
-          onSave={handleSave} onCancel={() => { resetForm(); setShowForm(false) }}
-        />}
-      </section>
-
-      {/* 3 -- Activity Log */}
-      <section style={styles.section}>
-        <div style={styles.sectionHeader}>
-          <div>
-            <h2 style={styles.sectionTitle}>Bot Activity</h2>
-            <p style={styles.sectionSubtitle}>
-              {hasRealData ? 'Live automated actions' : 'Recent automated actions'}
-            </p>
-          </div>
-          {!hasRealData && (
-            <span style={styles.previewBadge}>Preview &mdash; sample activity</span>
-          )}
-          {hasRealData && isLive && (
-            <span style={styles.liveIndicator}>
-              <span style={styles.liveIndicatorDot} />
-              Realtime
+    <div style={layoutStyles.root}>
+      {/* Top bar: title + Filters toggle */}
+      <div style={layoutStyles.topBar}>
+        <div style={layoutStyles.topBarLeft}>
+          <Bot size={20} color="var(--accent)" />
+          <h1 style={layoutStyles.topBarTitle}>Autopilot</h1>
+          {isLive && (
+            <span style={styles.liveBadge}>
+              <span style={styles.liveDot} />
+              LIVE
             </span>
           )}
         </div>
+        <div style={layoutStyles.topBarRight}>
+          {/* Bot controls */}
+          {profiles.length > 0 && !isBotActive && !isTriggering && (
+            <>
+              <button style={styles.btnStartBot} onClick={handleStartBot}>
+                <Play size={14} />
+                <span>Start Bot</span>
+              </button>
+              <button style={styles.btnDryRun} onClick={handleDryRun}>
+                <FlaskConical size={14} />
+                <span>Dry Run</span>
+              </button>
+            </>
+          )}
+          {isTriggering && (
+            <span style={styles.triggeringBadge}>
+              <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+              Triggering...
+            </span>
+          )}
+          {isBotActive && !isTriggering && (
+            <button style={styles.btnStopBot} onClick={() => {/* future: cancel run */}}>
+              <Square size={14} />
+              <span>Stop Bot</span>
+            </button>
+          )}
 
-        {/* Real activity feed */}
-        {hasRealData ? (
-          <div style={styles.timeline}>
-            {activities.map((item, i) => {
-              const Icon = ACTION_ICON_MAP[item.action] || CheckCircle2
-              const color = ACTION_COLOR_MAP[item.action] || '#60a5fa'
-              const isError = item.action === 'failed'
-              return (
-                <div key={item.id} style={styles.timelineItem}>
-                  <div style={styles.timelineIconWrap}>
-                    <Icon size={14} color={color} />
-                    {i < activities.length - 1 && (
-                      <div style={styles.timelineLine} />
-                    )}
-                  </div>
-                  <div style={styles.timelineContent}>
-                    <span style={styles.timelineTime}>
-                      <Clock size={10} color="var(--text-tertiary)" />
-                      {formatActivityTime(item.createdAt)}
-                    </span>
+          {/* Filter toggle */}
+          <button
+            style={{
+              ...layoutStyles.filterToggle,
+              ...(sidebarOpen ? layoutStyles.filterToggleActive : {}),
+            }}
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+          >
+            {sidebarOpen ? <ChevronLeft size={14} /> : <SlidersHorizontal size={14} />}
+            <span>{sidebarOpen ? 'Hide Filters' : 'Filters'}</span>
+            {profiles.length > 0 && !sidebarOpen && (
+              <span style={layoutStyles.filterCount}>{profiles.length}</span>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {triggerError && (
+        <div style={styles.triggerErrorRow}>
+          <XCircle size={14} color="#f43f5e" />
+          <span style={styles.triggerErrorText}>{triggerError}</span>
+        </div>
+      )}
+
+      {/* 2-panel body */}
+      <div style={layoutStyles.body}>
+        {/* LEFT: Collapsible filter sidebar */}
+        {sidebarOpen && !isMobile && (
+          <div style={layoutStyles.sidebar}>
+            <FilterSidebar
+              profiles={profiles}
+              activeProfile={activeProfile}
+              onSelectProfile={handleSelectProfile}
+              onDeleteProfile={handleDelete}
+              showForm={showForm} setShowForm={setShowForm}
+              formName={formName} setFormName={setFormName}
+              formKeywords={formKeywords} setFormKeywords={setFormKeywords}
+              formLocationRules={formLocationRules} setFormLocationRules={setFormLocationRules}
+              formExcluded={formExcluded} setFormExcluded={setFormExcluded}
+              formDailyLimit={formDailyLimit} setFormDailyLimit={setFormDailyLimit}
+              onSave={handleSave} resetForm={resetForm}
+            />
+          </div>
+        )}
+
+        {/* Mobile: overlay sidebar */}
+        {sidebarOpen && isMobile && (
+          <>
+            <div
+              style={layoutStyles.mobileOverlay}
+              onClick={() => setSidebarOpen(false)}
+            />
+            <div style={layoutStyles.mobileSidebar}>
+              <div style={layoutStyles.mobileSheetHeader}>
+                <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>Filters</span>
+                <button
+                  style={layoutStyles.mobileCloseBtn}
+                  onClick={() => setSidebarOpen(false)}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              <FilterSidebar
+                profiles={profiles}
+                activeProfile={activeProfile}
+                onSelectProfile={handleSelectProfile}
+                onDeleteProfile={handleDelete}
+                showForm={showForm} setShowForm={setShowForm}
+                formName={formName} setFormName={setFormName}
+                formKeywords={formKeywords} setFormKeywords={setFormKeywords}
+                formLocationRules={formLocationRules} setFormLocationRules={setFormLocationRules}
+                formExcluded={formExcluded} setFormExcluded={setFormExcluded}
+                formDailyLimit={formDailyLimit} setFormDailyLimit={setFormDailyLimit}
+                onSave={handleSave} resetForm={resetForm}
+              />
+            </div>
+          </>
+        )}
+
+        {/* RIGHT: Main content */}
+        <div style={layoutStyles.main}>
+          {/* Active filter tags bar */}
+          {activeProfile && <ActiveFilterTags profile={activeProfile} />}
+
+          {/* Status Banner */}
+          <section style={styles.statusBanner}>
+            <div style={styles.statusRow}>
+              <div style={styles.statusLeft}>
+                <div style={styles.botIconWrap}>
+                  <Bot size={24} color="var(--text-secondary)" />
+                </div>
+                <div>
+                  <div style={styles.statusTitle}>
                     <span
                       style={{
-                        ...styles.timelineText,
-                        color: isError ? '#f87171' : 'var(--text-primary)',
+                        ...styles.statusDot,
+                        background: statusCfg.dotColor,
+                        ...(statusCfg.pulsing
+                          ? {
+                              animation: 'pulseGlow 1.5s ease-in-out infinite',
+                              boxShadow: `0 0 6px ${statusCfg.dotColor}`,
+                            }
+                          : {}),
                       }}
-                    >
-                      {formatActivityText(item)}
+                    />
+                    {statusCfg.label}
+                  </div>
+                  <p style={styles.statusDesc}>{statusCfg.description}</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Preview Queue */}
+          <PreviewQueue />
+
+          {/* Activity Log */}
+          <section style={styles.section}>
+            <div style={styles.sectionHeader}>
+              <div>
+                <h2 style={styles.sectionTitle}>Bot Activity</h2>
+                <p style={styles.sectionSubtitle}>
+                  {hasRealData ? 'Live automated actions' : 'Recent automated actions'}
+                </p>
+              </div>
+              {!hasRealData && (
+                <span style={styles.previewBadge}>Preview &mdash; sample activity</span>
+              )}
+              {hasRealData && isLive && (
+                <span style={styles.liveIndicator}>
+                  <span style={styles.liveIndicatorDot} />
+                  Realtime
+                </span>
+              )}
+            </div>
+
+            {hasRealData ? (
+              <div style={styles.timeline}>
+                {activities.map((item, i) => {
+                  const Icon = ACTION_ICON_MAP[item.action] || CheckCircle2
+                  const color = ACTION_COLOR_MAP[item.action] || '#60a5fa'
+                  const isError = item.action === 'failed'
+                  return (
+                    <div key={item.id} style={styles.timelineItem}>
+                      <div style={styles.timelineIconWrap}>
+                        <Icon size={14} color={color} />
+                        {i < activities.length - 1 && (
+                          <div style={styles.timelineLine} />
+                        )}
+                      </div>
+                      <div style={styles.timelineContent}>
+                        <span style={styles.timelineTime}>
+                          <Clock size={10} color="var(--text-tertiary)" />
+                          {formatActivityTime(item.createdAt)}
+                        </span>
+                        <span
+                          style={{
+                            ...styles.timelineText,
+                            color: isError ? '#f87171' : 'var(--text-primary)',
+                          }}
+                        >
+                          {formatActivityText(item)}
+                        </span>
+                      </div>
+                    </div>
+                  )
+                })}
+                {activities.length === 0 && (
+                  <p style={styles.emptyTimelineText}>
+                    No activity yet for the current run.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div style={styles.timeline}>
+                <p style={styles.emptyTimelineText}>
+                  No activity yet — start the bot to see results here
+                </p>
+              </div>
+            )}
+          </section>
+
+          {/* Run History */}
+          <section style={styles.section}>
+            <div style={styles.sectionHeader}>
+              <div>
+                <h2 style={styles.sectionTitle}>Run History</h2>
+                <p style={styles.sectionSubtitle}>Past bot pipeline runs</p>
+              </div>
+              <History size={16} color="var(--text-tertiary)" />
+            </div>
+
+            {historyLoading ? (
+              <div style={styles.historyLoading}>
+                <Loader2 size={16} color="var(--text-tertiary)" style={{ animation: 'spin 1s linear infinite' }} />
+                <span style={styles.historyLoadingText}>Loading history...</span>
+              </div>
+            ) : runHistory.length === 0 ? (
+              <p style={styles.emptyTimelineText}>No bot runs yet.</p>
+            ) : (
+              <div style={styles.historyTable}>
+                <div style={styles.historyHeaderRow}>
+                  <span style={{ ...styles.historyCell, flex: 2 }}>Date</span>
+                  <span style={{ ...styles.historyCell, flex: 1 }}>Status</span>
+                  <span style={{ ...styles.historyCell, flex: 1, textAlign: 'right' as const }}>Applied</span>
+                  <span style={{ ...styles.historyCell, flex: 1, textAlign: 'right' as const }}>Skipped</span>
+                  <span style={{ ...styles.historyCell, flex: 1, textAlign: 'right' as const }}>Failed</span>
+                  <span style={{ ...styles.historyCell, flex: 1, textAlign: 'right' as const }}>Duration</span>
+                </div>
+                {runHistory.map((run) => (
+                  <div key={run.id} style={styles.historyRow}>
+                    <span style={{ ...styles.historyCellValue, flex: 2 }}>
+                      {formatRunDate(run.startedAt || run.completedAt)}
+                    </span>
+                    <span style={{ ...styles.historyCellValue, flex: 1 }}>
+                      <span
+                        style={{
+                          ...styles.historyStatusDot,
+                          background: RUN_STATUS_COLORS[run.status] || '#6b7280',
+                        }}
+                      />
+                      {run.status}
+                    </span>
+                    <span style={{ ...styles.historyCellValue, flex: 1, textAlign: 'right' as const, color: '#34d399' }}>
+                      {run.jobsApplied}
+                    </span>
+                    <span style={{ ...styles.historyCellValue, flex: 1, textAlign: 'right' as const, color: '#fbbf24' }}>
+                      {run.jobsSkipped}
+                    </span>
+                    <span style={{ ...styles.historyCellValue, flex: 1, textAlign: 'right' as const, color: '#f43f5e' }}>
+                      {run.jobsFailed}
+                    </span>
+                    <span style={{ ...styles.historyCellValue, flex: 1, textAlign: 'right' as const }}>
+                      {formatDuration(run.startedAt, run.completedAt)}
                     </span>
                   </div>
-                </div>
-              )
-            })}
-            {activities.length === 0 && (
-              <p style={styles.emptyTimelineText}>
-                No activity yet for the current run.
-              </p>
-            )}
-          </div>
-        ) : (
-          /* Empty state when no real activity */
-          <div style={styles.timeline}>
-            <p style={styles.emptyTimelineText}>
-              No activity yet — start the bot to see results here
-            </p>
-          </div>
-        )}
-      </section>
-
-      {/* 4 -- Run History */}
-      <section style={styles.section}>
-        <div style={styles.sectionHeader}>
-          <div>
-            <h2 style={styles.sectionTitle}>Run History</h2>
-            <p style={styles.sectionSubtitle}>Past bot pipeline runs</p>
-          </div>
-          <History size={16} color="var(--text-tertiary)" />
-        </div>
-
-        {historyLoading ? (
-          <div style={styles.historyLoading}>
-            <Loader2 size={16} color="var(--text-tertiary)" style={{ animation: 'spin 1s linear infinite' }} />
-            <span style={styles.historyLoadingText}>Loading history...</span>
-          </div>
-        ) : runHistory.length === 0 ? (
-          <p style={styles.emptyTimelineText}>No bot runs yet.</p>
-        ) : (
-          <div style={styles.historyTable}>
-            {/* Header */}
-            <div style={styles.historyHeaderRow}>
-              <span style={{ ...styles.historyCell, flex: 2 }}>Date</span>
-              <span style={{ ...styles.historyCell, flex: 1 }}>Status</span>
-              <span style={{ ...styles.historyCell, flex: 1, textAlign: 'right' as const }}>Applied</span>
-              <span style={{ ...styles.historyCell, flex: 1, textAlign: 'right' as const }}>Skipped</span>
-              <span style={{ ...styles.historyCell, flex: 1, textAlign: 'right' as const }}>Failed</span>
-              <span style={{ ...styles.historyCell, flex: 1, textAlign: 'right' as const }}>Duration</span>
-            </div>
-            {/* Rows */}
-            {runHistory.map((run) => (
-              <div key={run.id} style={styles.historyRow}>
-                <span style={{ ...styles.historyCellValue, flex: 2 }}>
-                  {formatRunDate(run.startedAt || run.completedAt)}
-                </span>
-                <span style={{ ...styles.historyCellValue, flex: 1 }}>
-                  <span
-                    style={{
-                      ...styles.historyStatusDot,
-                      background: RUN_STATUS_COLORS[run.status] || '#6b7280',
-                    }}
-                  />
-                  {run.status}
-                </span>
-                <span style={{ ...styles.historyCellValue, flex: 1, textAlign: 'right' as const, color: '#34d399' }}>
-                  {run.jobsApplied}
-                </span>
-                <span style={{ ...styles.historyCellValue, flex: 1, textAlign: 'right' as const, color: '#fbbf24' }}>
-                  {run.jobsSkipped}
-                </span>
-                <span style={{ ...styles.historyCellValue, flex: 1, textAlign: 'right' as const, color: '#f43f5e' }}>
-                  {run.jobsFailed}
-                </span>
-                <span style={{ ...styles.historyCellValue, flex: 1, textAlign: 'right' as const }}>
-                  {formatDuration(run.startedAt, run.completedAt)}
-                </span>
+                ))}
               </div>
-            ))}
-          </div>
-        )}
-      </section>
+            )}
+          </section>
+        </div>
+      </div>
 
       {/* Keyframe injection for pulsing dot + spinner */}
       <style>{`
@@ -2721,6 +3177,144 @@ export function AutopilotView() {
       `}</style>
     </div>
   )
+}
+
+/* ------------------------------------------------------------------ */
+/*  2-Panel layout styles                                               */
+/* ------------------------------------------------------------------ */
+const layoutStyles: Record<string, React.CSSProperties> = {
+  root: {
+    height: '100%',
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+  },
+  topBar: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '16px 20px 12px',
+    gap: 12,
+    flexWrap: 'wrap',
+    flexShrink: 0,
+    borderBottom: '1px solid var(--border)',
+  },
+  topBarLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+  },
+  topBarTitle: {
+    fontSize: 18,
+    fontWeight: 700,
+    color: 'var(--text-primary)',
+    margin: 0,
+  },
+  topBarRight: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  filterToggle: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    padding: '7px 14px',
+    fontSize: 13,
+    fontWeight: 600,
+    borderRadius: 'var(--radius-md)',
+    border: '1px solid var(--border)',
+    background: 'var(--bg-surface)',
+    color: 'var(--text-secondary)',
+    cursor: 'pointer',
+    transition: 'all 0.15s',
+    whiteSpace: 'nowrap',
+  },
+  filterToggleActive: {
+    background: 'rgba(96, 165, 250, 0.08)',
+    border: '1px solid rgba(96, 165, 250, 0.3)',
+    color: '#93c5fd',
+  },
+  filterCount: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 18,
+    height: 18,
+    borderRadius: '50%',
+    background: 'rgba(96, 165, 250, 0.2)',
+    color: '#93c5fd',
+    fontSize: 10,
+    fontWeight: 700,
+  },
+  body: {
+    display: 'flex',
+    flex: 1,
+    overflow: 'hidden',
+    minHeight: 0,
+  },
+  sidebar: {
+    width: 280,
+    minWidth: 280,
+    maxWidth: 280,
+    borderRight: '1px solid var(--border)',
+    background: 'var(--bg-surface)',
+    overflowY: 'auto',
+    overflowX: 'hidden',
+    flexShrink: 0,
+  },
+  main: {
+    flex: 1,
+    overflowY: 'auto',
+    padding: '16px 20px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 14,
+    minWidth: 0,
+  },
+  /* Mobile overlay */
+  mobileOverlay: {
+    position: 'fixed',
+    inset: 0,
+    background: 'rgba(0,0,0,0.5)',
+    zIndex: 90,
+  },
+  mobileSidebar: {
+    position: 'fixed',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    maxHeight: '80vh',
+    background: 'var(--bg-surface)',
+    borderTop: '1px solid var(--border)',
+    borderRadius: '16px 16px 0 0',
+    zIndex: 91,
+    overflowY: 'auto',
+    boxShadow: '0 -8px 32px rgba(0,0,0,0.4)',
+  },
+  mobileSheetHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '14px 16px 0',
+    position: 'sticky',
+    top: 0,
+    background: 'var(--bg-surface)',
+    zIndex: 1,
+  },
+  mobileCloseBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    background: 'var(--bg-elevated)',
+    border: '1px solid var(--border)',
+    color: 'var(--text-secondary)',
+    cursor: 'pointer',
+  },
 }
 
 /* ------------------------------------------------------------------ */
