@@ -24,7 +24,6 @@ import {
   ChevronLeft,
   Tag,
   Zap,
-  Pencil,
   ChevronUp,
   Save,
 } from 'lucide-react'
@@ -1657,13 +1656,13 @@ const chipStyles: Record<string, React.CSSProperties> = {
 function ApplicationReviewCard({
   item,
   onApprove,
-  onEdit,
   onSkip,
+  onUndo,
 }: {
   item: ReviewQueueItem
   onApprove: (id: string) => void
-  onEdit: (id: string) => void
   onSkip: (id: string) => void
+  onUndo: (id: string) => void
 }) {
   const scoreColor =
     item.matchScore > 70 ? '#34d399' : item.matchScore >= 50 ? '#fbbf24' : '#f43f5e'
@@ -1714,7 +1713,7 @@ function ApplicationReviewCard({
         </div>
       </div>
 
-      {/* Actions: 3 buttons */}
+      {/* Actions: Approve or Skip */}
       {item.status === 'pending' && (
         <div style={reviewStyles.cardActions}>
           <button
@@ -1724,14 +1723,6 @@ function ApplicationReviewCard({
           >
             <Check size={14} />
             <span>Approve</span>
-          </button>
-          <button
-            style={reviewStyles.btnEdit}
-            onClick={() => onEdit(item.id)}
-            title="Edit before submitting"
-          >
-            <Pencil size={14} />
-            <span>Edit</span>
           </button>
           <button
             style={reviewStyles.btnSkip}
@@ -1744,15 +1735,33 @@ function ApplicationReviewCard({
         </div>
       )}
       {item.status === 'approved' && (
-        <div style={reviewStyles.statusLabel}>
-          <CheckCircle2 size={12} color="#34d399" />
-          <span style={{ color: '#34d399', fontSize: 12, fontWeight: 600 }}>Approved</span>
+        <div style={reviewStyles.cardActions}>
+          <div style={reviewStyles.statusLabel}>
+            <CheckCircle2 size={12} color="#34d399" />
+            <span style={{ color: '#34d399', fontSize: 12, fontWeight: 600 }}>Approved</span>
+          </div>
+          <button
+            style={reviewStyles.btnUndo}
+            onClick={() => onUndo(item.id)}
+            title="Undo — move back to pending"
+          >
+            Undo
+          </button>
         </div>
       )}
       {item.status === 'skipped' && (
-        <div style={reviewStyles.statusLabel}>
-          <XCircle size={12} color="#6b7280" />
-          <span style={{ color: '#6b7280', fontSize: 12, fontWeight: 600 }}>Skipped</span>
+        <div style={reviewStyles.cardActions}>
+          <div style={reviewStyles.statusLabel}>
+            <XCircle size={12} color="#6b7280" />
+            <span style={{ color: '#6b7280', fontSize: 12, fontWeight: 600 }}>Skipped</span>
+          </div>
+          <button
+            style={reviewStyles.btnUndo}
+            onClick={() => onUndo(item.id)}
+            title="Undo — move back to pending"
+          >
+            Undo
+          </button>
         </div>
       )}
     </div>
@@ -1765,8 +1774,8 @@ function ApplicationReviewCard({
 function ReviewQueue({
   queue,
   onApprove,
-  onEdit,
   onSkip,
+  onUndo,
   onApproveAll,
   onSkipAll,
   onSubmitApproved,
@@ -1774,8 +1783,8 @@ function ReviewQueue({
 }: {
   queue: ReviewQueueItem[]
   onApprove: (id: string) => void
-  onEdit: (id: string) => void
   onSkip: (id: string) => void
+  onUndo: (id: string) => void
   onApproveAll: () => void
   onSkipAll: () => void
   onSubmitApproved: () => void
@@ -1824,7 +1833,7 @@ function ReviewQueue({
             key={item.id}
             item={item}
             onApprove={onApprove}
-            onEdit={onEdit}
+            onUndo={onUndo}
             onSkip={onSkip}
           />
         ))}
@@ -1899,13 +1908,13 @@ function AutoSubmitQueues({
   needsReview,
   autoSubmitted,
   onApprove,
-  onEdit,
+  onUndo,
   onSkip,
 }: {
   needsReview: ReviewQueueItem[]
   autoSubmitted: { company: string; role: string; time: string }[]
   onApprove: (id: string) => void
-  onEdit: (id: string) => void
+  onUndo: (id: string) => void
   onSkip: (id: string) => void
 }) {
   const [autoExpanded, setAutoExpanded] = useState(false)
@@ -1929,7 +1938,7 @@ function AutoSubmitQueues({
                 key={item.id}
                 item={item}
                 onApprove={onApprove}
-                onEdit={onEdit}
+                onUndo={onUndo}
                 onSkip={onSkip}
               />
             ))}
@@ -2199,19 +2208,17 @@ const reviewStyles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     transition: 'opacity 0.15s',
   },
-  btnEdit: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 4,
-    background: 'rgba(96, 165, 250, 0.1)',
-    color: '#93c5fd',
+  btnUndo: {
+    background: 'none',
+    border: 'none',
+    color: 'var(--text-tertiary)',
+    fontSize: 11,
     fontWeight: 500,
-    fontSize: 12,
-    padding: '6px 14px',
-    borderRadius: 6,
-    border: '1px solid rgba(96, 165, 250, 0.2)',
     cursor: 'pointer',
-    transition: 'border-color 0.15s',
+    textDecoration: 'underline' as const,
+    textUnderlineOffset: '2px',
+    padding: '4px 8px',
+    marginLeft: 'auto',
   },
   btnSkip: {
     display: 'inline-flex',
@@ -2954,8 +2961,10 @@ export function AutopilotView() {
     setReviewQueue(prev => prev.map(item => item.id === id ? { ...item, status: 'approved' as const } : item))
   }, [])
 
-  const handleReviewEdit = useCallback((_id: string) => {
-    // Future: open edit modal for this job
+  const handleReviewUndo = useCallback((id: string) => {
+    setReviewQueue((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, status: 'pending' as const } : item))
+    )
   }, [])
 
   const handleReviewSkip = useCallback((id: string) => {
@@ -3069,7 +3078,7 @@ export function AutopilotView() {
         <ReviewQueue
           queue={reviewQueue}
           onApprove={handleReviewApprove}
-          onEdit={handleReviewEdit}
+          onUndo={handleReviewUndo}
           onSkip={handleReviewSkip}
           onApproveAll={handleReviewApproveAll}
           onSkipAll={handleReviewSkipAll}
@@ -3343,7 +3352,7 @@ export function AutopilotView() {
                   .map(a => ({ company: a.company, role: a.role, time: formatActivityTime(a.createdAt) }))
               }
               onApprove={handleReviewApprove}
-              onEdit={handleReviewEdit}
+              onUndo={handleReviewUndo}
               onSkip={handleReviewSkip}
             />
           )}
@@ -3353,7 +3362,7 @@ export function AutopilotView() {
             <ReviewQueue
               queue={reviewQueue}
               onApprove={handleReviewApprove}
-              onEdit={handleReviewEdit}
+              onUndo={handleReviewUndo}
               onSkip={handleReviewSkip}
               onApproveAll={handleReviewApproveAll}
               onSkipAll={handleReviewSkipAll}
