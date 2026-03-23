@@ -232,6 +232,8 @@ interface ReviewQueueItem {
   cvName: string
   coverLetterSnippet: string
   status: 'pending' | 'approved' | 'skipped'
+  editedCoverLetter?: string
+  editedAnswers?: Record<string, string>
 }
 
 const REVIEW_LS_KEY = 'tracker_v2_review_queue'
@@ -1658,11 +1660,13 @@ function ApplicationReviewCard({
   onApprove,
   onSkip,
   onUndo,
+  onPreview,
 }: {
   item: ReviewQueueItem
   onApprove: (id: string) => void
   onSkip: (id: string) => void
   onUndo: (id: string) => void
+  onPreview?: (id: string) => void
 }) {
   const scoreColor =
     item.matchScore > 70 ? '#34d399' : item.matchScore >= 50 ? '#fbbf24' : '#f43f5e'
@@ -1713,7 +1717,7 @@ function ApplicationReviewCard({
         </div>
       </div>
 
-      {/* Actions: Approve or Skip */}
+      {/* Actions: Approve | Preview | Skip */}
       {item.status === 'pending' && (
         <div style={reviewStyles.cardActions}>
           <button
@@ -1724,6 +1728,16 @@ function ApplicationReviewCard({
             <Check size={14} />
             <span>Approve</span>
           </button>
+          {onPreview && (
+            <button
+              style={reviewStyles.btnPreview}
+              onClick={() => onPreview(item.id)}
+              title="Preview &amp; edit this application"
+            >
+              <Eye size={14} />
+              <span>Preview</span>
+            </button>
+          )}
           <button
             style={reviewStyles.btnSkip}
             onClick={() => onSkip(item.id)}
@@ -1769,6 +1783,222 @@ function ApplicationReviewCard({
 }
 
 /* ------------------------------------------------------------------ */
+/*  ApplicationPreviewDrawer                                            */
+/* ------------------------------------------------------------------ */
+const DEFAULT_SCREENING_QUESTIONS: { key: string; label: string; type: 'number' | 'textarea' | 'select' | 'text'; options?: string[]; defaultValue: string }[] = [
+  { key: 'years_experience', label: 'Years of experience', type: 'number', defaultValue: '7' },
+  { key: 'why_interested', label: 'Why are you interested in this role?', type: 'textarea', defaultValue: '' },
+  { key: 'work_authorization', label: 'Are you authorized to work?', type: 'select', options: ['Yes', 'No', 'Requires sponsorship'], defaultValue: 'Yes' },
+  { key: 'expected_salary', label: 'Expected salary', type: 'text', defaultValue: '' },
+  { key: 'notice_period', label: 'Notice period', type: 'select', options: ['Immediately', '2 weeks', '1 month', '2 months', '3 months'], defaultValue: 'Immediately' },
+]
+
+function ApplicationPreviewDrawer({
+  item,
+  onClose,
+  onApproveWithEdits,
+  onSkip,
+}: {
+  item: ReviewQueueItem
+  onClose: () => void
+  onApproveWithEdits: (id: string, edits: { editedCoverLetter?: string; editedAnswers?: Record<string, string> }) => void
+  onSkip: (id: string) => void
+}) {
+  const [coverLetter, setCoverLetter] = useState(
+    item.editedCoverLetter || item.coverLetterSnippet
+  )
+  const [answers, setAnswers] = useState<Record<string, string>>(() => {
+    if (item.editedAnswers) return { ...item.editedAnswers }
+    const defaults: Record<string, string> = {}
+    DEFAULT_SCREENING_QUESTIONS.forEach(q => {
+      if (q.key === 'why_interested') {
+        defaults[q.key] = `I am excited about the ${item.role} role at ${item.company}. ${item.coverLetterSnippet}`
+      } else if (q.key === 'expected_salary') {
+        defaults[q.key] = '80000 EUR'
+      } else {
+        defaults[q.key] = q.defaultValue
+      }
+    })
+    return defaults
+  })
+
+  const scoreColor =
+    item.matchScore > 70 ? '#34d399' : item.matchScore >= 50 ? '#fbbf24' : '#f43f5e'
+  const scoreBg =
+    item.matchScore > 70
+      ? 'rgba(52, 211, 153, 0.12)'
+      : item.matchScore >= 50
+        ? 'rgba(251, 191, 36, 0.12)'
+        : 'rgba(244, 63, 94, 0.12)'
+
+  const handleAnswerChange = useCallback((key: string, value: string) => {
+    setAnswers(prev => ({ ...prev, [key]: value }))
+  }, [])
+
+  const handleApprove = useCallback(() => {
+    onApproveWithEdits(item.id, {
+      editedCoverLetter: coverLetter !== item.coverLetterSnippet ? coverLetter : undefined,
+      editedAnswers: answers,
+    })
+  }, [item.id, item.coverLetterSnippet, coverLetter, answers, onApproveWithEdits])
+
+  // Read profile from localStorage if available
+  const profileData = (() => {
+    try {
+      const raw = localStorage.getItem('tracker_v2_profile')
+      return raw ? JSON.parse(raw) : null
+    } catch { return null }
+  })()
+
+  const portfolioUrl = profileData?.portfolioUrl || 'https://www.floriangouloubi.com'
+  const websiteUrl = profileData?.websiteUrl || profileData?.portfolioUrl || 'https://www.floriangouloubi.com'
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div style={drawerStyles.backdrop} onClick={onClose} />
+      {/* Drawer */}
+      <div style={drawerStyles.drawer}>
+        {/* Header */}
+        <div style={drawerStyles.header}>
+          <div style={drawerStyles.headerInfo}>
+            <div style={drawerStyles.headerTitleRow}>
+              <span style={drawerStyles.headerCompany}>{item.company}</span>
+              <div
+                style={{
+                  ...drawerStyles.scoreBadge,
+                  color: scoreColor,
+                  background: scoreBg,
+                  border: `1px solid ${scoreColor}33`,
+                }}
+              >
+                <Shield size={12} />
+                <span>{item.matchScore}%</span>
+              </div>
+            </div>
+            <span style={drawerStyles.headerRole}>{item.role}</span>
+          </div>
+          <button style={drawerStyles.closeBtn} onClick={onClose} title="Close">
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Scrollable content */}
+        <div style={drawerStyles.body}>
+          {/* Section 1: What the recruiter sees */}
+          <div style={drawerStyles.section}>
+            <h3 style={drawerStyles.sectionTitle}>What the recruiter sees</h3>
+
+            <div style={drawerStyles.fieldGroup}>
+              <label style={drawerStyles.fieldLabel}>CV</label>
+              <div style={drawerStyles.fieldReadonly}>{item.cvName}</div>
+            </div>
+
+            <div style={drawerStyles.fieldGroup}>
+              <label style={drawerStyles.fieldLabel}>Cover Letter</label>
+              <textarea
+                style={drawerStyles.textarea}
+                value={coverLetter}
+                onChange={e => setCoverLetter(e.target.value)}
+                rows={6}
+              />
+            </div>
+
+            {portfolioUrl && (
+              <div style={drawerStyles.fieldGroup}>
+                <label style={drawerStyles.fieldLabel}>Portfolio URL</label>
+                <div style={drawerStyles.fieldReadonly}>{portfolioUrl}</div>
+              </div>
+            )}
+
+            {websiteUrl && websiteUrl !== portfolioUrl && (
+              <div style={drawerStyles.fieldGroup}>
+                <label style={drawerStyles.fieldLabel}>Website URL</label>
+                <div style={drawerStyles.fieldReadonly}>{websiteUrl}</div>
+              </div>
+            )}
+          </div>
+
+          {/* Section 2: Screening Answers */}
+          <div style={drawerStyles.section}>
+            <h3 style={drawerStyles.sectionTitle}>Screening Answers</h3>
+            {DEFAULT_SCREENING_QUESTIONS.map(q => (
+              <div key={q.key} style={drawerStyles.fieldGroup}>
+                <label style={drawerStyles.fieldLabel}>{q.label}</label>
+                {q.type === 'textarea' ? (
+                  <textarea
+                    style={drawerStyles.textarea}
+                    value={answers[q.key] || ''}
+                    onChange={e => handleAnswerChange(q.key, e.target.value)}
+                    rows={4}
+                  />
+                ) : q.type === 'select' && q.options ? (
+                  <select
+                    style={drawerStyles.select}
+                    value={answers[q.key] || q.defaultValue}
+                    onChange={e => handleAnswerChange(q.key, e.target.value)}
+                  >
+                    {q.options.map(opt => (
+                      <option key={opt} value={opt}>{opt}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    style={drawerStyles.input}
+                    type={q.type === 'number' ? 'number' : 'text'}
+                    value={answers[q.key] || ''}
+                    onChange={e => handleAnswerChange(q.key, e.target.value)}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Section 3: Match Details */}
+          <div style={drawerStyles.section}>
+            <h3 style={drawerStyles.sectionTitle}>Match Details</h3>
+            <div style={drawerStyles.matchReasonsWrap}>
+              {item.matchReasons.map((reason, i) => (
+                <span key={i} style={drawerStyles.matchChip}>{reason}</span>
+              ))}
+            </div>
+            <div style={drawerStyles.scoreBreakdown}>
+              <span style={drawerStyles.scoreBreakdownLabel}>Match Score</span>
+              <div style={drawerStyles.scoreBar}>
+                <div
+                  style={{
+                    ...drawerStyles.scoreBarFill,
+                    width: `${item.matchScore}%`,
+                    background: scoreColor,
+                  }}
+                />
+              </div>
+              <span style={{ ...drawerStyles.scoreBreakdownValue, color: scoreColor }}>
+                {item.matchScore}%
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div style={drawerStyles.footer}>
+          <button style={drawerStyles.btnApproveSubmit} onClick={handleApprove}>
+            <Check size={14} />
+            <span>Approve &amp; Submit</span>
+          </button>
+          <button
+            style={drawerStyles.btnFooterSkip}
+            onClick={() => { onSkip(item.id); onClose() }}
+          >
+            Skip
+          </button>
+        </div>
+      </div>
+    </>
+  )
+}
+
+/* ------------------------------------------------------------------ */
 /*  ReviewQueue                                                        */
 /* ------------------------------------------------------------------ */
 function ReviewQueue({
@@ -1779,6 +2009,7 @@ function ReviewQueue({
   onApproveAll,
   onSkipAll,
   onSubmitApproved,
+  onPreview,
   isDemo,
 }: {
   queue: ReviewQueueItem[]
@@ -1788,6 +2019,7 @@ function ReviewQueue({
   onApproveAll: () => void
   onSkipAll: () => void
   onSubmitApproved: () => void
+  onPreview?: (id: string) => void
   isDemo: boolean
 }) {
   const pendingCount = queue.filter((i) => i.status === 'pending').length
@@ -1835,6 +2067,7 @@ function ReviewQueue({
             onApprove={onApprove}
             onUndo={onUndo}
             onSkip={onSkip}
+            onPreview={onPreview}
           />
         ))}
       </div>
@@ -1910,12 +2143,14 @@ function AutoSubmitQueues({
   onApprove,
   onUndo,
   onSkip,
+  onPreview,
 }: {
   needsReview: ReviewQueueItem[]
   autoSubmitted: { company: string; role: string; time: string }[]
   onApprove: (id: string) => void
   onUndo: (id: string) => void
   onSkip: (id: string) => void
+  onPreview?: (id: string) => void
 }) {
   const [autoExpanded, setAutoExpanded] = useState(false)
 
@@ -1940,6 +2175,7 @@ function AutoSubmitQueues({
                 onApprove={onApprove}
                 onUndo={onUndo}
                 onSkip={onSkip}
+                onPreview={onPreview}
               />
             ))}
           </div>
@@ -2239,6 +2475,20 @@ const reviewStyles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: 4,
     marginTop: 2,
+  },
+  btnPreview: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    background: 'transparent',
+    color: '#93c5fd',
+    fontWeight: 500,
+    fontSize: 12,
+    padding: '6px 14px',
+    borderRadius: 6,
+    border: '1px solid rgba(96, 165, 250, 0.3)',
+    cursor: 'pointer',
+    transition: 'border-color 0.15s, background 0.15s',
   },
 }
 
@@ -2784,6 +3034,233 @@ const dailyLimitStyles: Record<string, React.CSSProperties> = {
 }
 
 /* ------------------------------------------------------------------ */
+/*  ApplicationPreviewDrawer styles                                     */
+/* ------------------------------------------------------------------ */
+const drawerStyles: Record<string, React.CSSProperties> = {
+  backdrop: {
+    position: 'fixed',
+    inset: 0,
+    background: 'rgba(0, 0, 0, 0.55)',
+    zIndex: 200,
+  },
+  drawer: {
+    position: 'fixed',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    width: 500,
+    maxWidth: '100vw',
+    background: 'var(--bg-surface)',
+    borderLeft: '1px solid var(--border)',
+    zIndex: 201,
+    display: 'flex',
+    flexDirection: 'column',
+    boxShadow: '-8px 0 32px rgba(0, 0, 0, 0.4)',
+    animation: 'drawerSlideIn 0.2s ease-out',
+  },
+  header: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    padding: '20px 20px 16px',
+    borderBottom: '1px solid var(--border)',
+    flexShrink: 0,
+  },
+  headerInfo: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 4,
+    minWidth: 0,
+  },
+  headerTitleRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+  },
+  headerCompany: {
+    fontSize: 16,
+    fontWeight: 700,
+    color: 'var(--text-primary)',
+  },
+  headerRole: {
+    fontSize: 14,
+    color: 'var(--text-secondary)',
+  },
+  scoreBadge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    fontSize: 13,
+    fontWeight: 700,
+    padding: '3px 8px',
+    borderRadius: 6,
+    flexShrink: 0,
+  },
+  closeBtn: {
+    background: 'none',
+    border: 'none',
+    color: 'var(--text-tertiary)',
+    cursor: 'pointer',
+    padding: 4,
+    borderRadius: 6,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    transition: 'color 0.15s',
+  },
+  body: {
+    flex: 1,
+    overflowY: 'auto',
+    padding: '0 20px 20px',
+  },
+  section: {
+    padding: '16px 0',
+    borderBottom: '1px solid var(--border)',
+  },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.04em',
+    margin: '0 0 12px',
+  },
+  fieldGroup: {
+    marginBottom: 12,
+  },
+  fieldLabel: {
+    display: 'block',
+    fontSize: 12,
+    fontWeight: 600,
+    color: 'var(--text-secondary)',
+    marginBottom: 4,
+  },
+  fieldReadonly: {
+    fontSize: 13,
+    color: 'var(--text-tertiary)',
+    padding: '8px 10px',
+    background: 'rgba(255, 255, 255, 0.02)',
+    borderRadius: 6,
+    border: '1px solid var(--border)',
+  },
+  textarea: {
+    width: '100%',
+    minHeight: 120,
+    fontSize: 13,
+    color: 'var(--text-primary)',
+    background: 'var(--bg-elevated)',
+    border: '1px solid var(--border)',
+    borderRadius: 6,
+    padding: '8px 10px',
+    resize: 'vertical' as const,
+    fontFamily: 'inherit',
+    lineHeight: 1.5,
+    outline: 'none',
+    boxSizing: 'border-box' as const,
+  },
+  input: {
+    width: '100%',
+    fontSize: 13,
+    color: 'var(--text-primary)',
+    background: 'var(--bg-elevated)',
+    border: '1px solid var(--border)',
+    borderRadius: 6,
+    padding: '8px 10px',
+    fontFamily: 'inherit',
+    outline: 'none',
+    boxSizing: 'border-box' as const,
+  },
+  select: {
+    width: '100%',
+    fontSize: 13,
+    color: 'var(--text-primary)',
+    background: 'var(--bg-elevated)',
+    border: '1px solid var(--border)',
+    borderRadius: 6,
+    padding: '8px 10px',
+    fontFamily: 'inherit',
+    outline: 'none',
+    boxSizing: 'border-box' as const,
+    cursor: 'pointer',
+  },
+  matchReasonsWrap: {
+    display: 'flex',
+    flexWrap: 'wrap' as const,
+    gap: 6,
+    marginBottom: 12,
+  },
+  matchChip: {
+    fontSize: 12,
+    padding: '3px 10px',
+    borderRadius: 12,
+    background: 'rgba(96, 165, 250, 0.10)',
+    color: '#93c5fd',
+    border: '1px solid rgba(96, 165, 250, 0.15)',
+    whiteSpace: 'nowrap' as const,
+  },
+  scoreBreakdown: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+  },
+  scoreBreakdownLabel: {
+    fontSize: 12,
+    color: 'var(--text-secondary)',
+    flexShrink: 0,
+  },
+  scoreBar: {
+    flex: 1,
+    height: 6,
+    borderRadius: 3,
+    background: 'rgba(255, 255, 255, 0.06)',
+    overflow: 'hidden',
+  },
+  scoreBarFill: {
+    height: '100%',
+    borderRadius: 3,
+    transition: 'width 0.3s ease',
+  },
+  scoreBreakdownValue: {
+    fontSize: 14,
+    fontWeight: 700,
+    flexShrink: 0,
+  },
+  footer: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 12,
+    padding: '16px 20px',
+    borderTop: '1px solid var(--border)',
+    flexShrink: 0,
+  },
+  btnApproveSubmit: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    background: '#34d399',
+    color: '#09090b',
+    fontWeight: 700,
+    fontSize: 14,
+    padding: '10px 20px',
+    borderRadius: 'var(--radius-md)',
+    border: 'none',
+    cursor: 'pointer',
+    transition: 'opacity 0.15s',
+  },
+  btnFooterSkip: {
+    background: 'none',
+    border: 'none',
+    color: 'var(--text-secondary)',
+    fontSize: 13,
+    cursor: 'pointer',
+    textDecoration: 'underline' as const,
+    textUnderlineOffset: '2px',
+    padding: '10px 12px',
+  },
+}
+
+/* ------------------------------------------------------------------ */
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 export function AutopilotView() {
@@ -2840,6 +3317,10 @@ export function AutopilotView() {
     return saved.length > 0 ? saved : MOCK_REVIEW_QUEUE
   })
   const [isReviewDemo] = useState(() => loadReviewQueue().length === 0)
+
+  // Preview drawer state
+  const [previewItemId, setPreviewItemId] = useState<string | null>(null)
+  const previewItem = previewItemId ? reviewQueue.find(i => i.id === previewItemId) ?? null : null
 
   // Auto-submit state
   const [autoSubmitOn, setAutoSubmitOn] = useState(getAutoSubmitEnabled)
@@ -2979,6 +3460,23 @@ export function AutopilotView() {
     setReviewQueue(prev => prev.map(item => item.status === 'pending' ? { ...item, status: 'skipped' as const } : item))
   }, [])
 
+  const handleReviewPreview = useCallback((id: string) => {
+    setPreviewItemId(id)
+  }, [])
+
+  const handlePreviewClose = useCallback(() => {
+    setPreviewItemId(null)
+  }, [])
+
+  const handleApproveWithEdits = useCallback((id: string, edits: { editedCoverLetter?: string; editedAnswers?: Record<string, string> }) => {
+    setReviewQueue(prev => prev.map(item =>
+      item.id === id
+        ? { ...item, status: 'approved' as const, editedCoverLetter: edits.editedCoverLetter, editedAnswers: edits.editedAnswers }
+        : item
+    ))
+    setPreviewItemId(null)
+  }, [])
+
   const handleSubmitApproved = useCallback(() => {
     // Future: trigger actual submission of approved jobs
     if (!requireAuth('start_bot', () => { doStartBot() })) return
@@ -3083,8 +3581,19 @@ export function AutopilotView() {
           onApproveAll={handleReviewApproveAll}
           onSkipAll={handleReviewSkipAll}
           onSubmitApproved={handleSubmitApproved}
+          onPreview={handleReviewPreview}
           isDemo={isReviewDemo}
         />
+
+        {/* Preview Drawer */}
+        {previewItem && (
+          <ApplicationPreviewDrawer
+            item={previewItem}
+            onClose={handlePreviewClose}
+            onApproveWithEdits={handleApproveWithEdits}
+            onSkip={handleReviewSkip}
+          />
+        )}
 
         {/* Live Activity Feed */}
         <section style={styles.section}>
@@ -3166,6 +3675,10 @@ export function AutopilotView() {
             15% { opacity: 1; }
             85% { opacity: 1; }
             100% { opacity: 0; }
+          }
+          @keyframes drawerSlideIn {
+            from { transform: translateX(100%); }
+            to { transform: translateX(0); }
           }
         `}</style>
       </div>
@@ -3354,6 +3867,7 @@ export function AutopilotView() {
               onApprove={handleReviewApprove}
               onUndo={handleReviewUndo}
               onSkip={handleReviewSkip}
+              onPreview={handleReviewPreview}
             />
           )}
 
@@ -3367,7 +3881,18 @@ export function AutopilotView() {
               onApproveAll={handleReviewApproveAll}
               onSkipAll={handleReviewSkipAll}
               onSubmitApproved={handleSubmitApproved}
+              onPreview={handleReviewPreview}
               isDemo={isReviewDemo}
+            />
+          )}
+
+          {/* Preview Drawer (authenticated) */}
+          {previewItem && (
+            <ApplicationPreviewDrawer
+              item={previewItem}
+              onClose={handlePreviewClose}
+              onApproveWithEdits={handleApproveWithEdits}
+              onSkip={handleReviewSkip}
             />
           )}
 
@@ -3518,6 +4043,10 @@ export function AutopilotView() {
         @keyframes spin {
           from { transform: rotate(0deg); }
           to { transform: rotate(360deg); }
+        }
+        @keyframes drawerSlideIn {
+          from { transform: translateX(100%); }
+          to { transform: translateX(0); }
         }
       `}</style>
     </div>
