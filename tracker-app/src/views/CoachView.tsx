@@ -1,5 +1,26 @@
 import { useState, useEffect, useRef, useMemo, Component, type ErrorInfo, type ReactNode } from 'react'
 import { useCoach, type GoalMode, type PersonalRank } from '../context/CoachContext'
+
+// Mobile responsive CSS
+const coachResponsiveCSS = `
+@media (max-width: 767px) {
+  .coach-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .coach-container {
+    padding: 16px !important;
+  }
+}
+`
+if (typeof document !== 'undefined') {
+  const id = 'coach-responsive-styles'
+  if (!document.getElementById(id)) {
+    const style = document.createElement('style')
+    style.id = id
+    style.textContent = coachResponsiveCSS
+    document.head.appendChild(style)
+  }
+}
 import { useJobs } from '../context/JobsContext'
 import { celebrate } from '../hooks/useCelebration'
 import {
@@ -86,10 +107,10 @@ export function CoachView() {
 
 function CoachViewContent() {
   return (
-    <div style={styles.container}>
+    <div className="coach-container" style={styles.container}>
       {/* AI Coach Banner */}
       <AICoachBanner />
-      <div style={styles.grid}>
+      <div className="coach-grid" style={styles.grid}>
         <div style={styles.leftCol}>
           <StreakCard />
           <DailyGoalCard />

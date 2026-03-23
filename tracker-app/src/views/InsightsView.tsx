@@ -8,6 +8,27 @@ import {
   Calendar,
 } from 'lucide-react'
 import { useFeedbackLoop } from '../hooks/useFeedbackLoop'
+
+// Mobile responsive CSS
+const insightsResponsiveCSS = `
+@media (max-width: 767px) {
+  .insights-container {
+    padding: 16px !important;
+  }
+  .insights-card {
+    padding: 14px !important;
+  }
+}
+`
+if (typeof document !== 'undefined') {
+  const id = 'insights-responsive-styles'
+  if (!document.getElementById(id)) {
+    const style = document.createElement('style')
+    style.id = id
+    style.textContent = insightsResponsiveCSS
+    document.head.appendChild(style)
+  }
+}
 import { useJobs } from '../context/JobsContext'
 import {
   Bar,
@@ -79,7 +100,7 @@ function ATSPlaybookCard() {
   }
 
   return (
-    <div style={styles.card}>
+    <div className="insights-card" style={styles.card}>
       <div style={styles.cardHeader}>
         <Zap size={16} color="#fbbf24" />
         <h3 style={styles.cardTitle}>What's Working</h3>
@@ -139,7 +160,7 @@ function GhostRadarCard() {
   const { updateJobStatus } = useJobs()
 
   return (
-    <div style={styles.card}>
+    <div className="insights-card" style={styles.card}>
       <div style={styles.cardHeader}>
         <Ghost size={16} color="#71717a" />
         <h3 style={styles.cardTitle}>Ghost Radar</h3>
@@ -232,7 +253,7 @@ function QualityImpactCard() {
   const bestFactor = qualityImpact.length > 0 ? qualityImpact[0] : null
 
   return (
-    <div style={styles.card}>
+    <div className="insights-card" style={styles.card}>
       <div style={styles.cardHeader}>
         <FileCheck size={16} color="#60a5fa" />
         <h3 style={styles.cardTitle}>Quality Impact</h3>
@@ -307,7 +328,7 @@ function TimingAnalysisCard() {
   }
 
   return (
-    <div style={styles.card}>
+    <div className="insights-card" style={styles.card}>
       <div style={styles.cardHeader}>
         <Calendar size={16} color="#fb923c" />
         <h3 style={styles.cardTitle}>Timing Analysis</h3>
@@ -514,7 +535,7 @@ function InsightsBanner() {
 
 export function InsightsView() {
   return (
-    <div style={styles.container}>
+    <div className="insights-container" style={styles.container}>
       <div style={styles.header}>
         <h1 style={styles.title}>Insights</h1>
         <p style={styles.subtitle}>Personalized recommendations based on your results</p>
@@ -557,7 +578,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   grid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(min(380px, 100%), 1fr))',
     gap: 16,
   },
   card: {

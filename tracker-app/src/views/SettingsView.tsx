@@ -36,6 +36,32 @@ import { getPlanConfig, createPortalSession } from '../lib/billing'
 import type { Job } from '../types/job'
 
 /* ------------------------------------------------------------------ */
+/*  Mobile responsive CSS injection                                     */
+/* ------------------------------------------------------------------ */
+const settingsResponsiveCSS = `
+@media (max-width: 767px) {
+  .settings-profile-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .settings-field-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .settings-container {
+    padding: 16px !important;
+  }
+}
+`
+if (typeof document !== 'undefined') {
+  const id = 'settings-responsive-styles'
+  if (!document.getElementById(id)) {
+    const style = document.createElement('style')
+    style.id = id
+    style.textContent = settingsResponsiveCSS
+    document.head.appendChild(style)
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /*  localStorage keys                                                   */
 /* ------------------------------------------------------------------ */
 const LS_PROFILE = 'tracker_v2_user_profile'
@@ -407,7 +433,7 @@ export function SettingsView() {
   /*  Render                                                              */
   /* ================================================================== */
   return (
-    <div style={s.container}>
+    <div className="settings-container" style={s.container}>
       <div style={s.header}>
         <h1 style={s.pageTitle}>Settings</h1>
         <p style={s.pageSubtitle}>Manage your account, preferences, and integrations</p>
@@ -429,7 +455,7 @@ export function SettingsView() {
         openSections={openSections}
         toggle={toggleSection}
       >
-        <div style={s.profileGrid}>
+        <div className="settings-profile-grid" style={s.profileGrid}>
           <div style={s.fieldGroup}>
             <label style={s.label}>Display Name</label>
             <input
@@ -563,7 +589,7 @@ export function SettingsView() {
         </div>
 
         {/* Salary Minimum */}
-        <div style={s.fieldGrid}>
+        <div className="settings-field-grid" style={s.fieldGrid}>
           <div style={s.fieldGroup}>
             <label style={s.label}><DollarSign size={12} style={{ marginRight: 4 }} />Minimum Salary (annual)</label>
             <div style={s.inputRow}>
@@ -692,7 +718,7 @@ export function SettingsView() {
         </div>
 
         {/* Max Applies Per Day */}
-        <div style={s.fieldGrid}>
+        <div className="settings-field-grid" style={s.fieldGrid}>
           <div style={s.fieldGroup}>
             <label style={s.label}>Max Applications / Day</label>
             <input

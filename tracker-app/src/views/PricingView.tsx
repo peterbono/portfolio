@@ -17,6 +17,8 @@ const responsiveCSS = `
 @media (max-width: 640px) {
   .pricing-grid { grid-template-columns: 1fr !important; }
   .faq-grid { grid-template-columns: 1fr !important; }
+  .pricing-container { padding: 16px !important; }
+  .pricing-title { font-size: 22px !important; }
 }
 `
 if (typeof document !== 'undefined') {
@@ -36,11 +38,11 @@ export function PricingViewWithResponsive() {
   const { plan: currentPlan } = usePlan()
 
   return (
-    <div style={styles.container}>
+    <div className="pricing-container" style={styles.container}>
       <div style={styles.inner}>
         {/* Header */}
         <div style={styles.header}>
-          <h1 style={styles.title}>Choose your plan</h1>
+          <h1 className="pricing-title" style={styles.title}>Choose your plan</h1>
           <p style={styles.subtitle}>
             Job search takes 6-8 weeks, not a year. Pay only while you need it.
           </p>

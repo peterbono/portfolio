@@ -56,6 +56,15 @@ export function UIProvider({ children }: { children: ReactNode }) {
     } catch { /* ignore */ }
   }, [activeView])
 
+  // Auto-collapse sidebar when resizing to mobile
+  useEffect(() => {
+    const onResize = () => {
+      if (window.innerWidth < 768) setSidebarCollapsed(true)
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
   const toggleSidebar = useCallback(() => {
     setSidebarCollapsed((prev) => !prev)
   }, [])

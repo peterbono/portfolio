@@ -20,6 +20,37 @@ import { EmptyState } from '../components/EmptyState'
 import { SkeletonForView } from '../components/SkeletonView'
 import { LayoutList, Kanban, BarChart3, Flame, Brain, Bot } from 'lucide-react'
 
+// Mobile responsive CSS
+const appShellResponsiveCSS = `
+@media (max-width: 767px) {
+  .app-shell-filter-bar {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding: 8px 12px !important;
+    gap: 4px !important;
+    flex-wrap: nowrap !important;
+  }
+  .app-shell-filter-bar::-webkit-scrollbar {
+    display: none;
+  }
+  .app-shell-filter-bar button,
+  .app-shell-filter-bar select {
+    flex-shrink: 0 !important;
+    min-height: 36px !important;
+  }
+}
+`
+if (typeof document !== 'undefined') {
+  const id = 'appshell-responsive-styles'
+  if (!document.getElementById(id)) {
+    const style = document.createElement('style')
+    style.id = id
+    style.textContent = appShellResponsiveCSS
+    document.head.appendChild(style)
+  }
+}
+
 const TIME_OPTIONS: { value: TimeRange; label: string }[] = [
   { value: 'all', label: 'All time' },
   { value: 'today', label: 'Today' },
@@ -45,7 +76,7 @@ const MODE_OPTIONS: { value: WorkMode; label: string }[] = [
 function GlobalFilters() {
   const { timeRange, setTimeRange, areaFilter, setAreaFilter, workMode, setWorkMode } = useUI()
   return (
-    <div style={styles.timeBar} data-filter-bar>
+    <div className="app-shell-filter-bar" style={styles.timeBar} data-filter-bar>
       {TIME_OPTIONS.map(opt => (
         <button
           key={opt.value}

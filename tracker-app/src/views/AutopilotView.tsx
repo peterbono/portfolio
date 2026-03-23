@@ -38,6 +38,76 @@ import CompanyChipInput from '../components/CompanyChipInput'
 import { ProfileSetupModal, isProfileComplete } from '../components/ProfileSetupModal'
 
 /* ------------------------------------------------------------------ */
+/*  Mobile responsive CSS injection                                    */
+/* ------------------------------------------------------------------ */
+const autopilotResponsiveCSS = `
+@media (max-width: 767px) {
+  /* Preview drawer: full-screen on mobile */
+  .autopilot-preview-drawer {
+    width: 100vw !important;
+    border-left: none !important;
+  }
+  /* Container padding */
+  .autopilot-container {
+    padding: 16px !important;
+    gap: 12px !important;
+  }
+  /* Status banner padding */
+  .autopilot-status-banner {
+    padding: 16px !important;
+  }
+  /* Hero section */
+  .autopilot-hero {
+    padding: 24px 16px !important;
+  }
+  .autopilot-hero-title {
+    font-size: 22px !important;
+  }
+  /* Top bar padding */
+  .autopilot-top-bar {
+    padding: 12px 16px 10px !important;
+  }
+  /* Main panel padding */
+  .autopilot-main-panel {
+    padding: 12px 16px !important;
+  }
+  /* Review cards: ensure full width */
+  .autopilot-review-card {
+    padding: 12px !important;
+  }
+  /* Bot controls stack vertically */
+  .autopilot-top-bar-right {
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+  }
+  /* Filter tags horizontal scroll */
+  .autopilot-filter-tags {
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .autopilot-filter-tags::-webkit-scrollbar {
+    display: none;
+  }
+  /* Run history table scroll */
+  .autopilot-history-table {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+`
+if (typeof document !== 'undefined') {
+  const id = 'autopilot-responsive-styles'
+  if (!document.getElementById(id)) {
+    const style = document.createElement('style')
+    style.id = id
+    style.textContent = autopilotResponsiveCSS
+    document.head.appendChild(style)
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
 interface LocationRule {
@@ -1858,7 +1928,7 @@ function ApplicationPreviewDrawer({
       {/* Backdrop */}
       <div style={drawerStyles.backdrop} onClick={onClose} />
       {/* Drawer */}
-      <div style={drawerStyles.drawer}>
+      <div className="autopilot-preview-drawer" style={drawerStyles.drawer}>
         {/* Header */}
         <div style={drawerStyles.header}>
           <div style={drawerStyles.headerInfo}>
@@ -3691,7 +3761,7 @@ export function AutopilotView() {
   return (
     <div style={layoutStyles.root}>
       {/* Top bar: title + Filters toggle */}
-      <div style={layoutStyles.topBar}>
+      <div className="autopilot-top-bar" style={layoutStyles.topBar}>
         <div style={layoutStyles.topBarLeft}>
           <Bot size={20} color="var(--accent)" />
           <h1 style={layoutStyles.topBarTitle}>Autopilot</h1>
@@ -3702,7 +3772,7 @@ export function AutopilotView() {
             </span>
           )}
         </div>
-        <div style={layoutStyles.topBarRight}>
+        <div className="autopilot-top-bar-right" style={layoutStyles.topBarRight}>
           {/* Auto-submit badge when ON */}
           {autoSubmitOn && (
             <span style={autoSubmitStyles.topBarBadge}>
@@ -3799,7 +3869,7 @@ export function AutopilotView() {
         )}
 
         {/* RIGHT: Main content */}
-        <div style={layoutStyles.main}>
+        <div className="autopilot-main-panel" style={layoutStyles.main}>
           {/* Active filter tags bar */}
           <ActiveFilterTags config={searchConfig} />
 

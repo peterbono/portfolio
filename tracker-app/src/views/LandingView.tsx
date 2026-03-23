@@ -3346,6 +3346,16 @@ if (typeof document !== 'undefined' && !document.getElementById(RESPONSIVE_ID)) 
         flex-direction: column !important;
         gap: 12px !important;
       }
+      [data-landing-page] {
+        overflow-x: hidden !important;
+      }
+      [data-landing-page] section {
+        padding-left: 16px !important;
+        padding-right: 16px !important;
+      }
+      [data-landing-footer-columns] {
+        flex-wrap: wrap !important;
+      }
     }
     @media (max-width: 480px) {
       [data-landing-logo-grid] {

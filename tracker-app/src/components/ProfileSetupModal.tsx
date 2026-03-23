@@ -20,6 +20,43 @@ import {
   AlertCircle,
 } from 'lucide-react'
 
+// Mobile responsive CSS
+const profileModalResponsiveCSS = `
+@media (max-width: 767px) {
+  .profile-modal-overlay {
+    padding: 0 !important;
+    align-items: flex-end !important;
+  }
+  .profile-modal {
+    max-width: 100% !important;
+    max-height: 100vh !important;
+    border-radius: 16px 16px 0 0 !important;
+    height: 95vh !important;
+  }
+  .profile-modal-header {
+    padding: 20px 16px 0 !important;
+  }
+  .profile-modal-stepper {
+    padding: 12px 16px 0 !important;
+  }
+  .profile-modal-body {
+    padding: 16px !important;
+  }
+  .profile-modal-footer {
+    padding: 12px 16px !important;
+  }
+}
+`
+if (typeof document !== 'undefined') {
+  const id = 'profile-modal-responsive-styles'
+  if (!document.getElementById(id)) {
+    const style = document.createElement('style')
+    style.id = id
+    style.textContent = profileModalResponsiveCSS
+    document.head.appendChild(style)
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
@@ -786,15 +823,15 @@ export function ProfileSetupModal({
   }, [])
 
   return (
-    <div style={ms.overlay} onClick={onDismiss}>
-      <div style={ms.modal} onClick={(e) => e.stopPropagation()}>
+    <div className="profile-modal-overlay" style={ms.overlay} onClick={onDismiss}>
+      <div className="profile-modal" style={ms.modal} onClick={(e) => e.stopPropagation()}>
         {/* Close button */}
         <button type="button" style={ms.closeBtn} onClick={onDismiss}>
           <X size={18} />
         </button>
 
         {/* Header */}
-        <div style={ms.header}>
+        <div className="profile-modal-header" style={ms.header}>
           <h2 style={ms.title}>Complete Your Profile</h2>
           <p style={ms.subtitle}>
             The bot needs your professional data to apply on your behalf.
@@ -802,7 +839,7 @@ export function ProfileSetupModal({
         </div>
 
         {/* Step indicators */}
-        <div style={ms.stepper}>
+        <div className="profile-modal-stepper" style={ms.stepper}>
           {STEPS.map((label, i) => (
             <button
               key={label}
@@ -839,12 +876,12 @@ export function ProfileSetupModal({
         </div>
 
         {/* Step content */}
-        <div style={ms.body}>
+        <div className="profile-modal-body" style={ms.body}>
           {stepRenderers[step]()}
         </div>
 
         {/* Footer */}
-        <div style={ms.footer}>
+        <div className="profile-modal-footer" style={ms.footer}>
           <div style={ms.footerLeft}>
             {step > 0 && (
               <button type="button" style={ms.btnBack} onClick={handleBack}>

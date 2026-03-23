@@ -19,6 +19,40 @@ import {
   AlertCircle,
 } from 'lucide-react'
 import confetti from 'canvas-confetti'
+
+// Mobile responsive CSS
+const onboardingResponsiveCSS = `
+@media (max-width: 767px) {
+  .onboarding-card {
+    max-width: 100% !important;
+    padding: 20px 16px !important;
+    border-radius: 12px !important;
+    max-height: 95vh !important;
+  }
+  .onboarding-overlay {
+    padding: 10px !important;
+  }
+  .onboarding-bot-icon {
+    width: 56px !important;
+    height: 56px !important;
+  }
+  .onboarding-title {
+    font-size: 20px !important;
+  }
+  .onboarding-step-title {
+    font-size: 17px !important;
+  }
+}
+`
+if (typeof document !== 'undefined') {
+  const id = 'onboarding-responsive-styles'
+  if (!document.getElementById(id)) {
+    const style = document.createElement('style')
+    style.id = id
+    style.textContent = onboardingResponsiveCSS
+    document.head.appendChild(style)
+  }
+}
 import CompanyChipInput from './CompanyChipInput'
 import { WORLD_CITIES } from '../data/cities'
 import { JOB_TITLES as IMPORTED_JOB_TITLES } from '../data/job-titles'
@@ -529,8 +563,8 @@ export function OnboardingWizard({ onComplete, defaultEmail, defaultName }: Onbo
   // ---------------------------------------------------------------------------
 
   return (
-    <div style={styles.overlay}>
-      <div style={styles.card}>
+    <div className="onboarding-overlay" style={styles.overlay}>
+      <div className="onboarding-card" style={styles.card}>
         {/* Step indicators */}
         <div style={styles.stepRow}>
           {Array.from({ length: totalSteps }, (_, i) => (
