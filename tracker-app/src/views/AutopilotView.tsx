@@ -23,10 +23,14 @@ import {
   SlidersHorizontal,
   ChevronLeft,
   Tag,
+  Zap,
+  Pencil,
+  ChevronUp,
+  Save,
 } from 'lucide-react'
 import { useBotActivity } from '../hooks/useBotActivity'
 import type { BotActivityItem, BotRunStatus } from '../hooks/useBotActivity'
-import { triggerBotRun, triggerDryRun } from '../lib/bot-api'
+import { triggerBotRun } from '../lib/bot-api'
 import { supabase } from '../lib/supabase'
 import { useAuthWall } from '../hooks/useAuthWall'
 import { useSupabase } from '../context/SupabaseContext'
@@ -218,9 +222,9 @@ function formatRunDate(iso: string | null): string {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Preview Queue types + persistence                                  */
+/*  Review Queue types + persistence                                   */
 /* ------------------------------------------------------------------ */
-interface PreviewQueueItem {
+interface ReviewQueueItem {
   id: string
   company: string
   role: string
@@ -231,28 +235,72 @@ interface PreviewQueueItem {
   status: 'pending' | 'approved' | 'skipped'
 }
 
-const PREVIEW_LS_KEY = 'tracker_v2_preview_queue'
+const REVIEW_LS_KEY = 'tracker_v2_review_queue'
+const RUN_COUNT_LS_KEY = 'tracker_v2_run_count'
+const AUTO_SUBMIT_LS_KEY = 'tracker_v2_auto_submit'
+const AUTO_SUBMIT_DISMISS_LS_KEY = 'tracker_v2_auto_submit_dismissed_at'
 
-function loadPreviewQueue(): PreviewQueueItem[] {
+function loadReviewQueue(): ReviewQueueItem[] {
   try {
-    const raw = localStorage.getItem(PREVIEW_LS_KEY)
+    const raw = localStorage.getItem(REVIEW_LS_KEY)
     return raw ? JSON.parse(raw) : []
   } catch {
     return []
   }
 }
 
-function savePreviewQueue(queue: PreviewQueueItem[]) {
+function saveReviewQueue(queue: ReviewQueueItem[]) {
   try {
-    localStorage.setItem(PREVIEW_LS_KEY, JSON.stringify(queue))
+    localStorage.setItem(REVIEW_LS_KEY, JSON.stringify(queue))
   } catch {
     /* ignore */
   }
 }
 
-const MOCK_PREVIEW_QUEUE: PreviewQueueItem[] = [
+function getRunCount(): number {
+  try {
+    return parseInt(localStorage.getItem(RUN_COUNT_LS_KEY) || '0') || 0
+  } catch {
+    return 0
+  }
+}
+
+function incrementRunCount(): number {
+  const next = getRunCount() + 1
+  try { localStorage.setItem(RUN_COUNT_LS_KEY, String(next)) } catch { /* ignore */ }
+  return next
+}
+
+function getAutoSubmitEnabled(): boolean {
+  try {
+    return localStorage.getItem(AUTO_SUBMIT_LS_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
+function setAutoSubmitEnabled(val: boolean) {
+  try { localStorage.setItem(AUTO_SUBMIT_LS_KEY, String(val)) } catch { /* ignore */ }
+}
+
+function isAutoSubmitDismissedRecently(): boolean {
+  try {
+    const ts = localStorage.getItem(AUTO_SUBMIT_DISMISS_LS_KEY)
+    if (!ts) return false
+    const TWO_WEEKS = 14 * 24 * 60 * 60 * 1000
+    return Date.now() - parseInt(ts) < TWO_WEEKS
+  } catch {
+    return false
+  }
+}
+
+function dismissAutoSubmitSuggestion() {
+  try { localStorage.setItem(AUTO_SUBMIT_DISMISS_LS_KEY, String(Date.now())) } catch { /* ignore */ }
+}
+
+const MOCK_REVIEW_QUEUE: ReviewQueueItem[] = [
   {
-    id: 'preview-1',
+    id: 'review-1',
     company: 'Canva',
     role: 'Senior Product Designer',
     matchScore: 88,
@@ -262,7 +310,7 @@ const MOCK_PREVIEW_QUEUE: PreviewQueueItem[] = [
     status: 'pending',
   },
   {
-    id: 'preview-2',
+    id: 'review-2',
     company: 'Wise',
     role: 'Product Designer',
     matchScore: 62,
@@ -272,7 +320,7 @@ const MOCK_PREVIEW_QUEUE: PreviewQueueItem[] = [
     status: 'pending',
   },
   {
-    id: 'preview-3',
+    id: 'review-3',
     company: 'Agoda',
     role: 'UX/UI Designer',
     matchScore: 41,
@@ -377,8 +425,8 @@ interface StatusConfig {
 function getStatusConfig(run: BotRunStatus | null): StatusConfig {
   if (!run) {
     return {
-      label: 'Bot Inactive',
-      description: 'Set up your search profile to get started',
+      label: 'Ready to search',
+      description: 'Set up your search criteria and find matching jobs',
       dotColor: '#6b7280',
       pulsing: false,
     }
@@ -387,43 +435,43 @@ function getStatusConfig(run: BotRunStatus | null): StatusConfig {
   switch (run.status) {
     case 'pending':
       return {
-        label: 'Bot Queued',
+        label: 'Search queued',
         description: 'Starting soon...',
         dotColor: '#fbbf24',
         pulsing: false,
       }
     case 'running':
       return {
-        label: 'Bot Running',
-        description: `Applied ${run.jobsApplied}, Found ${run.jobsFound}, Skipped ${run.jobsSkipped}`,
+        label: 'Searching...',
+        description: `Found ${run.jobsFound} match${run.jobsFound !== 1 ? 'es' : ''} so far`,
         dotColor: '#34d399',
         pulsing: true,
       }
     case 'completed':
       return {
-        label: 'Last run completed',
-        description: `Applied ${run.jobsApplied} job${run.jobsApplied !== 1 ? 's' : ''}`,
+        label: 'Search complete',
+        description: `Found ${run.jobsFound} match${run.jobsFound !== 1 ? 'es' : ''}`,
         dotColor: '#34d399',
         pulsing: false,
       }
     case 'failed':
       return {
-        label: 'Last run failed',
-        description: run.errorMessage || 'Unknown error',
+        label: 'Something went wrong',
+        description: run.errorMessage || 'Something went wrong during the search. Try again?',
         dotColor: '#f43f5e',
         pulsing: false,
       }
     case 'cancelled':
       return {
-        label: 'Run cancelled',
-        description: `Applied ${run.jobsApplied} before cancellation`,
+        label: 'Search cancelled',
+        description: `Found ${run.jobsFound} match${run.jobsFound !== 1 ? 'es' : ''} before cancellation`,
         dotColor: '#6b7280',
         pulsing: false,
       }
     default:
       return {
-        label: 'Bot Inactive',
-        description: 'Set up your search profile to get started',
+        label: 'Ready to search',
+        description: 'Set up your search criteria and find matching jobs',
         dotColor: '#6b7280',
         pulsing: false,
       }
@@ -1604,15 +1652,17 @@ const chipStyles: Record<string, React.CSSProperties> = {
 }
 
 /* ------------------------------------------------------------------ */
-/*  ApplicationPreviewCard                                             */
+/*  ApplicationReviewCard                                              */
 /* ------------------------------------------------------------------ */
-function ApplicationPreviewCard({
+function ApplicationReviewCard({
   item,
   onApprove,
+  onEdit,
   onSkip,
 }: {
-  item: PreviewQueueItem
+  item: ReviewQueueItem
   onApprove: (id: string) => void
+  onEdit: (id: string) => void
   onSkip: (id: string) => void
 }) {
   const scoreColor =
@@ -1625,50 +1675,50 @@ function ApplicationPreviewCard({
         : 'rgba(244, 63, 94, 0.12)'
 
   return (
-    <div style={previewStyles.card}>
+    <div style={reviewStyles.card}>
       {/* Top row: company + score */}
-      <div style={previewStyles.cardTop}>
-        <div style={previewStyles.cardInfo}>
-          <span style={previewStyles.cardCompany}>{item.company}</span>
-          <span style={previewStyles.cardRole}>{item.role}</span>
+      <div style={reviewStyles.cardTop}>
+        <div style={reviewStyles.cardInfo}>
+          <span style={reviewStyles.cardCompany}>{item.company}</span>
+          <span style={reviewStyles.cardRole}>{item.role}</span>
         </div>
         <div
           style={{
-            ...previewStyles.scoreBadge,
+            ...reviewStyles.scoreBadge,
             color: scoreColor,
             background: scoreBg,
             border: `1px solid ${scoreColor}33`,
           }}
         >
           <Shield size={12} />
-          <span>{item.matchScore}</span>
+          <span>{item.matchScore}%</span>
         </div>
       </div>
 
       {/* Match reasons */}
-      <div style={previewStyles.reasonsWrap}>
+      <div style={reviewStyles.reasonsWrap}>
         {item.matchReasons.map((reason, i) => (
-          <span key={i} style={previewStyles.reasonChip}>{reason}</span>
+          <span key={i} style={reviewStyles.reasonChip}>{reason}</span>
         ))}
       </div>
 
       {/* What will be sent */}
-      <div style={previewStyles.sentSection}>
-        <div style={previewStyles.sentRow}>
-          <span style={previewStyles.sentLabel}>CV:</span>
-          <span style={previewStyles.sentValue}>{item.cvName}</span>
+      <div style={reviewStyles.sentSection}>
+        <div style={reviewStyles.sentRow}>
+          <span style={reviewStyles.sentLabel}>CV:</span>
+          <span style={reviewStyles.sentValue}>{item.cvName}</span>
         </div>
-        <div style={previewStyles.sentRow}>
-          <span style={previewStyles.sentLabel}>Cover:</span>
-          <span style={previewStyles.sentCover}>{item.coverLetterSnippet}</span>
+        <div style={reviewStyles.sentRow}>
+          <span style={reviewStyles.sentLabel}>Cover:</span>
+          <span style={reviewStyles.sentCover}>{item.coverLetterSnippet}</span>
         </div>
       </div>
 
-      {/* Actions */}
+      {/* Actions: 3 buttons */}
       {item.status === 'pending' && (
-        <div style={previewStyles.cardActions}>
+        <div style={reviewStyles.cardActions}>
           <button
-            style={previewStyles.btnApprove}
+            style={reviewStyles.btnApprove}
             onClick={() => onApprove(item.id)}
             title="Approve this application"
           >
@@ -1676,7 +1726,15 @@ function ApplicationPreviewCard({
             <span>Approve</span>
           </button>
           <button
-            style={previewStyles.btnSkip}
+            style={reviewStyles.btnEdit}
+            onClick={() => onEdit(item.id)}
+            title="Edit before submitting"
+          >
+            <Pencil size={14} />
+            <span>Edit</span>
+          </button>
+          <button
+            style={reviewStyles.btnSkip}
             onClick={() => onSkip(item.id)}
             title="Skip this application"
           >
@@ -1686,13 +1744,13 @@ function ApplicationPreviewCard({
         </div>
       )}
       {item.status === 'approved' && (
-        <div style={previewStyles.statusLabel}>
+        <div style={reviewStyles.statusLabel}>
           <CheckCircle2 size={12} color="#34d399" />
           <span style={{ color: '#34d399', fontSize: 12, fontWeight: 600 }}>Approved</span>
         </div>
       )}
       {item.status === 'skipped' && (
-        <div style={previewStyles.statusLabel}>
+        <div style={reviewStyles.statusLabel}>
           <XCircle size={12} color="#6b7280" />
           <span style={{ color: '#6b7280', fontSize: 12, fontWeight: 600 }}>Skipped</span>
         </div>
@@ -1702,73 +1760,56 @@ function ApplicationPreviewCard({
 }
 
 /* ------------------------------------------------------------------ */
-/*  PreviewQueue                                                       */
+/*  ReviewQueue                                                        */
 /* ------------------------------------------------------------------ */
-function PreviewQueue() {
-  const [queue, setQueue] = useState<PreviewQueueItem[]>(() => {
-    const saved = loadPreviewQueue()
-    return saved.length > 0 ? saved : MOCK_PREVIEW_QUEUE
-  })
-  const [isDemo] = useState(() => loadPreviewQueue().length === 0)
-
-  // Persist on every change (but not the initial mock load)
-  useEffect(() => {
-    if (!isDemo) savePreviewQueue(queue)
-  }, [queue, isDemo])
-
+function ReviewQueue({
+  queue,
+  onApprove,
+  onEdit,
+  onSkip,
+  onApproveAll,
+  onSkipAll,
+  onSubmitApproved,
+  isDemo,
+}: {
+  queue: ReviewQueueItem[]
+  onApprove: (id: string) => void
+  onEdit: (id: string) => void
+  onSkip: (id: string) => void
+  onApproveAll: () => void
+  onSkipAll: () => void
+  onSubmitApproved: () => void
+  isDemo: boolean
+}) {
   const pendingCount = queue.filter((i) => i.status === 'pending').length
+  const approvedCount = queue.filter((i) => i.status === 'approved').length
   if (queue.length === 0) return null
 
-  const handleApprove = (id: string) => {
-    setQueue((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, status: 'approved' as const } : item))
-    )
-  }
-
-  const handleSkip = (id: string) => {
-    setQueue((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, status: 'skipped' as const } : item))
-    )
-  }
-
-  const handleApproveAll = () => {
-    setQueue((prev) =>
-      prev.map((item) =>
-        item.status === 'pending' ? { ...item, status: 'approved' as const } : item
-      )
-    )
-  }
-
-  const handleSkipAll = () => {
-    setQueue((prev) =>
-      prev.map((item) =>
-        item.status === 'pending' ? { ...item, status: 'skipped' as const } : item
-      )
-    )
-  }
-
   return (
-    <section style={previewStyles.queueSection}>
+    <section style={reviewStyles.queueSection}>
       {/* Header */}
-      <div style={previewStyles.queueHeader}>
-        <div style={previewStyles.queueTitleRow}>
-          <Eye size={16} color="var(--accent)" />
-          <h2 style={previewStyles.queueTitle}>
-            {pendingCount > 0
-              ? `${pendingCount} application${pendingCount !== 1 ? 's' : ''} ready to send`
-              : 'All applications reviewed'}
-          </h2>
-          {isDemo && (
-            <span style={previewStyles.demoBadge}>Preview mode — sample data</span>
-          )}
+      <div style={reviewStyles.queueHeader}>
+        <div>
+          <div style={reviewStyles.queueTitleRow}>
+            <Search size={16} color="var(--accent)" />
+            <h2 style={reviewStyles.queueTitle}>
+              Search complete &mdash; {queue.length} match{queue.length !== 1 ? 'es' : ''} found
+            </h2>
+            {isDemo && (
+              <span style={reviewStyles.demoBadge}>Sample data</span>
+            )}
+          </div>
+          <p style={reviewStyles.queueSubtext}>
+            Review your matches. Nothing is submitted until you approve.
+          </p>
         </div>
         {pendingCount > 0 && (
-          <div style={previewStyles.queueBulkActions}>
-            <button style={previewStyles.btnApproveAll} onClick={handleApproveAll}>
+          <div style={reviewStyles.queueBulkActions}>
+            <button style={reviewStyles.btnApproveAll} onClick={onApproveAll}>
               <Check size={12} />
               <span>Approve All</span>
             </button>
-            <button style={previewStyles.btnSkipAll} onClick={handleSkipAll}>
+            <button style={reviewStyles.btnSkipAll} onClick={onSkipAll}>
               <X size={12} />
               <span>Skip All</span>
             </button>
@@ -1777,24 +1818,162 @@ function PreviewQueue() {
       </div>
 
       {/* Scrollable list */}
-      <div style={previewStyles.queueList}>
+      <div style={reviewStyles.queueList}>
         {queue.map((item) => (
-          <ApplicationPreviewCard
+          <ApplicationReviewCard
             key={item.id}
             item={item}
-            onApprove={handleApprove}
-            onSkip={handleSkip}
+            onApprove={onApprove}
+            onEdit={onEdit}
+            onSkip={onSkip}
           />
         ))}
+      </div>
+
+      {/* Bottom CTA */}
+      <div style={reviewStyles.queueBottom}>
+        <button
+          style={{
+            ...reviewStyles.btnSubmitApproved,
+            ...(approvedCount === 0 ? { opacity: 0.4, cursor: 'not-allowed' } : {}),
+          }}
+          disabled={approvedCount === 0}
+          onClick={onSubmitApproved}
+        >
+          <Play size={14} />
+          <span>Submit {approvedCount} Approved Application{approvedCount !== 1 ? 's' : ''}</span>
+        </button>
+        <button style={reviewStyles.btnSaveLater}>
+          <Save size={12} />
+          <span>Save and submit later</span>
+        </button>
       </div>
     </section>
   )
 }
 
 /* ------------------------------------------------------------------ */
-/*  PreviewQueue + Card styles                                         */
+/*  AutoSubmitSuggestion card                                          */
 /* ------------------------------------------------------------------ */
-const previewStyles: Record<string, React.CSSProperties> = {
+function AutoSubmitSuggestionCard({
+  runCount,
+  onEnable,
+  onDismiss,
+}: {
+  runCount: number
+  onEnable: () => void
+  onDismiss: () => void
+}) {
+  return (
+    <section style={autoSubmitStyles.card}>
+      <div style={autoSubmitStyles.header}>
+        <Zap size={20} color="#f59e0b" />
+        <h3 style={autoSubmitStyles.title}>Your bot is getting good at this.</h3>
+      </div>
+      <p style={autoSubmitStyles.evidence}>
+        After {runCount} searches, you approved 80%+ of jobs with a 85%+ match score.
+      </p>
+      <ul style={autoSubmitStyles.bulletList}>
+        <li style={autoSubmitStyles.bullet}>Only auto-submits jobs scoring 90% or above</li>
+        <li style={autoSubmitStyles.bullet}>Jobs below that threshold still come to you for review</li>
+        <li style={autoSubmitStyles.bullet}>You can turn it off anytime from the top bar</li>
+        <li style={autoSubmitStyles.bullet}>Every submission is logged in your activity feed</li>
+      </ul>
+      <div style={autoSubmitStyles.actions}>
+        <button style={autoSubmitStyles.btnEnable} onClick={onEnable}>
+          <Zap size={14} />
+          <span>Enable Auto-Submit</span>
+        </button>
+        <button style={autoSubmitStyles.btnDismiss} onClick={onDismiss}>
+          No thanks
+        </button>
+      </div>
+    </section>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/*  AutoSubmit Queue sections (when auto-submit is ON)                 */
+/* ------------------------------------------------------------------ */
+function AutoSubmitQueues({
+  needsReview,
+  autoSubmitted,
+  onApprove,
+  onEdit,
+  onSkip,
+}: {
+  needsReview: ReviewQueueItem[]
+  autoSubmitted: { company: string; role: string; time: string }[]
+  onApprove: (id: string) => void
+  onEdit: (id: string) => void
+  onSkip: (id: string) => void
+}) {
+  const [autoExpanded, setAutoExpanded] = useState(false)
+
+  return (
+    <>
+      {/* Needs Review section — expanded */}
+      {needsReview.length > 0 && (
+        <section style={reviewStyles.queueSection}>
+          <div style={reviewStyles.queueHeader}>
+            <div style={reviewStyles.queueTitleRow}>
+              <Eye size={16} color="#f59e0b" />
+              <h2 style={reviewStyles.queueTitle}>
+                Needs Your Review ({needsReview.length})
+              </h2>
+            </div>
+          </div>
+          <div style={reviewStyles.queueList}>
+            {needsReview.map((item) => (
+              <ApplicationReviewCard
+                key={item.id}
+                item={item}
+                onApprove={onApprove}
+                onEdit={onEdit}
+                onSkip={onSkip}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Auto-submitted section — collapsed by default */}
+      {autoSubmitted.length > 0 && (
+        <section style={autoSubmitStyles.queueSection}>
+          <button
+            style={autoSubmitStyles.queueToggle}
+            onClick={() => setAutoExpanded(!autoExpanded)}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <CheckCircle2 size={16} color="#34d399" />
+              <span style={autoSubmitStyles.queueToggleTitle}>
+                Auto-Submitted Today ({autoSubmitted.length})
+              </span>
+            </div>
+            {autoExpanded ? <ChevronUp size={14} color="var(--text-tertiary)" /> : <ChevronDown size={14} color="var(--text-tertiary)" />}
+          </button>
+          {autoExpanded && (
+            <div style={autoSubmitStyles.submittedList}>
+              {autoSubmitted.map((item, i) => (
+                <div key={i} style={autoSubmitStyles.submittedItem}>
+                  <CheckCircle2 size={12} color="#34d399" />
+                  <span style={autoSubmitStyles.submittedCompany}>{item.company}</span>
+                  <span style={autoSubmitStyles.submittedRole}>{item.role}</span>
+                  <span style={autoSubmitStyles.submittedTime}>{item.time}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+    </>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/*  ReviewQueue + Card styles                                          */
+/* ------------------------------------------------------------------ */
+const reviewStyles: Record<string, React.CSSProperties> = {
   queueSection: {
     background: 'var(--bg-surface)',
     border: '1px solid rgba(96, 165, 250, 0.25)',
@@ -1803,7 +1982,7 @@ const previewStyles: Record<string, React.CSSProperties> = {
   },
   queueHeader: {
     display: 'flex',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     marginBottom: 16,
     gap: 12,
@@ -1819,6 +1998,11 @@ const previewStyles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     color: 'var(--text-primary)',
     margin: 0,
+  },
+  queueSubtext: {
+    fontSize: 12,
+    color: 'var(--text-tertiary)',
+    margin: '4px 0 0 24px',
   },
   demoBadge: {
     fontSize: 10,
@@ -1871,6 +2055,42 @@ const previewStyles: Record<string, React.CSSProperties> = {
     gap: 10,
     maxHeight: 480,
     overflowY: 'auto',
+  },
+  queueBottom: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 16,
+    marginTop: 16,
+    paddingTop: 16,
+    borderTop: '1px solid var(--border)',
+  },
+  btnSubmitApproved: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    background: '#34d399',
+    color: '#09090b',
+    fontWeight: 700,
+    fontSize: 14,
+    padding: '10px 20px',
+    borderRadius: 'var(--radius-md)',
+    border: 'none',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap' as const,
+    transition: 'opacity 0.15s',
+  },
+  btnSaveLater: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    background: 'none',
+    border: 'none',
+    color: 'var(--text-secondary)',
+    fontSize: 13,
+    cursor: 'pointer',
+    textDecoration: 'underline',
+    textUnderlineOffset: 2,
+    padding: 0,
   },
   card: {
     background: 'var(--bg-elevated)',
@@ -1979,6 +2199,20 @@ const previewStyles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     transition: 'opacity 0.15s',
   },
+  btnEdit: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    background: 'rgba(96, 165, 250, 0.1)',
+    color: '#93c5fd',
+    fontWeight: 500,
+    fontSize: 12,
+    padding: '6px 14px',
+    borderRadius: 6,
+    border: '1px solid rgba(96, 165, 250, 0.2)',
+    cursor: 'pointer',
+    transition: 'border-color 0.15s',
+  },
   btnSkip: {
     display: 'inline-flex',
     alignItems: 'center',
@@ -1998,6 +2232,149 @@ const previewStyles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: 4,
     marginTop: 2,
+  },
+}
+
+/* ------------------------------------------------------------------ */
+/*  AutoSubmit suggestion + queue styles                                */
+/* ------------------------------------------------------------------ */
+const autoSubmitStyles: Record<string, React.CSSProperties> = {
+  card: {
+    background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.06) 0%, rgba(251, 191, 36, 0.03) 100%)',
+    border: '1px solid rgba(245, 158, 11, 0.2)',
+    borderRadius: 'var(--radius-lg)',
+    padding: 20,
+  },
+  header: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 8,
+  },
+  title: {
+    fontSize: 16,
+    fontWeight: 700,
+    color: 'var(--text-primary)',
+    margin: 0,
+  },
+  evidence: {
+    fontSize: 13,
+    color: 'var(--text-secondary)',
+    margin: '0 0 12px',
+    lineHeight: 1.4,
+  },
+  bulletList: {
+    margin: '0 0 16px',
+    padding: '0 0 0 20px',
+    listStyle: 'none',
+  },
+  bullet: {
+    fontSize: 13,
+    color: 'var(--text-secondary)',
+    lineHeight: 1.8,
+    position: 'relative' as const,
+    paddingLeft: 4,
+  },
+  actions: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 12,
+  },
+  btnEnable: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    background: '#f59e0b',
+    color: '#09090b',
+    fontWeight: 700,
+    fontSize: 14,
+    padding: '10px 20px',
+    borderRadius: 'var(--radius-md)',
+    border: 'none',
+    cursor: 'pointer',
+    transition: 'opacity 0.15s',
+  },
+  btnDismiss: {
+    background: 'none',
+    border: 'none',
+    color: 'var(--text-secondary)',
+    fontSize: 13,
+    cursor: 'pointer',
+    padding: '10px 12px',
+  },
+  /* Auto-submit ON badge */
+  topBarBadge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    padding: '4px 12px',
+    borderRadius: 20,
+    background: 'rgba(245, 158, 11, 0.12)',
+    border: '1px solid rgba(245, 158, 11, 0.25)',
+    fontSize: 12,
+    fontWeight: 600,
+    color: '#f59e0b',
+    whiteSpace: 'nowrap' as const,
+  },
+  topBarBadgeOff: {
+    marginLeft: 4,
+    background: 'none',
+    border: 'none',
+    color: 'var(--text-tertiary)',
+    fontSize: 11,
+    cursor: 'pointer',
+    textDecoration: 'underline',
+    padding: 0,
+  },
+  /* Queue sections */
+  queueSection: {
+    background: 'var(--bg-surface)',
+    border: '1px solid rgba(52, 211, 153, 0.2)',
+    borderRadius: 'var(--radius-lg)',
+    overflow: 'hidden',
+  },
+  queueToggle: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    padding: '14px 16px',
+    background: 'transparent',
+    border: 'none',
+    cursor: 'pointer',
+    color: 'var(--text-primary)',
+  },
+  queueToggleTitle: {
+    fontSize: 14,
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+  },
+  submittedList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 0,
+    padding: '0 16px 12px',
+  },
+  submittedItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: '8px 0',
+    borderBottom: '1px solid var(--border)',
+    fontSize: 13,
+  },
+  submittedCompany: {
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+  },
+  submittedRole: {
+    color: 'var(--text-secondary)',
+    flex: 1,
+  },
+  submittedTime: {
+    fontSize: 11,
+    color: 'var(--text-tertiary)',
+    whiteSpace: 'nowrap' as const,
   },
 }
 
@@ -2450,9 +2827,34 @@ export function AutopilotView() {
   const [isTriggering, setIsTriggering] = useState(false)
   const [triggerError, setTriggerError] = useState<string | null>(null)
 
-  // Preview mode state
-  const [previewMode, setPreviewMode] = useState(false)
-  const [showApplyModal, setShowApplyModal] = useState(false)
+  // Review queue state
+  const [reviewQueue, setReviewQueue] = useState<ReviewQueueItem[]>(() => {
+    const saved = loadReviewQueue()
+    return saved.length > 0 ? saved : MOCK_REVIEW_QUEUE
+  })
+  const [isReviewDemo] = useState(() => loadReviewQueue().length === 0)
+
+  // Auto-submit state
+  const [autoSubmitOn, setAutoSubmitOn] = useState(getAutoSubmitEnabled)
+  const [showAutoSubmitSuggestion, setShowAutoSubmitSuggestion] = useState(false)
+  const [runCount] = useState(getRunCount)
+
+  // Persist review queue on change
+  useEffect(() => {
+    if (!isReviewDemo) saveReviewQueue(reviewQueue)
+  }, [reviewQueue, isReviewDemo])
+
+  // Check if auto-submit suggestion should show
+  useEffect(() => {
+    if (!autoSubmitOn && runCount >= 3 && !isAutoSubmitDismissedRecently()) {
+      // Check approval rate for high-score jobs
+      const highScoreJobs = reviewQueue.filter(j => j.matchScore >= 85)
+      const approvedHighScore = highScoreJobs.filter(j => j.status === 'approved').length
+      if (highScoreJobs.length > 0 && approvedHighScore / highScoreJobs.length >= 0.8) {
+        setShowAutoSubmitSuggestion(true)
+      }
+    }
+  }, [autoSubmitOn, runCount, reviewQueue])
 
   // Profile setup modal state
   const [showProfileModal, setShowProfileModal] = useState(false)
@@ -2515,29 +2917,12 @@ export function AutopilotView() {
     }
   }, [hasConfig])
 
-  const doDryRun = useCallback(async () => {
-    if (!hasConfig) return
-    setIsTriggering(true)
-    setTriggerError(null)
-    try {
-      await triggerDryRun('search_config')
-    } catch (err) {
-      setTriggerError((err as Error).message)
-    } finally {
-      setIsTriggering(false)
-    }
-  }, [hasConfig])
-
   // Core bot action after auth + profile checks
   const executeBotAction = useCallback(() => {
-    if (previewMode) {
-      if (!requireAuth('start_bot', () => { doDryRun() })) return
-      doDryRun()
-    } else {
-      if (!requireAuth('start_bot', () => { doStartBot() })) return
-      doStartBot()
-    }
-  }, [requireAuth, doStartBot, doDryRun, previewMode])
+    if (!requireAuth('start_bot', () => { doStartBot() })) return
+    doStartBot()
+    incrementRunCount()
+  }, [requireAuth, doStartBot])
 
   // Handlers with auth wall gate + profile completeness check
   const handleStartBot = useCallback(() => {
@@ -2564,12 +2949,48 @@ export function AutopilotView() {
     pendingBotActionRef.current = null
   }, [])
 
-  const handleApplyAll = useCallback(() => {
-    setShowApplyModal(false)
-    setPreviewMode(false)
+  // Review queue handlers
+  const handleReviewApprove = useCallback((id: string) => {
+    setReviewQueue(prev => prev.map(item => item.id === id ? { ...item, status: 'approved' as const } : item))
+  }, [])
+
+  const handleReviewEdit = useCallback((_id: string) => {
+    // Future: open edit modal for this job
+  }, [])
+
+  const handleReviewSkip = useCallback((id: string) => {
+    setReviewQueue(prev => prev.map(item => item.id === id ? { ...item, status: 'skipped' as const } : item))
+  }, [])
+
+  const handleReviewApproveAll = useCallback(() => {
+    setReviewQueue(prev => prev.map(item => item.status === 'pending' ? { ...item, status: 'approved' as const } : item))
+  }, [])
+
+  const handleReviewSkipAll = useCallback(() => {
+    setReviewQueue(prev => prev.map(item => item.status === 'pending' ? { ...item, status: 'skipped' as const } : item))
+  }, [])
+
+  const handleSubmitApproved = useCallback(() => {
+    // Future: trigger actual submission of approved jobs
     if (!requireAuth('start_bot', () => { doStartBot() })) return
     doStartBot()
   }, [requireAuth, doStartBot])
+
+  const handleEnableAutoSubmit = useCallback(() => {
+    setAutoSubmitOn(true)
+    setAutoSubmitEnabled(true)
+    setShowAutoSubmitSuggestion(false)
+  }, [])
+
+  const handleDismissAutoSubmit = useCallback(() => {
+    setShowAutoSubmitSuggestion(false)
+    dismissAutoSubmitSuggestion()
+  }, [])
+
+  const handleDisableAutoSubmit = useCallback(() => {
+    setAutoSubmitOn(false)
+    setAutoSubmitEnabled(false)
+  }, [])
 
   // Persist config on change is handled by handleConfigChange debounce above
 
@@ -2617,16 +3038,16 @@ export function AutopilotView() {
           </div>
           <h1 style={styles.heroTitle}>Auto-Apply Bot</h1>
           <p style={styles.heroSubtitle}>
-            Set your criteria. The bot scouts LinkedIn, qualifies jobs, and auto-applies for you.
+            Set your criteria. Find matching jobs. Review everything before anything is sent.
           </p>
 
           {/* How it works steps */}
           <div style={styles.heroSteps}>
             {[
               { num: '1', text: 'Set your search criteria' },
-              { num: '2', text: 'Bot scouts LinkedIn daily' },
-              { num: '3', text: 'Smart filtering by timezone, salary, fit' },
-              { num: '4', text: 'Auto-applies via Greenhouse, Lever, Workable...' },
+              { num: '2', text: 'Find matching jobs' },
+              { num: '3', text: 'Review and approve matches' },
+              { num: '4', text: 'Submit approved applications' },
             ].map((step) => (
               <div key={step.num} style={styles.heroStep}>
                 <span style={styles.heroStepNum}>{step.num}</span>
@@ -2636,27 +3057,39 @@ export function AutopilotView() {
           </div>
 
           <button style={styles.heroCta} onClick={handleAnonStartBot}>
-            <Play size={16} />
-            Start My Bot
+            <Search size={16} />
+            Find Jobs
           </button>
+          <p style={{ fontSize: 12, color: 'var(--text-tertiary)', margin: 0 }}>
+            You&apos;ll review everything before anything is sent.
+          </p>
         </div>
 
-        {/* Preview Queue */}
-        <PreviewQueue />
+        {/* Review Queue */}
+        <ReviewQueue
+          queue={reviewQueue}
+          onApprove={handleReviewApprove}
+          onEdit={handleReviewEdit}
+          onSkip={handleReviewSkip}
+          onApproveAll={handleReviewApproveAll}
+          onSkipAll={handleReviewSkipAll}
+          onSubmitApproved={handleSubmitApproved}
+          isDemo={isReviewDemo}
+        />
 
-        {/* Live Activity Feed (the hook) */}
+        {/* Live Activity Feed */}
         <section style={styles.section}>
           <div style={styles.sectionHeader}>
             <div>
-              <h2 style={styles.sectionTitle}>Bot Activity</h2>
+              <h2 style={styles.sectionTitle}>Activity</h2>
               <p style={styles.sectionSubtitle}>
-                Activity from bot runs will appear here
+                Find jobs to see results here
               </p>
             </div>
           </div>
           <div style={styles.timeline}>
             <p style={styles.emptyTimelineText}>
-              No activity yet — start the bot to see results here
+              Find jobs to see results here
             </p>
           </div>
         </section>
@@ -2691,8 +3124,8 @@ export function AutopilotView() {
           {hasConfig && (
             <div style={{ display: 'flex', justifyContent: 'center', marginTop: 16 }}>
               <button style={styles.heroCta} onClick={handleAnonStartBot}>
-                <Play size={14} />
-                <span>Start My Bot</span>
+                <Search size={14} />
+                <span>Find Jobs</span>
               </button>
             </div>
           )}
@@ -2701,8 +3134,8 @@ export function AutopilotView() {
         {/* Bottom CTA */}
         <div style={styles.bottomCta}>
           <button style={styles.heroCta} onClick={handleAnonStartBot}>
-            <Play size={16} />
-            Start My Bot
+            <Search size={16} />
+            Find Jobs
           </button>
         </div>
 
@@ -2748,50 +3181,35 @@ export function AutopilotView() {
           )}
         </div>
         <div style={layoutStyles.topBarRight}>
+          {/* Auto-submit badge when ON */}
+          {autoSubmitOn && (
+            <span style={autoSubmitStyles.topBarBadge}>
+              <Zap size={12} />
+              Auto-submit: ON (90%+)
+              <button style={autoSubmitStyles.topBarBadgeOff as React.CSSProperties} onClick={handleDisableAutoSubmit}>[Turn off]</button>
+            </span>
+          )}
+
           {/* Bot controls */}
           {hasConfig && !isBotActive && !isTriggering && (
-            <>
-              {/* Preview Mode toggle */}
-              <div style={styles.previewToggleWrap} title="Find jobs without applying. Review everything first, then go live.">
-                <span style={styles.previewToggleLabel}>Preview Mode</span>
-                <button
-                  role="switch"
-                  aria-checked={previewMode}
-                  style={{
-                    ...styles.toggleTrack,
-                    background: previewMode ? '#f59e0b' : 'var(--border)',
-                  }}
-                  onClick={() => setPreviewMode((v) => !v)}
-                >
-                  <span
-                    style={{
-                      ...styles.toggleThumb,
-                      transform: previewMode ? 'translateX(16px)' : 'translateX(2px)',
-                    }}
-                  />
-                </button>
-              </div>
-
-              {/* Main action button */}
-              <button
-                style={previewMode ? styles.btnStartPreview : styles.btnStartBot}
-                onClick={handleStartBot}
-              >
-                {previewMode ? <Eye size={14} /> : <Play size={14} />}
-                <span>{previewMode ? 'Start Preview' : 'Start Bot'}</span>
-              </button>
-            </>
+            <button
+              style={styles.btnStartBot}
+              onClick={handleStartBot}
+            >
+              <Search size={14} />
+              <span>Find Jobs</span>
+            </button>
           )}
           {isTriggering && (
             <span style={styles.triggeringBadge}>
               <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
-              Triggering...
+              Searching...
             </span>
           )}
           {isBotActive && !isTriggering && (
             <button style={styles.btnStopBot} onClick={() => {/* future: cancel run */}}>
               <Square size={14} />
-              <span>Stop Bot</span>
+              <span>Stop</span>
             </button>
           )}
 
@@ -2889,93 +3307,94 @@ export function AutopilotView() {
                   <p style={styles.statusDesc}>{statusCfg.description}</p>
                 </div>
               </div>
-            </div>
-          </section>
-
-          {/* Preview Mode active banner */}
-          {isBotActive && previewMode && (
-            <div style={styles.previewBannerWrap}>
-              <Eye size={14} color="#d97706" />
-              <span style={styles.previewBannerText}>
-                Preview mode &mdash; no applications are being submitted
-              </span>
-            </div>
-          )}
-
-          {/* Preview Results (after preview run completes) */}
-          {currentRun?.status === 'completed' && previewMode && (
-            <section style={styles.previewResultsCard}>
-              <div style={styles.previewResultsHeader}>
-                <CheckCircle2 size={20} color="#f59e0b" />
+              {/* CTA in banner when not active */}
+              {hasConfig && !isBotActive && !isTriggering && (
                 <div>
-                  <h3 style={styles.previewResultsTitle}>
-                    Preview Complete &mdash; {currentRun.jobsFound} job{currentRun.jobsFound !== 1 ? 's' : ''} found
-                  </h3>
-                  <p style={styles.previewResultsSubtitle}>
-                    Nothing was submitted. Here&apos;s what the bot would apply to.
+                  <button style={styles.btnStartBot} onClick={handleStartBot}>
+                    <Search size={14} />
+                    <span>Find Jobs</span>
+                  </button>
+                  <p style={{ fontSize: 11, color: 'var(--text-tertiary)', margin: '6px 0 0', textAlign: 'center' as const }}>
+                    Typically finds 5-15 matches in about 3 minutes
                   </p>
                 </div>
-              </div>
-              <div style={styles.previewResultsActions}>
-                <button
-                  style={styles.btnApplyAll}
-                  onClick={() => setShowApplyModal(true)}
-                >
-                  <Play size={14} />
-                  Apply to All {currentRun.jobsFound} Job{currentRun.jobsFound !== 1 ? 's' : ''}
-                </button>
-                <button
-                  style={styles.btnReviewIndividually}
-                  onClick={() => {/* future: scroll to queue / toggle individual review */}}
-                >
-                  or review and select individually
-                </button>
-              </div>
-              <p style={styles.previewReassurance}>
+              )}
+              {isTriggering && (
+                <span style={styles.triggeringBadge}>
+                  <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+                  Searching...
+                </span>
+              )}
+            </div>
+            {!isBotActive && !isTriggering && hasConfig && (
+              <p style={styles.reassuranceText}>
                 <Shield size={12} color="var(--text-tertiary)" />
-                You&apos;ll see a confirmation before anything is submitted.
+                You&apos;ll review everything before anything is sent.
               </p>
-            </section>
-          )}
+            )}
+          </section>
 
-          {/* Apply All Confirmation Modal */}
-          {showApplyModal && (
-            <div style={styles.modalOverlay} onClick={() => setShowApplyModal(false)}>
-              <div style={styles.modalCard} onClick={(e) => e.stopPropagation()}>
-                <h3 style={styles.modalTitle}>
-                  Ready to apply to {currentRun?.jobsFound ?? 0} job{(currentRun?.jobsFound ?? 0) !== 1 ? 's' : ''}?
-                </h3>
-                <p style={styles.modalDesc}>
-                  The bot will submit your application to each job. You can pause at any time.
-                </p>
-                <div style={styles.modalActions}>
-                  <button style={styles.btnModalApply} onClick={handleApplyAll}>
-                    <Play size={14} />
-                    Apply Now
-                  </button>
-                  <button style={styles.btnModalCancel} onClick={() => setShowApplyModal(false)}>
-                    Cancel
-                  </button>
-                </div>
-              </div>
+          {/* Error state for failed runs */}
+          {currentRun?.status === 'failed' && (
+            <div style={styles.errorBanner}>
+              <AlertTriangle size={14} color="#f43f5e" />
+              <span style={styles.errorBannerText}>
+                Something went wrong during the search. Try again?
+              </span>
+              <button style={styles.btnRetry} onClick={handleStartBot}>
+                Find Jobs
+              </button>
             </div>
           )}
 
-          {/* Preview Queue */}
-          <PreviewQueue />
+          {/* Auto-submit suggestion card */}
+          {showAutoSubmitSuggestion && !autoSubmitOn && (
+            <AutoSubmitSuggestionCard
+              runCount={runCount}
+              onEnable={handleEnableAutoSubmit}
+              onDismiss={handleDismissAutoSubmit}
+            />
+          )}
+
+          {/* Auto-submit queue sections (when enabled) */}
+          {autoSubmitOn && (
+            <AutoSubmitQueues
+              needsReview={reviewQueue.filter(j => j.status === 'pending' && j.matchScore < 90)}
+              autoSubmitted={
+                // Demo auto-submitted data
+                activities
+                  .filter(a => a.action === 'applied')
+                  .map(a => ({ company: a.company, role: a.role, time: formatActivityTime(a.createdAt) }))
+              }
+              onApprove={handleReviewApprove}
+              onEdit={handleReviewEdit}
+              onSkip={handleReviewSkip}
+            />
+          )}
+
+          {/* Review Queue (standard flow, shown when auto-submit is OFF) */}
+          {!autoSubmitOn && reviewQueue.length > 0 && (
+            <ReviewQueue
+              queue={reviewQueue}
+              onApprove={handleReviewApprove}
+              onEdit={handleReviewEdit}
+              onSkip={handleReviewSkip}
+              onApproveAll={handleReviewApproveAll}
+              onSkipAll={handleReviewSkipAll}
+              onSubmitApproved={handleSubmitApproved}
+              isDemo={isReviewDemo}
+            />
+          )}
 
           {/* Activity Log */}
           <section style={styles.section}>
             <div style={styles.sectionHeader}>
               <div>
-                <h2 style={styles.sectionTitle}>Bot Activity</h2>
+                <h2 style={styles.sectionTitle}>Activity</h2>
                 <p style={styles.sectionSubtitle}>
-                  {hasRealData ? 'Live automated actions' : 'Recent automated actions'}
+                  {hasRealData ? 'Live search activity' : 'Find jobs to see results here'}
                 </p>
               </div>
-              {!hasRealData && (
-                <span style={styles.previewBadge}>Preview &mdash; sample activity</span>
-              )}
               {hasRealData && isLive && (
                 <span style={styles.liveIndicator}>
                   <span style={styles.liveIndicatorDot} />
@@ -3017,14 +3436,14 @@ export function AutopilotView() {
                 })}
                 {activities.length === 0 && (
                   <p style={styles.emptyTimelineText}>
-                    No activity yet for the current run.
+                    No activity yet for the current search.
                   </p>
                 )}
               </div>
             ) : (
               <div style={styles.timeline}>
                 <p style={styles.emptyTimelineText}>
-                  No activity yet — start the bot to see results here
+                  Find jobs to see results here
                 </p>
               </div>
             )}
@@ -3335,6 +3754,44 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--text-tertiary)',
     marginTop: 2,
   },
+  reassuranceText: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    fontSize: 12,
+    color: 'var(--text-tertiary)',
+    margin: '12px 0 0',
+    paddingTop: 12,
+    borderTop: '1px solid var(--border)',
+  },
+  errorBanner: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: '12px 16px',
+    borderRadius: 'var(--radius-md)',
+    background: 'rgba(244, 63, 94, 0.08)',
+    border: '1px solid rgba(244, 63, 94, 0.2)',
+  },
+  errorBannerText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#f87171',
+  },
+  btnRetry: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    background: 'rgba(244, 63, 94, 0.12)',
+    color: '#f87171',
+    fontWeight: 600,
+    fontSize: 12,
+    padding: '6px 14px',
+    borderRadius: 6,
+    border: '1px solid rgba(244, 63, 94, 0.25)',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap' as const,
+  },
   comingSoonBadge: {
     fontSize: 11,
     fontWeight: 600,
@@ -3580,17 +4037,6 @@ const styles: Record<string, React.CSSProperties> = {
     whiteSpace: 'nowrap' as const,
   },
 
-  /* ---- Preview Badge ---- */
-  previewBadge: {
-    fontSize: 11,
-    fontWeight: 500,
-    padding: '3px 8px',
-    borderRadius: 6,
-    background: 'rgba(139, 92, 246, 0.12)',
-    color: '#a78bfa',
-    whiteSpace: 'nowrap' as const,
-  },
-
   /* ---- Live Indicator (activity section) ---- */
   liveIndicator: {
     display: 'inline-flex',
@@ -3687,194 +4133,6 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     whiteSpace: 'nowrap' as const,
     transition: 'opacity 0.15s',
-  },
-  btnStartPreview: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 6,
-    background: 'transparent',
-    color: '#f59e0b',
-    fontWeight: 600,
-    fontSize: 13,
-    padding: '8px 16px',
-    borderRadius: 'var(--radius-md)',
-    border: '1px solid rgba(245, 158, 11, 0.4)',
-    cursor: 'pointer',
-    whiteSpace: 'nowrap' as const,
-    transition: 'border-color 0.15s, background 0.15s',
-  },
-  previewToggleWrap: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 8,
-    cursor: 'default',
-  },
-  previewToggleLabel: {
-    fontSize: 12,
-    fontWeight: 500,
-    color: 'var(--text-secondary)',
-    whiteSpace: 'nowrap' as const,
-    userSelect: 'none' as const,
-  },
-  toggleTrack: {
-    position: 'relative' as const,
-    width: 34,
-    height: 20,
-    borderRadius: 10,
-    border: 'none',
-    cursor: 'pointer',
-    transition: 'background 0.2s',
-    padding: 0,
-    flexShrink: 0,
-  },
-  toggleThumb: {
-    position: 'absolute' as const,
-    top: 2,
-    width: 16,
-    height: 16,
-    borderRadius: '50%',
-    background: '#fff',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
-    transition: 'transform 0.2s',
-  },
-  /* Preview active banner */
-  previewBannerWrap: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    padding: '10px 16px',
-    borderRadius: 'var(--radius-md)',
-    background: 'rgba(245, 158, 11, 0.08)',
-    border: '1px solid rgba(245, 158, 11, 0.25)',
-    marginBottom: 12,
-  },
-  previewBannerText: {
-    fontSize: 13,
-    fontWeight: 500,
-    color: '#d97706',
-  },
-  /* Preview results card */
-  previewResultsCard: {
-    padding: 20,
-    borderRadius: 'var(--radius-lg)',
-    background: 'var(--bg-elevated)',
-    border: '1px solid rgba(245, 158, 11, 0.3)',
-    marginBottom: 16,
-  },
-  previewResultsHeader: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: 12,
-    marginBottom: 16,
-  },
-  previewResultsTitle: {
-    fontSize: 16,
-    fontWeight: 700,
-    color: 'var(--text-primary)',
-    margin: 0,
-    lineHeight: 1.3,
-  },
-  previewResultsSubtitle: {
-    fontSize: 13,
-    color: 'var(--text-secondary)',
-    margin: '4px 0 0',
-  },
-  previewResultsActions: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 16,
-    marginBottom: 12,
-  },
-  btnApplyAll: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 6,
-    background: '#34d399',
-    color: '#09090b',
-    fontWeight: 700,
-    fontSize: 14,
-    padding: '10px 20px',
-    borderRadius: 'var(--radius-md)',
-    border: 'none',
-    cursor: 'pointer',
-    whiteSpace: 'nowrap' as const,
-    transition: 'opacity 0.15s',
-  },
-  btnReviewIndividually: {
-    background: 'none',
-    border: 'none',
-    color: 'var(--text-secondary)',
-    fontSize: 13,
-    cursor: 'pointer',
-    textDecoration: 'underline',
-    textUnderlineOffset: 2,
-    padding: 0,
-  },
-  previewReassurance: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-    fontSize: 12,
-    color: 'var(--text-tertiary)',
-    margin: 0,
-  },
-  /* Apply All confirmation modal */
-  modalOverlay: {
-    position: 'fixed' as const,
-    inset: 0,
-    background: 'rgba(0,0,0,0.55)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 9999,
-  },
-  modalCard: {
-    background: 'var(--bg-elevated)',
-    borderRadius: 'var(--radius-lg)',
-    border: '1px solid var(--border)',
-    padding: '28px 32px',
-    maxWidth: 420,
-    width: '90vw',
-    boxShadow: '0 16px 48px rgba(0,0,0,0.3)',
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: 700,
-    color: 'var(--text-primary)',
-    margin: '0 0 8px',
-  },
-  modalDesc: {
-    fontSize: 14,
-    color: 'var(--text-secondary)',
-    margin: '0 0 20px',
-    lineHeight: 1.5,
-  },
-  modalActions: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 12,
-  },
-  btnModalApply: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 6,
-    background: '#34d399',
-    color: '#09090b',
-    fontWeight: 700,
-    fontSize: 14,
-    padding: '10px 24px',
-    borderRadius: 'var(--radius-md)',
-    border: 'none',
-    cursor: 'pointer',
-    transition: 'opacity 0.15s',
-  },
-  btnModalCancel: {
-    background: 'none',
-    border: 'none',
-    color: 'var(--text-secondary)',
-    fontSize: 14,
-    cursor: 'pointer',
-    padding: '10px 12px',
   },
   btnStopBot: {
     display: 'inline-flex',
