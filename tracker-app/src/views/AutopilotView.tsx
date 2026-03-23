@@ -29,6 +29,7 @@ import {
   ChevronLeft,
   Save,
   Tag,
+  Zap,
 } from 'lucide-react'
 import { useBotActivity } from '../hooks/useBotActivity'
 import type { BotActivityItem, BotRunStatus } from '../hooks/useBotActivity'
@@ -2079,8 +2080,8 @@ function SearchProfileForm({
           onClick={onSave}
           disabled={!formName.trim()}
         >
-          <Save size={12} />
-          Save Profile
+          <Zap size={12} />
+          Save &amp; Start Bot
         </button>
       </div>
     </div>
@@ -2677,6 +2678,7 @@ export function AutopilotView() {
     setActiveProfileId(newProfile.id)
     resetForm()
     setShowForm(false)
+    setSidebarOpen(false) // collapse panel after save to show bot activity
   }, [formName, formKeywords, formLocationRules, formExcluded, formDailyLimit, resetForm])
 
   const handleDelete = useCallback((id: string) => {
