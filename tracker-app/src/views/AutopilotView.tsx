@@ -8,28 +8,21 @@ import {
   AlertTriangle,
   Search,
   MapPin,
-  DollarSign,
   Building2,
-  Trash2,
-  Sparkles,
   SkipForward,
   Eye,
   ThumbsDown,
   Play,
-  FlaskConical,
   Square,
   History,
   Loader2,
   X,
   Check,
   Shield,
-  Globe,
   ChevronDown,
   SlidersHorizontal,
   ChevronLeft,
-  Save,
   Tag,
-  Zap,
 } from 'lucide-react'
 import { useBotActivity } from '../hooks/useBotActivity'
 import type { BotActivityItem, BotRunStatus } from '../hooks/useBotActivity'
@@ -39,6 +32,7 @@ import { useAuthWall } from '../hooks/useAuthWall'
 import { useSupabase } from '../context/SupabaseContext'
 import { useAuthWallContext } from '../context/AuthWallContext'
 import CompanyChipInput from '../components/CompanyChipInput'
+import { ProfileSetupModal, isProfileComplete } from '../components/ProfileSetupModal'
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -69,17 +63,18 @@ function getCurrencySymbol(code?: string): string {
   return CURRENCY_OPTIONS.find(c => c.value === code)?.symbol || code
 }
 
-interface SearchProfile {
-  id: string
-  name: string
+interface SearchConfig {
   keywords: string[]
-  location: string // legacy, kept for backward compat
-  minSalary: number
-  remoteOnly: boolean // legacy, kept for backward compat
-  locationRules?: LocationRule[]
+  locationRules: LocationRule[]
   excludedCompanies: string[]
   dailyLimit: number
-  createdAt: string
+}
+
+const DEFAULT_SEARCH_CONFIG: SearchConfig = {
+  keywords: [],
+  locationRules: [],
+  excludedCompanies: [],
+  dailyLimit: 15,
 }
 
 const ZONES: Record<string, { label: string; countries: string[] }> = {
@@ -120,42 +115,68 @@ function getLocationRuleLabel(rule: LocationRule): string {
   return `${rule.value} ${arrangement}${salaryPart}`
 }
 
-/** Migrate old profiles: if no locationRules, create one from legacy fields */
-function migrateProfileLocationRules(p: SearchProfile): LocationRule[] {
-  if (p.locationRules && p.locationRules.length > 0) return p.locationRules
-  const rules: LocationRule[] = []
-  if (p.location) {
-    rules.push({
-      id: crypto.randomUUID(),
-      type: 'city',
-      value: p.location,
-      workArrangement: p.remoteOnly ? 'remote' : 'any',
-    })
-  } else if (p.remoteOnly) {
-    rules.push({
-      id: crypto.randomUUID(),
-      type: 'zone',
-      value: 'Global',
-      workArrangement: 'remote',
-    })
+const LS_KEY = 'tracker_v2_search_config'
+const LS_KEY_OLD = 'tracker_v2_search_profiles'
+
+/** Migrate from old multi-profile array to single config */
+function migrateFromProfiles(): SearchConfig | null {
+  try {
+    const raw = localStorage.getItem(LS_KEY_OLD)
+    if (!raw) return null
+    const profiles = JSON.parse(raw)
+    if (!Array.isArray(profiles) || profiles.length === 0) return null
+    const p = profiles[0]
+    // Build locationRules from old format
+    let locationRules: LocationRule[] = p.locationRules || []
+    if (locationRules.length === 0) {
+      if (p.location) {
+        locationRules = [{
+          id: crypto.randomUUID(),
+          type: 'city',
+          value: p.location,
+          workArrangement: p.remoteOnly ? 'remote' : 'any',
+        }]
+      } else if (p.remoteOnly) {
+        locationRules = [{
+          id: crypto.randomUUID(),
+          type: 'zone',
+          value: 'Global',
+          workArrangement: 'remote',
+        }]
+      }
+    }
+    const config: SearchConfig = {
+      keywords: p.keywords || [],
+      locationRules,
+      excludedCompanies: p.excludedCompanies || [],
+      dailyLimit: p.dailyLimit || 15,
+    }
+    return config
+  } catch {
+    return null
   }
-  return rules
 }
 
-const LS_KEY = 'tracker_v2_search_profiles'
-
-function loadProfiles(): SearchProfile[] {
+function loadSearchConfig(): SearchConfig {
   try {
     const raw = localStorage.getItem(LS_KEY)
-    return raw ? JSON.parse(raw) : []
+    if (raw) return { ...DEFAULT_SEARCH_CONFIG, ...JSON.parse(raw) }
+    // Attempt migration from old profiles array
+    const migrated = migrateFromProfiles()
+    if (migrated) {
+      localStorage.setItem(LS_KEY, JSON.stringify(migrated))
+      localStorage.removeItem(LS_KEY_OLD)
+      return migrated
+    }
+    return { ...DEFAULT_SEARCH_CONFIG }
   } catch {
-    return []
+    return { ...DEFAULT_SEARCH_CONFIG }
   }
 }
 
-function saveProfiles(profiles: SearchProfile[]) {
+function saveSearchConfig(config: SearchConfig) {
   try {
-    localStorage.setItem(LS_KEY, JSON.stringify(profiles))
+    localStorage.setItem(LS_KEY, JSON.stringify(config))
   } catch {
     /* ignore */
   }
@@ -1981,47 +2002,28 @@ const previewStyles: Record<string, React.CSSProperties> = {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Extracted SearchProfileForm (shared by anon + auth)                 */
+/*  SearchSettingsForm — always-visible, auto-saving settings form      */
 /* ------------------------------------------------------------------ */
-function SearchProfileForm({
-  formName, setFormName,
-  formKeywords, setFormKeywords,
-  formLocationRules, setFormLocationRules,
-  formExcluded, setFormExcluded,
-  formDailyLimit, setFormDailyLimit,
-  onSave, onCancel,
+function SearchSettingsForm({
+  config,
+  onChange,
+  showSaved,
   compact,
 }: {
-  formName: string; setFormName: (v: string) => void
-  formKeywords: string[]; setFormKeywords: React.Dispatch<React.SetStateAction<string[]>>
-  formLocationRules: LocationRule[]; setFormLocationRules: (v: LocationRule[]) => void
-  formExcluded: string[]; setFormExcluded: React.Dispatch<React.SetStateAction<string[]>>
-  formDailyLimit: number; setFormDailyLimit: (v: number) => void
-  onSave: () => void; onCancel: () => void
+  config: SearchConfig
+  onChange: (patch: Partial<SearchConfig>) => void
+  showSaved: boolean
   compact?: boolean
 }) {
   return (
     <div style={compact ? sidebarFormStyles.card : styles.formCard}>
-      {!compact && <h3 style={styles.formTitle}>New Search Profile</h3>}
-
-      <div style={styles.fieldGroup}>
-        <label style={styles.label}>Profile Name</label>
-        <input
-          style={styles.input}
-          type="text"
-          value={formName}
-          onChange={(e) => setFormName(e.target.value)}
-          placeholder='e.g. "Senior Product Designer APAC"'
-        />
-      </div>
-
       <div style={styles.fieldGroup}>
         <label style={styles.label}>Keywords</label>
         <p style={styles.hint}>Type a keyword and press Enter</p>
         <ChipInput
-          chips={formKeywords}
-          onAdd={(val) => setFormKeywords((prev) => [...prev, val])}
-          onRemove={(idx) => setFormKeywords((prev) => prev.filter((_, i) => i !== idx))}
+          chips={config.keywords}
+          onAdd={(val) => onChange({ keywords: [...config.keywords, val] })}
+          onRemove={(idx) => onChange({ keywords: config.keywords.filter((_, i) => i !== idx) })}
           placeholder="Search job titles..."
           suggestions={JOB_TITLE_SUGGESTIONS}
         />
@@ -2030,15 +2032,15 @@ function SearchProfileForm({
       <div style={styles.fieldGroup}>
         <label style={styles.label}>Location Rules</label>
         <p style={styles.hint}>Set salary per location — different markets, different expectations</p>
-        <LocationRulesField rules={formLocationRules} onChange={setFormLocationRules} />
+        <LocationRulesField rules={config.locationRules} onChange={(rules) => onChange({ locationRules: rules })} />
       </div>
 
       <div style={styles.fieldGroup}>
         <label style={styles.label}>Excluded Companies</label>
         <CompanyChipInput
-          chips={formExcluded}
-          onAdd={(val) => setFormExcluded((prev) => [...prev, val])}
-          onRemove={(idx) => setFormExcluded((prev) => prev.filter((_, i) => i !== idx))}
+          chips={config.excludedCompanies}
+          onAdd={(val) => onChange({ excludedCompanies: [...config.excludedCompanies, val] })}
+          onRemove={(idx) => onChange({ excludedCompanies: config.excludedCompanies.filter((_, i) => i !== idx) })}
           placeholder="Search companies..."
         />
       </div>
@@ -2052,37 +2054,32 @@ function SearchProfileForm({
             type="number"
             min={1}
             max={50}
-            value={formDailyLimit}
+            value={config.dailyLimit}
             onChange={(e) => {
               const val = Math.max(1, Math.min(50, parseInt(e.target.value) || 1))
-              setFormDailyLimit(val)
+              onChange({ dailyLimit: val })
             }}
           />
           <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>/day</span>
-          {formDailyLimit > 25 && (
+          {config.dailyLimit > 25 && (
             <div style={dailyLimitStyles.warning}>
               <AlertTriangle size={14} color="#f97316" />
               <span style={dailyLimitStyles.warningText}>Risk of restrictions</span>
             </div>
           )}
+          {showSaved && (
+            <span style={{
+              fontSize: 11,
+              fontWeight: 600,
+              color: '#34d399',
+              marginLeft: 'auto',
+              whiteSpace: 'nowrap' as const,
+              animation: 'fadeInOut 2s ease-in-out forwards',
+            }}>
+              Saved
+            </span>
+          )}
         </div>
-      </div>
-
-      <div style={styles.formActions}>
-        <button style={styles.btnSecondary} onClick={onCancel}>
-          Cancel
-        </button>
-        <button
-          style={{
-            ...styles.btnPrimary,
-            opacity: formName.trim() ? 1 : 0.5,
-          }}
-          onClick={onSave}
-          disabled={!formName.trim()}
-        >
-          <Zap size={12} />
-          Save &amp; Start Bot
-        </button>
       </div>
     </div>
   )
@@ -2102,19 +2099,17 @@ const sidebarFormStyles: Record<string, React.CSSProperties> = {
 /* ------------------------------------------------------------------ */
 /*  ActiveFilterTags — compact summary tags for the right panel         */
 /* ------------------------------------------------------------------ */
-function ActiveFilterTags({ profile }: { profile: SearchProfile | null }) {
-  if (!profile) return null
-  const rules = migrateProfileLocationRules(profile)
+function ActiveFilterTags({ config }: { config: SearchConfig }) {
+  const hasAnything = config.keywords.length > 0 || config.locationRules.length > 0 ||
+    config.excludedCompanies.length > 0
+  if (!hasAnything) return null
 
   return (
     <div style={filterTagStyles.bar}>
       <Tag size={12} color="var(--text-tertiary)" style={{ flexShrink: 0 }} />
-      {/* Profile name */}
-      <span style={filterTagStyles.profileName}>{profile.name}</span>
-      <span style={filterTagStyles.divider} />
 
       {/* Keywords as tags */}
-      {profile.keywords.map((kw, i) => (
+      {config.keywords.map((kw, i) => (
         <span key={`kw-${i}`} style={filterTagStyles.tag}>
           <Search size={10} />
           {kw}
@@ -2122,7 +2117,7 @@ function ActiveFilterTags({ profile }: { profile: SearchProfile | null }) {
       ))}
 
       {/* Location rules as tags */}
-      {rules.map((rule) => {
+      {config.locationRules.map((rule) => {
         const icon = getLocationRuleIcon(rule)
         const salaryPart = rule.minSalary && rule.minSalary > 0
           ? ` ${getCurrencySymbol(rule.currency)}${(rule.minSalary / 1000).toFixed(0)}k+`
@@ -2138,18 +2133,18 @@ function ActiveFilterTags({ profile }: { profile: SearchProfile | null }) {
       })}
 
       {/* Excluded count */}
-      {profile.excludedCompanies.length > 0 && (
+      {config.excludedCompanies.length > 0 && (
         <span style={filterTagStyles.tagExcluded}>
           <Building2 size={10} />
-          {profile.excludedCompanies.length} excluded
+          {config.excludedCompanies.length} excluded
         </span>
       )}
 
       {/* Daily cap */}
-      {profile.dailyLimit && (
+      {config.dailyLimit && (
         <span style={filterTagStyles.tagCap}>
           <Shield size={10} />
-          {profile.dailyLimit}/day
+          {config.dailyLimit}/day
         </span>
       )}
     </div>
@@ -2234,147 +2229,45 @@ const filterTagStyles: Record<string, React.CSSProperties> = {
 }
 
 /* ------------------------------------------------------------------ */
-/*  FilterSidebar — collapsible left panel (LinkedIn/Airbnb pattern)    */
+/*  FilterSidebar — collapsible left panel showing search settings       */
 /* ------------------------------------------------------------------ */
 function FilterSidebar({
-  profiles, activeProfile, onSelectProfile, onDeleteProfile,
-  showForm, setShowForm,
-  formName, setFormName,
-  formKeywords, setFormKeywords,
-  formLocationRules, setFormLocationRules,
-  formExcluded, setFormExcluded,
-  formDailyLimit, setFormDailyLimit,
-  onSave, resetForm,
+  config,
+  onChange,
+  showSaved,
 }: {
-  profiles: SearchProfile[]
-  activeProfile: SearchProfile | null
-  onSelectProfile: (id: string) => void
-  onDeleteProfile: (id: string) => void
-  showForm: boolean; setShowForm: (v: boolean) => void
-  formName: string; setFormName: (v: string) => void
-  formKeywords: string[]; setFormKeywords: React.Dispatch<React.SetStateAction<string[]>>
-  formLocationRules: LocationRule[]; setFormLocationRules: (v: LocationRule[]) => void
-  formExcluded: string[]; setFormExcluded: React.Dispatch<React.SetStateAction<string[]>>
-  formDailyLimit: number; setFormDailyLimit: (v: number) => void
-  onSave: () => void; resetForm: () => void
+  config: SearchConfig
+  onChange: (patch: Partial<SearchConfig>) => void
+  showSaved: boolean
 }) {
   return (
     <div style={sidebarStyles.inner}>
       {/* Sidebar header */}
       <div style={sidebarStyles.header}>
         <SlidersHorizontal size={16} color="var(--accent)" />
-        <h2 style={sidebarStyles.title}>Search Profiles</h2>
+        <h2 style={sidebarStyles.title}>Search Settings</h2>
+        {showSaved && (
+          <span style={{
+            fontSize: 11,
+            fontWeight: 600,
+            color: '#34d399',
+            marginLeft: 'auto',
+            whiteSpace: 'nowrap' as const,
+          }}>
+            Saved
+          </span>
+        )}
       </div>
 
-      {/* Profile list as selectable cards */}
-      {profiles.length > 0 && !showForm && (
-        <div style={sidebarStyles.profileList}>
-          {profiles.map((p) => {
-            const isActive = activeProfile?.id === p.id
-            const rules = migrateProfileLocationRules(p)
-            return (
-              <div
-                key={p.id}
-                style={{
-                  ...sidebarStyles.profileCard,
-                  ...(isActive ? sidebarStyles.profileCardActive : {}),
-                }}
-                onClick={() => onSelectProfile(p.id)}
-              >
-                <div style={sidebarStyles.profileTop}>
-                  <span style={sidebarStyles.profileName}>{p.name}</span>
-                  <button
-                    style={styles.deleteBtn}
-                    onClick={(e) => { e.stopPropagation(); onDeleteProfile(p.id) }}
-                    title="Delete profile"
-                  >
-                    <Trash2 size={12} />
-                  </button>
-                </div>
-                {/* Compact meta */}
-                <div style={sidebarStyles.meta}>
-                  {p.keywords.length > 0 && (
-                    <span style={sidebarStyles.metaChip}>
-                      <Search size={10} /> {p.keywords.length} keywords
-                    </span>
-                  )}
-                  {rules.length > 0 && (
-                    <span style={sidebarStyles.metaChip}>
-                      <Globe size={10} /> {rules.length} location{rules.length > 1 ? 's' : ''}
-                    </span>
-                  )}
-                  {p.excludedCompanies.length > 0 && (
-                    <span style={sidebarStyles.metaChip}>
-                      <Building2 size={10} /> {p.excludedCompanies.length} excluded
-                    </span>
-                  )}
-                  {p.dailyLimit && (
-                    <span style={sidebarStyles.metaChip}>
-                      <Shield size={10} /> {p.dailyLimit}/day
-                    </span>
-                  )}
-                </div>
-                {/* Show location rules with salary */}
-                {rules.length > 0 && (
-                  <div style={{ marginTop: 6 }}>
-                    {rules.map((rule) => {
-                      const icon = getLocationRuleIcon(rule)
-                      const arr = rule.workArrangement === 'any' ? '' :
-                        rule.workArrangement === 'remote' ? ' Remote' :
-                        rule.workArrangement === 'hybrid' ? ' Hybrid' : ' On-site'
-                      const sal = rule.minSalary && rule.minSalary > 0
-                        ? ` \u2014 ${getCurrencySymbol(rule.currency)}${(rule.minSalary / 1000).toFixed(0)}k+`
-                        : ''
-                      return (
-                        <div key={rule.id} style={sidebarStyles.locationLine}>
-                          <span>{icon}</span>
-                          <span>{rule.value}{arr}{sal}</span>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {/* New profile button */}
-      {!showForm && (
-        <button
-          style={sidebarStyles.addBtn}
-          onClick={() => setShowForm(true)}
-        >
-          <Plus size={14} />
-          {profiles.length === 0 ? 'Create search profile' : 'Add profile'}
-        </button>
-      )}
-
-      {/* Inline form */}
-      {showForm && (
-        <div style={sidebarStyles.formWrap}>
-          <SearchProfileForm
-            formName={formName} setFormName={setFormName}
-            formKeywords={formKeywords} setFormKeywords={setFormKeywords}
-            formLocationRules={formLocationRules} setFormLocationRules={setFormLocationRules}
-            formExcluded={formExcluded} setFormExcluded={setFormExcluded}
-            formDailyLimit={formDailyLimit} setFormDailyLimit={setFormDailyLimit}
-            onSave={onSave}
-            onCancel={() => { resetForm(); setShowForm(false) }}
-            compact
-          />
-        </div>
-      )}
-
-      {profiles.length === 0 && !showForm && (
-        <div style={sidebarStyles.emptyHint}>
-          <Sparkles size={20} color="var(--text-tertiary)" strokeWidth={1.2} />
-          <p style={{ fontSize: 12, color: 'var(--text-tertiary)', margin: 0, textAlign: 'center' as const }}>
-            Create a profile to tell the bot what jobs to search for
-          </p>
-        </div>
-      )}
+      {/* Always-visible form */}
+      <div style={sidebarStyles.formWrap}>
+        <SearchSettingsForm
+          config={config}
+          onChange={onChange}
+          showSaved={false}
+          compact
+        />
+      </div>
     </div>
   )
 }
@@ -2510,22 +2403,29 @@ const dailyLimitStyles: Record<string, React.CSSProperties> = {
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 export function AutopilotView() {
-  const [profiles, setProfiles] = useState<SearchProfile[]>(loadProfiles)
-  const [showForm, setShowForm] = useState(() => loadProfiles().length === 0)
+  const [searchConfig, setSearchConfig] = useState<SearchConfig>(loadSearchConfig)
+  const [showSaved, setShowSaved] = useState(false)
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Sidebar state
   const [sidebarOpen, setSidebarOpen] = useState(true)
-  const [activeProfileId, setActiveProfileId] = useState<string | null>(() => {
-    const saved = loadProfiles()
-    return saved.length > 0 ? saved[0].id : null
-  })
 
-  // Derived active profile
-  const activeProfile = profiles.find(p => p.id === activeProfileId) || profiles[0] || null
+  // Whether the config has any meaningful content
+  const hasConfig = searchConfig.keywords.length > 0 || searchConfig.locationRules.length > 0
 
-  // Handle profile selection
-  const handleSelectProfile = useCallback((id: string) => {
-    setActiveProfileId(id)
+  // Auto-save handler with debounce
+  const handleConfigChange = useCallback((patch: Partial<SearchConfig>) => {
+    setSearchConfig(prev => {
+      const next = { ...prev, ...patch }
+      // Debounced save
+      if (savedTimerRef.current) clearTimeout(savedTimerRef.current)
+      savedTimerRef.current = setTimeout(() => {
+        saveSearchConfig(next)
+        setShowSaved(true)
+        setTimeout(() => setShowSaved(false), 2000)
+      }, 400)
+      return next
+    })
   }, [])
 
   // Mobile detection (simple)
@@ -2549,6 +2449,14 @@ export function AutopilotView() {
   // Bot triggering state
   const [isTriggering, setIsTriggering] = useState(false)
   const [triggerError, setTriggerError] = useState<string | null>(null)
+
+  // Preview mode state
+  const [previewMode, setPreviewMode] = useState(false)
+  const [showApplyModal, setShowApplyModal] = useState(false)
+
+  // Profile setup modal state
+  const [showProfileModal, setShowProfileModal] = useState(false)
+  const pendingBotActionRef = useRef<(() => void) | null>(null)
 
   // Run history
   const [runHistory, setRunHistory] = useState<BotRunHistoryItem[]>([])
@@ -2593,97 +2501,90 @@ export function AutopilotView() {
   const { requireAuth } = useAuthWall()
 
   // Core bot run logic (called after auth check)
+  // Pass 'search_config' as profileId — the backend resolves the single config
   const doStartBot = useCallback(async () => {
-    if (profiles.length === 0) return
+    if (!hasConfig) return
     setIsTriggering(true)
     setTriggerError(null)
     try {
-      await triggerBotRun(profiles[0].id)
+      await triggerBotRun('search_config')
     } catch (err) {
       setTriggerError((err as Error).message)
     } finally {
       setIsTriggering(false)
     }
-  }, [profiles])
+  }, [hasConfig])
 
   const doDryRun = useCallback(async () => {
-    if (profiles.length === 0) return
+    if (!hasConfig) return
     setIsTriggering(true)
     setTriggerError(null)
     try {
-      await triggerDryRun(profiles[0].id)
+      await triggerDryRun('search_config')
     } catch (err) {
       setTriggerError((err as Error).message)
     } finally {
       setIsTriggering(false)
     }
-  }, [profiles])
+  }, [hasConfig])
 
-  // Handlers with auth wall gate
+  // Core bot action after auth + profile checks
+  const executeBotAction = useCallback(() => {
+    if (previewMode) {
+      if (!requireAuth('start_bot', () => { doDryRun() })) return
+      doDryRun()
+    } else {
+      if (!requireAuth('start_bot', () => { doStartBot() })) return
+      doStartBot()
+    }
+  }, [requireAuth, doStartBot, doDryRun, previewMode])
+
+  // Handlers with auth wall gate + profile completeness check
   const handleStartBot = useCallback(() => {
+    // Check if profile is complete first
+    if (!isProfileComplete()) {
+      pendingBotActionRef.current = executeBotAction
+      setShowProfileModal(true)
+      return
+    }
+    executeBotAction()
+  }, [executeBotAction])
+
+  // Callback when profile modal completes
+  const handleProfileComplete = useCallback(() => {
+    setShowProfileModal(false)
+    // Auto-trigger the bot run that was interrupted
+    const pending = pendingBotActionRef.current
+    pendingBotActionRef.current = null
+    if (pending) pending()
+  }, [])
+
+  const handleProfileDismiss = useCallback(() => {
+    setShowProfileModal(false)
+    pendingBotActionRef.current = null
+  }, [])
+
+  const handleApplyAll = useCallback(() => {
+    setShowApplyModal(false)
+    setPreviewMode(false)
     if (!requireAuth('start_bot', () => { doStartBot() })) return
     doStartBot()
   }, [requireAuth, doStartBot])
 
-  const handleDryRun = useCallback(() => {
-    if (!requireAuth('start_bot', () => { doDryRun() })) return
-    doDryRun()
-  }, [requireAuth, doDryRun])
+  // Persist config on change is handled by handleConfigChange debounce above
 
-  // Form state
-  const [formName, setFormName] = useState('')
-  const [formKeywords, setFormKeywords] = useState<string[]>([])
-  const [formLocationRules, setFormLocationRules] = useState<LocationRule[]>([])
-  const [formExcluded, setFormExcluded] = useState<string[]>([])
-  const [formDailyLimit, setFormDailyLimit] = useState(15)
+  // Profile modal summaries from search config
+  const locationRulesSummary = searchConfig.locationRules
+    .filter((r) => r.minSalary)
+    .map((r) => `${r.value}: ${getCurrencySymbol(r.currency)}${((r.minSalary ?? 0) / 1000).toFixed(0)}k+`)
+    .join(', ') || undefined
 
-  // Persist on change
-  useEffect(() => {
-    saveProfiles(profiles)
-  }, [profiles])
-
-  // Keep activeProfileId in sync when profiles change
-  useEffect(() => {
-    if (profiles.length > 0 && !profiles.find(p => p.id === activeProfileId)) {
-      setActiveProfileId(profiles[0].id)
-    }
-    if (profiles.length === 0) {
-      setActiveProfileId(null)
-    }
-  }, [profiles, activeProfileId])
-
-  const resetForm = useCallback(() => {
-    setFormName('')
-    setFormKeywords([])
-    setFormLocationRules([])
-    setFormExcluded([])
-    setFormDailyLimit(15)
-  }, [])
-
-  const handleSave = useCallback(() => {
-    if (!formName.trim()) return
-    const newProfile: SearchProfile = {
-      id: crypto.randomUUID(),
-      name: formName.trim(),
-      keywords: [...formKeywords],
-      location: '', // legacy field, kept empty for new profiles
-      minSalary: 0, // legacy — salary is now per LocationRule
-      remoteOnly: false, // legacy field, replaced by locationRules
-      locationRules: [...formLocationRules],
-      excludedCompanies: [...formExcluded],
-      dailyLimit: formDailyLimit,
-      createdAt: new Date().toISOString(),
-    }
-    setProfiles((prev) => [...prev, newProfile])
-    setActiveProfileId(newProfile.id)
-    resetForm()
-    setShowForm(false)
-    setSidebarOpen(false) // collapse panel after save to show bot activity
-  }, [formName, formKeywords, formLocationRules, formExcluded, formDailyLimit, resetForm])
-
-  const handleDelete = useCallback((id: string) => {
-    setProfiles((prev) => prev.filter((p) => p.id !== id))
-  }, [])
+  const remotePreferenceSummary = (() => {
+    const arrangements = searchConfig.locationRules.map((r) => r.workArrangement)
+    if (arrangements.length === 0) return undefined
+    const unique = [...new Set(arrangements)]
+    return unique.map((a) => a === 'any' ? 'Any' : a === 'remote' ? 'Remote' : a === 'hybrid' ? 'Hybrid' : 'On-site').join(', ')
+  })()
 
   // Status banner config
   const statusCfg = getStatusConfig(currentRun)
@@ -2697,11 +2598,11 @@ export function AutopilotView() {
   const handleAnonStartBot = useCallback(() => {
     showAuthWall('start_bot', () => {
       // After sign-up, bot starts with saved preferences
-      if (profiles.length > 0) {
+      if (hasConfig) {
         doStartBot()
       }
     })
-  }, [showAuthWall, profiles, doStartBot])
+  }, [showAuthWall, hasConfig, doStartBot])
 
   /* ------------------------------------------------------------------ */
   /*  ANONYMOUS USER: Conversion-focused layout                          */
@@ -2760,93 +2661,41 @@ export function AutopilotView() {
           </div>
         </section>
 
-        {/* Search Profiles (anonymous users can configure before sign-up) */}
+        {/* Search Settings (anonymous users can configure before sign-up) */}
         <section style={styles.section}>
           <div style={styles.sectionHeader}>
             <div>
-              <h2 style={styles.sectionTitle}>Your Search Profile</h2>
+              <h2 style={styles.sectionTitle}>Search Settings</h2>
               <p style={styles.sectionSubtitle}>
                 Configure now — the bot starts immediately after sign-up
               </p>
             </div>
+            {showSaved && (
+              <span style={{
+                fontSize: 11,
+                fontWeight: 600,
+                color: '#34d399',
+                whiteSpace: 'nowrap' as const,
+              }}>
+                Saved
+              </span>
+            )}
           </div>
 
-          {/* Profile list */}
-          {profiles.length > 0 && !showForm && (
-            <>
-              <div style={styles.profileList}>
-                {profiles.map((p) => (
-                  <div key={p.id} style={styles.profileCard}>
-                    <div style={styles.profileTop}>
-                      <span style={styles.profileName}>{p.name}</span>
-                      <button
-                        style={styles.deleteBtn}
-                        onClick={() => handleDelete(p.id)}
-                        title="Delete profile"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                    <div style={styles.profileMeta}>
-                      {p.keywords.length > 0 && (
-                        <div style={styles.metaItem}>
-                          <Search size={12} color="var(--text-tertiary)" />
-                          <span style={styles.metaText}>{p.keywords.join(', ')}</span>
-                        </div>
-                      )}
-                      {migrateProfileLocationRules(p).length > 0 && (
-                        <div style={styles.metaItem}>
-                          <Globe size={12} color="var(--text-tertiary)" />
-                          <LocationRuleChips rules={migrateProfileLocationRules(p)} compact />
-                        </div>
-                      )}
-                      {p.minSalary > 0 && (
-                        <div style={styles.metaItem}>
-                          <DollarSign size={12} color="var(--text-tertiary)" />
-                          <span style={styles.metaText}>{p.minSalary.toLocaleString()} EUR min</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-                <button style={styles.btnPrimary} onClick={() => setShowForm(true)}>
-                  <Plus size={14} />
-                  <span>Add another</span>
-                </button>
-                <button style={styles.heroCta} onClick={handleAnonStartBot}>
-                  <Play size={14} />
-                  <span>Start My Bot</span>
-                </button>
-              </div>
-            </>
-          )}
+          <SearchSettingsForm
+            config={searchConfig}
+            onChange={handleConfigChange}
+            showSaved={false}
+          />
 
-          {/* Empty — show form directly */}
-          {profiles.length === 0 && !showForm && (
-            <div style={styles.emptyState}>
-              <div style={styles.emptyIllustration}>
-                <Sparkles size={40} color="var(--text-tertiary)" strokeWidth={1.2} />
-              </div>
-              <p style={styles.emptyText}>Tell the bot what to search for</p>
-              <p style={styles.emptyHint}>Your preferences are saved locally — the bot starts right after sign-up</p>
-              <button style={styles.btnPrimary} onClick={() => setShowForm(true)}>
-                <Plus size={14} />
-                <span>Create your search profile</span>
+          {hasConfig && (
+            <div style={{ display: 'flex', justifyContent: 'center', marginTop: 16 }}>
+              <button style={styles.heroCta} onClick={handleAnonStartBot}>
+                <Play size={14} />
+                <span>Start My Bot</span>
               </button>
             </div>
           )}
-
-          {/* Form (same for anon + auth) */}
-          {showForm && <SearchProfileForm
-            formName={formName} setFormName={setFormName}
-            formKeywords={formKeywords} setFormKeywords={setFormKeywords}
-            formLocationRules={formLocationRules} setFormLocationRules={setFormLocationRules}
-            formExcluded={formExcluded} setFormExcluded={setFormExcluded}
-            formDailyLimit={formDailyLimit} setFormDailyLimit={setFormDailyLimit}
-            onSave={handleSave} onCancel={() => { resetForm(); setShowForm(false) }}
-          />}
         </section>
 
         {/* Bottom CTA */}
@@ -2869,6 +2718,12 @@ export function AutopilotView() {
           @keyframes spin {
             from { transform: rotate(0deg); }
             to { transform: rotate(360deg); }
+          }
+          @keyframes fadeInOut {
+            0% { opacity: 0; }
+            15% { opacity: 1; }
+            85% { opacity: 1; }
+            100% { opacity: 0; }
           }
         `}</style>
       </div>
@@ -2894,15 +2749,36 @@ export function AutopilotView() {
         </div>
         <div style={layoutStyles.topBarRight}>
           {/* Bot controls */}
-          {profiles.length > 0 && !isBotActive && !isTriggering && (
+          {hasConfig && !isBotActive && !isTriggering && (
             <>
-              <button style={styles.btnStartBot} onClick={handleStartBot}>
-                <Play size={14} />
-                <span>Start Bot</span>
-              </button>
-              <button style={styles.btnDryRun} onClick={handleDryRun}>
-                <FlaskConical size={14} />
-                <span>Dry Run</span>
+              {/* Preview Mode toggle */}
+              <div style={styles.previewToggleWrap} title="Find jobs without applying. Review everything first, then go live.">
+                <span style={styles.previewToggleLabel}>Preview Mode</span>
+                <button
+                  role="switch"
+                  aria-checked={previewMode}
+                  style={{
+                    ...styles.toggleTrack,
+                    background: previewMode ? '#f59e0b' : 'var(--border)',
+                  }}
+                  onClick={() => setPreviewMode((v) => !v)}
+                >
+                  <span
+                    style={{
+                      ...styles.toggleThumb,
+                      transform: previewMode ? 'translateX(16px)' : 'translateX(2px)',
+                    }}
+                  />
+                </button>
+              </div>
+
+              {/* Main action button */}
+              <button
+                style={previewMode ? styles.btnStartPreview : styles.btnStartBot}
+                onClick={handleStartBot}
+              >
+                {previewMode ? <Eye size={14} /> : <Play size={14} />}
+                <span>{previewMode ? 'Start Preview' : 'Start Bot'}</span>
               </button>
             </>
           )}
@@ -2929,8 +2805,8 @@ export function AutopilotView() {
           >
             {sidebarOpen ? <ChevronLeft size={14} /> : <SlidersHorizontal size={14} />}
             <span>{sidebarOpen ? 'Hide Filters' : 'Filters'}</span>
-            {profiles.length > 0 && !sidebarOpen && (
-              <span style={layoutStyles.filterCount}>{profiles.length}</span>
+            {hasConfig && !sidebarOpen && (
+              <span style={layoutStyles.filterCount}>{searchConfig.keywords.length + searchConfig.locationRules.length}</span>
             )}
           </button>
         </div>
@@ -2949,17 +2825,9 @@ export function AutopilotView() {
         {sidebarOpen && !isMobile && (
           <div style={layoutStyles.sidebar}>
             <FilterSidebar
-              profiles={profiles}
-              activeProfile={activeProfile}
-              onSelectProfile={handleSelectProfile}
-              onDeleteProfile={handleDelete}
-              showForm={showForm} setShowForm={setShowForm}
-              formName={formName} setFormName={setFormName}
-              formKeywords={formKeywords} setFormKeywords={setFormKeywords}
-              formLocationRules={formLocationRules} setFormLocationRules={setFormLocationRules}
-              formExcluded={formExcluded} setFormExcluded={setFormExcluded}
-              formDailyLimit={formDailyLimit} setFormDailyLimit={setFormDailyLimit}
-              onSave={handleSave} resetForm={resetForm}
+              config={searchConfig}
+              onChange={handleConfigChange}
+              showSaved={showSaved}
             />
           </div>
         )}
@@ -2982,17 +2850,9 @@ export function AutopilotView() {
                 </button>
               </div>
               <FilterSidebar
-                profiles={profiles}
-                activeProfile={activeProfile}
-                onSelectProfile={handleSelectProfile}
-                onDeleteProfile={handleDelete}
-                showForm={showForm} setShowForm={setShowForm}
-                formName={formName} setFormName={setFormName}
-                formKeywords={formKeywords} setFormKeywords={setFormKeywords}
-                formLocationRules={formLocationRules} setFormLocationRules={setFormLocationRules}
-                formExcluded={formExcluded} setFormExcluded={setFormExcluded}
-                formDailyLimit={formDailyLimit} setFormDailyLimit={setFormDailyLimit}
-                onSave={handleSave} resetForm={resetForm}
+                config={searchConfig}
+                onChange={handleConfigChange}
+                showSaved={showSaved}
               />
             </div>
           </>
@@ -3001,7 +2861,7 @@ export function AutopilotView() {
         {/* RIGHT: Main content */}
         <div style={layoutStyles.main}>
           {/* Active filter tags bar */}
-          {activeProfile && <ActiveFilterTags profile={activeProfile} />}
+          <ActiveFilterTags config={searchConfig} />
 
           {/* Status Banner */}
           <section style={styles.statusBanner}>
@@ -3031,6 +2891,75 @@ export function AutopilotView() {
               </div>
             </div>
           </section>
+
+          {/* Preview Mode active banner */}
+          {isBotActive && previewMode && (
+            <div style={styles.previewBannerWrap}>
+              <Eye size={14} color="#d97706" />
+              <span style={styles.previewBannerText}>
+                Preview mode &mdash; no applications are being submitted
+              </span>
+            </div>
+          )}
+
+          {/* Preview Results (after preview run completes) */}
+          {currentRun?.status === 'completed' && previewMode && (
+            <section style={styles.previewResultsCard}>
+              <div style={styles.previewResultsHeader}>
+                <CheckCircle2 size={20} color="#f59e0b" />
+                <div>
+                  <h3 style={styles.previewResultsTitle}>
+                    Preview Complete &mdash; {currentRun.jobsFound} job{currentRun.jobsFound !== 1 ? 's' : ''} found
+                  </h3>
+                  <p style={styles.previewResultsSubtitle}>
+                    Nothing was submitted. Here&apos;s what the bot would apply to.
+                  </p>
+                </div>
+              </div>
+              <div style={styles.previewResultsActions}>
+                <button
+                  style={styles.btnApplyAll}
+                  onClick={() => setShowApplyModal(true)}
+                >
+                  <Play size={14} />
+                  Apply to All {currentRun.jobsFound} Job{currentRun.jobsFound !== 1 ? 's' : ''}
+                </button>
+                <button
+                  style={styles.btnReviewIndividually}
+                  onClick={() => {/* future: scroll to queue / toggle individual review */}}
+                >
+                  or review and select individually
+                </button>
+              </div>
+              <p style={styles.previewReassurance}>
+                <Shield size={12} color="var(--text-tertiary)" />
+                You&apos;ll see a confirmation before anything is submitted.
+              </p>
+            </section>
+          )}
+
+          {/* Apply All Confirmation Modal */}
+          {showApplyModal && (
+            <div style={styles.modalOverlay} onClick={() => setShowApplyModal(false)}>
+              <div style={styles.modalCard} onClick={(e) => e.stopPropagation()}>
+                <h3 style={styles.modalTitle}>
+                  Ready to apply to {currentRun?.jobsFound ?? 0} job{(currentRun?.jobsFound ?? 0) !== 1 ? 's' : ''}?
+                </h3>
+                <p style={styles.modalDesc}>
+                  The bot will submit your application to each job. You can pause at any time.
+                </p>
+                <div style={styles.modalActions}>
+                  <button style={styles.btnModalApply} onClick={handleApplyAll}>
+                    <Play size={14} />
+                    Apply Now
+                  </button>
+                  <button style={styles.btnModalCancel} onClick={() => setShowApplyModal(false)}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Preview Queue */}
           <PreviewQueue />
@@ -3161,6 +3090,16 @@ export function AutopilotView() {
           </section>
         </div>
       </div>
+
+      {/* Profile Setup Modal */}
+      {showProfileModal && (
+        <ProfileSetupModal
+          onComplete={handleProfileComplete}
+          onDismiss={handleProfileDismiss}
+          locationRulesSummary={locationRulesSummary}
+          remotePreference={remotePreferenceSummary}
+        />
+      )}
 
       {/* Keyframe injection for pulsing dot + spinner */}
       <style>{`
@@ -3749,20 +3688,193 @@ const styles: Record<string, React.CSSProperties> = {
     whiteSpace: 'nowrap' as const,
     transition: 'opacity 0.15s',
   },
-  btnDryRun: {
+  btnStartPreview: {
     display: 'inline-flex',
     alignItems: 'center',
     gap: 6,
     background: 'transparent',
-    color: 'var(--text-secondary)',
-    fontWeight: 500,
+    color: '#f59e0b',
+    fontWeight: 600,
     fontSize: 13,
     padding: '8px 16px',
     borderRadius: 'var(--radius-md)',
-    border: '1px solid var(--border)',
+    border: '1px solid rgba(245, 158, 11, 0.4)',
     cursor: 'pointer',
     whiteSpace: 'nowrap' as const,
-    transition: 'border-color 0.15s',
+    transition: 'border-color 0.15s, background 0.15s',
+  },
+  previewToggleWrap: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 8,
+    cursor: 'default',
+  },
+  previewToggleLabel: {
+    fontSize: 12,
+    fontWeight: 500,
+    color: 'var(--text-secondary)',
+    whiteSpace: 'nowrap' as const,
+    userSelect: 'none' as const,
+  },
+  toggleTrack: {
+    position: 'relative' as const,
+    width: 34,
+    height: 20,
+    borderRadius: 10,
+    border: 'none',
+    cursor: 'pointer',
+    transition: 'background 0.2s',
+    padding: 0,
+    flexShrink: 0,
+  },
+  toggleThumb: {
+    position: 'absolute' as const,
+    top: 2,
+    width: 16,
+    height: 16,
+    borderRadius: '50%',
+    background: '#fff',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+    transition: 'transform 0.2s',
+  },
+  /* Preview active banner */
+  previewBannerWrap: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: '10px 16px',
+    borderRadius: 'var(--radius-md)',
+    background: 'rgba(245, 158, 11, 0.08)',
+    border: '1px solid rgba(245, 158, 11, 0.25)',
+    marginBottom: 12,
+  },
+  previewBannerText: {
+    fontSize: 13,
+    fontWeight: 500,
+    color: '#d97706',
+  },
+  /* Preview results card */
+  previewResultsCard: {
+    padding: 20,
+    borderRadius: 'var(--radius-lg)',
+    background: 'var(--bg-elevated)',
+    border: '1px solid rgba(245, 158, 11, 0.3)',
+    marginBottom: 16,
+  },
+  previewResultsHeader: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginBottom: 16,
+  },
+  previewResultsTitle: {
+    fontSize: 16,
+    fontWeight: 700,
+    color: 'var(--text-primary)',
+    margin: 0,
+    lineHeight: 1.3,
+  },
+  previewResultsSubtitle: {
+    fontSize: 13,
+    color: 'var(--text-secondary)',
+    margin: '4px 0 0',
+  },
+  previewResultsActions: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 16,
+    marginBottom: 12,
+  },
+  btnApplyAll: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    background: '#34d399',
+    color: '#09090b',
+    fontWeight: 700,
+    fontSize: 14,
+    padding: '10px 20px',
+    borderRadius: 'var(--radius-md)',
+    border: 'none',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap' as const,
+    transition: 'opacity 0.15s',
+  },
+  btnReviewIndividually: {
+    background: 'none',
+    border: 'none',
+    color: 'var(--text-secondary)',
+    fontSize: 13,
+    cursor: 'pointer',
+    textDecoration: 'underline',
+    textUnderlineOffset: 2,
+    padding: 0,
+  },
+  previewReassurance: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    fontSize: 12,
+    color: 'var(--text-tertiary)',
+    margin: 0,
+  },
+  /* Apply All confirmation modal */
+  modalOverlay: {
+    position: 'fixed' as const,
+    inset: 0,
+    background: 'rgba(0,0,0,0.55)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 9999,
+  },
+  modalCard: {
+    background: 'var(--bg-elevated)',
+    borderRadius: 'var(--radius-lg)',
+    border: '1px solid var(--border)',
+    padding: '28px 32px',
+    maxWidth: 420,
+    width: '90vw',
+    boxShadow: '0 16px 48px rgba(0,0,0,0.3)',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 700,
+    color: 'var(--text-primary)',
+    margin: '0 0 8px',
+  },
+  modalDesc: {
+    fontSize: 14,
+    color: 'var(--text-secondary)',
+    margin: '0 0 20px',
+    lineHeight: 1.5,
+  },
+  modalActions: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 12,
+  },
+  btnModalApply: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    background: '#34d399',
+    color: '#09090b',
+    fontWeight: 700,
+    fontSize: 14,
+    padding: '10px 24px',
+    borderRadius: 'var(--radius-md)',
+    border: 'none',
+    cursor: 'pointer',
+    transition: 'opacity 0.15s',
+  },
+  btnModalCancel: {
+    background: 'none',
+    border: 'none',
+    color: 'var(--text-secondary)',
+    fontSize: 14,
+    cursor: 'pointer',
+    padding: '10px 12px',
   },
   btnStopBot: {
     display: 'inline-flex',
