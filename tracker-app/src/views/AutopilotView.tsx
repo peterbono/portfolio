@@ -2510,7 +2510,7 @@ const dailyLimitStyles: Record<string, React.CSSProperties> = {
 /* ------------------------------------------------------------------ */
 export function AutopilotView() {
   const [profiles, setProfiles] = useState<SearchProfile[]>(loadProfiles)
-  const [showForm, setShowForm] = useState(false)
+  const [showForm, setShowForm] = useState(() => loadProfiles().length === 0)
 
   // Sidebar state
   const [sidebarOpen, setSidebarOpen] = useState(true)
