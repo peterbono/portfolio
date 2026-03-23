@@ -3281,58 +3281,34 @@ export function AutopilotView() {
           {/* Active filter tags bar */}
           <ActiveFilterTags config={searchConfig} />
 
-          {/* Status Banner */}
-          <section style={styles.statusBanner}>
-            <div style={styles.statusRow}>
-              <div style={styles.statusLeft}>
-                <div style={styles.botIconWrap}>
-                  <Bot size={24} color="var(--text-secondary)" />
+          {/* Status Banner — only shows when something is happening */}
+          {(isBotActive || isTriggering || currentRun?.status === 'completed') && (
+            <section style={styles.statusBanner}>
+              <div style={styles.statusRow}>
+                <div style={styles.statusLeft}>
+                  <span
+                    style={{
+                      ...styles.statusDot,
+                      background: statusCfg.dotColor,
+                      ...(statusCfg.pulsing
+                        ? { animation: 'pulseGlow 1.5s ease-in-out infinite', boxShadow: `0 0 6px ${statusCfg.dotColor}` }
+                        : {}),
+                    }}
+                  />
+                  <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>{statusCfg.label}</span>
+                  {statusCfg.description && (
+                    <span style={{ fontSize: 13, color: 'var(--text-secondary)', marginLeft: 8 }}>{statusCfg.description}</span>
+                  )}
                 </div>
-                <div>
-                  <div style={styles.statusTitle}>
-                    <span
-                      style={{
-                        ...styles.statusDot,
-                        background: statusCfg.dotColor,
-                        ...(statusCfg.pulsing
-                          ? {
-                              animation: 'pulseGlow 1.5s ease-in-out infinite',
-                              boxShadow: `0 0 6px ${statusCfg.dotColor}`,
-                            }
-                          : {}),
-                      }}
-                    />
-                    {statusCfg.label}
-                  </div>
-                  <p style={styles.statusDesc}>{statusCfg.description}</p>
-                </div>
+                {isTriggering && (
+                  <span style={styles.triggeringBadge}>
+                    <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+                    Searching...
+                  </span>
+                )}
               </div>
-              {/* CTA in banner when not active */}
-              {hasConfig && !isBotActive && !isTriggering && (
-                <div>
-                  <button style={styles.btnStartBot} onClick={handleStartBot}>
-                    <Search size={14} />
-                    <span>Find Jobs</span>
-                  </button>
-                  <p style={{ fontSize: 11, color: 'var(--text-tertiary)', margin: '6px 0 0', textAlign: 'center' as const }}>
-                    Typically finds 5-15 matches in about 3 minutes
-                  </p>
-                </div>
-              )}
-              {isTriggering && (
-                <span style={styles.triggeringBadge}>
-                  <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
-                  Searching...
-                </span>
-              )}
-            </div>
-            {!isBotActive && !isTriggering && hasConfig && (
-              <p style={styles.reassuranceText}>
-                <Shield size={12} color="var(--text-tertiary)" />
-                You&apos;ll review everything before anything is sent.
-              </p>
-            )}
-          </section>
+            </section>
+          )}
 
           {/* Error state for failed runs */}
           {currentRun?.status === 'failed' && (
