@@ -2,6 +2,20 @@ import type { Page } from 'playwright'
 import type { ApplicantProfile } from './types'
 
 /**
+ * Solve CAPTCHA via Bright Data Scraping Browser's CDP command.
+ * Returns true if solved, false if no CAPTCHA or not using Scraping Browser.
+ */
+export async function solveCaptchaIfPresent(page: Page, timeout = 30000): Promise<boolean> {
+  try {
+    const client = await page.context().newCDPSession(page)
+    const result = await client.send('Captcha.waitForSolve', { detectTimeout: timeout } as any)
+    return (result as any)?.status === 'solved'
+  } catch {
+    return false
+  }
+}
+
+/**
  * Human-like delay between actions to avoid bot detection.
  * Randomized between min and max milliseconds.
  */

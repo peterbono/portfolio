@@ -19,13 +19,17 @@ export const applyJobTask = task({
   }) => {
     // Dynamic import — orchestrator depends on Playwright which is server-only
     const { runPipelineForUser } = await import("../bot/orchestrator")
-    // Playwright browser must be launched here in the task context
     const { chromium } = await import("playwright")
 
-    const browser = await chromium.launch({
-      headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
-    })
+    // Connect to Bright Data Scraping Browser (residential IPs, anti-detection, CAPTCHA solving)
+    // Falls back to local Chromium for dev/testing
+    const SBR_AUTH = process.env.BRIGHTDATA_SBR_AUTH
+    const browser = SBR_AUTH
+      ? await chromium.connectOverCDP(`wss://${SBR_AUTH}@brd.superproxy.io:9222`)
+      : await chromium.launch({
+          headless: true,
+          args: ["--no-sandbox", "--disable-setuid-sandbox"],
+        })
 
     try {
       const result = await runPipelineForUser(payload.userId, browser, {
