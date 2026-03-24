@@ -517,6 +517,7 @@ export function LandingView({ onGetStarted, onSignIn }: LandingViewProps) {
               features={[
                 'Unlimited job tracking',
                 '25 auto-applies/month',
+                'Direct ATS only (no LinkedIn)',
                 'Basic analytics',
                 'Ghost detection',
               ]}
@@ -530,8 +531,8 @@ export function LandingView({ onGetStarted, onSignIn }: LandingViewProps) {
               description="For active job seekers"
               features={[
                 '100 auto-applies/month',
+                'Stealth mode (LinkedIn + all ATS)',
                 'Full analytics',
-                '4 ATS adapters',
                 '20 AI cover letters/mo',
                 'Ghost detection',
               ]}
@@ -545,7 +546,7 @@ export function LandingView({ onGetStarted, onSignIn }: LandingViewProps) {
               description="For serious seekers"
               features={[
                 'Unlimited auto-applies',
-                'All 10 ATS adapters',
+                'Stealth mode (LinkedIn + all ATS)',
                 'AI insights & coaching',
                 'Unlimited cover letters',
                 'Feedback loop',
