@@ -16,15 +16,19 @@ export const applyJobTask = task({
     searchProfileId?: string
     maxApplications?: number
     dryRun?: boolean
+    plan?: 'free' | 'starter' | 'pro' | 'boost'
   }) => {
     // Dynamic import — orchestrator depends on Playwright which is server-only
     const { runPipelineForUser } = await import("../bot/orchestrator")
     const { chromium } = await import("playwright")
 
-    // Connect to Bright Data Scraping Browser (residential IPs, anti-detection, CAPTCHA solving)
-    // Falls back to local Chromium for dev/testing
+    // Bright Data Scraping Browser: only for PAID users (residential IPs, anti-detection, CAPTCHA)
+    // Free users get local Chromium (no anti-detection — works for direct ATS, not LinkedIn)
     const SBR_AUTH = process.env.BRIGHTDATA_SBR_AUTH
-    const browser = SBR_AUTH
+    const isPaid = payload.plan && payload.plan !== 'free'
+    const useBrightData = SBR_AUTH && isPaid
+
+    const browser = useBrightData
       ? await chromium.connectOverCDP(`wss://${SBR_AUTH}@brd.superproxy.io:9222`)
       : await chromium.launch({
           headless: true,
