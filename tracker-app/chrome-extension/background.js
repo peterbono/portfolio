@@ -39,30 +39,12 @@ async function getLinkedInCookie() {
  * @returns {Promise<{valid: boolean, name: string|null}>}
  */
 async function validateCookie(cookieValue) {
-  try {
-    const res = await fetch(LINKEDIN_PROFILE_API, {
-      headers: {
-        'csrf-token': 'ajax:0',
-        'cookie': `li_at=${cookieValue}`,
-      },
-      credentials: 'omit',
-    })
-
-    if (!res.ok) {
-      return { valid: false, name: null }
-    }
-
-    const data = await res.json()
-    const firstName = data?.miniProfile?.firstName || data?.firstName || ''
-    const lastName = data?.miniProfile?.lastName || data?.lastName || ''
-    const name = `${firstName} ${lastName}`.trim() || 'LinkedIn User'
-
-    return { valid: true, name }
-  } catch {
-    // Network error or CORS — cookie might still be valid, just can't verify from extension
-    // Fall back to "cookie exists" as a weaker validation
-    return { valid: !!cookieValue, name: null }
+  // Service workers can't send custom cookie headers to cross-origin APIs.
+  // Simply check that the cookie exists and has a reasonable format.
+  if (!cookieValue || cookieValue.length < 50) {
+    return { valid: false, name: null }
   }
+  return { valid: true, name: 'LinkedIn User' }
 }
 
 // ─── Storage Helpers ────────────────────────────────────────────────────────
