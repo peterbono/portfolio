@@ -108,7 +108,9 @@ export interface UserProfile {
   keySkills: string[]
 
   /* Step 4 — Screening */
-  workAuthorization: string
+  workAuthorization: string // legacy single value
+  workAuthorizations: string[] // multi-select
+  workArrangements: string[] // ['remote', 'hybrid', 'onsite']
   noticePeriod: string
   languages: string[]
   education: string
@@ -133,6 +135,8 @@ const EMPTY_PROFILE: UserProfile = {
   keySkills: [],
   // Step 4
   workAuthorization: '',
+  workAuthorizations: [],
+  workArrangements: [],
   noticePeriod: '',
   languages: [],
   education: '',
@@ -336,12 +340,21 @@ const LANGUAGE_SUGGESTIONS = [
 ]
 
 const WORK_AUTH_OPTIONS = [
-  'EU Citizen',
-  'US Citizen',
-  'UK Citizen',
-  'Work Visa Required',
-  'No Visa Needed',
+  { label: 'EU/EEA Citizen', regions: ['EMEA'] },
+  { label: 'US Citizen / Green Card', regions: ['Americas'] },
+  { label: 'UK Right to Work', regions: ['EMEA'] },
+  { label: 'Australian PR / Citizen', regions: ['APAC'] },
+  { label: 'Singapore PR / Citizen', regions: ['APAC'] },
+  { label: 'Work Permit / Visa Holder', regions: ['Global'] },
+  { label: 'Visa Sponsorship Required', regions: ['Global'] },
+  { label: 'No Visa Needed (Remote)', regions: ['Global'] },
 ]
+
+const WORK_ARRANGEMENT_OPTIONS = [
+  { key: 'remote', label: 'Remote' },
+  { key: 'hybrid', label: 'Hybrid' },
+  { key: 'onsite', label: 'On-site' },
+] as const
 
 const NOTICE_OPTIONS = [
   'Immediately',
@@ -587,6 +600,21 @@ export function ProfileSetupModal({
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [dragActive, setDragActive] = useState(false)
   const [linkInput, setLinkInput] = useState('')
+
+  // Pre-fill work arrangements from search settings on mount
+  useEffect(() => {
+    if (profile.workArrangements.length === 0 && remotePreference) {
+      const lower = remotePreference.toLowerCase()
+      const arrangements: string[] = []
+      if (lower.includes('remote') || lower.includes('any')) arrangements.push('remote')
+      if (lower.includes('hybrid') || lower.includes('any')) arrangements.push('hybrid')
+      if (lower.includes('onsite') || lower.includes('on-site') || lower.includes('any')) arrangements.push('onsite')
+      if (arrangements.length > 0) {
+        patch({ workArrangements: arrangements })
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // PDF compression state
   const [compressionStatus, setCompressionStatus] = useState<
@@ -1331,30 +1359,82 @@ export function ProfileSetupModal({
       <div style={ms.fieldGroup}>
         <label style={ms.label}>
           <Shield size={14} color="var(--text-tertiary)" />
-          Work Authorization
+          Work Authorization <span style={ms.optional}>select all that apply</span>
         </label>
-        <select
-          style={ms.select}
-          value={profile.workAuthorization}
-          onChange={(e) => patch({ workAuthorization: e.target.value })}
-        >
-          <option value="">Select...</option>
-          {WORK_AUTH_OPTIONS.map((opt) => (
-            <option key={opt} value={opt}>{opt}</option>
-          ))}
-        </select>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {WORK_AUTH_OPTIONS.map((opt) => {
+            const checked = (profile.workAuthorizations || []).includes(opt.label)
+            return (
+              <label
+                key={opt.label}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+                  padding: '6px 10px', borderRadius: 6, fontSize: 13,
+                  background: checked ? 'rgba(52, 211, 153, 0.06)' : 'transparent',
+                  border: `1px solid ${checked ? 'rgba(52, 211, 153, 0.2)' : 'transparent'}`,
+                  color: 'var(--text-primary)', transition: 'all 150ms ease',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => {
+                    const current = profile.workAuthorizations || []
+                    const next = checked
+                      ? current.filter((a) => a !== opt.label)
+                      : [...current, opt.label]
+                    patch({ workAuthorizations: next, workAuthorization: next[0] || '' })
+                  }}
+                  style={{ accentColor: 'var(--accent)', width: 15, height: 15 }}
+                />
+                {opt.label}
+              </label>
+            )
+          })}
+        </div>
       </div>
 
-      {remotePreference && (
-        <div style={ms.fieldGroup}>
-          <label style={ms.label}>
-            <Globe size={14} color="var(--text-tertiary)" />
-            Remote Preference
-            <span style={ms.readOnlyBadge}>from search settings</span>
-          </label>
-          <div style={ms.readOnlyField}>{remotePreference}</div>
+      <div style={ms.fieldGroup}>
+        <label style={ms.label}>
+          <Globe size={14} color="var(--text-tertiary)" />
+          Work Arrangement
+          {(profile.workArrangements || []).length > 0 && (
+            <span style={{ fontSize: 10, color: 'var(--accent)', fontWeight: 400, marginLeft: 8 }}>Pre-filled from search settings</span>
+          )}
+        </label>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {WORK_ARRANGEMENT_OPTIONS.map((opt) => {
+            const checked = (profile.workArrangements || []).includes(opt.key)
+            return (
+              <label
+                key={opt.key}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+                  padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 500,
+                  background: checked ? 'rgba(52, 211, 153, 0.1)' : 'var(--bg-elevated)',
+                  border: `1px solid ${checked ? 'rgba(52, 211, 153, 0.3)' : 'var(--border)'}`,
+                  color: checked ? '#34d399' : 'var(--text-secondary)',
+                  transition: 'all 150ms ease',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => {
+                    const current = profile.workArrangements || []
+                    const next = checked
+                      ? current.filter((a) => a !== opt.key)
+                      : [...current, opt.key]
+                    patch({ workArrangements: next })
+                  }}
+                  style={{ accentColor: 'var(--accent)', width: 15, height: 15 }}
+                />
+                {opt.label}
+              </label>
+            )
+          })}
         </div>
-      )}
+      </div>
 
       <div style={ms.fieldGroup}>
         <label style={ms.label}>
