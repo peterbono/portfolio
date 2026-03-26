@@ -974,26 +974,23 @@ export function ProfileSetupModal({
             </div>
           ) : (
             <>
-              {/* Suggestions from Step 1 */}
-              {suggestedCvs.length > 0 && (
-                <div style={ms.suggestionBox}>
-                  <span style={ms.suggestionLabel}>From your uploads:</span>
-                  {suggestedCvs.map((cf) => (
-                    <button
-                      key={cf.id}
-                      type="button"
-                      style={ms.suggestionBtn}
-                      onClick={() => useSuggestedCv(cf)}
-                    >
-                      <FileText size={12} />
-                      Use {cf.fileName}
-                    </button>
-                  ))}
-                </div>
-              )}
-              <button type="button" style={ms.uploadBtn} onClick={() => cvFileRef.current?.click()}>
-                <Upload size={16} /> Upload CV (PDF, max 20MB)
-              </button>
+              <p style={{ fontSize: 12, color: 'var(--text-tertiary)', margin: '0 0 10px' }}>No CV selected yet. Choose one:</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {suggestedCvs.map((cf) => (
+                  <button
+                    key={cf.id}
+                    type="button"
+                    style={{ ...ms.uploadBtn, borderColor: 'rgba(52, 211, 153, 0.3)', background: 'rgba(52, 211, 153, 0.04)' }}
+                    onClick={() => useSuggestedCv(cf)}
+                  >
+                    <FileText size={16} color="#34d399" />
+                    <span>Use <strong>{cf.fileName}</strong> from About You</span>
+                  </button>
+                ))}
+                <button type="button" style={ms.uploadBtn} onClick={() => cvFileRef.current?.click()}>
+                  <Upload size={16} /> Upload a different CV (PDF, max 20MB)
+                </button>
+              </div>
             </>
           )}
           <input ref={cvFileRef} type="file" accept=".pdf,application/pdf" style={{ display: 'none' }} onChange={handleCvFileChange} />
@@ -1058,25 +1055,22 @@ export function ProfileSetupModal({
             </div>
           ) : (
             <>
-              {suggestedPortfolios.length > 0 && (
-                <div style={ms.suggestionBox}>
-                  <span style={ms.suggestionLabel}>From your uploads:</span>
-                  {suggestedPortfolios.map((cf) => (
-                    <button
-                      key={cf.id}
-                      type="button"
-                      style={ms.suggestionBtn}
-                      onClick={() => useSuggestedPortfolio(cf)}
-                    >
-                      <FileText size={12} />
-                      Use {cf.fileName}
-                    </button>
-                  ))}
-                </div>
-              )}
-              <button type="button" style={{ ...ms.uploadBtn, borderColor: 'var(--border)' }} onClick={() => portfolioFileRef.current?.click()}>
-                <Upload size={16} /> Upload Portfolio PDF
-              </button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {suggestedPortfolios.map((cf) => (
+                  <button
+                    key={cf.id}
+                    type="button"
+                    style={{ ...ms.uploadBtn, borderColor: 'rgba(52, 211, 153, 0.3)', background: 'rgba(52, 211, 153, 0.04)' }}
+                    onClick={() => useSuggestedPortfolio(cf)}
+                  >
+                    <FileText size={16} color="#34d399" />
+                    <span>Use <strong>{cf.fileName}</strong> from About You</span>
+                  </button>
+                ))}
+                <button type="button" style={{ ...ms.uploadBtn, borderColor: 'var(--border)' }} onClick={() => portfolioFileRef.current?.click()}>
+                  <Upload size={16} /> Upload a different portfolio PDF
+                </button>
+              </div>
             </>
           )}
           <input ref={portfolioFileRef} type="file" accept=".pdf,application/pdf" style={{ display: 'none' }} onChange={handlePortfolioFileChange} />
