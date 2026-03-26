@@ -840,7 +840,7 @@ export function ProfileSetupModal({
             {dragActive ? 'Drop files here' : 'Drop files or click to browse'}
           </span>
           <span style={ms.dropZoneSub}>
-            PDF, DOC, DOCX, PNG, JPG \u2014 up to 50MB per file, 200MB total
+            PDF, DOC, DOCX, PNG, JPG — up to 50MB per file, 200MB total
           </span>
         </div>
       </div>
