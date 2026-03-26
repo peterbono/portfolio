@@ -595,6 +595,10 @@ interface ProfileSetupModalProps {
   locationRulesSummary?: string
   remotePreference?: string
   locationRules?: LocationRuleSummary[]
+  /** When true, opens in edit mode: pre-fills existing data, allows free step navigation, shows "Save" instead of "Complete & Start Bot" */
+  editMode?: boolean
+  /** Optional: start on a specific step (0-3) in edit mode */
+  initialStep?: number
 }
 
 export function ProfileSetupModal({
@@ -603,8 +607,10 @@ export function ProfileSetupModal({
   locationRulesSummary,
   remotePreference,
   locationRules,
+  editMode = false,
+  initialStep = 0,
 }: ProfileSetupModalProps) {
-  const [step, setStep] = useState(0)
+  const [step, setStep] = useState(editMode ? initialStep : 0)
   const [profile, setProfile] = useState<UserProfile>(loadProfile)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [dragActive, setDragActive] = useState(false)
@@ -933,9 +939,11 @@ export function ProfileSetupModal({
   const handleComplete = useCallback(() => {
     if (!validateStep(step)) return
     saveProfile(profile)
-    markProfileComplete()
+    if (!editMode) {
+      markProfileComplete()
+    }
     onComplete()
-  }, [step, profile, validateStep, onComplete])
+  }, [step, profile, validateStep, onComplete, editMode])
 
   const handleSkip = useCallback(() => {
     if (step === 0 && profile.contextFiles.length === 0 && profile.contextLinks.length === 0) {
@@ -1521,7 +1529,7 @@ export function ProfileSetupModal({
 
         {/* Header — dynamic per step */}
         <div className="profile-modal-header" style={ms.header}>
-          <h2 style={ms.title}>{currentMeta.title}</h2>
+          <h2 style={ms.title}>{editMode ? `Edit: ${currentMeta.title}` : currentMeta.title}</h2>
           <p style={ms.subtitle}>{currentMeta.subtitle}</p>
         </div>
 
@@ -1539,7 +1547,10 @@ export function ProfileSetupModal({
                   ...(i < step ? ms.stepIndicatorDone : {}),
                 }}
                 onClick={() => {
-                  if (i < step) {
+                  if (editMode) {
+                    // In edit mode, allow free navigation between all steps
+                    setStep(i)
+                  } else if (i < step) {
                     setStep(i)
                   } else if (i === step + 1 && validateStep(step)) {
                     setStep(i)
@@ -1580,19 +1591,36 @@ export function ProfileSetupModal({
             )}
           </div>
           <div style={ms.footerRight}>
-            <button type="button" style={ms.btnSkip} onClick={handleSkip}>
-              {step === STEPS.length - 1 ? 'Skip & Start Bot' : 'Skip for now'}
-            </button>
-            {step < STEPS.length - 1 ? (
-              <button type="button" style={ms.btnNext} onClick={handleNext}>
-                Next
-                <ChevronRight size={14} />
-              </button>
+            {editMode ? (
+              <>
+                {step < STEPS.length - 1 ? (
+                  <button type="button" style={ms.btnNext} onClick={handleNext}>
+                    Next
+                    <ChevronRight size={14} />
+                  </button>
+                ) : null}
+                <button type="button" style={ms.btnComplete} onClick={handleComplete}>
+                  <Check size={14} />
+                  Save Changes
+                </button>
+              </>
             ) : (
-              <button type="button" style={ms.btnComplete} onClick={handleComplete}>
-                <Check size={14} />
-                Complete & Start Bot
-              </button>
+              <>
+                <button type="button" style={ms.btnSkip} onClick={handleSkip}>
+                  {step === STEPS.length - 1 ? 'Skip & Start Bot' : 'Skip for now'}
+                </button>
+                {step < STEPS.length - 1 ? (
+                  <button type="button" style={ms.btnNext} onClick={handleNext}>
+                    Next
+                    <ChevronRight size={14} />
+                  </button>
+                ) : (
+                  <button type="button" style={ms.btnComplete} onClick={handleComplete}>
+                    <Check size={14} />
+                    Complete & Start Bot
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>

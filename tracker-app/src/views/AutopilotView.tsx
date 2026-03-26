@@ -24,8 +24,10 @@ import {
   ChevronLeft,
   Tag,
   Zap,
+  User,
   ChevronUp,
   Save,
+  Pencil,
 } from 'lucide-react'
 import { useBotActivity } from '../hooks/useBotActivity'
 import type { BotActivityItem, BotRunStatus } from '../hooks/useBotActivity'
@@ -2951,10 +2953,12 @@ function FilterSidebar({
   config,
   onChange,
   showSaved,
+  onEditProfile,
 }: {
   config: SearchConfig
   onChange: (patch: Partial<SearchConfig>) => void
   showSaved: boolean
+  onEditProfile?: () => void
 }) {
   return (
     <div style={sidebarStyles.inner}>
@@ -2984,6 +2988,18 @@ function FilterSidebar({
           compact
         />
       </div>
+
+      {/* Edit Profile link */}
+      {onEditProfile && (
+        <button
+          type="button"
+          onClick={onEditProfile}
+          style={sidebarStyles.editProfileLink}
+        >
+          <Pencil size={12} />
+          Edit Bot Profile
+        </button>
+      )}
     </div>
   )
 }
@@ -2997,6 +3013,21 @@ const sidebarStyles: Record<string, React.CSSProperties> = {
     overflowY: 'auto',
     overflowX: 'hidden',
     padding: '16px 14px',
+  },
+  editProfileLink: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    background: 'none',
+    border: 'none',
+    color: 'var(--accent)',
+    fontSize: 12,
+    fontWeight: 500,
+    cursor: 'pointer',
+    padding: '8px 0',
+    marginTop: 4,
+    opacity: 0.8,
+    transition: 'opacity 0.15s',
   },
   header: {
     display: 'flex',
@@ -3425,6 +3456,7 @@ export function AutopilotView() {
 
   // Profile setup modal state
   const [showProfileModal, setShowProfileModal] = useState(false)
+  const [showProfileEditModal, setShowProfileEditModal] = useState(false)
   const pendingBotActionRef = useRef<(() => void) | null>(null)
 
   // Run history
@@ -3780,6 +3812,27 @@ export function AutopilotView() {
               LIVE
             </span>
           )}
+          {/* Bot Profile button — always visible */}
+          <button
+            onClick={() => setShowProfileEditModal(true)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '5px 12px', borderRadius: 6,
+              background: 'none',
+              border: '1px solid var(--border)',
+              color: 'var(--text-secondary)',
+              fontSize: 12, fontWeight: 500,
+              cursor: 'pointer', whiteSpace: 'nowrap',
+              transition: 'all 150ms ease',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.color = 'var(--accent)' }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-secondary)' }}
+            title="Edit your bot profile (CV, skills, screening answers)"
+          >
+            <User size={13} />
+            Bot Profile
+            <Pencil size={10} style={{ opacity: 0.5 }} />
+          </button>
         </div>
         <div className="autopilot-top-bar-right" style={layoutStyles.topBarRight}>
           {/* Auto-submit badge when ON */}
@@ -3847,6 +3900,7 @@ export function AutopilotView() {
               config={searchConfig}
               onChange={handleConfigChange}
               showSaved={showSaved}
+              onEditProfile={() => setShowProfileEditModal(true)}
             />
           </div>
         )}
@@ -3872,6 +3926,7 @@ export function AutopilotView() {
                 config={searchConfig}
                 onChange={handleConfigChange}
                 showSaved={showSaved}
+                onEditProfile={() => setShowProfileEditModal(true)}
               />
             </div>
           </>
@@ -4099,11 +4154,28 @@ export function AutopilotView() {
         </div>
       </div>
 
-      {/* Profile Setup Modal */}
+      {/* Profile Setup Modal (first-time setup) */}
       {showProfileModal && (
         <ProfileSetupModal
           onComplete={handleProfileComplete}
           onDismiss={handleProfileDismiss}
+          locationRulesSummary={locationRulesSummary}
+          remotePreference={remotePreferenceSummary}
+          locationRules={searchConfig.locationRules.map((r) => ({
+            value: r.value,
+            type: r.type,
+            workArrangement: r.workArrangement,
+            salary: r.minSalary ? `${getCurrencySymbol(r.currency)}${((r.minSalary) / 1000).toFixed(0)}k+` : undefined,
+          }))}
+        />
+      )}
+
+      {/* Profile Setup Modal (edit mode) */}
+      {showProfileEditModal && (
+        <ProfileSetupModal
+          editMode
+          onComplete={() => setShowProfileEditModal(false)}
+          onDismiss={() => setShowProfileEditModal(false)}
           locationRulesSummary={locationRulesSummary}
           remotePreference={remotePreferenceSummary}
           locationRules={searchConfig.locationRules.map((r) => ({

@@ -25,6 +25,7 @@ import {
   Play,
   Pause,
   RefreshCw,
+  Pencil,
 } from 'lucide-react'
 import { useJobs } from '../context/JobsContext'
 import { useGmailAPI } from '../hooks/useGmailAPI'
@@ -33,6 +34,7 @@ import { usePlan } from '../hooks/usePlan'
 import { useUI } from '../context/UIContext'
 import { useAuthWall } from '../hooks/useAuthWall'
 import { getPlanConfig, createPortalSession } from '../lib/billing'
+import { ProfileSetupModal, isProfileComplete } from '../components/ProfileSetupModal'
 import type { Job } from '../types/job'
 
 /* ------------------------------------------------------------------ */
@@ -419,6 +421,9 @@ export function SettingsView() {
   // ---------- Delete account ----------
   const [deleteConfirm, setDeleteConfirm] = useState(false)
 
+  // ---------- Profile Setup Modal (edit mode) ----------
+  const [showProfileEditModal, setShowProfileEditModal] = useState(false)
+
   /* ================================================================== */
   /*  Responsive                                                          */
   /* ================================================================== */
@@ -530,6 +535,20 @@ export function SettingsView() {
           </div>
         </div>
         {profileSaved && <span style={s.successText}>Profile saved</span>}
+
+        {/* Edit Bot Profile — opens the full 4-step profile modal in edit mode */}
+        <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+          <p style={s.hint}>
+            Edit the detailed profile the bot uses to fill applications (CV, skills, work authorization, etc.)
+          </p>
+          <button
+            style={s.btnPrimary}
+            onClick={() => setShowProfileEditModal(true)}
+          >
+            <Pencil size={14} style={{ marginRight: 6 }} />
+            {isProfileComplete() ? 'Edit Bot Profile' : 'Set Up Bot Profile'}
+          </button>
+        </div>
       </AccordionSection>
 
       {/* ─────────────── 2. Search Preferences ─────────────── */}
@@ -1177,6 +1196,15 @@ export function SettingsView() {
 
       </div>{/* END RIGHT COLUMN */}
       </div>{/* END COLUMNS GRID */}
+
+      {/* Profile Setup Modal (edit mode) */}
+      {showProfileEditModal && (
+        <ProfileSetupModal
+          editMode
+          onComplete={() => setShowProfileEditModal(false)}
+          onDismiss={() => setShowProfileEditModal(false)}
+        />
+      )}
     </div>
   )
 }
