@@ -249,6 +249,77 @@ const SKILL_SUGGESTIONS = [
   'Machine Learning', 'TensorFlow', 'PyTorch',
 ]
 
+/** Extract skills from raw text by matching against known skill keywords */
+function extractSkillsFromText(text: string): string[] {
+  if (!text) return []
+  const lower = text.toLowerCase()
+  const found: string[] = []
+  // Extended keyword map: lowercased alias → display name
+  const SKILL_ALIASES: Record<string, string> = {
+    'figma': 'Figma', 'sketch': 'Sketch', 'react': 'React', 'react.js': 'React',
+    'typescript': 'TypeScript', 'python': 'Python', 'javascript': 'JavaScript',
+    'css': 'CSS', 'html': 'HTML', 'node.js': 'Node.js', 'nodejs': 'Node.js',
+    'sql': 'SQL', 'postgresql': 'PostgreSQL', 'mongodb': 'MongoDB', 'redis': 'Redis',
+    'design system': 'Design Systems', 'design systems': 'Design Systems',
+    'user research': 'User Research', 'ux research': 'User Research',
+    'prototyping': 'Prototyping', 'wireframing': 'Wireframing', 'wireframe': 'Wireframing',
+    'product strategy': 'Product Strategy', 'product design': 'Product Design',
+    'agile': 'Agile', 'scrum': 'Scrum', 'kanban': 'Agile',
+    'a/b testing': 'A/B Testing', 'ab testing': 'A/B Testing',
+    'accessibility': 'Accessibility', 'wcag': 'Accessibility', 'a11y': 'Accessibility',
+    'storybook': 'Storybook', 'zeroheight': 'Zeroheight',
+    'tailwind': 'Tailwind CSS', 'tailwindcss': 'Tailwind CSS',
+    'next.js': 'Next.js', 'nextjs': 'Next.js',
+    'vue': 'Vue.js', 'vue.js': 'Vue.js', 'angular': 'Angular',
+    'swift': 'Swift', 'kotlin': 'Kotlin', 'java ': 'Java',
+    'aws': 'AWS', 'docker': 'Docker', 'kubernetes': 'Kubernetes', 'k8s': 'Kubernetes',
+    'graphql': 'GraphQL', 'rest api': 'REST APIs', 'rest apis': 'REST APIs',
+    'machine learning': 'Machine Learning', 'tensorflow': 'TensorFlow', 'pytorch': 'PyTorch',
+    'jira': 'Jira', 'asana': 'Asana', 'notion': 'Notion', 'confluence': 'Confluence',
+    'adobe xd': 'Adobe XD', 'illustrator': 'Illustrator', 'photoshop': 'Photoshop',
+    'indesign': 'InDesign', 'after effects': 'After Effects',
+    'rive': 'Rive', 'lottie': 'Lottie', 'framer': 'Framer',
+    'usability testing': 'Usability Testing', 'heuristic evaluation': 'Heuristic Evaluation',
+    'information architecture': 'Information Architecture',
+    'interaction design': 'Interaction Design', 'visual design': 'Visual Design',
+    'ui design': 'UI Design', 'ux design': 'UX Design', 'ux/ui': 'UX/UI Design',
+    'design ops': 'Design Ops', 'designops': 'Design Ops',
+    'responsive design': 'Responsive Design', 'mobile design': 'Mobile Design',
+    'design thinking': 'Design Thinking', 'atomic design': 'Atomic Design',
+    'maze': 'Maze', 'hotjar': 'Hotjar', 'google analytics': 'Google Analytics',
+    'mixpanel': 'Mixpanel', 'amplitude': 'Amplitude',
+  }
+  for (const [alias, display] of Object.entries(SKILL_ALIASES)) {
+    if (lower.includes(alias) && !found.includes(display)) {
+      found.push(display)
+    }
+  }
+  return found
+}
+
+/** Read text content from a PDF file using basic extraction */
+async function extractTextFromPdf(file: File): Promise<string> {
+  try {
+    const buffer = await file.arrayBuffer()
+    const bytes = new Uint8Array(buffer)
+    // Simple text extraction: find text between parentheses in PDF streams
+    // This won't get everything but catches most plain text in simple PDFs
+    const decoder = new TextDecoder('latin1')
+    const raw = decoder.decode(bytes)
+    const textChunks: string[] = []
+    // Extract text from Tj/TJ operators (PDF text rendering)
+    const tjRegex = /\(([^)]{2,})\)/g
+    let match
+    while ((match = tjRegex.exec(raw)) !== null) {
+      const chunk = match[1].replace(/\\[nrt]/g, ' ').replace(/\\/g, '')
+      if (chunk.trim().length > 1) textChunks.push(chunk.trim())
+    }
+    return textChunks.join(' ')
+  } catch {
+    return ''
+  }
+}
+
 const LANGUAGE_SUGGESTIONS = [
   'English (Native)', 'English (Fluent)', 'English (Professional)',
   'French (Native)', 'French (Fluent)', 'French (Professional)',
@@ -545,6 +616,23 @@ export function ProfileSetupModal({
     })
   }, [])
 
+  // Extract skills from uploaded PDFs and pre-populate keySkills
+  const extractAndSuggestSkills = useCallback(async (file: File) => {
+    if (file.type !== 'application/pdf') return
+    const text = await extractTextFromPdf(file)
+    if (!text) return
+    const extracted = extractSkillsFromText(text)
+    if (extracted.length === 0) return
+    setProfile((prev) => {
+      const existing = new Set(prev.keySkills)
+      const newSkills = extracted.filter((s) => !existing.has(s))
+      if (newSkills.length === 0) return prev
+      const updated = { ...prev, keySkills: [...prev.keySkills, ...newSkills] }
+      saveProfile(updated)
+      return updated
+    })
+  }, [])
+
   /* ---- Step 1: File handling ---- */
   const addContextFiles = useCallback((files: FileList | File[]) => {
     const arr = Array.from(files)
@@ -584,6 +672,12 @@ export function ProfileSetupModal({
 
     if (valid.length > 0) {
       patch({ contextFiles: [...profile.contextFiles, ...valid] })
+      // Extract skills from uploaded PDFs in background
+      for (const file of arr) {
+        if (file.type === 'application/pdf') {
+          extractAndSuggestSkills(file)
+        }
+      }
     }
     if (errs.length > 0) {
       setErrors((prev) => ({ ...prev, contextFiles: errs.join('. ') }))
@@ -1199,6 +1293,9 @@ export function ProfileSetupModal({
           <label style={ms.label}>
             <Award size={14} color="var(--text-tertiary)" />
             Key Skills
+            {profile.keySkills.length > 0 && profile.contextFiles.length > 0 && (
+              <span style={{ fontSize: 10, color: 'var(--accent)', fontWeight: 400, marginLeft: 8 }}>Auto-detected from your documents</span>
+            )}
           </label>
           <ChipInput
             value={profile.keySkills}
