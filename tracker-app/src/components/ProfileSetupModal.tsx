@@ -223,7 +223,8 @@ function isValidUrl(url: string): boolean {
   }
 }
 
-const MAX_FILE_SIZE = 20 * 1024 * 1024 // 20MB per file
+const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB per file (Supabase Storage limit)
+const MAX_TOTAL_STORAGE = 200 * 1024 * 1024 // 200MB total per user
 const MAX_TOTAL_FILES = 10
 const ACCEPTED_FILE_TYPES = '.pdf,.doc,.docx,.png,.jpg,.jpeg'
 const ACCEPTED_MIME = [
@@ -556,11 +557,16 @@ export function ProfileSetupModal({
         continue
       }
       if (file.size > MAX_FILE_SIZE) {
-        errs.push(`${file.name}: exceeds 20MB`)
+        errs.push(`${file.name}: exceeds 50MB limit`)
         continue
       }
       if (profile.contextFiles.length + valid.length >= MAX_TOTAL_FILES) {
         errs.push(`Maximum ${MAX_TOTAL_FILES} files allowed`)
+        break
+      }
+      const currentTotal = profile.contextFiles.reduce((sum, f) => sum + (f.fileSize || 0), 0) + valid.reduce((sum, f) => sum + f.fileSize, 0)
+      if (currentTotal + file.size > MAX_TOTAL_STORAGE) {
+        errs.push(`Storage limit reached (200MB). Remove some files first.`)
         break
       }
       // Skip duplicates by name
@@ -692,7 +698,7 @@ export function ProfileSetupModal({
       return
     }
     if (file.size > MAX_FILE_SIZE) {
-      setErrors((prev) => ({ ...prev, cv: 'File must be under 20MB' }))
+      setErrors((prev) => ({ ...prev, cv: 'File must be under 50MB' }))
       return
     }
     // Store file reference and update profile metadata
@@ -834,7 +840,7 @@ export function ProfileSetupModal({
             {dragActive ? 'Drop files here' : 'Drop files or click to browse'}
           </span>
           <span style={ms.dropZoneSub}>
-            PDF, DOC, DOCX, PNG, JPG -- up to 20MB each, {MAX_TOTAL_FILES} files max
+            PDF, DOC, DOCX, PNG, JPG \u2014 up to 50MB per file, 200MB total
           </span>
         </div>
       </div>
@@ -988,7 +994,7 @@ export function ProfileSetupModal({
                   </button>
                 ))}
                 <button type="button" style={ms.uploadBtn} onClick={() => cvFileRef.current?.click()}>
-                  <Upload size={16} /> Upload a different CV (PDF, max 20MB)
+                  <Upload size={16} /> Upload a different CV
                 </button>
               </div>
             </>
