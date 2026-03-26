@@ -3427,11 +3427,8 @@ export function AutopilotView() {
   const [triggerError, setTriggerError] = useState<string | null>(null)
 
   // Review queue state
-  const [reviewQueue, setReviewQueue] = useState<ReviewQueueItem[]>(() => {
-    const saved = loadReviewQueue()
-    return saved.length > 0 ? saved : MOCK_REVIEW_QUEUE
-  })
-  const [isReviewDemo] = useState(() => loadReviewQueue().length === 0)
+  const [reviewQueue, setReviewQueue] = useState<ReviewQueueItem[]>(() => loadReviewQueue())
+  const [isReviewDemo] = useState(false)
 
   // Preview drawer state
   const [previewItemId, setPreviewItemId] = useState<string | null>(null)
