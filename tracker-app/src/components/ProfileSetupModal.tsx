@@ -427,8 +427,8 @@ export function ProfileSetupModal({
       setErrors((prev) => ({ ...prev, cv: 'Only PDF files are accepted' }))
       return
     }
-    if (file.size > 5 * 1024 * 1024) {
-      setErrors((prev) => ({ ...prev, cv: 'File must be under 5MB' }))
+    if (file.size > 20 * 1024 * 1024) {
+      setErrors((prev) => ({ ...prev, cv: 'File must be under 20MB' }))
       return
     }
 
@@ -446,7 +446,7 @@ export function ProfileSetupModal({
   const handlePortfolioFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    if (file.type !== 'application/pdf' || file.size > 5 * 1024 * 1024) return
+    if (file.type !== 'application/pdf' || file.size > 20 * 1024 * 1024) return
     patch({ portfolioFileName: file.name, portfolioFileSize: file.size })
   }, [patch])
 
@@ -556,7 +556,7 @@ export function ProfileSetupModal({
           </div>
         ) : (
           <button type="button" style={ms.uploadBtn} onClick={() => fileInputRef.current?.click()}>
-            <Upload size={16} /> Upload PDF (max 5MB)
+            <Upload size={16} /> Upload PDF (max 20MB)
           </button>
         )}
         <input ref={fileInputRef} type="file" accept=".pdf,application/pdf" style={{ display: 'none' }} onChange={handleFileChange} />
