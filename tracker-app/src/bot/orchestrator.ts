@@ -27,6 +27,27 @@ export interface PipelineConfig {
   minScore: number // Minimum qualification score, default 60
 }
 
+/** Inline config passed from frontend (no Supabase lookup needed) */
+export interface InlinePipelineConfig {
+  userId: string
+  browser: Browser
+  searchConfig: {
+    keywords: string[]
+    locationRules: Array<{
+      type: string
+      value: string
+      workArrangement: string
+      minSalary?: number
+      currency?: string
+    }>
+    excludedCompanies: string[]
+    dailyLimit: number
+  }
+  userProfile: Record<string, unknown>
+  maxApplications?: number
+  dryRun?: boolean
+}
+
 export interface PipelineResult {
   runId: string
   jobsFound: number
@@ -597,5 +618,34 @@ export async function runPipelineForUser(
     maxApplications: options?.maxApplications ?? 20,
     dryRun: options?.dryRun ?? false,
     minScore: options?.minScore ?? 60,
+  })
+}
+
+/**
+ * Run pipeline from inline config (passed directly from frontend).
+ * No Supabase lookup needed — config is in the payload.
+ */
+export async function runPipelineFromInline(cfg: InlinePipelineConfig): Promise<PipelineResult> {
+  // Build a SearchProfile-compatible object from inline config
+  const searchProfile: SearchProfile = {
+    id: 'inline-' + Date.now(),
+    user_id: cfg.userId,
+    name: 'Search from dashboard',
+    keywords: cfg.searchConfig.keywords,
+    location: cfg.searchConfig.locationRules?.[0]?.value || '',
+    remote_only: cfg.searchConfig.locationRules?.some(r => r.workArrangement === 'remote') ?? false,
+    min_salary: cfg.searchConfig.locationRules?.find(r => r.minSalary)?.minSalary ?? 0,
+    excluded_companies: cfg.searchConfig.excludedCompanies,
+    is_active: true,
+    created_at: new Date().toISOString(),
+  }
+
+  return runPipeline({
+    userId: cfg.userId,
+    searchProfile,
+    browser: cfg.browser,
+    maxApplications: cfg.maxApplications ?? 20,
+    dryRun: cfg.dryRun ?? false,
+    minScore: 60,
   })
 }

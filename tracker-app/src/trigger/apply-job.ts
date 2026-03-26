@@ -1,29 +1,37 @@
 import { task } from "@trigger.dev/sdk/v3"
 
-/**
- * Trigger.dev task that runs the bot application pipeline.
- *
- * This is a SERVER-SIDE task — it runs in the Trigger.dev runtime,
- * not in the browser/Vite bundle. It dynamically imports the
- * orchestrator which depends on Playwright (server-only).
- */
 export const applyJobTask = task({
   id: "apply-job-pipeline",
-  // Browser automation can take a long time — allow up to 30 minutes
   maxDuration: 1800,
   run: async (payload: {
     userId: string
-    searchProfileId?: string
     maxApplications?: number
     dryRun?: boolean
     plan?: 'free' | 'starter' | 'pro' | 'boost'
+    searchConfig?: {
+      keywords: string[]
+      locationRules: Array<{
+        type: string
+        value: string
+        workArrangement: string
+        minSalary?: number
+        currency?: string
+      }>
+      excludedCompanies: string[]
+      dailyLimit: number
+    }
+    userProfile?: Record<string, unknown>
   }) => {
-    // Dynamic import — orchestrator depends on Playwright which is server-only
-    const { runPipelineForUser } = await import("../bot/orchestrator")
+    const { runPipelineFromInline } = await import("../bot/orchestrator")
     const { chromium } = await import("playwright")
 
-    // Bright Data Scraping Browser: only for PAID users (residential IPs, anti-detection, CAPTCHA)
-    // Free users get local Chromium (no anti-detection — works for direct ATS, not LinkedIn)
+    // Validate search config
+    const config = payload.searchConfig
+    if (!config || !config.keywords || config.keywords.length === 0) {
+      throw new Error("No search config provided. Set up keywords in Autopilot first.")
+    }
+
+    // Bright Data for paid users, local Chromium for free
     const SBR_AUTH = process.env.BRIGHTDATA_SBR_AUTH
     const isPaid = payload.plan && payload.plan !== 'free'
     const useBrightData = SBR_AUTH && isPaid
@@ -36,7 +44,16 @@ export const applyJobTask = task({
         })
 
     try {
-      const result = await runPipelineForUser(payload.userId, browser, {
+      const result = await runPipelineFromInline({
+        userId: payload.userId,
+        browser,
+        searchConfig: {
+          keywords: config.keywords,
+          locationRules: config.locationRules || [],
+          excludedCompanies: config.excludedCompanies || [],
+          dailyLimit: config.dailyLimit || 15,
+        },
+        userProfile: payload.userProfile || {},
         maxApplications: payload.maxApplications ?? 20,
         dryRun: payload.dryRun ?? false,
       })

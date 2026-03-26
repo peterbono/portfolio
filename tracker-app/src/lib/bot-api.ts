@@ -1,8 +1,5 @@
 /**
  * Client-side API for triggering bot runs via Trigger.dev REST API.
- *
- * This module is imported by the frontend (Vite SPA). It calls the
- * Trigger.dev REST API directly — no server routes needed.
  */
 
 const TRIGGER_API_URL = 'https://api.trigger.dev/api/v1/tasks/apply-job-pipeline/trigger'
@@ -11,10 +8,6 @@ function getTriggerKey(): string {
   return import.meta.env.VITE_TRIGGER_PUBLIC_KEY || ''
 }
 
-/**
- * Get the current user ID from Supabase auth session.
- * Never hardcode user IDs in client-side code.
- */
 async function getCurrentUserId(): Promise<string> {
   const { supabase } = await import('./supabase')
   const { data: { session } } = await supabase.auth.getSession()
@@ -24,23 +17,46 @@ async function getCurrentUserId(): Promise<string> {
   return session.user.id
 }
 
+/** Load search config from localStorage */
+function getSearchConfig(): Record<string, unknown> | null {
+  try {
+    const raw = localStorage.getItem('tracker_v2_search_config')
+    return raw ? JSON.parse(raw) : null
+  } catch { return null }
+}
+
+/** Load user profile from localStorage */
+function getUserProfile(): Record<string, unknown> | null {
+  try {
+    const raw = localStorage.getItem('tracker_v2_user_profile')
+    return raw ? JSON.parse(raw) : null
+  } catch { return null }
+}
+
 export interface TriggerBotResponse {
   runId: string
 }
 
 /**
  * Trigger a full bot run (scout -> qualify -> apply).
+ * Sends search config + user profile inline so the worker doesn't need Supabase lookup.
  */
 export async function triggerBotRun(
-  searchProfileId: string,
+  _searchProfileId: string,
   options?: { maxApplications?: number },
 ): Promise<TriggerBotResponse> {
   const key = getTriggerKey()
   if (!key) {
-    throw new Error('VITE_TRIGGER_PUBLIC_KEY is not configured')
+    throw new Error('Bot is not configured. Please contact support.')
   }
 
   const userId = await getCurrentUserId()
+  const searchConfig = getSearchConfig()
+  const userProfile = getUserProfile()
+
+  if (!searchConfig || !searchConfig.keywords || (searchConfig.keywords as string[]).length === 0) {
+    throw new Error('No search criteria configured. Set up your keywords first.')
+  }
 
   const response = await fetch(TRIGGER_API_URL, {
     method: 'POST',
@@ -51,55 +67,18 @@ export async function triggerBotRun(
     body: JSON.stringify({
       payload: {
         userId,
-        searchProfileId,
         maxApplications: options?.maxApplications ?? 20,
         dryRun: false,
+        // Pass config inline — worker uses this instead of Supabase lookup
+        searchConfig,
+        userProfile,
       },
     }),
   })
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => 'Unknown error')
-    throw new Error(`Failed to trigger bot run: ${response.status} ${errorText}`)
-  }
-
-  const data = await response.json()
-  return { runId: data.id }
-}
-
-/**
- * Trigger a dry run (scout -> qualify -> simulate apply, no real submissions).
- */
-export async function triggerDryRun(
-  searchProfileId: string,
-  options?: { maxApplications?: number },
-): Promise<TriggerBotResponse> {
-  const key = getTriggerKey()
-  if (!key) {
-    throw new Error('VITE_TRIGGER_PUBLIC_KEY is not configured')
-  }
-
-  const userId = await getCurrentUserId()
-
-  const response = await fetch(TRIGGER_API_URL, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${key}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      payload: {
-        userId,
-        searchProfileId,
-        maxApplications: options?.maxApplications ?? 20,
-        dryRun: true,
-      },
-    }),
-  })
-
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => 'Unknown error')
-    throw new Error(`Failed to trigger dry run: ${response.status} ${errorText}`)
+    throw new Error(`Failed to start job search: ${response.status} ${errorText}`)
   }
 
   const data = await response.json()
