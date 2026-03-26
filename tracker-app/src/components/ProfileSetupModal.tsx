@@ -1394,47 +1394,16 @@ export function ProfileSetupModal({
         </div>
       </div>
 
-      <div style={ms.fieldGroup}>
-        <label style={ms.label}>
-          <Globe size={14} color="var(--text-tertiary)" />
-          Work Arrangement
-          {(profile.workArrangements || []).length > 0 && (
-            <span style={{ fontSize: 10, color: 'var(--accent)', fontWeight: 400, marginLeft: 8 }}>Pre-filled from search settings</span>
-          )}
-        </label>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {WORK_ARRANGEMENT_OPTIONS.map((opt) => {
-            const checked = (profile.workArrangements || []).includes(opt.key)
-            return (
-              <label
-                key={opt.key}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer',
-                  padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 500,
-                  background: checked ? 'rgba(52, 211, 153, 0.1)' : 'var(--bg-elevated)',
-                  border: `1px solid ${checked ? 'rgba(52, 211, 153, 0.3)' : 'var(--border)'}`,
-                  color: checked ? '#34d399' : 'var(--text-secondary)',
-                  transition: 'all 150ms ease',
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={() => {
-                    const current = profile.workArrangements || []
-                    const next = checked
-                      ? current.filter((a) => a !== opt.key)
-                      : [...current, opt.key]
-                    patch({ workArrangements: next })
-                  }}
-                  style={{ accentColor: 'var(--accent)', width: 15, height: 15 }}
-                />
-                {opt.label}
-              </label>
-            )
-          })}
+      {remotePreference && (
+        <div style={ms.fieldGroup}>
+          <label style={ms.label}>
+            <Globe size={14} color="var(--text-tertiary)" />
+            Work Arrangement
+            <span style={ms.readOnlyBadge}>from search settings</span>
+          </label>
+          <div style={ms.readOnlyField}>{remotePreference}</div>
         </div>
-      </div>
+      )}
 
       <div style={ms.fieldGroup}>
         <label style={ms.label}>
