@@ -2,7 +2,10 @@
  * Client-side API for triggering bot runs via Trigger.dev REST API.
  */
 
-const TRIGGER_API_URL = 'https://api.trigger.dev/api/v1/tasks/apply-job-pipeline/trigger'
+const TRIGGER_API_BASE = 'https://api.trigger.dev/api/v1/tasks'
+const TRIGGER_API_URL = `${TRIGGER_API_BASE}/apply-job-pipeline/trigger`
+const TRIGGER_QUALIFY_URL = `${TRIGGER_API_BASE}/qualify-jobs/trigger`
+const TRIGGER_APPLY_URL = `${TRIGGER_API_BASE}/apply-jobs/trigger`
 
 function getTriggerKey(): string {
   return import.meta.env.VITE_TRIGGER_PUBLIC_KEY || ''
@@ -92,6 +95,135 @@ export async function triggerBotRun(
   if (!response.ok) {
     const errorText = await response.text().catch(() => 'Unknown error')
     throw new Error(`Failed to start job search: ${response.status} ${errorText}`)
+  }
+
+  const data = await response.json()
+  return { runId: data.id }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2: Qualify discovered jobs (standalone task)
+// ---------------------------------------------------------------------------
+
+export interface DiscoveredJobInput {
+  title: string
+  company: string
+  location: string
+  url: string
+  isEasyApply: boolean
+}
+
+/**
+ * Trigger Phase 2 (Qualify) as a standalone task.
+ * Takes discovered jobs from Phase 1 (Scout) and qualifies them with Haiku.
+ * Returns a runId that can be polled for results.
+ * Cost: ~$0.003/job x 15 = ~$0.045 per run.
+ */
+export async function triggerQualifyJobs(
+  jobs: DiscoveredJobInput[],
+): Promise<TriggerBotResponse> {
+  const key = getTriggerKey()
+  if (!key) {
+    throw new Error('Bot is not configured. Please contact support.')
+  }
+
+  if (jobs.length === 0) {
+    throw new Error('No jobs provided for qualification.')
+  }
+
+  const userId = await getCurrentUserId()
+  const searchConfig = getSearchConfig()
+  const userProfile = getUserProfile()
+
+  if (!searchConfig) {
+    throw new Error('No search criteria configured. Set up your keywords first.')
+  }
+
+  const payload = {
+    userId,
+    jobs,
+    searchConfig,
+    userProfile: userProfile || {},
+  }
+
+  const response = await fetch(TRIGGER_QUALIFY_URL, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${key}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ payload }),
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error')
+    throw new Error(`Failed to start job qualification: ${response.status} ${errorText}`)
+  }
+
+  const data = await response.json()
+  return { runId: data.id }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3: Apply to qualified/approved jobs (standalone task)
+// ---------------------------------------------------------------------------
+
+export interface ApprovedJobInput {
+  url: string
+  company: string
+  role: string
+  coverLetterSnippet: string
+  matchScore: number
+}
+
+/**
+ * Trigger Phase 3 (Apply) as a standalone task.
+ * Takes qualified/approved jobs and submits applications via ATS adapters.
+ * Max 5 applications per run (daily cap). 2-minute gap between submissions.
+ * Returns a runId that can be polled for results.
+ *
+ * For LinkedIn Easy Apply: requires a LinkedIn session cookie (li_at).
+ * For ATS (Greenhouse/Lever/Generic): uses Bright Data Scraping Browser.
+ */
+export async function triggerApplyJobs(
+  jobs: ApprovedJobInput[],
+): Promise<TriggerBotResponse> {
+  const key = getTriggerKey()
+  if (!key) {
+    throw new Error('Bot is not configured. Please contact support.')
+  }
+
+  if (jobs.length === 0) {
+    throw new Error('No approved jobs provided for application.')
+  }
+
+  const userId = await getCurrentUserId()
+  const userProfile = getUserProfile()
+  const linkedInCookie = getLinkedInCookie()
+
+  const payload: Record<string, unknown> = {
+    userId,
+    jobs,
+    userProfile: userProfile || {},
+  }
+
+  // Include LinkedIn session cookie if available (needed for Easy Apply)
+  if (linkedInCookie) {
+    payload.linkedInCookie = linkedInCookie
+  }
+
+  const response = await fetch(TRIGGER_APPLY_URL, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${key}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ payload }),
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error')
+    throw new Error(`Failed to start job applications: ${response.status} ${errorText}`)
   }
 
   const data = await response.json()

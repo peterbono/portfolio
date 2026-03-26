@@ -306,6 +306,15 @@ interface ReviewQueueItem {
   status: 'pending' | 'approved' | 'skipped'
   editedCoverLetter?: string
   editedAnswers?: Record<string, string>
+  jobUrl?: string
+}
+
+interface DiscoveredJob {
+  title: string
+  company: string
+  location: string
+  url: string
+  isEasyApply: boolean
 }
 
 const REVIEW_LS_KEY = 'tracker_v2_review_queue'
@@ -3429,7 +3438,7 @@ export function AutopilotView() {
   const [runStartTime, setRunStartTime] = useState<number | null>(null)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [polledRunStatus, setPolledRunStatus] = useState<'QUEUED' | 'EXECUTING' | 'COMPLETED' | 'FAILED' | 'CRASHED' | 'REATTEMPTING' | null>(null)
-  const [polledRunOutput, setPolledRunOutput] = useState<{ jobsFound?: number; jobsQualified?: number } | null>(null)
+  const [polledRunOutput, setPolledRunOutput] = useState<{ jobsFound?: number; jobsQualified?: number; discoveredJobs?: DiscoveredJob[] } | null>(null)
 
   // Review queue state
   const [reviewQueue, setReviewQueue] = useState<ReviewQueueItem[]>(() => loadReviewQueue())
@@ -3465,6 +3474,7 @@ export function AutopilotView() {
   const [showProfileModal, setShowProfileModal] = useState(false)
   const [showProfileEditModal, setShowProfileEditModal] = useState(false)
   const pendingBotActionRef = useRef<(() => void) | null>(null)
+  const reviewQueueRef = useRef<HTMLDivElement>(null)
 
   // Run history
   const [runHistory, setRunHistory] = useState<BotRunHistoryItem[]>([])
@@ -3541,19 +3551,38 @@ export function AutopilotView() {
 
     const poll = async () => {
       try {
+        // Try the individual run endpoint first
+        let data: Record<string, unknown> | null = null
         const res = await fetch(`https://api.trigger.dev/api/v1/runs/${activeRunId}`, {
           headers: { Authorization: `Bearer ${triggerKey}` },
         })
-        if (!res.ok) return
-        const data = await res.json()
+        if (res.ok) {
+          data = await res.json()
+        } else if (res.status === 404) {
+          // Fallback: use list endpoint and find our run
+          const listRes = await fetch(`https://api.trigger.dev/api/v1/runs?limit=5`, {
+            headers: { Authorization: `Bearer ${triggerKey}` },
+          })
+          if (listRes.ok) {
+            const listData = await listRes.json()
+            const runs = listData.data || listData.runs || []
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            data = runs.find((r: any) => r.id === activeRunId) || (runs.length > 0 ? runs[0] : null)
+          }
+        }
+
+        if (!data) return
         const status = data.status as string
         setPolledRunStatus(status as typeof polledRunStatus)
 
         // Try to extract output/stats from the run data
-        if (data.output) {
+        const output = data.output as Record<string, unknown> | undefined
+        if (output) {
+          const discovered = (output.discoveredJobs ?? output.discovered_jobs) as DiscoveredJob[] | undefined
           setPolledRunOutput({
-            jobsFound: data.output.jobsFound ?? data.output.jobs_found,
-            jobsQualified: data.output.jobsQualified ?? data.output.jobs_qualified,
+            jobsFound: (output.jobsFound ?? output.jobs_found) as number | undefined,
+            jobsQualified: (output.jobsQualified ?? output.jobs_qualified) as number | undefined,
+            discoveredJobs: Array.isArray(discovered) ? discovered : undefined,
           })
         }
 
@@ -3582,6 +3611,44 @@ export function AutopilotView() {
     const interval = setInterval(tick, 1000)
     return () => clearInterval(interval)
   }, [runStartTime, activeRunId])
+
+  // ---- Convert discoveredJobs into ReviewQueueItems when run completes ---
+  useEffect(() => {
+    if (polledRunStatus !== 'COMPLETED') return
+    const jobs = polledRunOutput?.discoveredJobs
+    if (!jobs || jobs.length === 0) return
+
+    // Load user profile for CV name
+    let cvName = 'cvflo.pdf'
+    try {
+      const raw = localStorage.getItem('tracker_v2_user_profile')
+      if (raw) {
+        const prof = JSON.parse(raw)
+        if (prof?.cvFileName) cvName = prof.cvFileName
+      }
+    } catch { /* ignore */ }
+
+    // Build new review queue items, avoiding duplicates by URL
+    const existingUrls = new Set(reviewQueue.map(i => i.jobUrl).filter(Boolean))
+    const newItems: ReviewQueueItem[] = jobs
+      .filter(job => !existingUrls.has(job.url))
+      .map((job, index) => ({
+        id: `discovered-${Date.now()}-${index}`,
+        company: job.company,
+        role: job.title,
+        matchScore: 0,
+        matchReasons: [job.location, job.isEasyApply ? 'Easy Apply' : 'External'].filter(Boolean),
+        cvName,
+        coverLetterSnippet: '',
+        status: 'pending' as const,
+        jobUrl: job.url,
+      }))
+
+    if (newItems.length > 0) {
+      setReviewQueue(prev => [...newItems, ...prev])
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [polledRunStatus])
 
   // Helper: format elapsed seconds as M:SS
   const formatElapsed = (secs: number): string => {
@@ -4085,6 +4152,23 @@ export function AutopilotView() {
                       <> &middot; {polledRunOutput?.jobsQualified ?? currentRun?.jobsApplied} qualified</>
                     )}
                   </span>
+                  {reviewQueue.filter(i => i.status === 'pending').length > 0 && (
+                    <button
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--accent, #818cf8)',
+                        cursor: 'pointer',
+                        fontSize: 13,
+                        fontWeight: 600,
+                        textDecoration: 'underline',
+                        padding: '2px 6px',
+                      }}
+                      onClick={() => reviewQueueRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                    >
+                      Review below &darr;
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -4130,17 +4214,19 @@ export function AutopilotView() {
 
           {/* Review Queue (standard flow, shown when auto-submit is OFF) */}
           {!autoSubmitOn && reviewQueue.length > 0 && (
-            <ReviewQueue
-              queue={reviewQueue}
-              onApprove={handleReviewApprove}
-              onUndo={handleReviewUndo}
-              onSkip={handleReviewSkip}
-              onApproveAll={handleReviewApproveAll}
-              onSkipAll={handleReviewSkipAll}
-              onSubmitApproved={handleSubmitApproved}
-              onPreview={handleReviewPreview}
-              isDemo={isReviewDemo}
-            />
+            <div ref={reviewQueueRef}>
+              <ReviewQueue
+                queue={reviewQueue}
+                onApprove={handleReviewApprove}
+                onUndo={handleReviewUndo}
+                onSkip={handleReviewSkip}
+                onApproveAll={handleReviewApproveAll}
+                onSkipAll={handleReviewSkipAll}
+                onSubmitApproved={handleSubmitApproved}
+                onPreview={handleReviewPreview}
+                isDemo={isReviewDemo}
+              />
+            </div>
           )}
 
           {/* Preview Drawer (authenticated) */}
