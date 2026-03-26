@@ -469,9 +469,9 @@ const STEP_META = [
   },
   {
     key: 'recruiters',
-    label: 'Documents',
+    label: 'Send to Recruiters',
     icon: Send,
-    title: 'Documents',
+    title: 'Send to Recruiters',
     subtitle: 'Choose what gets attached to your applications.',
     tip: 'This is what hiring managers see. Pick your best 1-page CV and portfolio.',
   },
