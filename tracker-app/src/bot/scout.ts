@@ -185,8 +185,25 @@ export async function scoutJobs(
       await randomDelay(500, 1200)
     }
 
-    // Extract job cards
-    const cards = await page.locator('.job-card-container, .jobs-search-results__list-item, [data-job-id]').all()
+    // Debug: log page title and a snippet of the HTML to see what LinkedIn shows
+    const pageTitle = await page.title().catch(() => 'unknown')
+    const bodySnippet = await page.evaluate(() => {
+      const main = document.querySelector('main') || document.body
+      return main.innerHTML.substring(0, 2000)
+    }).catch(() => 'failed to get HTML')
+    console.log(`[scout] Page ${pageNum + 1} title: "${pageTitle}"`)
+    console.log(`[scout] Page ${pageNum + 1} HTML snippet: ${bodySnippet.substring(0, 500)}`)
+
+    // Try multiple selector strategies (LinkedIn changes HTML frequently)
+    const cards = await page.locator([
+      '.job-card-container',
+      '.jobs-search-results__list-item',
+      '[data-job-id]',
+      '.scaffold-layout__list-item',
+      '.jobs-search-results-list__list-item',
+      'li.ember-view.occludable-update',
+      '[data-occludable-job-id]',
+    ].join(', ')).all()
     console.log(`[scout] Page ${pageNum + 1}: found ${cards.length} cards`)
 
     for (const card of cards) {
