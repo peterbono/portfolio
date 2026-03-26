@@ -1082,36 +1082,12 @@ export function ProfileSetupModal({
           <input ref={portfolioFileRef} type="file" accept=".pdf,application/pdf" style={{ display: 'none' }} onChange={handlePortfolioFileChange} />
         </div>
 
-        {/* Links for recruiters */}
+        {/* Portfolio URL */}
         <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0', paddingTop: 16 }}>
-          <label style={ms.label}>
-            <LinkIcon size={14} color="var(--text-tertiary)" />
-            Links for applications <span style={ms.optional}>optional</span>
-          </label>
-          <p style={ms.helper}>Portfolio URL and website included in every application.</p>
-
-          {/* Quick-use suggestions from context links */}
-          {availableLinks.length > 0 && !profile.portfolioUrl && (
-            <div style={{ ...ms.suggestionBox, marginBottom: 8 }}>
-              <span style={ms.suggestionLabel}>Use a link from Step 1:</span>
-              {availableLinks.slice(0, 3).map((cl) => (
-                <button
-                  key={cl.id}
-                  type="button"
-                  style={ms.suggestionBtn}
-                  onClick={() => useContextLinkAsPortfolio(cl.url)}
-                >
-                  <LinkIcon size={12} />
-                  {cl.label || 'Link'}: {cl.url.replace(/^https?:\/\//, '').slice(0, 30)}...
-                </button>
-              ))}
-            </div>
-          )}
-
           <div style={ms.fieldGroup}>
-            <label style={{ ...ms.label, fontSize: 12 }}>
-              <Globe size={12} color="var(--text-tertiary)" />
-              Portfolio URL
+            <label style={ms.label}>
+              <Globe size={14} color="var(--text-tertiary)" />
+              Portfolio URL <span style={ms.optional}>optional</span>
             </label>
             <input
               type="url"
@@ -1121,37 +1097,6 @@ export function ProfileSetupModal({
               onChange={(e) => patch({ portfolioUrl: e.target.value })}
             />
             {errors.portfolioUrl && <span style={ms.error}><AlertCircle size={12} /> {errors.portfolioUrl}</span>}
-          </div>
-
-          <div style={{ ...ms.fieldGroup, marginTop: 8 }}>
-            <label style={{ ...ms.label, fontSize: 12 }}>
-              <Globe size={12} color="var(--text-tertiary)" />
-              Website
-            </label>
-            <input
-              type="url"
-              style={ms.input}
-              placeholder="https://yoursite.com"
-              value={profile.websiteUrl}
-              onChange={(e) => patch({ websiteUrl: e.target.value })}
-            />
-            {errors.websiteUrl && <span style={ms.error}><AlertCircle size={12} /> {errors.websiteUrl}</span>}
-
-            {/* Quick-fill from context links for website */}
-            {availableLinks.length > 0 && (!profile.websiteUrl || profile.websiteUrl === 'https://') && (
-              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 4 }}>
-                {availableLinks.slice(0, 2).map((cl) => (
-                  <button
-                    key={cl.id}
-                    type="button"
-                    style={ms.inlineSuggestion}
-                    onClick={() => useContextLinkAsWebsite(cl.url)}
-                  >
-                    Use {cl.label || cl.url.replace(/^https?:\/\//, '').slice(0, 25)}
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
         </div>
       </div>
