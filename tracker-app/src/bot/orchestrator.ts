@@ -24,6 +24,7 @@ export interface PipelineConfig {
   maxApplications: number // Per run, default 20
   dryRun: boolean // If true, don't actually submit — just log
   browser: Browser // Playwright browser instance
+  browserContext?: BrowserContext // pre-authenticated context (LinkedIn cookie)
   minScore: number // Minimum qualification score, default 60
 }
 
@@ -31,6 +32,7 @@ export interface PipelineConfig {
 export interface InlinePipelineConfig {
   userId: string
   browser: Browser
+  browserContext?: BrowserContext // pre-authenticated context (e.g. LinkedIn cookie)
   searchConfig: {
     keywords: string[]
     locationRules: Array<{
@@ -458,18 +460,23 @@ export async function runPipeline(config: PipelineConfig): Promise<PipelineResul
   let jobsSkipped = 0
   let jobsFailed = 0
 
-  // Create a browser context with stealth-like settings
+  // Use pre-authenticated context if provided (LinkedIn cookie), else create new
   let context: BrowserContext | null = null
   let page: Page | null = null
+  const ownsContext = !config.browserContext // only close context if we created it
 
   try {
-    context = await config.browser.newContext({
-      viewport: { width: 1280, height: 900 },
-      userAgent:
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      locale: 'en-US',
-      timezoneId: 'Asia/Bangkok',
-    })
+    if (config.browserContext) {
+      context = config.browserContext
+    } else {
+      context = await config.browser.newContext({
+        viewport: { width: 1280, height: 900 },
+        userAgent:
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        locale: 'en-US',
+        timezoneId: 'Asia/Bangkok',
+      })
+    }
 
     page = await context.newPage()
 
@@ -547,7 +554,7 @@ export async function runPipeline(config: PipelineConfig): Promise<PipelineResul
   } finally {
     // Clean up browser resources
     if (page) await page.close().catch(() => {})
-    if (context) await context.close().catch(() => {})
+    if (context && ownsContext) await context.close().catch(() => {})
   }
 
   const duration = Date.now() - startTime
@@ -644,6 +651,7 @@ export async function runPipelineFromInline(cfg: InlinePipelineConfig): Promise<
     userId: cfg.userId,
     searchProfile,
     browser: cfg.browser,
+    browserContext: cfg.browserContext, // pass pre-authenticated context
     maxApplications: cfg.maxApplications ?? 20,
     dryRun: cfg.dryRun ?? false,
     minScore: 60,
