@@ -507,7 +507,41 @@ export async function runPipeline(config: PipelineConfig): Promise<PipelineResul
       }
     }
 
-    // --- Phase 2: Qualify ---
+    // For now: skip Phase 2 (Qualify) and Phase 3 (Apply).
+    // Return discovered jobs immediately so the frontend can show them.
+    // Qualification and application will be separate user-triggered actions.
+    console.log(`[pipeline] Scout complete: ${discoveredJobs.length} jobs found. Skipping qualify+apply (scout-only mode).`)
+
+    const duration = Date.now() - startTime
+    await updateBotRun(runId, {
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+      jobs_found: discoveredJobs.length,
+      jobs_applied: 0,
+      jobs_skipped: 0,
+      jobs_failed: 0,
+    }).catch(() => {})
+
+    return {
+      runId,
+      jobsFound: discoveredJobs.length,
+      jobsQualified: 0,
+      jobsApplied: 0,
+      jobsSkipped: 0,
+      jobsFailed: 0,
+      duration,
+      activities,
+      // Include discovered jobs in the result so frontend can display them
+      discoveredJobs: discoveredJobs.map(j => ({
+        title: j.title,
+        company: j.company,
+        location: j.location,
+        url: j.url,
+        isEasyApply: j.isEasyApply,
+      })),
+    }
+
+    /* Phase 2 & 3 disabled — will be separate user-triggered runs
     const qualifiedJobs = await phaseQualify(
       page,
       discoveredJobs,
@@ -518,7 +552,6 @@ export async function runPipeline(config: PipelineConfig): Promise<PipelineResul
     jobsQualified = qualifiedJobs.length
     jobsSkipped += discoveredJobs.length - qualifiedJobs.length
 
-    // --- Phase 3: Apply ---
     const applyResults = await phaseApply(
       page,
       qualifiedJobs,
@@ -529,6 +562,7 @@ export async function runPipeline(config: PipelineConfig): Promise<PipelineResul
     jobsApplied = applyResults.applied
     jobsSkipped += applyResults.skipped
     jobsFailed = applyResults.failed
+    */ // end of disabled Phase 2 & 3
   } catch (err) {
     const errorMessage = (err as Error).message
     console.error('[pipeline] Fatal error:', errorMessage)
