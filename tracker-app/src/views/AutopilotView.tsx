@@ -369,39 +369,6 @@ function dismissAutoSubmitSuggestion() {
   try { localStorage.setItem(AUTO_SUBMIT_DISMISS_LS_KEY, String(Date.now())) } catch { /* ignore */ }
 }
 
-const MOCK_REVIEW_QUEUE: ReviewQueueItem[] = [
-  {
-    id: 'review-1',
-    company: 'Canva',
-    role: 'Senior Product Designer',
-    matchScore: 88,
-    matchReasons: ['Remote APAC', 'Design Systems keyword', 'Salary > 80k EUR'],
-    cvName: 'cvflo.pdf',
-    coverLetterSnippet: 'With 7+ years of experience in product design and design systems, I am excited to bring my expertise to Canva...',
-    status: 'pending',
-  },
-  {
-    id: 'review-2',
-    company: 'Wise',
-    role: 'Product Designer',
-    matchScore: 62,
-    matchReasons: ['Fintech SaaS match', 'Location: Singapore (GMT+8)'],
-    cvName: 'cvflo.pdf',
-    coverLetterSnippet: 'I bring deep experience in complex B2B product architecture and regulated industries, making me a strong fit...',
-    status: 'pending',
-  },
-  {
-    id: 'review-3',
-    company: 'Agoda',
-    role: 'UX/UI Designer',
-    matchScore: 41,
-    matchReasons: ['Bangkok on-site', 'Salary below threshold'],
-    cvName: 'cvflo.pdf',
-    coverLetterSnippet: 'Having lived and worked in Bangkok for several years, I understand the local market and would bring a unique...',
-    status: 'pending',
-  },
-]
-
 const RUN_STATUS_COLORS: Record<string, string> = {
   completed: '#34d399',
   running: '#60a5fa',
