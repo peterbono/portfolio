@@ -87,10 +87,26 @@ function sendConnectionStatus() {
 }
 
 // Send status immediately and also after a short delay
-// (in case the web app's listener isn't registered yet)
 sendConnectionStatus()
 setTimeout(sendConnectionStatus, 1000)
 setTimeout(sendConnectionStatus, 3000)
+
+// ─── Auto-sync cookie to localStorage on page load ──────────────────────────
+
+function syncCookieToLocalStorage() {
+  chrome.runtime.sendMessage({ action: 'getCookie' }, (response) => {
+    if (chrome.runtime.lastError) return
+    if (response?.success && response?.cookie) {
+      localStorage.setItem('tracker_v2_linkedin_cookie', response.cookie)
+      console.log('[JobTracker Extension] LinkedIn cookie synced to localStorage')
+    }
+  })
+}
+
+// Sync on load and periodically
+syncCookieToLocalStorage()
+setTimeout(syncCookieToLocalStorage, 2000)
+setInterval(syncCookieToLocalStorage, 5 * 60 * 1000) // every 5 min
 
 // ─── Announce extension is installed ────────────────────────────────────────
 
