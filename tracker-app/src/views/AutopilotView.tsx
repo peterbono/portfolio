@@ -1879,12 +1879,48 @@ function ApplicationPreviewDrawer({
   )
   const [answers, setAnswers] = useState<Record<string, string>>(() => {
     if (item.editedAnswers) return { ...item.editedAnswers }
+    // Load user profile for pre-filling
+    let prof: Record<string, unknown> | null = null
+    try {
+      const raw = localStorage.getItem('tracker_v2_user_profile')
+      if (raw) prof = JSON.parse(raw)
+    } catch { /* ignore */ }
     const defaults: Record<string, string> = {}
     DEFAULT_SCREENING_QUESTIONS.forEach(q => {
-      if (q.key === 'why_interested') {
-        defaults[q.key] = `I am excited about the ${item.role} role at ${item.company}. ${item.coverLetterSnippet}`
+      if (q.key === 'years_experience') {
+        defaults[q.key] = String(prof?.yearsOfExperience ?? 7)
+      } else if (q.key === 'why_interested') {
+        const role = prof?.currentRole ? String(prof.currentRole) : 'design'
+        const skills = Array.isArray(prof?.keySkills) ? (prof.keySkills as string[]).slice(0, 3).join(', ') : ''
+        defaults[q.key] = `I am excited about the ${item.role} role at ${item.company}. With ${prof?.yearsOfExperience ?? '7+'}  years in ${role}${skills ? ` specializing in ${skills}` : ''}, I bring deep experience that aligns well with this position. ${item.coverLetterSnippet}`
+      } else if (q.key === 'work_authorization') {
+        const auths = Array.isArray(prof?.workAuthorizations) ? (prof.workAuthorizations as string[]) : []
+        if (auths.some(a => a.includes('Citizen') || a.includes('Right to Work') || a.includes('PR'))) {
+          defaults[q.key] = 'Yes'
+        } else if (auths.some(a => a.includes('Sponsorship'))) {
+          defaults[q.key] = 'Requires sponsorship'
+        } else {
+          defaults[q.key] = auths.length > 0 ? 'Yes' : q.defaultValue
+        }
       } else if (q.key === 'expected_salary') {
-        defaults[q.key] = '80000 EUR'
+        // Try to find salary from search config location rules
+        try {
+          const configRaw = localStorage.getItem('tracker_v2_search_config')
+          if (configRaw) {
+            const config = JSON.parse(configRaw)
+            const rules = config.locationRules || []
+            const withSalary = rules.find((r: { minSalary?: number }) => r.minSalary)
+            if (withSalary) {
+              defaults[q.key] = `${withSalary.currency || 'EUR'} ${withSalary.minSalary}`
+            } else {
+              defaults[q.key] = ''
+            }
+          } else {
+            defaults[q.key] = ''
+          }
+        } catch { defaults[q.key] = '' }
+      } else if (q.key === 'notice_period') {
+        defaults[q.key] = (prof?.noticePeriod as string) || q.defaultValue
       } else {
         defaults[q.key] = q.defaultValue
       }
@@ -1915,13 +1951,15 @@ function ApplicationPreviewDrawer({
   // Read profile from localStorage if available
   const profileData = (() => {
     try {
-      const raw = localStorage.getItem('tracker_v2_profile')
+      const raw = localStorage.getItem('tracker_v2_user_profile')
       return raw ? JSON.parse(raw) : null
     } catch { return null }
   })()
 
-  const portfolioUrl = profileData?.portfolioUrl || 'https://www.floriangouloubi.com'
-  const websiteUrl = profileData?.websiteUrl || profileData?.portfolioUrl || 'https://www.floriangouloubi.com'
+  const cvDisplayName = profileData?.cvFileName || item.cvName
+  const portfolioUrl = profileData?.portfolioUrl || ''
+  const linkedinUrl = profileData?.linkedinUrl || ''
+  const githubUrl = profileData?.githubUrl || ''
 
   return (
     <>
@@ -1961,7 +1999,7 @@ function ApplicationPreviewDrawer({
 
             <div style={drawerStyles.fieldGroup}>
               <label style={drawerStyles.fieldLabel}>CV</label>
-              <div style={drawerStyles.fieldReadonly}>{item.cvName}</div>
+              <div style={drawerStyles.fieldReadonly}>{cvDisplayName}</div>
             </div>
 
             <div style={drawerStyles.fieldGroup}>
@@ -1976,15 +2014,22 @@ function ApplicationPreviewDrawer({
 
             {portfolioUrl && (
               <div style={drawerStyles.fieldGroup}>
-                <label style={drawerStyles.fieldLabel}>Portfolio URL</label>
+                <label style={drawerStyles.fieldLabel}>Portfolio</label>
                 <div style={drawerStyles.fieldReadonly}>{portfolioUrl}</div>
               </div>
             )}
 
-            {websiteUrl && websiteUrl !== portfolioUrl && (
+            {linkedinUrl && (
               <div style={drawerStyles.fieldGroup}>
-                <label style={drawerStyles.fieldLabel}>Website URL</label>
-                <div style={drawerStyles.fieldReadonly}>{websiteUrl}</div>
+                <label style={drawerStyles.fieldLabel}>LinkedIn</label>
+                <div style={drawerStyles.fieldReadonly}>{linkedinUrl}</div>
+              </div>
+            )}
+
+            {githubUrl && (
+              <div style={drawerStyles.fieldGroup}>
+                <label style={drawerStyles.fieldLabel}>GitHub</label>
+                <div style={drawerStyles.fieldReadonly}>{githubUrl}</div>
               </div>
             )}
           </div>
