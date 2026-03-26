@@ -645,6 +645,7 @@ export async function runPipelineFromInline(cfg: InlinePipelineConfig): Promise<
     excluded_companies: cfg.searchConfig.excludedCompanies,
     is_active: true,
     created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   }
 
   return runPipeline({

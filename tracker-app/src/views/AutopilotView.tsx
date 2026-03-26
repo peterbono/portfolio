@@ -3424,6 +3424,13 @@ export function AutopilotView() {
   const [isTriggering, setIsTriggering] = useState(false)
   const [triggerError, setTriggerError] = useState<string | null>(null)
 
+  // Run polling state (real-time progress tracking)
+  const [activeRunId, setActiveRunId] = useState<string | null>(null)
+  const [runStartTime, setRunStartTime] = useState<number | null>(null)
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
+  const [polledRunStatus, setPolledRunStatus] = useState<'QUEUED' | 'EXECUTING' | 'COMPLETED' | 'FAILED' | 'CRASHED' | 'REATTEMPTING' | null>(null)
+  const [polledRunOutput, setPolledRunOutput] = useState<{ jobsFound?: number; jobsQualified?: number } | null>(null)
+
   // Review queue state
   const [reviewQueue, setReviewQueue] = useState<ReviewQueueItem[]>(() => loadReviewQueue())
   const [isReviewDemo] = useState(false)
@@ -3507,14 +3514,85 @@ export function AutopilotView() {
     if (!hasConfig) return
     setIsTriggering(true)
     setTriggerError(null)
+    // Reset polling state
+    setActiveRunId(null)
+    setRunStartTime(null)
+    setElapsedSeconds(0)
+    setPolledRunStatus(null)
+    setPolledRunOutput(null)
     try {
-      await triggerBotRun('search_config')
+      const result = await triggerBotRun('search_config')
+      // Start polling
+      setActiveRunId(result.runId)
+      setRunStartTime(Date.now())
+      setPolledRunStatus('QUEUED')
     } catch (err) {
       setTriggerError((err as Error).message)
     } finally {
       setIsTriggering(false)
     }
   }, [hasConfig])
+
+  // ---- Trigger.dev run polling (every 5s) ----------------------------
+  useEffect(() => {
+    if (!activeRunId) return
+    const TERMINAL = ['COMPLETED', 'FAILED', 'CRASHED', 'CANCELED', 'SYSTEM_FAILURE']
+    const triggerKey = import.meta.env.VITE_TRIGGER_PUBLIC_KEY || ''
+
+    const poll = async () => {
+      try {
+        const res = await fetch(`https://api.trigger.dev/api/v1/runs/${activeRunId}`, {
+          headers: { Authorization: `Bearer ${triggerKey}` },
+        })
+        if (!res.ok) return
+        const data = await res.json()
+        const status = data.status as string
+        setPolledRunStatus(status as typeof polledRunStatus)
+
+        // Try to extract output/stats from the run data
+        if (data.output) {
+          setPolledRunOutput({
+            jobsFound: data.output.jobsFound ?? data.output.jobs_found,
+            jobsQualified: data.output.jobsQualified ?? data.output.jobs_qualified,
+          })
+        }
+
+        if (TERMINAL.includes(status)) {
+          // Run reached a terminal state — stop polling
+          setActiveRunId(null)
+        }
+      } catch {
+        // Network error — keep polling, don't crash
+      }
+    }
+
+    // Poll immediately, then every 5 seconds
+    poll()
+    const interval = setInterval(poll, 5000)
+    return () => clearInterval(interval)
+  }, [activeRunId])
+
+  // ---- Elapsed time counter (every 1s while a run is active) ---------
+  useEffect(() => {
+    if (!runStartTime || !activeRunId) return
+    const tick = () => {
+      setElapsedSeconds(Math.floor((Date.now() - runStartTime) / 1000))
+    }
+    tick()
+    const interval = setInterval(tick, 1000)
+    return () => clearInterval(interval)
+  }, [runStartTime, activeRunId])
+
+  // Helper: format elapsed seconds as M:SS
+  const formatElapsed = (secs: number): string => {
+    const m = Math.floor(secs / 60)
+    const s = secs % 60
+    return `${m}:${s.toString().padStart(2, '0')}`
+  }
+
+  // Derived: is a polled run actively in progress
+  const isRunPolling = activeRunId !== null
+  const isRunTerminal = polledRunStatus === 'COMPLETED' || polledRunStatus === 'FAILED' || polledRunStatus === 'CRASHED'
 
   // Core bot action after auth + profile checks
   const executeBotAction = useCallback(() => {
@@ -3937,46 +4015,91 @@ export function AutopilotView() {
           {/* Active filter tags bar */}
           <ActiveFilterTags config={searchConfig} />
 
-          {/* Status Banner — only shows when something is happening */}
-          {(isBotActive || isTriggering || currentRun?.status === 'completed') && (
-            <section style={styles.statusBanner}>
-              <div style={styles.statusRow}>
-                <div style={styles.statusLeft}>
-                  <span
-                    style={{
-                      ...styles.statusDot,
-                      background: statusCfg.dotColor,
-                      ...(statusCfg.pulsing
-                        ? { animation: 'pulseGlow 1.5s ease-in-out infinite', boxShadow: `0 0 6px ${statusCfg.dotColor}` }
-                        : {}),
-                    }}
-                  />
-                  <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>{statusCfg.label}</span>
-                  {statusCfg.description && (
-                    <span style={{ fontSize: 13, color: 'var(--text-secondary)', marginLeft: 8 }}>{statusCfg.description}</span>
+          {/* Progress Banner — shows during and after bot runs */}
+          {(isRunPolling || isRunTerminal || isTriggering || isBotActive || currentRun?.status === 'completed' || currentRun?.status === 'failed') && (
+            <section style={progressBannerStyles.container}>
+              {/* Top row: status + elapsed */}
+              <div style={progressBannerStyles.topRow}>
+                <div style={progressBannerStyles.statusLabel}>
+                  {(isTriggering || polledRunStatus === 'QUEUED' || polledRunStatus === 'REATTEMPTING') && (
+                    <>
+                      <span style={progressBannerStyles.pulsingDot} />
+                      <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>Searching for jobs...</span>
+                    </>
+                  )}
+                  {(polledRunStatus === 'EXECUTING' || (isBotActive && !isTriggering && !isRunPolling)) && (
+                    <>
+                      <span style={progressBannerStyles.pulsingDot} />
+                      <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>Searching for jobs...</span>
+                    </>
+                  )}
+                  {(polledRunStatus === 'COMPLETED' || (!isRunPolling && !isTriggering && currentRun?.status === 'completed')) && (
+                    <>
+                      <CheckCircle2 size={16} color="#34d399" />
+                      <span style={{ fontWeight: 600, color: '#34d399' }}>Search complete</span>
+                    </>
+                  )}
+                  {(polledRunStatus === 'FAILED' || polledRunStatus === 'CRASHED' || (!isRunPolling && !isTriggering && currentRun?.status === 'failed')) && (
+                    <>
+                      <XCircle size={16} color="#f43f5e" />
+                      <span style={{ fontWeight: 600, color: '#f43f5e' }}>Search failed</span>
+                    </>
                   )}
                 </div>
-                {isTriggering && (
-                  <span style={styles.triggeringBadge}>
-                    <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
-                    Searching...
+                {(runStartTime || currentRun?.startedAt) && (
+                  <span style={progressBannerStyles.elapsed}>
+                    <Clock size={12} />
+                    {activeRunId
+                      ? formatElapsed(elapsedSeconds)
+                      : currentRun?.completedAt && currentRun?.startedAt
+                        ? formatElapsed(Math.floor((new Date(currentRun.completedAt).getTime() - new Date(currentRun.startedAt).getTime()) / 1000))
+                        : ''
+                    }
                   </span>
                 )}
               </div>
-            </section>
-          )}
 
-          {/* Error state for failed runs */}
-          {currentRun?.status === 'failed' && (
-            <div style={styles.errorBanner}>
-              <AlertTriangle size={14} color="#f43f5e" />
-              <span style={styles.errorBannerText}>
-                Something went wrong during the search. Try again?
-              </span>
-              <button style={styles.btnRetry} onClick={handleStartBot}>
-                Find Jobs
-              </button>
-            </div>
+              {/* Pulsing progress bar (only while running) */}
+              {(isTriggering || isRunPolling || isBotActive) && !(polledRunStatus === 'COMPLETED' || polledRunStatus === 'FAILED' || polledRunStatus === 'CRASHED') && (
+                <div style={progressBannerStyles.barTrack}>
+                  <div style={progressBannerStyles.barFill} />
+                </div>
+              )}
+
+              {/* Subtitle: search query while running */}
+              {(isTriggering || isRunPolling || isBotActive) && !(polledRunStatus === 'COMPLETED' || polledRunStatus === 'FAILED' || polledRunStatus === 'CRASHED') && (
+                <span style={progressBannerStyles.subtitle}>
+                  Finding matches for {searchConfig.keywords.length > 0
+                    ? `"${searchConfig.keywords.slice(0, 2).join(', ')}${searchConfig.keywords.length > 2 ? '...' : ''}"`
+                    : 'your criteria'
+                  }
+                </span>
+              )}
+
+              {/* Completed: stats + review button */}
+              {(polledRunStatus === 'COMPLETED' || (!isRunPolling && !isTriggering && currentRun?.status === 'completed')) && (
+                <div style={progressBannerStyles.resultRow}>
+                  <span style={progressBannerStyles.resultText}>
+                    Found {polledRunOutput?.jobsFound ?? currentRun?.jobsFound ?? 0} match{(polledRunOutput?.jobsFound ?? currentRun?.jobsFound ?? 0) !== 1 ? 'es' : ''}
+                    {(polledRunOutput?.jobsQualified ?? currentRun?.jobsApplied) != null && (
+                      <> &middot; {polledRunOutput?.jobsQualified ?? currentRun?.jobsApplied} qualified</>
+                    )}
+                  </span>
+                </div>
+              )}
+
+              {/* Failed: error message + retry */}
+              {(polledRunStatus === 'FAILED' || polledRunStatus === 'CRASHED' || (!isRunPolling && !isTriggering && currentRun?.status === 'failed')) && (
+                <div style={progressBannerStyles.resultRow}>
+                  <span style={{ ...progressBannerStyles.resultText, color: '#f87171' }}>
+                    Something went wrong. Try again?
+                  </span>
+                  <button style={progressBannerStyles.retryBtn} onClick={handleStartBot}>
+                    Retry
+                  </button>
+                </div>
+              )}
+            </section>
           )}
 
           {/* Auto-submit suggestion card */}
@@ -4205,6 +4328,14 @@ export function AutopilotView() {
           from { transform: translateX(100%); }
           to { transform: translateX(0); }
         }
+        @keyframes progressPulse {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(200%); }
+        }
+        @keyframes dotPulse {
+          0%, 100% { opacity: 1; box-shadow: 0 0 4px #34d399; }
+          50% { opacity: 0.5; box-shadow: 0 0 10px #34d399, 0 0 20px rgba(52,211,153,0.3); }
+        }
       `}</style>
     </div>
   )
@@ -4345,6 +4476,97 @@ const layoutStyles: Record<string, React.CSSProperties> = {
     border: '1px solid var(--border)',
     color: 'var(--text-secondary)',
     cursor: 'pointer',
+  },
+}
+
+/* ------------------------------------------------------------------ */
+/*  Progress Banner Styles                                             */
+/* ------------------------------------------------------------------ */
+const progressBannerStyles: Record<string, React.CSSProperties> = {
+  container: {
+    background: 'var(--bg-surface)',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-lg)',
+    padding: '16px 20px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 10,
+  },
+  topRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  statusLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    fontSize: 14,
+  },
+  pulsingDot: {
+    width: 10,
+    height: 10,
+    borderRadius: '50%',
+    background: '#34d399',
+    flexShrink: 0,
+    animation: 'dotPulse 1.5s ease-in-out infinite',
+  },
+  elapsed: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    fontSize: 13,
+    fontWeight: 500,
+    color: 'var(--text-secondary)',
+    fontVariantNumeric: 'tabular-nums',
+  },
+  barTrack: {
+    width: '100%',
+    height: 4,
+    borderRadius: 2,
+    background: 'var(--bg-elevated)',
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  barFill: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: '50%',
+    height: '100%',
+    borderRadius: 2,
+    background: 'linear-gradient(90deg, transparent, #34d399, transparent)',
+    animation: 'progressPulse 1.8s ease-in-out infinite',
+  },
+  subtitle: {
+    fontSize: 13,
+    color: 'var(--text-tertiary)',
+  },
+  resultRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingTop: 4,
+  },
+  resultText: {
+    fontSize: 13,
+    color: 'var(--text-secondary)',
+  },
+  retryBtn: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    background: 'rgba(244, 63, 94, 0.12)',
+    color: '#f87171',
+    fontWeight: 600,
+    fontSize: 12,
+    padding: '6px 14px',
+    borderRadius: 6,
+    border: '1px solid rgba(244, 63, 94, 0.25)',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
   },
 }
 

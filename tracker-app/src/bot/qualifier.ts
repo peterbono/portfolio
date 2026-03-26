@@ -128,7 +128,7 @@ Return ONLY the JSON object, no markdown fences.`
   try {
     const response = await Promise.race([
       client.messages.create({
-        model: 'claude-haiku-4-20250414',
+        model: 'claude-haiku-4-5-20251001',
         max_tokens: 600,
         system: SYSTEM_PROMPT,
         messages: [{ role: 'user', content: userMessage }],
@@ -192,6 +192,8 @@ Return ONLY the JSON object, no markdown fences.`
  * Qualify multiple job descriptions in parallel with a concurrency limit.
  * Default concurrency: 5 (to respect Anthropic rate limits).
  */
+const MAX_QUALIFY_PER_RUN = 30 // Cap to control Haiku API costs (~$0.003/job)
+
 export async function qualifyJobsBatch(
   jobs: Array<{ jobDescription: string; url: string }>,
   searchProfile: SearchProfile,
@@ -199,7 +201,12 @@ export async function qualifyJobsBatch(
   concurrency: number = 5,
 ): Promise<Map<string, QualificationResult>> {
   const results = new Map<string, QualificationResult>()
-  const queue = [...jobs]
+  // Cap the number of jobs to qualify per run
+  const capped = jobs.slice(0, MAX_QUALIFY_PER_RUN)
+  if (jobs.length > MAX_QUALIFY_PER_RUN) {
+    console.log(`[qualifier] Capped at ${MAX_QUALIFY_PER_RUN} jobs (${jobs.length} found)`)
+  }
+  const queue = [...capped]
 
   async function worker() {
     while (queue.length > 0) {

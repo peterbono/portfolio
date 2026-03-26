@@ -2,7 +2,7 @@ import { task } from "@trigger.dev/sdk/v3"
 
 export const applyJobTask = task({
   id: "apply-job-pipeline",
-  maxDuration: 1800,
+  maxDuration: 180, // 3 minutes max — prevents runaway costs
   run: async (payload: {
     userId: string
     maxApplications?: number

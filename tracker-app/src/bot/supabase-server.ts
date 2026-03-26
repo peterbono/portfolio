@@ -96,12 +96,44 @@ export interface ActivityLogEntry {
   screenshot_url?: string
 }
 
+/**
+ * The DB has a CHECK constraint on bot_activity_log.action limiting values to:
+ *   applied, skipped, failed, found, qualified, disqualified
+ * The orchestrator uses more granular names — we normalize them here.
+ */
+const VALID_DB_ACTIONS = new Set(['applied', 'skipped', 'failed', 'found', 'qualified', 'disqualified'])
+
+function normalizeAction(action: string): string {
+  // Already a valid DB action
+  if (VALID_DB_ACTIONS.has(action)) return action
+
+  // Scout phase → found
+  if (action.startsWith('scout')) return 'found'
+
+  // Qualify phase
+  if (action === 'qualify_pass') return 'qualified'
+  if (action === 'qualify_fail' || action === 'qualify_skip') return 'disqualified'
+  if (action === 'qualify_error') return 'disqualified'
+
+  // Apply phase
+  if (action === 'apply_applied' || action === 'apply_dry_run') return 'applied'
+  if (action === 'apply_skipped' || action === 'apply_needs_manual' || action === 'apply_no_adapter') return 'skipped'
+  if (action === 'apply_failed') return 'failed'
+
+  // Pipeline lifecycle → found (generic event, reason field carries the detail)
+  if (action.startsWith('pipeline')) return 'found'
+
+  // Fallback — log a warning and use 'found' to avoid DB constraint violation
+  console.warn(`[supabase] Unknown action "${action}" — normalizing to "found"`)
+  return 'found'
+}
+
 /** Insert a single activity log entry */
 export async function logBotActivity(entry: ActivityLogEntry): Promise<void> {
   const { error } = await insertRowNoReturn('bot_activity_log', {
     user_id: entry.user_id,
     run_id: entry.run_id,
-    action: entry.action,
+    action: normalizeAction(entry.action),
     company: entry.company ?? null,
     role: entry.role ?? null,
     ats: entry.ats ?? null,
