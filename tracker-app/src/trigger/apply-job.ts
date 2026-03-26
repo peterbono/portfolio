@@ -32,28 +32,32 @@ export const applyJobTask = task({
       throw new Error("No search config provided. Set up keywords in Autopilot first.")
     }
 
-    // LinkedIn requires cookie injection which Bright Data blocks.
-    // Use local Chromium for LinkedIn scouting (with cookie injection).
-    // Bright Data can be used for ATS form submission later.
-    const browser = await chromium.launch({
-      headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
-    })
+    // Use Bright Data for fast LinkedIn access with residential IPs.
+    // Cookie injection via CDP Network.setCookie (bypasses Bright Data's
+    // Storage.setCookies block).
+    const SBR_AUTH = process.env.BRIGHTDATA_SBR_AUTH
+    const browser = SBR_AUTH
+      ? await chromium.connectOverCDP(`wss://${SBR_AUTH}@brd.superproxy.io:9222`)
+      : await chromium.launch({ headless: true, args: ["--no-sandbox", "--disable-setuid-sandbox"] })
 
-    // Inject LinkedIn session cookie into a browser context
     let browserContext
     if (payload.linkedInCookie) {
       browserContext = await browser.newContext()
-      await browserContext.addCookies([{
+      // Use CDP protocol directly to set the cookie (bypasses Playwright's
+      // Storage.setCookies which Bright Data blocks)
+      const page = await browserContext.newPage()
+      const cdpSession = await page.context().newCDPSession(page)
+      await cdpSession.send('Network.setCookie', {
         name: 'li_at',
         value: payload.linkedInCookie,
         domain: '.linkedin.com',
         path: '/',
         httpOnly: true,
         secure: true,
-        sameSite: 'None' as const,
-      }])
-      console.log('[apply-job] LinkedIn cookie injected into browser context')
+        sameSite: 'None',
+      })
+      await page.close()
+      console.log('[apply-job] LinkedIn cookie injected via CDP Network.setCookie')
     }
 
     try {
