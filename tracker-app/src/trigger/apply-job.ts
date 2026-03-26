@@ -8,6 +8,7 @@ export const applyJobTask = task({
     maxApplications?: number
     dryRun?: boolean
     plan?: 'free' | 'starter' | 'pro' | 'boost'
+    linkedInCookie?: string
     searchConfig?: {
       keywords: string[]
       locationRules: Array<{
@@ -43,10 +44,28 @@ export const applyJobTask = task({
           args: ["--no-sandbox", "--disable-setuid-sandbox"],
         })
 
+    // If a LinkedIn session cookie was provided by the Chrome extension,
+    // create a browser context with the cookie pre-injected so the bot
+    // is already authenticated on linkedin.com.
+    let browserContext
+    if (payload.linkedInCookie) {
+      browserContext = await browser.newContext()
+      await browserContext.addCookies([{
+        name: 'li_at',
+        value: payload.linkedInCookie,
+        domain: '.linkedin.com',
+        path: '/',
+        httpOnly: true,
+        secure: true,
+        sameSite: 'None' as const,
+      }])
+    }
+
     try {
       const result = await runPipelineFromInline({
         userId: payload.userId,
         browser,
+        browserContext, // pre-authenticated LinkedIn context (if cookie provided)
         searchConfig: {
           keywords: config.keywords,
           locationRules: config.locationRules || [],
@@ -68,6 +87,9 @@ export const applyJobTask = task({
         duration: result.duration,
       }
     } finally {
+      if (browserContext) {
+        await browserContext.close().catch(() => {})
+      }
       await browser.close()
     }
   },

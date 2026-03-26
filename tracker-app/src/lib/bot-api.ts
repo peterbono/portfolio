@@ -33,6 +33,13 @@ function getUserProfile(): Record<string, unknown> | null {
   } catch { return null }
 }
 
+/** Load LinkedIn cookie from localStorage (set by Chrome extension) */
+function getLinkedInCookie(): string | null {
+  try {
+    return localStorage.getItem('tracker_v2_linkedin_cookie')
+  } catch { return null }
+}
+
 export interface TriggerBotResponse {
   runId: string
 }
@@ -53,9 +60,24 @@ export async function triggerBotRun(
   const userId = await getCurrentUserId()
   const searchConfig = getSearchConfig()
   const userProfile = getUserProfile()
+  const linkedInCookie = getLinkedInCookie()
 
   if (!searchConfig || !searchConfig.keywords || (searchConfig.keywords as string[]).length === 0) {
     throw new Error('No search criteria configured. Set up your keywords first.')
+  }
+
+  const payload: Record<string, unknown> = {
+    userId,
+    maxApplications: options?.maxApplications ?? 20,
+    dryRun: false,
+    // Pass config inline — worker uses this instead of Supabase lookup
+    searchConfig,
+    userProfile,
+  }
+
+  // Include LinkedIn session cookie if available (from Chrome extension)
+  if (linkedInCookie) {
+    payload.linkedInCookie = linkedInCookie
   }
 
   const response = await fetch(TRIGGER_API_URL, {
@@ -64,16 +86,7 @@ export async function triggerBotRun(
       'Authorization': `Bearer ${key}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      payload: {
-        userId,
-        maxApplications: options?.maxApplications ?? 20,
-        dryRun: false,
-        // Pass config inline — worker uses this instead of Supabase lookup
-        searchConfig,
-        userProfile,
-      },
-    }),
+    body: JSON.stringify({ payload }),
   })
 
   if (!response.ok) {
