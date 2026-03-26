@@ -32,43 +32,28 @@ export const applyJobTask = task({
       throw new Error("No search config provided. Set up keywords in Autopilot first.")
     }
 
-    // Use Bright Data if available (residential IPs, anti-detection)
-    const SBR_AUTH = process.env.BRIGHTDATA_SBR_AUTH
-    const useBrightData = !!SBR_AUTH // always use if configured
+    // LinkedIn requires cookie injection which Bright Data blocks.
+    // Use local Chromium for LinkedIn scouting (with cookie injection).
+    // Bright Data can be used for ATS form submission later.
+    const browser = await chromium.launch({
+      headless: true,
+      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    })
 
-    const browser = useBrightData
-      ? await chromium.connectOverCDP(`wss://${SBR_AUTH}@brd.superproxy.io:9222`)
-      : await chromium.launch({
-          headless: true,
-          args: ["--no-sandbox", "--disable-setuid-sandbox"],
-        })
-
-    // If a LinkedIn session cookie was provided, create a context and
-    // inject the cookie. Try addCookies first; if blocked (Bright Data
-    // forbids overriding li_at), fall back to JavaScript injection.
+    // Inject LinkedIn session cookie into a browser context
     let browserContext
     if (payload.linkedInCookie) {
       browserContext = await browser.newContext()
-      try {
-        await browserContext.addCookies([{
-          name: 'li_at',
-          value: payload.linkedInCookie,
-          domain: '.linkedin.com',
-          path: '/',
-          httpOnly: true,
-          secure: true,
-          sameSite: 'None' as const,
-        }])
-      } catch (cookieErr) {
-        console.log('[apply-job] addCookies blocked, using JS injection fallback')
-        // Navigate to LinkedIn first, then inject cookie via JS
-        const tempPage = await browserContext.newPage()
-        await tempPage.goto('https://www.linkedin.com', { waitUntil: 'domcontentloaded', timeout: 30000 })
-        await tempPage.evaluate((cookieVal) => {
-          document.cookie = `li_at=${cookieVal}; domain=.linkedin.com; path=/; secure; SameSite=None; max-age=31536000`
-        }, payload.linkedInCookie)
-        await tempPage.close()
-      }
+      await browserContext.addCookies([{
+        name: 'li_at',
+        value: payload.linkedInCookie,
+        domain: '.linkedin.com',
+        path: '/',
+        httpOnly: true,
+        secure: true,
+        sameSite: 'None' as const,
+      }])
+      console.log('[apply-job] LinkedIn cookie injected into browser context')
     }
 
     try {
