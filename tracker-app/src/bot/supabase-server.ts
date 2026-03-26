@@ -54,9 +54,11 @@ export async function createBotRun(
   userId: string,
   profileId: string,
 ): Promise<string> {
+  // If profileId is not a valid UUID (e.g. "inline-xxx"), set to null
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(profileId)
   const { data, error } = await insertRow('bot_runs', {
     user_id: userId,
-    search_profile_id: profileId,
+    search_profile_id: isUuid ? profileId : null,
     status: 'running',
     started_at: new Date().toISOString(),
   })
