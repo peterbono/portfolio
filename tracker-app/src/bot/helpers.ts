@@ -1,5 +1,15 @@
 import type { Page } from 'playwright'
 import type { ApplicantProfile } from './types'
+import { supabaseServer } from './supabase-server'
+
+// ---------------------------------------------------------------------------
+// Standard compressed variant filenames (created by compress-pdf task)
+// ---------------------------------------------------------------------------
+const VARIANT_FILES = [
+  { name: 'cv-10mb.pdf', quality: 'high' },
+  { name: 'cv-5mb.pdf', quality: 'medium' },
+  { name: 'cv-2mb.pdf', quality: 'low' },
+] as const
 
 /**
  * Solve CAPTCHA via Bright Data Scraping Browser's CDP command.
@@ -25,10 +35,96 @@ export async function humanDelay(min = 800, max = 2500): Promise<void> {
 }
 
 /**
- * Download CV from a URL and return as Buffer.
- * Uses Playwright's API context to fetch the file server-side.
+ * Get the best compressed CV variant for a given ATS size limit.
+ *
+ * Checks Supabase Storage for pre-compressed variants and returns a
+ * signed download URL for the largest variant under the size limit.
+ *
+ * Falls back to the original cvUrl (e.g. GitHub) if no variants exist.
+ *
+ * @param userId - The user whose variants to look up
+ * @param maxSizeMB - Maximum file size the ATS accepts (default: 5)
+ * @returns Signed URL or fallback URL
  */
-export async function downloadCV(page: Page, cvUrl: string): Promise<Buffer> {
+export async function getBestCvUrl(
+  userId: string,
+  maxSizeMB = 5,
+): Promise<string | null> {
+  const maxSizeBytes = maxSizeMB * 1024 * 1024
+
+  try {
+    // List files in the user's documents folder
+    const { data: files } = await supabaseServer.storage
+      .from('documents')
+      .list(`documents/${userId}`, { limit: 20 })
+
+    if (!files || files.length === 0) return null
+
+    // Find variant files and their sizes
+    const variants: { name: string; size: number; quality: string }[] = []
+    for (const vf of VARIANT_FILES) {
+      const match = files.find((f) => f.name === vf.name)
+      if (match) {
+        variants.push({
+          name: vf.name,
+          size: match.metadata?.size ?? 0,
+          quality: vf.quality,
+        })
+      }
+    }
+
+    if (variants.length === 0) return null
+
+    // Sort by size descending — pick the largest that fits
+    variants.sort((a, b) => b.size - a.size)
+    const best = variants.find((v) => v.size <= maxSizeBytes) ?? variants[variants.length - 1]
+
+    // Generate signed URL (1 hour expiry)
+    const { data: signedData, error } = await supabaseServer.storage
+      .from('documents')
+      .createSignedUrl(`documents/${userId}/${best.name}`, 3600)
+
+    if (error || !signedData?.signedUrl) {
+      console.warn(`[helpers] Failed to sign URL for ${best.name}:`, error?.message)
+      return null
+    }
+
+    console.log(`[helpers] Using ${best.quality} variant (${best.name}, ${(best.size / 1024 / 1024).toFixed(1)}MB) for ${maxSizeMB}MB limit`)
+    return signedData.signedUrl
+  } catch (err) {
+    console.warn('[helpers] getBestCvUrl failed:', err instanceof Error ? err.message : err)
+    return null
+  }
+}
+
+/**
+ * Download CV from a URL and return as Buffer.
+ *
+ * If a userId is provided, tries to fetch a pre-compressed variant from
+ * Supabase Storage first (picked for the given ATS size limit).
+ * Falls back to the provided cvUrl (e.g. GitHub raw URL).
+ */
+export async function downloadCV(
+  page: Page,
+  cvUrl: string,
+  options?: { userId?: string; atsMaxSizeMB?: number },
+): Promise<Buffer> {
+  // Try compressed variant first if we have a userId
+  if (options?.userId) {
+    const variantUrl = await getBestCvUrl(options.userId, options.atsMaxSizeMB ?? 5)
+    if (variantUrl) {
+      try {
+        const response = await page.context().request.get(variantUrl)
+        if (response.ok()) {
+          return await response.body()
+        }
+      } catch (err) {
+        console.warn('[helpers] Variant download failed, falling back to original:', err)
+      }
+    }
+  }
+
+  // Fallback: download from the original URL (e.g. GitHub)
   const response = await page.context().request.get(cvUrl)
   if (!response.ok()) {
     throw new Error(`Failed to download CV: ${response.status()} ${response.statusText()}`)

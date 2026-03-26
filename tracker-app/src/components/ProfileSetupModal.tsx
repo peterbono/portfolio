@@ -24,7 +24,11 @@ import {
   Send,
   Brain,
   Eye,
+  Loader2,
+  Zap,
 } from 'lucide-react'
+import { uploadDocument, triggerCompression } from '../lib/document-storage'
+import { supabase } from '../lib/supabase'
 
 // Mobile responsive CSS
 const profileModalResponsiveCSS = `
@@ -511,6 +515,15 @@ export function ProfileSetupModal({
   const [dragActive, setDragActive] = useState(false)
   const [linkInput, setLinkInput] = useState('')
 
+  // PDF compression state
+  const [compressionStatus, setCompressionStatus] = useState<
+    'idle' | 'uploading' | 'compressing' | 'done' | 'error'
+  >('idle')
+  const [compressionMessage, setCompressionMessage] = useState('')
+
+  // Ref to hold the actual File object for upload (state only holds metadata)
+  const cvFileObjectRef = useRef<File | null>(null)
+
   // File input refs
   const contextFileRef = useRef<HTMLInputElement>(null)
   const cvFileRef = useRef<HTMLInputElement>(null)
@@ -627,7 +640,50 @@ export function ProfileSetupModal({
     }
   }, [addContextFiles])
 
-  /* ---- Step 2: CV file handling ---- */
+  /* ---- Step 2: CV file handling + compression ---- */
+
+  /**
+   * Upload CV to Supabase Storage and trigger Ghostscript compression.
+   * Runs after the user selects a file or picks a suggestion.
+   */
+  const uploadAndCompress = useCallback(async (file: File) => {
+    // Check auth — compression requires a user ID for storage paths
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.user?.id) {
+      // Not authenticated: store file locally, compress after auth
+      cvFileObjectRef.current = file
+      setCompressionStatus('idle')
+      setCompressionMessage('Compression will run after you sign in.')
+      return
+    }
+
+    const userId = session.user.id
+
+    try {
+      // Step A: Upload original to Supabase Storage
+      setCompressionStatus('uploading')
+      setCompressionMessage('Uploading CV to secure storage...')
+
+      const { path: storagePath } = await uploadDocument(file, userId, 'recruiter')
+
+      // Step B: Trigger Ghostscript compression task
+      setCompressionStatus('compressing')
+      setCompressionMessage('Compressing for different ATS platforms...')
+
+      await triggerCompression(userId, storagePath, file.name)
+
+      // Compression runs async on Trigger.dev — we show success immediately
+      setCompressionStatus('done')
+      setCompressionMessage('3 versions ready: 10MB, 5MB, 2MB — the bot picks the right one automatically')
+    } catch (err) {
+      console.error('[ProfileSetup] Compression failed:', err)
+      setCompressionStatus('error')
+      setCompressionMessage(
+        err instanceof Error ? err.message : 'Compression failed. The original CV will still be used.'
+      )
+    }
+  }, [])
+
   const handleCvFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -639,9 +695,14 @@ export function ProfileSetupModal({
       setErrors((prev) => ({ ...prev, cv: 'File must be under 20MB' }))
       return
     }
+    // Store file reference and update profile metadata
+    cvFileObjectRef.current = file
     patch({ cvFileName: file.name, cvFileSize: file.size })
     setErrors((prev) => { const n = { ...prev }; delete n.cv; return n })
-  }, [patch])
+
+    // Trigger upload + compression in background
+    uploadAndCompress(file)
+  }, [patch, uploadAndCompress])
 
   const handlePortfolioFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -937,6 +998,37 @@ export function ProfileSetupModal({
           )}
           <input ref={cvFileRef} type="file" accept=".pdf,application/pdf" style={{ display: 'none' }} onChange={handleCvFileChange} />
           {errors.cv && <span style={ms.error}><AlertCircle size={12} /> {errors.cv}</span>}
+
+          {/* Compression status indicator */}
+          {compressionStatus !== 'idle' && profile.cvFileName && (
+            <div style={{
+              marginTop: 8,
+              padding: '10px 14px',
+              borderRadius: 8,
+              fontSize: 13,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              background: compressionStatus === 'done' ? 'rgba(52, 211, 153, 0.08)'
+                : compressionStatus === 'error' ? 'rgba(239, 68, 68, 0.08)'
+                : 'rgba(99, 102, 241, 0.08)',
+              color: compressionStatus === 'done' ? '#34d399'
+                : compressionStatus === 'error' ? '#ef4444'
+                : 'var(--accent)',
+              border: `1px solid ${
+                compressionStatus === 'done' ? 'rgba(52, 211, 153, 0.2)'
+                : compressionStatus === 'error' ? 'rgba(239, 68, 68, 0.2)'
+                : 'rgba(99, 102, 241, 0.2)'
+              }`,
+            }}>
+              {(compressionStatus === 'uploading' || compressionStatus === 'compressing') && (
+                <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+              )}
+              {compressionStatus === 'done' && <Zap size={14} />}
+              {compressionStatus === 'error' && <AlertCircle size={14} />}
+              <span>{compressionMessage}</span>
+            </div>
+          )}
         </div>
 
         {/* Portfolio PDF Slot */}

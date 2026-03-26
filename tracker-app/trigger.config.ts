@@ -1,5 +1,6 @@
 import { defineConfig } from "@trigger.dev/sdk/v3"
 import { playwright } from "@trigger.dev/build/extensions/playwright"
+import { aptGet } from "@trigger.dev/build/extensions/core"
 
 export default defineConfig({
   project: "proj_tnxarbbygyqjddsnteoj",
@@ -22,6 +23,8 @@ export default defineConfig({
     extensions: [
       // Install Chromium inside the Trigger.dev container so Playwright can launch it
       playwright({ browsers: ["chromium"] }),
+      // Install Ghostscript for PDF compression task
+      aptGet({ packages: ["ghostscript"] }),
     ],
   },
 })
