@@ -73,19 +73,25 @@ function buildLinkedInSearchUrl(profile: SearchProfile): string {
   const base = 'https://www.linkedin.com/jobs/search/'
   const params = new URLSearchParams()
 
-  // Keywords
-  const keywords = profile.keywords?.join(' ') ?? 'Product Designer'
+  // Keywords — use first keyword only (LinkedIn search works best with single terms)
+  // Multiple keywords are searched across separate scout passes
+  const keywords = profile.keywords?.[0] ?? 'Product Designer'
   params.set('keywords', keywords)
 
-  // Location
+  // Location — use profile.location or default to "Asia Pacific" for APAC searches
   if (profile.location) {
     params.set('location', profile.location)
+  } else {
+    // Default: worldwide remote jobs
+    params.set('location', 'Worldwide')
   }
 
   // Remote filter (f_WT=2 = remote)
   if (profile.remote_only) {
     params.set('f_WT', '2')
   }
+  // Always add remote filter for better results
+  params.set('f_WT', '2')
 
   // Date posted: past week (f_TPR=r604800)
   params.set('f_TPR', 'r604800')
@@ -195,7 +201,9 @@ export async function scoutJobs(
     console.log(`[scout] Page ${pageNum + 1} HTML snippet: ${bodySnippet.substring(0, 500)}`)
 
     // Try multiple selector strategies (LinkedIn changes HTML frequently)
+    // Public LinkedIn uses different selectors than authenticated
     const cards = await page.locator([
+      // Authenticated LinkedIn selectors
       '.job-card-container',
       '.jobs-search-results__list-item',
       '[data-job-id]',
@@ -203,22 +211,48 @@ export async function scoutJobs(
       '.jobs-search-results-list__list-item',
       'li.ember-view.occludable-update',
       '[data-occludable-job-id]',
+      // Public LinkedIn (guest) selectors
+      '.base-card',
+      '.base-search-card',
+      '.job-search-card',
+      'li.jobs-search__results-list > li',
+      '.base-card--link',
+      'ul.jobs-search__results-list li',
     ].join(', ')).all()
     console.log(`[scout] Page ${pageNum + 1}: found ${cards.length} cards`)
 
     for (const card of cards) {
       try {
-        const title = await card.locator('.job-card-list__title, .job-card-container__link, a[data-control-name]')
+        const title = await card.locator([
+          '.job-card-list__title',
+          '.job-card-container__link',
+          'a[data-control-name]',
+          '.base-search-card__title',
+          '.base-card__full-link',
+          'h3.base-search-card__title',
+          'a.base-card__full-link',
+        ].join(', '))
           .first()
           .innerText()
           .catch(() => '')
 
-        const company = await card.locator('.job-card-container__primary-description, .artdeco-entity-lockup__subtitle')
+        const company = await card.locator([
+          '.job-card-container__primary-description',
+          '.artdeco-entity-lockup__subtitle',
+          '.base-search-card__subtitle',
+          'h4.base-search-card__subtitle',
+          'a.hidden-nested-link',
+        ].join(', '))
           .first()
           .innerText()
           .catch(() => '')
 
-        const location = await card.locator('.job-card-container__metadata-wrapper li, .artdeco-entity-lockup__caption')
+        const location = await card.locator([
+          '.job-card-container__metadata-wrapper li',
+          '.artdeco-entity-lockup__caption',
+          '.job-search-card__location',
+          '.base-search-card__metadata',
+        ].join(', '))
           .first()
           .innerText()
           .catch(() => '')
