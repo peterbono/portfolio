@@ -4097,6 +4097,12 @@ export function AutopilotView() {
           onDismiss={handleProfileDismiss}
           locationRulesSummary={locationRulesSummary}
           remotePreference={remotePreferenceSummary}
+          locationRules={searchConfig.locationRules.map((r) => ({
+            value: r.value,
+            type: r.type,
+            workArrangement: r.workArrangement,
+            salary: r.minSalary ? `${getCurrencySymbol(r.currency)}${((r.minSalary) / 1000).toFixed(0)}k+` : undefined,
+          }))}
         />
       )}
 

@@ -582,11 +582,19 @@ const STEP_META = [
 /* ------------------------------------------------------------------ */
 /*  Main component                                                     */
 /* ------------------------------------------------------------------ */
+interface LocationRuleSummary {
+  value: string // "APAC", "Bangkok", etc.
+  type: 'zone' | 'city' | 'country'
+  workArrangement: string // "remote", "hybrid", "onsite", "any"
+  salary?: string // "EUR80k+"
+}
+
 interface ProfileSetupModalProps {
   onComplete: () => void
   onDismiss: () => void
   locationRulesSummary?: string
   remotePreference?: string
+  locationRules?: LocationRuleSummary[]
 }
 
 export function ProfileSetupModal({
@@ -594,6 +602,7 @@ export function ProfileSetupModal({
   onDismiss,
   locationRulesSummary,
   remotePreference,
+  locationRules,
 }: ProfileSetupModalProps) {
   const [step, setStep] = useState(0)
   const [profile, setProfile] = useState<UserProfile>(loadProfile)
@@ -1394,7 +1403,36 @@ export function ProfileSetupModal({
         </div>
       </div>
 
-      {remotePreference && (
+      {(locationRules && locationRules.length > 0) ? (
+        <div style={ms.fieldGroup}>
+          <label style={ms.label}>
+            <Globe size={14} color="var(--text-tertiary)" />
+            Work Arrangement
+            <span style={ms.readOnlyBadge}>from search settings</span>
+          </label>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {locationRules.map((rule, i) => {
+              const icon = rule.type === 'zone' ? '🌏' : '📍'
+              const arr = rule.workArrangement === 'any' ? 'Any' : rule.workArrangement.charAt(0).toUpperCase() + rule.workArrangement.slice(1)
+              const arrColor = rule.workArrangement === 'remote' ? '#34d399'
+                : rule.workArrangement === 'hybrid' ? '#fbbf24'
+                : rule.workArrangement === 'onsite' ? '#60a5fa' : 'var(--text-secondary)'
+              return (
+                <div key={i} style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '6px 10px', borderRadius: 6, fontSize: 13,
+                  background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+                }}>
+                  <span>{icon}</span>
+                  <span style={{ color: 'var(--text-primary)', flex: 1 }}>{rule.value}</span>
+                  <span style={{ color: arrColor, fontWeight: 500, fontSize: 12 }}>{arr}</span>
+                  {rule.salary && <span style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>{rule.salary}</span>}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      ) : remotePreference ? (
         <div style={ms.fieldGroup}>
           <label style={ms.label}>
             <Globe size={14} color="var(--text-tertiary)" />
@@ -1403,7 +1441,7 @@ export function ProfileSetupModal({
           </label>
           <div style={ms.readOnlyField}>{remotePreference}</div>
         </div>
-      )}
+      ) : null}
 
       <div style={ms.fieldGroup}>
         <label style={ms.label}>
