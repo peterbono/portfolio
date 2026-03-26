@@ -32,10 +32,9 @@ export const applyJobTask = task({
       throw new Error("No search config provided. Set up keywords in Autopilot first.")
     }
 
-    // Bright Data for paid users, local Chromium for free
+    // Use Bright Data if available (residential IPs, anti-detection)
     const SBR_AUTH = process.env.BRIGHTDATA_SBR_AUTH
-    const isPaid = payload.plan && payload.plan !== 'free'
-    const useBrightData = SBR_AUTH && isPaid
+    const useBrightData = !!SBR_AUTH // always use if configured
 
     const browser = useBrightData
       ? await chromium.connectOverCDP(`wss://${SBR_AUTH}@brd.superproxy.io:9222`)
