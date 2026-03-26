@@ -192,7 +192,7 @@ Return ONLY the JSON object, no markdown fences.`
  * Qualify multiple job descriptions in parallel with a concurrency limit.
  * Default concurrency: 5 (to respect Anthropic rate limits).
  */
-const MAX_QUALIFY_PER_RUN = 30 // Cap to control Haiku API costs (~$0.003/job)
+const MAX_QUALIFY_PER_RUN = 15 // Cap to control Haiku API costs (~$0.003/job, ~$0.045/run)
 
 export async function qualifyJobsBatch(
   jobs: Array<{ jobDescription: string; url: string }>,
