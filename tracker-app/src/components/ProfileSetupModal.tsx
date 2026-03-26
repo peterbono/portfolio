@@ -18,6 +18,12 @@ import {
   ChevronRight,
   ChevronLeft,
   AlertCircle,
+  Plus,
+  Trash2,
+  Sparkles,
+  Send,
+  Brain,
+  Eye,
 } from 'lucide-react'
 
 // Mobile responsive CSS
@@ -61,30 +67,42 @@ if (typeof document !== 'undefined') {
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
-export interface UserProfile {
-  /* Step 1 — Documents: Context (for AI to understand you) */
-  contextCvFileName: string | null
-  contextCvFileSize: number | null
-  contextPortfolioUrl: string
-  contextWebsiteUrl: string
-  contextLinkedinPdfFileName: string | null  // detailed LinkedIn export
+/** A file uploaded in Step 1 (context for AI) */
+export interface ContextFile {
+  id: string
+  fileName: string
+  fileSize: number
+  fileType: string // mime or extension
+}
 
-  /* Step 1 — Documents: Submit (sent to recruiters) */
-  cvFileName: string | null          // 1-page designed CV
+/** A link added in Step 1 */
+export interface ContextLink {
+  id: string
+  url: string
+  label?: string // auto-detected: "LinkedIn", "GitHub", "Website", etc.
+}
+
+export interface UserProfile {
+  /* Step 1 — Feed the AI: raw materials */
+  contextFiles: ContextFile[]
+  contextLinks: ContextLink[]
+
+  /* Step 2 — For Recruiters: curated submission */
+  cvFileName: string | null
   cvFileSize: number | null
-  portfolioFileName: string | null   // curated portfolio PDF
+  portfolioFileName: string | null
   portfolioFileSize: number | null
-  portfolioUrl: string               // online portfolio link
+  portfolioUrl: string
   websiteUrl: string
 
-  /* Step 2 — Professional Links */
+  /* Step 3 — Professional */
   linkedinUrl: string
   githubUrl: string
   currentRole: string
   yearsOfExperience: number | null
   keySkills: string[]
 
-  /* Step 3 — Screening */
+  /* Step 4 — Screening */
   workAuthorization: string
   noticePeriod: string
   languages: string[]
@@ -92,26 +110,23 @@ export interface UserProfile {
 }
 
 const EMPTY_PROFILE: UserProfile = {
-  // Context (for AI)
-  contextCvFileName: null,
-  contextCvFileSize: null,
-  contextPortfolioUrl: '',
-  contextWebsiteUrl: '',
-  contextLinkedinPdfFileName: null,
-  // Submit (to recruiters)
+  // Step 1
+  contextFiles: [],
+  contextLinks: [],
+  // Step 2
   cvFileName: null,
   cvFileSize: null,
   portfolioFileName: null,
   portfolioFileSize: null,
   portfolioUrl: '',
   websiteUrl: 'https://',
-  // Professional
+  // Step 3
   linkedinUrl: '',
   githubUrl: '',
   currentRole: '',
   yearsOfExperience: null,
   keySkills: [],
-  // Screening
+  // Step 4
   workAuthorization: '',
   noticePeriod: '',
   languages: [],
@@ -124,7 +139,31 @@ const PROFILE_COMPLETE_LS_KEY = 'tracker_v2_profile_complete'
 function loadProfile(): UserProfile {
   try {
     const raw = localStorage.getItem(PROFILE_LS_KEY)
-    if (raw) return { ...EMPTY_PROFILE, ...JSON.parse(raw) }
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      // Migration: if old format had contextCvFileName but no contextFiles
+      if (parsed.contextCvFileName && !parsed.contextFiles) {
+        parsed.contextFiles = [{
+          id: 'migrated-cv',
+          fileName: parsed.contextCvFileName,
+          fileSize: parsed.contextCvFileSize || 0,
+          fileType: 'application/pdf',
+        }]
+      }
+      if (!parsed.contextFiles) parsed.contextFiles = []
+      if (!parsed.contextLinks) {
+        // Migrate old URLs to contextLinks
+        const links: ContextLink[] = []
+        if (parsed.contextPortfolioUrl) {
+          links.push({ id: 'migrated-portfolio', url: parsed.contextPortfolioUrl, label: 'Portfolio' })
+        }
+        if (parsed.contextWebsiteUrl) {
+          links.push({ id: 'migrated-website', url: parsed.contextWebsiteUrl, label: 'Website' })
+        }
+        parsed.contextLinks = links
+      }
+      return { ...EMPTY_PROFILE, ...parsed }
+    }
   } catch { /* ignore */ }
   return { ...EMPTY_PROFILE }
 }
@@ -144,7 +183,55 @@ export function markProfileComplete() {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Skill suggestions                                                  */
+/*  Helpers                                                            */
+/* ------------------------------------------------------------------ */
+
+function generateId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function detectLinkLabel(url: string): string | undefined {
+  const lower = url.toLowerCase()
+  if (lower.includes('linkedin.com')) return 'LinkedIn'
+  if (lower.includes('github.com') || lower.includes('github.io')) return 'GitHub'
+  if (lower.includes('dribbble.com')) return 'Dribbble'
+  if (lower.includes('behance.net')) return 'Behance'
+  if (lower.includes('figma.com')) return 'Figma'
+  if (lower.includes('medium.com')) return 'Medium'
+  if (lower.includes('notion.so') || lower.includes('notion.site')) return 'Notion'
+  return undefined
+}
+
+function formatFileSize(bytes: number | null): string {
+  if (!bytes) return ''
+  if (bytes < 1024) return `${bytes}B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)}KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`
+}
+
+function isValidUrl(url: string): boolean {
+  if (!url || url === 'https://') return true
+  try {
+    new URL(url)
+    return true
+  } catch {
+    return false
+  }
+}
+
+const MAX_FILE_SIZE = 20 * 1024 * 1024 // 20MB per file
+const MAX_TOTAL_FILES = 10
+const ACCEPTED_FILE_TYPES = '.pdf,.doc,.docx,.png,.jpg,.jpeg'
+const ACCEPTED_MIME = [
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'image/png',
+  'image/jpeg',
+]
+
+/* ------------------------------------------------------------------ */
+/*  Skill / Language suggestions                                       */
 /* ------------------------------------------------------------------ */
 const SKILL_SUGGESTIONS = [
   'Figma', 'React', 'TypeScript', 'Python', 'JavaScript', 'CSS',
@@ -234,7 +321,6 @@ function ChipInput({
     }
   }, [input, value, addChip, onChange])
 
-  // Close dropdown on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
@@ -366,17 +452,42 @@ const chipStyles: Record<string, React.CSSProperties> = {
 }
 
 /* ------------------------------------------------------------------ */
-/*  URL validation helper                                              */
+/*  Step info for headers                                              */
 /* ------------------------------------------------------------------ */
-function isValidUrl(url: string): boolean {
-  if (!url || url === 'https://') return true // empty = optional = valid
-  try {
-    new URL(url)
-    return true
-  } catch {
-    return false
-  }
-}
+const STEP_META = [
+  {
+    key: 'feed',
+    label: 'Feed the AI',
+    icon: Brain,
+    title: 'Feed the AI',
+    subtitle: 'Upload documents and paste links. The AI reads everything to understand your profile.',
+    tip: 'CV, portfolio, LinkedIn export, certificates -- anything goes. The AI figures out what is what.',
+  },
+  {
+    key: 'recruiters',
+    label: 'For Recruiters',
+    icon: Send,
+    title: 'For Recruiters',
+    subtitle: 'Choose what actually gets sent with your applications.',
+    tip: 'This is what hiring managers see. Pick your best 1-page CV and portfolio.',
+  },
+  {
+    key: 'professional',
+    label: 'Professional',
+    icon: Briefcase,
+    title: 'Professional Info',
+    subtitle: 'Your role, experience, and key skills.',
+    tip: null,
+  },
+  {
+    key: 'screening',
+    label: 'Screening',
+    icon: Shield,
+    title: 'Screening Questions',
+    subtitle: 'Common questions recruiters ask. Pre-fill them once, never type again.',
+    tip: null,
+  },
+]
 
 /* ------------------------------------------------------------------ */
 /*  Main component                                                     */
@@ -384,7 +495,6 @@ function isValidUrl(url: string): boolean {
 interface ProfileSetupModalProps {
   onComplete: () => void
   onDismiss: () => void
-  /** The search config location rules — used for read-only salary/remote summary */
   locationRulesSummary?: string
   remotePreference?: string
 }
@@ -398,11 +508,15 @@ export function ProfileSetupModal({
   const [step, setStep] = useState(0)
   const [profile, setProfile] = useState<UserProfile>(loadProfile)
   const [errors, setErrors] = useState<Record<string, string>>({})
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const portfolioFileRef = useRef<HTMLInputElement>(null)
-  const contextCvRef = useRef<HTMLInputElement>(null)
+  const [dragActive, setDragActive] = useState(false)
+  const [linkInput, setLinkInput] = useState('')
 
-  const STEPS = ['Documents', 'Professional', 'Screening']
+  // File input refs
+  const contextFileRef = useRef<HTMLInputElement>(null)
+  const cvFileRef = useRef<HTMLInputElement>(null)
+  const portfolioFileRef = useRef<HTMLInputElement>(null)
+
+  const STEPS = STEP_META.map((s) => s.label)
 
   const patch = useCallback((p: Partial<UserProfile>) => {
     setProfile((prev) => {
@@ -410,7 +524,6 @@ export function ProfileSetupModal({
       saveProfile(next)
       return next
     })
-    // Clear related errors
     setErrors((prev) => {
       const next = { ...prev }
       Object.keys(p).forEach((k) => delete next[k])
@@ -418,43 +531,142 @@ export function ProfileSetupModal({
     })
   }, [])
 
-  /* ---- File upload ---- */
-  const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+  /* ---- Step 1: File handling ---- */
+  const addContextFiles = useCallback((files: FileList | File[]) => {
+    const arr = Array.from(files)
+    const valid: ContextFile[] = []
+    const errs: string[] = []
 
-    if (file.type !== 'application/pdf') {
-      setErrors((prev) => ({ ...prev, cv: 'Only PDF files are accepted' }))
+    for (const file of arr) {
+      if (!ACCEPTED_MIME.includes(file.type)) {
+        errs.push(`${file.name}: unsupported format`)
+        continue
+      }
+      if (file.size > MAX_FILE_SIZE) {
+        errs.push(`${file.name}: exceeds 20MB`)
+        continue
+      }
+      if (profile.contextFiles.length + valid.length >= MAX_TOTAL_FILES) {
+        errs.push(`Maximum ${MAX_TOTAL_FILES} files allowed`)
+        break
+      }
+      // Skip duplicates by name
+      if (profile.contextFiles.some((f) => f.fileName === file.name)) {
+        errs.push(`${file.name}: already added`)
+        continue
+      }
+      valid.push({
+        id: generateId(),
+        fileName: file.name,
+        fileSize: file.size,
+        fileType: file.type,
+      })
+    }
+
+    if (valid.length > 0) {
+      patch({ contextFiles: [...profile.contextFiles, ...valid] })
+    }
+    if (errs.length > 0) {
+      setErrors((prev) => ({ ...prev, contextFiles: errs.join('. ') }))
+      setTimeout(() => setErrors((prev) => { const n = { ...prev }; delete n.contextFiles; return n }), 4000)
+    }
+  }, [profile.contextFiles, patch])
+
+  const removeContextFile = useCallback((id: string) => {
+    patch({ contextFiles: profile.contextFiles.filter((f) => f.id !== id) })
+  }, [profile.contextFiles, patch])
+
+  const handleContextFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) addContextFiles(e.target.files)
+    e.target.value = '' // reset so same file can be re-selected
+  }, [addContextFiles])
+
+  /* ---- Step 1: Link handling ---- */
+  const addContextLink = useCallback(() => {
+    const url = linkInput.trim()
+    if (!url) return
+    // Auto-prepend https:// if missing
+    const fullUrl = url.match(/^https?:\/\//) ? url : `https://${url}`
+    if (!isValidUrl(fullUrl)) {
+      setErrors((prev) => ({ ...prev, contextLink: 'Invalid URL' }))
       return
     }
-    if (file.size > 20 * 1024 * 1024) {
+    if (profile.contextLinks.some((l) => l.url === fullUrl)) {
+      setErrors((prev) => ({ ...prev, contextLink: 'Already added' }))
+      return
+    }
+    const label = detectLinkLabel(fullUrl)
+    patch({ contextLinks: [...profile.contextLinks, { id: generateId(), url: fullUrl, label }] })
+    setLinkInput('')
+    setErrors((prev) => { const n = { ...prev }; delete n.contextLink; return n })
+  }, [linkInput, profile.contextLinks, patch])
+
+  const removeContextLink = useCallback((id: string) => {
+    patch({ contextLinks: profile.contextLinks.filter((l) => l.id !== id) })
+  }, [profile.contextLinks, patch])
+
+  /* ---- Drag & drop ---- */
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragActive(true)
+  }, [])
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragActive(false)
+  }, [])
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragActive(false)
+    if (e.dataTransfer.files.length > 0) {
+      addContextFiles(e.dataTransfer.files)
+    }
+  }, [addContextFiles])
+
+  /* ---- Step 2: CV file handling ---- */
+  const handleCvFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.type !== 'application/pdf') {
+      setErrors((prev) => ({ ...prev, cv: 'Only PDF files accepted for CV' }))
+      return
+    }
+    if (file.size > MAX_FILE_SIZE) {
       setErrors((prev) => ({ ...prev, cv: 'File must be under 20MB' }))
       return
     }
-
-    patch({
-      cvFileName: file.name,
-      cvFileSize: file.size,
-    })
-    setErrors((prev) => {
-      const next = { ...prev }
-      delete next.cv
-      return next
-    })
+    patch({ cvFileName: file.name, cvFileSize: file.size })
+    setErrors((prev) => { const n = { ...prev }; delete n.cv; return n })
   }, [patch])
 
   const handlePortfolioFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    if (file.type !== 'application/pdf' || file.size > 20 * 1024 * 1024) return
+    if (file.type !== 'application/pdf' || file.size > MAX_FILE_SIZE) return
     patch({ portfolioFileName: file.name, portfolioFileSize: file.size })
   }, [patch])
 
-  const handleContextCvChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    if (file.type !== 'application/pdf' || file.size > 10 * 1024 * 1024) return
-    patch({ contextCvFileName: file.name, contextCvFileSize: file.size })
+  /** Use a context file as the CV in Step 2 */
+  const useSuggestedCv = useCallback((cf: ContextFile) => {
+    patch({ cvFileName: cf.fileName, cvFileSize: cf.fileSize })
+  }, [patch])
+
+  /** Use a context file as the portfolio PDF in Step 2 */
+  const useSuggestedPortfolio = useCallback((cf: ContextFile) => {
+    patch({ portfolioFileName: cf.fileName, portfolioFileSize: cf.fileSize })
+  }, [patch])
+
+  /** Copy a context link to the recruiter URLs */
+  const useContextLinkAsPortfolio = useCallback((url: string) => {
+    patch({ portfolioUrl: url })
+  }, [patch])
+
+  const useContextLinkAsWebsite = useCallback((url: string) => {
+    patch({ websiteUrl: url })
   }, [patch])
 
   /* ---- Step validation ---- */
@@ -462,8 +674,16 @@ export function ProfileSetupModal({
     const newErrors: Record<string, string> = {}
 
     if (stepIndex === 0) {
+      // Step 1: Need at least 1 file or 1 link
+      if (profile.contextFiles.length === 0 && profile.contextLinks.length === 0) {
+        newErrors.contextFiles = 'Add at least one document or link so the AI can understand your profile'
+      }
+    }
+
+    if (stepIndex === 1) {
+      // Step 2: CV is required
       if (!profile.cvFileName) {
-        newErrors.cv = 'A CV/Resume is required to proceed'
+        newErrors.cv = 'A CV/Resume is required for applications'
       }
       if (profile.portfolioUrl && !isValidUrl(profile.portfolioUrl)) {
         newErrors.portfolioUrl = 'Please enter a valid URL'
@@ -473,7 +693,7 @@ export function ProfileSetupModal({
       }
     }
 
-    if (stepIndex === 1) {
+    if (stepIndex === 2) {
       if (profile.linkedinUrl && !isValidUrl(profile.linkedinUrl)) {
         newErrors.linkedinUrl = 'Please enter a valid URL'
       }
@@ -505,228 +725,459 @@ export function ProfileSetupModal({
   }, [step, profile, validateStep, onComplete])
 
   const handleSkip = useCallback(() => {
-    // On step 0 (Documents), CV is required — can't skip if no CV
-    if (step === 0 && !profile.cvFileName) {
-      setErrors({ cv: 'A CV/Resume is required. Upload it to continue.' })
+    if (step === 0 && profile.contextFiles.length === 0 && profile.contextLinks.length === 0) {
+      setErrors({ contextFiles: 'Add at least one document or link to continue' })
+      return
+    }
+    if (step === 1 && !profile.cvFileName) {
+      setErrors({ cv: 'A CV/Resume is required. Upload or select one to continue.' })
       return
     }
     if (step < STEPS.length - 1) {
       setStep(step + 1)
     } else {
-      // Last step skip = complete
       handleComplete()
     }
-  }, [step, profile.cvFileName, STEPS.length, handleComplete])
+  }, [step, profile.contextFiles.length, profile.contextLinks.length, profile.cvFileName, STEPS.length, handleComplete])
 
-  const formatFileSize = (bytes: number | null): string => {
-    if (!bytes) return ''
-    if (bytes < 1024) return `${bytes}B`
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)}KB`
-    return `${(bytes / (1024 * 1024)).toFixed(1)}MB`
-  }
+  // Helper: get PDF files from context (for Step 2 suggestions)
+  const contextPdfs = profile.contextFiles.filter((f) => f.fileType === 'application/pdf')
 
-  /* ---- Render steps ---- */
+  /* ================================================================ */
+  /*  STEP 0 — Feed the AI                                            */
+  /* ================================================================ */
   const renderStep0 = () => (
     <div style={ms.stepContent}>
-      {/* ---- Section: Send to Recruiters ---- */}
-      <div style={ms.sectionHeader}>
-        <span style={ms.sectionIcon}>📤</span>
-        <div>
-          <h4 style={ms.sectionTitle}>Send to Recruiters</h4>
-          <p style={ms.sectionDesc}>These files are attached to every application.</p>
+      {/* Step description */}
+      <div style={ms.stepTipBox}>
+        <Sparkles size={14} color="var(--accent)" style={{ flexShrink: 0, marginTop: 1 }} />
+        <span style={ms.stepTipText}>
+          {STEP_META[0].tip}
+        </span>
+      </div>
+
+      {/* Drop zone */}
+      <div
+        style={{
+          ...ms.dropZone,
+          ...(dragActive ? ms.dropZoneActive : {}),
+        }}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onClick={() => contextFileRef.current?.click()}
+      >
+        <Upload size={28} color={dragActive ? 'var(--accent)' : 'var(--text-tertiary)'} />
+        <div style={ms.dropZoneText}>
+          <span style={ms.dropZoneTitle}>
+            {dragActive ? 'Drop files here' : 'Drop files or click to browse'}
+          </span>
+          <span style={ms.dropZoneSub}>
+            PDF, DOC, DOCX, PNG, JPG -- up to 20MB each, {MAX_TOTAL_FILES} files max
+          </span>
         </div>
       </div>
+      <input
+        ref={contextFileRef}
+        type="file"
+        accept={ACCEPTED_FILE_TYPES}
+        multiple
+        style={{ display: 'none' }}
+        onChange={handleContextFileInput}
+      />
 
-      <div style={ms.fieldGroup}>
-        <label style={ms.label}>
-          <FileText size={14} color="var(--text-tertiary)" />
-          CV / Resume (1-page) <span style={ms.required}>*</span>
-        </label>
-        <p style={ms.helper}>Upload your polished, 1-page CV — this is what recruiters see.</p>
-        {profile.cvFileName ? (
-          <div style={ms.uploadedFile}>
-            <div style={ms.uploadedFileInfo}>
-              <Check size={16} color="#34d399" />
-              <span style={ms.uploadedFileName}>{profile.cvFileName}</span>
-              {profile.cvFileSize && (
-                <span style={ms.uploadedFileSize}>{formatFileSize(profile.cvFileSize)}</span>
-              )}
+      {/* Uploaded files list */}
+      {profile.contextFiles.length > 0 && (
+        <div style={ms.fileList}>
+          {profile.contextFiles.map((f) => (
+            <div key={f.id} style={ms.fileRow}>
+              <div style={ms.fileRowInfo}>
+                <FileText size={14} color="var(--text-tertiary)" />
+                <span style={ms.fileRowName}>{f.fileName}</span>
+                <span style={ms.fileRowSize}>{formatFileSize(f.fileSize)}</span>
+              </div>
+              <button type="button" style={ms.fileRowRemove} onClick={() => removeContextFile(f.id)}>
+                <Trash2 size={13} />
+              </button>
             </div>
-            <button type="button" style={ms.uploadedFileChange} onClick={() => fileInputRef.current?.click()}>Change</button>
+          ))}
+          <div style={ms.fileListSummary}>
+            {profile.contextFiles.length} file{profile.contextFiles.length > 1 ? 's' : ''} --{' '}
+            {formatFileSize(profile.contextFiles.reduce((sum, f) => sum + f.fileSize, 0))} total
           </div>
-        ) : (
-          <button type="button" style={ms.uploadBtn} onClick={() => fileInputRef.current?.click()}>
-            <Upload size={16} /> Upload PDF (max 20MB)
-          </button>
-        )}
-        <input ref={fileInputRef} type="file" accept=".pdf,application/pdf" style={{ display: 'none' }} onChange={handleFileChange} />
-        {errors.cv && <span style={ms.error}><AlertCircle size={12} /> {errors.cv}</span>}
-      </div>
-
-      <div style={ms.fieldGroup}>
-        <label style={ms.label}>
-          <FileText size={14} color="var(--text-tertiary)" />
-          Portfolio PDF <span style={ms.optional}>optional</span>
-        </label>
-        {profile.portfolioFileName ? (
-          <div style={ms.uploadedFile}>
-            <div style={ms.uploadedFileInfo}>
-              <Check size={16} color="#34d399" />
-              <span style={ms.uploadedFileName}>{profile.portfolioFileName}</span>
-              {profile.portfolioFileSize && (
-                <span style={ms.uploadedFileSize}>{formatFileSize(profile.portfolioFileSize)}</span>
-              )}
-            </div>
-            <button type="button" style={ms.uploadedFileChange} onClick={() => portfolioFileRef.current?.click()}>Change</button>
-          </div>
-        ) : (
-          <button type="button" style={{ ...ms.uploadBtn, borderColor: 'var(--border)' }} onClick={() => portfolioFileRef.current?.click()}>
-            <Upload size={16} /> Upload Portfolio PDF
-          </button>
-        )}
-        <input ref={portfolioFileRef} type="file" accept=".pdf,application/pdf" style={{ display: 'none' }} onChange={handlePortfolioFileChange} />
-      </div>
-
-      <div style={ms.fieldGroup}>
-        <label style={ms.label}><LinkIcon size={14} color="var(--text-tertiary)" /> Portfolio URL <span style={ms.optional}>optional</span></label>
-        <input type="url" style={ms.input} placeholder="https://your-portfolio.com" value={profile.portfolioUrl} onChange={(e) => patch({ portfolioUrl: e.target.value })} />
-        {errors.portfolioUrl && <span style={ms.error}><AlertCircle size={12} /> {errors.portfolioUrl}</span>}
-      </div>
-
-      <div style={ms.fieldGroup}>
-        <label style={ms.label}><Globe size={14} color="var(--text-tertiary)" /> Website <span style={ms.optional}>optional</span></label>
-        <input type="url" style={ms.input} placeholder="https://yoursite.com" value={profile.websiteUrl} onChange={(e) => patch({ websiteUrl: e.target.value })} />
-        {errors.websiteUrl && <span style={ms.error}><AlertCircle size={12} /> {errors.websiteUrl}</span>}
-      </div>
-
-      {/* ---- Separator ---- */}
-      <div style={{ borderTop: '1px solid var(--border)', margin: '8px 0' }} />
-
-      {/* ---- Section: Context for AI ---- */}
-      <div style={ms.sectionHeader}>
-        <span style={ms.sectionIcon}>🧠</span>
-        <div>
-          <h4 style={ms.sectionTitle}>Context for AI</h4>
-          <p style={ms.sectionDesc}>Help the bot understand your full profile. These are NOT sent to recruiters.</p>
         </div>
-      </div>
+      )}
 
-      <div style={ms.fieldGroup}>
-        <label style={ms.label}><FileText size={14} color="var(--text-tertiary)" /> Detailed CV / LinkedIn PDF <span style={ms.optional}>optional</span></label>
-        <p style={ms.helper}>Upload your complete LinkedIn export or detailed CV. The AI reads this to answer screening questions accurately.</p>
-        {profile.contextCvFileName ? (
-          <div style={ms.uploadedFile}>
-            <div style={ms.uploadedFileInfo}>
-              <Check size={16} color="#60a5fa" />
-              <span style={ms.uploadedFileName}>{profile.contextCvFileName}</span>
-              {profile.contextCvFileSize && (
-                <span style={ms.uploadedFileSize}>{formatFileSize(profile.contextCvFileSize)}</span>
-              )}
-            </div>
-            <button type="button" style={ms.uploadedFileChange} onClick={() => contextCvRef.current?.click()}>Change</button>
-          </div>
-        ) : (
-          <button type="button" style={{ ...ms.uploadBtn, borderColor: 'rgba(96, 165, 250, 0.3)' }} onClick={() => contextCvRef.current?.click()}>
-            <Upload size={16} /> Upload detailed CV / LinkedIn PDF
+      {errors.contextFiles && (
+        <span style={ms.error}><AlertCircle size={12} /> {errors.contextFiles}</span>
+      )}
+
+      {/* Link input */}
+      <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0', paddingTop: 16 }}>
+        <label style={ms.label}>
+          <LinkIcon size={14} color="var(--text-tertiary)" />
+          Add links
+        </label>
+        <p style={ms.helper}>LinkedIn, GitHub, Dribbble, personal website -- paste any URL</p>
+        <div style={ms.linkInputRow}>
+          <input
+            type="url"
+            style={{ ...ms.input, flex: 1 }}
+            placeholder="https://..."
+            value={linkInput}
+            onChange={(e) => {
+              setLinkInput(e.target.value)
+              setErrors((prev) => { const n = { ...prev }; delete n.contextLink; return n })
+            }}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addContextLink() } }}
+          />
+          <button
+            type="button"
+            style={ms.addLinkBtn}
+            onClick={addContextLink}
+            disabled={!linkInput.trim()}
+          >
+            <Plus size={16} />
           </button>
+        </div>
+        {errors.contextLink && (
+          <span style={ms.error}><AlertCircle size={12} /> {errors.contextLink}</span>
         )}
-        <input ref={contextCvRef} type="file" accept=".pdf,application/pdf" style={{ display: 'none' }} onChange={handleContextCvChange} />
       </div>
 
-      <div style={ms.fieldGroup}>
-        <label style={ms.label}><Globe size={14} color="var(--text-tertiary)" /> Portfolio URL (detailed) <span style={ms.optional}>optional</span></label>
-        <input type="url" style={ms.input} placeholder="https://full-portfolio.com" value={profile.contextPortfolioUrl} onChange={(e) => patch({ contextPortfolioUrl: e.target.value })} />
-      </div>
-
-      <div style={ms.fieldGroup}>
-        <label style={ms.label}><Globe size={14} color="var(--text-tertiary)" /> Website (for context) <span style={ms.optional}>optional</span></label>
-        <input type="url" style={ms.input} placeholder="https://your-detailed-site.com" value={profile.contextWebsiteUrl} onChange={(e) => patch({ contextWebsiteUrl: e.target.value })} />
-      </div>
+      {/* Links list */}
+      {profile.contextLinks.length > 0 && (
+        <div style={ms.linkList}>
+          {profile.contextLinks.map((l) => (
+            <div key={l.id} style={ms.linkRow}>
+              <div style={ms.linkRowInfo}>
+                {l.label === 'LinkedIn' ? <Linkedin size={13} color="#0a66c2" /> :
+                 l.label === 'GitHub' ? <Github size={13} color="var(--text-secondary)" /> :
+                 <Globe size={13} color="var(--text-tertiary)" />}
+                <span style={ms.linkRowUrl}>{l.url}</span>
+                {l.label && <span style={ms.linkRowLabel}>{l.label}</span>}
+              </div>
+              <button type="button" style={ms.fileRowRemove} onClick={() => removeContextLink(l.id)}>
+                <Trash2 size={13} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 
-  const renderStep1 = () => (
-    <div style={ms.stepContent}>
-      <div style={ms.fieldGroup}>
-        <label style={ms.label}>
-          <Linkedin size={14} color="var(--text-tertiary)" />
-          LinkedIn
-        </label>
-        <input
-          type="url"
-          style={ms.input}
-          placeholder="https://linkedin.com/in/..."
-          value={profile.linkedinUrl}
-          onChange={(e) => patch({ linkedinUrl: e.target.value })}
-        />
-        {errors.linkedinUrl && <span style={ms.error}><AlertCircle size={12} /> {errors.linkedinUrl}</span>}
-      </div>
+  /* ================================================================ */
+  /*  STEP 1 — For Recruiters                                         */
+  /* ================================================================ */
+  const renderStep1 = () => {
+    // Suggestions from Step 1
+    const suggestedCvs = contextPdfs.filter((f) => f.fileName !== profile.cvFileName)
+    const suggestedPortfolios = contextPdfs.filter(
+      (f) => f.fileName !== profile.portfolioFileName && f.fileName !== profile.cvFileName
+    )
+    const availableLinks = profile.contextLinks.filter(
+      (l) => l.url !== profile.portfolioUrl && l.url !== profile.websiteUrl
+    )
 
-      <div style={ms.fieldGroup}>
-        <label style={ms.label}>
-          <Github size={14} color="var(--text-tertiary)" />
-          GitHub
-          <span style={ms.optional}>optional</span>
-        </label>
-        <input
-          type="url"
-          style={ms.input}
-          placeholder="https://github.com/..."
-          value={profile.githubUrl}
-          onChange={(e) => patch({ githubUrl: e.target.value })}
-        />
-        {errors.githubUrl && <span style={ms.error}><AlertCircle size={12} /> {errors.githubUrl}</span>}
-      </div>
+    return (
+      <div style={ms.stepContent}>
+        {/* Step description */}
+        <div style={ms.stepTipBox}>
+          <Eye size={14} color="var(--accent)" style={{ flexShrink: 0, marginTop: 1 }} />
+          <span style={ms.stepTipText}>
+            {STEP_META[1].tip}
+          </span>
+        </div>
 
-      <div style={ms.fieldGroup}>
-        <label style={ms.label}>
-          <Briefcase size={14} color="var(--text-tertiary)" />
-          Current Role
-        </label>
-        <input
-          type="text"
-          style={ms.input}
-          placeholder="e.g. Senior Product Designer"
-          value={profile.currentRole}
-          onChange={(e) => patch({ currentRole: e.target.value })}
-        />
-      </div>
+        {/* CV Slot */}
+        <div style={ms.fieldGroup}>
+          <label style={ms.label}>
+            <FileText size={14} color="var(--text-tertiary)" />
+            CV / Resume <span style={ms.required}>*</span>
+          </label>
+          <p style={ms.helper}>Your polished, 1-page CV -- this is what recruiters see first.</p>
 
-      <div style={ms.fieldGroup}>
-        <label style={ms.label}>
-          <Hash size={14} color="var(--text-tertiary)" />
-          Years of Experience
-        </label>
-        <input
-          type="number"
-          style={{ ...ms.input, maxWidth: 120 }}
-          placeholder="e.g. 7"
-          min={1}
-          max={30}
-          value={profile.yearsOfExperience ?? ''}
-          onChange={(e) => {
-            const val = e.target.value ? parseInt(e.target.value, 10) : null
-            patch({ yearsOfExperience: val && val >= 1 && val <= 30 ? val : null })
-          }}
-        />
-      </div>
+          {profile.cvFileName ? (
+            <div style={ms.uploadedFile}>
+              <div style={ms.uploadedFileInfo}>
+                <Check size={16} color="#34d399" />
+                <span style={ms.uploadedFileName}>{profile.cvFileName}</span>
+                {profile.cvFileSize && (
+                  <span style={ms.uploadedFileSize}>{formatFileSize(profile.cvFileSize)}</span>
+                )}
+              </div>
+              <button type="button" style={ms.uploadedFileChange} onClick={() => cvFileRef.current?.click()}>
+                Replace
+              </button>
+            </div>
+          ) : (
+            <>
+              {/* Suggestions from Step 1 */}
+              {suggestedCvs.length > 0 && (
+                <div style={ms.suggestionBox}>
+                  <span style={ms.suggestionLabel}>From your uploads:</span>
+                  {suggestedCvs.map((cf) => (
+                    <button
+                      key={cf.id}
+                      type="button"
+                      style={ms.suggestionBtn}
+                      onClick={() => useSuggestedCv(cf)}
+                    >
+                      <FileText size={12} />
+                      Use {cf.fileName}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <button type="button" style={ms.uploadBtn} onClick={() => cvFileRef.current?.click()}>
+                <Upload size={16} /> Upload CV (PDF, max 20MB)
+              </button>
+            </>
+          )}
+          <input ref={cvFileRef} type="file" accept=".pdf,application/pdf" style={{ display: 'none' }} onChange={handleCvFileChange} />
+          {errors.cv && <span style={ms.error}><AlertCircle size={12} /> {errors.cv}</span>}
+        </div>
 
-      <div style={ms.fieldGroup}>
-        <label style={ms.label}>
-          <Award size={14} color="var(--text-tertiary)" />
-          Key Skills
-        </label>
-        <ChipInput
-          value={profile.keySkills}
-          onChange={(v) => patch({ keySkills: v })}
-          suggestions={SKILL_SUGGESTIONS}
-          placeholder="Type or select skills..."
-        />
-      </div>
-    </div>
-  )
+        {/* Portfolio PDF Slot */}
+        <div style={ms.fieldGroup}>
+          <label style={ms.label}>
+            <FileText size={14} color="var(--text-tertiary)" />
+            Portfolio PDF <span style={ms.optional}>optional</span>
+          </label>
 
-  const renderStep2 = () => (
+          {profile.portfolioFileName ? (
+            <div style={ms.uploadedFile}>
+              <div style={ms.uploadedFileInfo}>
+                <Check size={16} color="#34d399" />
+                <span style={ms.uploadedFileName}>{profile.portfolioFileName}</span>
+                {profile.portfolioFileSize && (
+                  <span style={ms.uploadedFileSize}>{formatFileSize(profile.portfolioFileSize)}</span>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button type="button" style={ms.uploadedFileChange} onClick={() => portfolioFileRef.current?.click()}>
+                  Replace
+                </button>
+                <button type="button" style={{ ...ms.uploadedFileChange, color: 'var(--text-tertiary)' }} onClick={() => patch({ portfolioFileName: null, portfolioFileSize: null })}>
+                  Remove
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              {suggestedPortfolios.length > 0 && (
+                <div style={ms.suggestionBox}>
+                  <span style={ms.suggestionLabel}>From your uploads:</span>
+                  {suggestedPortfolios.map((cf) => (
+                    <button
+                      key={cf.id}
+                      type="button"
+                      style={ms.suggestionBtn}
+                      onClick={() => useSuggestedPortfolio(cf)}
+                    >
+                      <FileText size={12} />
+                      Use {cf.fileName}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <button type="button" style={{ ...ms.uploadBtn, borderColor: 'var(--border)' }} onClick={() => portfolioFileRef.current?.click()}>
+                <Upload size={16} /> Upload Portfolio PDF
+              </button>
+            </>
+          )}
+          <input ref={portfolioFileRef} type="file" accept=".pdf,application/pdf" style={{ display: 'none' }} onChange={handlePortfolioFileChange} />
+        </div>
+
+        {/* Links for recruiters */}
+        <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0', paddingTop: 16 }}>
+          <label style={ms.label}>
+            <LinkIcon size={14} color="var(--text-tertiary)" />
+            Links for applications <span style={ms.optional}>optional</span>
+          </label>
+          <p style={ms.helper}>Portfolio URL and website included in every application.</p>
+
+          {/* Quick-use suggestions from context links */}
+          {availableLinks.length > 0 && !profile.portfolioUrl && (
+            <div style={{ ...ms.suggestionBox, marginBottom: 8 }}>
+              <span style={ms.suggestionLabel}>Use a link from Step 1:</span>
+              {availableLinks.slice(0, 3).map((cl) => (
+                <button
+                  key={cl.id}
+                  type="button"
+                  style={ms.suggestionBtn}
+                  onClick={() => useContextLinkAsPortfolio(cl.url)}
+                >
+                  <LinkIcon size={12} />
+                  {cl.label || 'Link'}: {cl.url.replace(/^https?:\/\//, '').slice(0, 30)}...
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div style={ms.fieldGroup}>
+            <label style={{ ...ms.label, fontSize: 12 }}>
+              <Globe size={12} color="var(--text-tertiary)" />
+              Portfolio URL
+            </label>
+            <input
+              type="url"
+              style={ms.input}
+              placeholder="https://your-portfolio.com"
+              value={profile.portfolioUrl}
+              onChange={(e) => patch({ portfolioUrl: e.target.value })}
+            />
+            {errors.portfolioUrl && <span style={ms.error}><AlertCircle size={12} /> {errors.portfolioUrl}</span>}
+          </div>
+
+          <div style={{ ...ms.fieldGroup, marginTop: 8 }}>
+            <label style={{ ...ms.label, fontSize: 12 }}>
+              <Globe size={12} color="var(--text-tertiary)" />
+              Website
+            </label>
+            <input
+              type="url"
+              style={ms.input}
+              placeholder="https://yoursite.com"
+              value={profile.websiteUrl}
+              onChange={(e) => patch({ websiteUrl: e.target.value })}
+            />
+            {errors.websiteUrl && <span style={ms.error}><AlertCircle size={12} /> {errors.websiteUrl}</span>}
+
+            {/* Quick-fill from context links for website */}
+            {availableLinks.length > 0 && (!profile.websiteUrl || profile.websiteUrl === 'https://') && (
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 4 }}>
+                {availableLinks.slice(0, 2).map((cl) => (
+                  <button
+                    key={cl.id}
+                    type="button"
+                    style={ms.inlineSuggestion}
+                    onClick={() => useContextLinkAsWebsite(cl.url)}
+                  >
+                    Use {cl.label || cl.url.replace(/^https?:\/\//, '').slice(0, 25)}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  /* ================================================================ */
+  /*  STEP 2 — Professional                                           */
+  /* ================================================================ */
+  const renderStep2 = () => {
+    // Pre-fill LinkedIn/GitHub from context links if available
+    const linkedinFromContext = profile.contextLinks.find((l) => l.label === 'LinkedIn')
+    const githubFromContext = profile.contextLinks.find((l) => l.label === 'GitHub')
+
+    return (
+      <div style={ms.stepContent}>
+        <div style={ms.fieldGroup}>
+          <label style={ms.label}>
+            <Linkedin size={14} color="var(--text-tertiary)" />
+            LinkedIn
+          </label>
+          <input
+            type="url"
+            style={ms.input}
+            placeholder="https://linkedin.com/in/..."
+            value={profile.linkedinUrl}
+            onChange={(e) => patch({ linkedinUrl: e.target.value })}
+          />
+          {!profile.linkedinUrl && linkedinFromContext && (
+            <button
+              type="button"
+              style={ms.inlineSuggestion}
+              onClick={() => patch({ linkedinUrl: linkedinFromContext.url })}
+            >
+              Use {linkedinFromContext.url.replace(/^https?:\/\//, '').slice(0, 35)}
+            </button>
+          )}
+          {errors.linkedinUrl && <span style={ms.error}><AlertCircle size={12} /> {errors.linkedinUrl}</span>}
+        </div>
+
+        <div style={ms.fieldGroup}>
+          <label style={ms.label}>
+            <Github size={14} color="var(--text-tertiary)" />
+            GitHub
+            <span style={ms.optional}>optional</span>
+          </label>
+          <input
+            type="url"
+            style={ms.input}
+            placeholder="https://github.com/..."
+            value={profile.githubUrl}
+            onChange={(e) => patch({ githubUrl: e.target.value })}
+          />
+          {!profile.githubUrl && githubFromContext && (
+            <button
+              type="button"
+              style={ms.inlineSuggestion}
+              onClick={() => patch({ githubUrl: githubFromContext.url })}
+            >
+              Use {githubFromContext.url.replace(/^https?:\/\//, '').slice(0, 35)}
+            </button>
+          )}
+          {errors.githubUrl && <span style={ms.error}><AlertCircle size={12} /> {errors.githubUrl}</span>}
+        </div>
+
+        <div style={ms.fieldGroup}>
+          <label style={ms.label}>
+            <Briefcase size={14} color="var(--text-tertiary)" />
+            Current Role
+          </label>
+          <input
+            type="text"
+            style={ms.input}
+            placeholder="e.g. Senior Product Designer"
+            value={profile.currentRole}
+            onChange={(e) => patch({ currentRole: e.target.value })}
+          />
+        </div>
+
+        <div style={ms.fieldGroup}>
+          <label style={ms.label}>
+            <Hash size={14} color="var(--text-tertiary)" />
+            Years of Experience
+          </label>
+          <input
+            type="number"
+            style={{ ...ms.input, maxWidth: 120 }}
+            placeholder="e.g. 7"
+            min={1}
+            max={30}
+            value={profile.yearsOfExperience ?? ''}
+            onChange={(e) => {
+              const val = e.target.value ? parseInt(e.target.value, 10) : null
+              patch({ yearsOfExperience: val && val >= 1 && val <= 30 ? val : null })
+            }}
+          />
+        </div>
+
+        <div style={ms.fieldGroup}>
+          <label style={ms.label}>
+            <Award size={14} color="var(--text-tertiary)" />
+            Key Skills
+          </label>
+          <ChipInput
+            value={profile.keySkills}
+            onChange={(v) => patch({ keySkills: v })}
+            suggestions={SKILL_SUGGESTIONS}
+            placeholder="Type or select skills..."
+          />
+        </div>
+      </div>
+    )
+  }
+
+  /* ================================================================ */
+  /*  STEP 3 — Screening                                              */
+  /* ================================================================ */
+  const renderStep3 = () => (
     <div style={ms.stepContent}>
       <div style={ms.fieldGroup}>
         <label style={ms.label}>
@@ -813,7 +1264,7 @@ export function ProfileSetupModal({
     </div>
   )
 
-  const stepRenderers = [renderStep0, renderStep1, renderStep2]
+  const stepRenderers = [renderStep0, renderStep1, renderStep2, renderStep3]
 
   // Prevent body scroll when modal is open
   useEffect(() => {
@@ -821,6 +1272,8 @@ export function ProfileSetupModal({
     document.body.style.overflow = 'hidden'
     return () => { document.body.style.overflow = prev }
   }, [])
+
+  const currentMeta = STEP_META[step]
 
   return (
     <div className="profile-modal-overlay" style={ms.overlay} onClick={onDismiss}>
@@ -830,49 +1283,49 @@ export function ProfileSetupModal({
           <X size={18} />
         </button>
 
-        {/* Header */}
+        {/* Header — dynamic per step */}
         <div className="profile-modal-header" style={ms.header}>
-          <h2 style={ms.title}>Complete Your Profile</h2>
-          <p style={ms.subtitle}>
-            The bot needs your professional data to apply on your behalf.
-          </p>
+          <h2 style={ms.title}>{currentMeta.title}</h2>
+          <p style={ms.subtitle}>{currentMeta.subtitle}</p>
         </div>
 
         {/* Step indicators */}
         <div className="profile-modal-stepper" style={ms.stepper}>
-          {STEPS.map((label, i) => (
-            <button
-              key={label}
-              type="button"
-              style={{
-                ...ms.stepIndicator,
-                ...(i === step ? ms.stepIndicatorActive : {}),
-                ...(i < step ? ms.stepIndicatorDone : {}),
-              }}
-              onClick={() => {
-                // Allow going back freely, forward only if current step validates
-                if (i < step) {
-                  setStep(i)
-                } else if (i === step + 1 && validateStep(step)) {
-                  setStep(i)
-                }
-              }}
-            >
-              <span style={{
-                ...ms.stepNumber,
-                ...(i === step ? ms.stepNumberActive : {}),
-                ...(i < step ? ms.stepNumberDone : {}),
-              }}>
-                {i < step ? <Check size={12} /> : i + 1}
-              </span>
-              <span style={{
-                ...ms.stepLabel,
-                ...(i === step ? ms.stepLabelActive : {}),
-              }}>
-                {label}
-              </span>
-            </button>
-          ))}
+          {STEPS.map((label, i) => {
+            const StepIcon = STEP_META[i].icon
+            return (
+              <button
+                key={label}
+                type="button"
+                style={{
+                  ...ms.stepIndicator,
+                  ...(i === step ? ms.stepIndicatorActive : {}),
+                  ...(i < step ? ms.stepIndicatorDone : {}),
+                }}
+                onClick={() => {
+                  if (i < step) {
+                    setStep(i)
+                  } else if (i === step + 1 && validateStep(step)) {
+                    setStep(i)
+                  }
+                }}
+              >
+                <span style={{
+                  ...ms.stepNumber,
+                  ...(i === step ? ms.stepNumberActive : {}),
+                  ...(i < step ? ms.stepNumberDone : {}),
+                }}>
+                  {i < step ? <Check size={12} /> : <StepIcon size={12} />}
+                </span>
+                <span style={{
+                  ...ms.stepLabel,
+                  ...(i === step ? ms.stepLabelActive : {}),
+                }}>
+                  {label}
+                </span>
+              </button>
+            )
+          })}
         </div>
 
         {/* Step content */}
@@ -909,7 +1362,6 @@ export function ProfileSetupModal({
         </div>
       </div>
 
-      {/* Keyframe for backdrop blur animation */}
       <style>{`
         @keyframes profileModalFadeIn {
           from { opacity: 0; }
@@ -950,7 +1402,7 @@ const ms: Record<string, React.CSSProperties> = {
     border: '1px solid var(--border)',
     borderRadius: 12,
     width: '100%',
-    maxWidth: 560,
+    maxWidth: 580,
     maxHeight: 'calc(100vh - 32px)',
     display: 'flex',
     flexDirection: 'column',
@@ -995,13 +1447,13 @@ const ms: Record<string, React.CSSProperties> = {
   stepper: {
     display: 'flex',
     alignItems: 'center',
-    gap: 4,
+    gap: 2,
     padding: '16px 28px 0',
   },
   stepIndicator: {
     display: 'flex',
     alignItems: 'center',
-    gap: 6,
+    gap: 5,
     flex: 1,
     padding: '8px 0',
     background: 'none',
@@ -1041,10 +1493,12 @@ const ms: Record<string, React.CSSProperties> = {
     color: '#34d399',
   },
   stepLabel: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: 500,
     color: 'var(--text-tertiary)',
     whiteSpace: 'nowrap' as const,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
   },
   stepLabelActive: {
     color: 'var(--text-primary)',
@@ -1062,6 +1516,22 @@ const ms: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     gap: 16,
+  },
+
+  /* Step tip box */
+  stepTipBox: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 8,
+    padding: '10px 12px',
+    background: 'rgba(var(--accent-rgb, 168, 85, 247), 0.06)',
+    border: '1px solid rgba(var(--accent-rgb, 168, 85, 247), 0.15)',
+    borderRadius: 'var(--radius-md)',
+  },
+  stepTipText: {
+    fontSize: 12,
+    color: 'var(--text-secondary)',
+    lineHeight: 1.5,
   },
 
   /* Fields */
@@ -1130,29 +1600,203 @@ const ms: Record<string, React.CSSProperties> = {
     marginTop: 2,
   },
 
-  /* Section headers */
-  sectionHeader: {
+  /* Drop zone (Step 1) */
+  dropZone: {
     display: 'flex',
-    alignItems: 'flex-start',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
     gap: 10,
-    marginBottom: 4,
+    padding: '28px 20px',
+    background: 'var(--bg-base)',
+    border: '2px dashed var(--border)',
+    borderRadius: 'var(--radius-lg)',
+    cursor: 'pointer',
+    transition: 'border-color 0.15s, background 0.15s',
+    textAlign: 'center',
   },
-  sectionIcon: {
-    fontSize: 20,
-    lineHeight: 1,
-    marginTop: 2,
+  dropZoneActive: {
+    borderColor: 'var(--accent)',
+    background: 'rgba(var(--accent-rgb, 168, 85, 247), 0.04)',
   },
-  sectionTitle: {
+  dropZoneText: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 4,
+  },
+  dropZoneTitle: {
     fontSize: 14,
-    fontWeight: 700,
-    color: 'var(--text-primary)',
-    margin: 0,
+    fontWeight: 600,
+    color: 'var(--text-secondary)',
   },
-  sectionDesc: {
+  dropZoneSub: {
     fontSize: 12,
     color: 'var(--text-tertiary)',
-    margin: '2px 0 0',
-    lineHeight: 1.4,
+  },
+
+  /* File list (Step 1) */
+  fileList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 2,
+  },
+  fileRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '8px 10px',
+    background: 'var(--bg-elevated)',
+    borderRadius: 'var(--radius-sm)',
+  },
+  fileRowInfo: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    minWidth: 0,
+    flex: 1,
+  },
+  fileRowName: {
+    fontSize: 12,
+    fontWeight: 500,
+    color: 'var(--text-primary)',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap' as const,
+  },
+  fileRowSize: {
+    fontSize: 11,
+    color: 'var(--text-tertiary)',
+    flexShrink: 0,
+  },
+  fileRowRemove: {
+    background: 'none',
+    border: 'none',
+    color: 'var(--text-tertiary)',
+    cursor: 'pointer',
+    padding: 4,
+    borderRadius: 4,
+    display: 'flex',
+    alignItems: 'center',
+    flexShrink: 0,
+    opacity: 0.6,
+    transition: 'opacity 0.15s',
+  },
+  fileListSummary: {
+    fontSize: 11,
+    color: 'var(--text-tertiary)',
+    textAlign: 'right',
+    padding: '4px 0',
+  },
+
+  /* Link input (Step 1) */
+  linkInputRow: {
+    display: 'flex',
+    gap: 8,
+    alignItems: 'center',
+  },
+  addLinkBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 36,
+    height: 36,
+    background: 'var(--bg-elevated)',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-md)',
+    color: 'var(--text-secondary)',
+    cursor: 'pointer',
+    flexShrink: 0,
+    transition: 'background 0.15s',
+  },
+
+  /* Link list (Step 1) */
+  linkList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 2,
+  },
+  linkRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '8px 10px',
+    background: 'var(--bg-elevated)',
+    borderRadius: 'var(--radius-sm)',
+  },
+  linkRowInfo: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    minWidth: 0,
+    flex: 1,
+  },
+  linkRowUrl: {
+    fontSize: 12,
+    color: 'var(--text-primary)',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap' as const,
+  },
+  linkRowLabel: {
+    fontSize: 10,
+    fontWeight: 600,
+    color: 'var(--accent)',
+    background: 'rgba(var(--accent-rgb, 168, 85, 247), 0.1)',
+    padding: '2px 6px',
+    borderRadius: 8,
+    flexShrink: 0,
+  },
+
+  /* Suggestion box (Step 2) */
+  suggestionBox: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 6,
+    padding: '8px 10px',
+    background: 'rgba(96, 165, 250, 0.06)',
+    border: '1px solid rgba(96, 165, 250, 0.15)',
+    borderRadius: 'var(--radius-md)',
+    marginBottom: 4,
+  },
+  suggestionLabel: {
+    fontSize: 11,
+    fontWeight: 500,
+    color: 'var(--text-tertiary)',
+    marginRight: 4,
+  },
+  suggestionBtn: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    padding: '4px 10px',
+    background: 'rgba(96, 165, 250, 0.1)',
+    border: '1px solid rgba(96, 165, 250, 0.25)',
+    borderRadius: 12,
+    fontSize: 11,
+    fontWeight: 600,
+    color: '#60a5fa',
+    cursor: 'pointer',
+    transition: 'background 0.15s',
+    whiteSpace: 'nowrap' as const,
+    maxWidth: '100%',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
+  inlineSuggestion: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 3,
+    padding: '2px 8px',
+    background: 'none',
+    border: '1px solid rgba(96, 165, 250, 0.2)',
+    borderRadius: 8,
+    fontSize: 11,
+    fontWeight: 500,
+    color: '#60a5fa',
+    cursor: 'pointer',
+    transition: 'background 0.15s',
+    whiteSpace: 'nowrap' as const,
   },
 
   /* Upload button */
@@ -1230,6 +1874,31 @@ const ms: Record<string, React.CSSProperties> = {
     color: 'var(--text-secondary)',
     fontSize: 13,
     fontStyle: 'italic' as const,
+  },
+
+  /* Section headers (legacy compat) */
+  sectionHeader: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginBottom: 4,
+  },
+  sectionIcon: {
+    fontSize: 20,
+    lineHeight: 1,
+    marginTop: 2,
+  },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: 700,
+    color: 'var(--text-primary)',
+    margin: 0,
+  },
+  sectionDesc: {
+    fontSize: 12,
+    color: 'var(--text-tertiary)',
+    margin: '2px 0 0',
+    lineHeight: 1.4,
   },
 
   /* Footer */
