@@ -21,6 +21,7 @@ import {
   Eye,
   HandHelping,
   Crosshair,
+  X,
 } from 'lucide-react'
 
 /* ------------------------------------------------------------------ */
@@ -517,9 +518,10 @@ export function LandingView({ onGetStarted, onSignIn }: LandingViewProps) {
               features={[
                 'Unlimited job tracking',
                 '25 auto-applies/month',
-                'Direct ATS only (no LinkedIn)',
+                'Basic apply (direct ATS only)',
                 'Basic analytics',
                 'Ghost detection',
+                { label: 'Stealth Mode', excluded: true },
               ]}
               cta="Start free"
               onCta={onGetStarted}
@@ -531,7 +533,7 @@ export function LandingView({ onGetStarted, onSignIn }: LandingViewProps) {
               description="For active job seekers"
               features={[
                 '100 auto-applies/month',
-                'Stealth mode (LinkedIn + all ATS)',
+                'Stealth Mode — apply undetected via LinkedIn & all platforms',
                 'Full analytics',
                 '20 AI cover letters/mo',
                 'Ghost detection',
@@ -546,7 +548,7 @@ export function LandingView({ onGetStarted, onSignIn }: LandingViewProps) {
               description="For serious seekers"
               features={[
                 'Unlimited auto-applies',
-                'Stealth mode (LinkedIn + all ATS)',
+                'Stealth Mode — apply undetected via LinkedIn & all platforms',
                 'AI insights & coaching',
                 'Unlimited cover letters',
                 'Feedback loop',
@@ -563,6 +565,7 @@ export function LandingView({ onGetStarted, onSignIn }: LandingViewProps) {
               description="Sprint mode"
               features={[
                 'Everything in Pro',
+                'Priority Stealth Mode — priority queue + undetected apply',
                 'Priority ATS submission',
                 'Phone support',
                 'Your apps processed first',
@@ -1681,7 +1684,7 @@ function PricingCard({
   price: number
   period: 'weekly' | 'monthly'
   description: string
-  features: string[]
+  features: (string | { label: string; excluded?: boolean })[]
   featured?: boolean
   boost?: boolean
   cta: string
@@ -1737,12 +1740,21 @@ function PricingCard({
         Most users find a job in 6-8 weeks
       </p>
       <ul style={s.pricingFeatures}>
-        {features.map((f, i) => (
-          <li key={i} style={s.pricingFeatureItem}>
-            <Check size={14} color={boost ? '#f59e0b' : 'var(--accent)'} style={{ flexShrink: 0 }} />
-            <span>{f}</span>
-          </li>
-        ))}
+        {features.map((f, i) => {
+          const isObj = typeof f === 'object'
+          const label = isObj ? f.label : f
+          const excluded = isObj ? f.excluded : false
+          return (
+            <li key={i} style={s.pricingFeatureItem}>
+              {excluded ? (
+                <X size={14} color="var(--text-tertiary)" style={{ flexShrink: 0, opacity: 0.4 }} />
+              ) : (
+                <Check size={14} color={boost ? '#f59e0b' : 'var(--accent)'} style={{ flexShrink: 0 }} />
+              )}
+              <span style={excluded ? { color: 'var(--text-tertiary)' } : undefined}>{label}</span>
+            </li>
+          )
+        })}
       </ul>
     </div>
   )

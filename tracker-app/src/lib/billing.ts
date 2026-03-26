@@ -15,6 +15,7 @@ export interface PlanLimits {
   hasPrioritySupport: boolean
   hasPhoneSupport: boolean
   hasPriorityATS: boolean
+  hasStealth: boolean
 }
 
 export interface PlanConfig {
@@ -51,6 +52,7 @@ const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
     hasPrioritySupport: false,
     hasPhoneSupport: false,
     hasPriorityATS: false,
+    hasStealth: false,
   },
   starter: {
     botAppliesPerMonth: 100,
@@ -64,6 +66,7 @@ const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
     hasPrioritySupport: false,
     hasPhoneSupport: false,
     hasPriorityATS: false,
+    hasStealth: true,
   },
   pro: {
     botAppliesPerMonth: Infinity,
@@ -77,6 +80,7 @@ const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
     hasPrioritySupport: false,
     hasPhoneSupport: false,
     hasPriorityATS: false,
+    hasStealth: true,
   },
   boost: {
     botAppliesPerMonth: Infinity,
@@ -90,6 +94,7 @@ const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
     hasPrioritySupport: true,
     hasPhoneSupport: true,
     hasPriorityATS: true,
+    hasStealth: true,
   },
 }
 
@@ -106,10 +111,10 @@ export const PLAN_CONFIGS: PlanConfig[] = [
       { label: 'Basic analytics', included: true },
       { label: 'AI Coach', included: true, detail: 'Basic' },
       { label: 'Bot auto-apply', included: true, detail: '25/month' },
-      { label: 'Direct ATS only', included: true, detail: 'Greenhouse, Lever' },
+      { label: 'Basic apply (direct ATS only)', included: true, detail: 'Greenhouse, Lever' },
       { label: 'Ghost detection', included: true },
       { label: 'Cover letter AI', included: true, detail: '10/month' },
-      { label: 'Stealth mode (LinkedIn)', included: false },
+      { label: 'Stealth Mode — apply undetected via LinkedIn & all platforms', included: false },
       { label: 'Feedback loop', included: false },
       { label: 'Priority support', included: false },
     ],
@@ -126,7 +131,7 @@ export const PLAN_CONFIGS: PlanConfig[] = [
       { label: 'Full analytics', included: true },
       { label: 'AI Coach', included: true, detail: 'Basic' },
       { label: 'Bot auto-apply', included: true, detail: '100/month' },
-      { label: 'Stealth mode', included: true, detail: 'LinkedIn + all ATS' },
+      { label: 'Stealth Mode', included: true, detail: 'Apply undetected via LinkedIn & all platforms' },
       { label: 'Ghost detection', included: true },
       { label: 'Cover letter AI', included: true, detail: '20/month' },
       { label: 'Feedback loop', included: false },
@@ -145,7 +150,7 @@ export const PLAN_CONFIGS: PlanConfig[] = [
       { label: 'Full analytics', included: true },
       { label: 'AI Coach', included: true, detail: 'Full' },
       { label: 'Bot auto-apply', included: true, detail: 'Unlimited' },
-      { label: 'Stealth mode', included: true, detail: 'LinkedIn + all ATS' },
+      { label: 'Stealth Mode', included: true, detail: 'Apply undetected via LinkedIn & all platforms' },
       { label: 'Ghost detection', included: true },
       { label: 'Cover letter AI', included: true, detail: 'Unlimited' },
       { label: 'Feedback loop', included: true },
@@ -163,7 +168,7 @@ export const PLAN_CONFIGS: PlanConfig[] = [
     features: [
       { label: 'Everything in Pro', included: true },
       { label: 'Bot auto-apply', included: true, detail: 'Unlimited' },
-      { label: 'Stealth mode', included: true, detail: 'LinkedIn + all ATS' },
+      { label: 'Priority Stealth Mode', included: true, detail: 'Priority queue + undetected via LinkedIn & all platforms' },
       { label: 'Priority ATS submission', included: true },
       { label: 'AI cover letters', included: true, detail: 'Unlimited' },
       { label: 'Feedback loop', included: true },
@@ -192,6 +197,7 @@ type GatableFeature =
   | 'ghost-detection'
   | 'cover-letter'
   | 'priority-support'
+  | 'stealth'
 
 /** Check if a feature is available on the given plan */
 export function canUseFeature(plan: PlanTier, feature: GatableFeature): boolean {
@@ -211,6 +217,8 @@ export function canUseFeature(plan: PlanTier, feature: GatableFeature): boolean 
       return limits.coverLettersPerMonth > 0
     case 'priority-support':
       return limits.hasPrioritySupport
+    case 'stealth':
+      return limits.hasStealth
     default:
       return false
   }
