@@ -90,6 +90,7 @@ export interface UserProfile {
   /* Step 1 — Feed the AI: raw materials */
   contextFiles: ContextFile[]
   contextLinks: ContextLink[]
+  extractedText?: string // cached text from PDFs for skill extraction
 
   /* Step 2 — For Recruiters: curated submission */
   cvFileName: string | null
@@ -622,15 +623,29 @@ export function ProfileSetupModal({
     const text = await extractTextFromPdf(file)
     if (!text) return
     const extracted = extractSkillsFromText(text)
-    if (extracted.length === 0) return
     setProfile((prev) => {
+      const combinedText = (prev.extractedText || '') + ' ' + text
       const existing = new Set(prev.keySkills)
       const newSkills = extracted.filter((s) => !existing.has(s))
-      if (newSkills.length === 0) return prev
-      const updated = { ...prev, keySkills: [...prev.keySkills, ...newSkills] }
+      const updated = {
+        ...prev,
+        extractedText: combinedText.slice(0, 10000), // cap at 10k chars
+        ...(newSkills.length > 0 ? { keySkills: [...prev.keySkills, ...newSkills] } : {}),
+      }
       saveProfile(updated)
       return updated
     })
+  }, [])
+
+  // On mount: if we have cached extractedText but no skills, re-extract
+  useEffect(() => {
+    if (profile.extractedText && profile.keySkills.length === 0) {
+      const extracted = extractSkillsFromText(profile.extractedText)
+      if (extracted.length > 0) {
+        patch({ keySkills: extracted })
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   /* ---- Step 1: File handling ---- */
