@@ -638,6 +638,15 @@ export async function runPipeline(config: PipelineConfig & { onProgress?: (p: Pi
   const maxApplications = config.maxApplications ?? 20
   const effectiveConfig = { ...config, minScore, maxApplications }
 
+  // Counters — declared early so emitProgress can reference them
+  let jobsFound = 0
+  let jobsQualified = 0
+  let jobsApplied = 0
+  let jobsSkipped = 0
+  let jobsFailed = 0
+  let discoveredJobsOutput: PipelineResult['discoveredJobs'] = []
+  let qualifiedJobsOutput: QualifiedJobOutput[] = []
+
   // Helper to emit progress
   const emitProgress = (phase: PipelineProgress['phase'], extra?: Partial<PipelineProgress>) => {
     if (!config.onProgress) return
@@ -675,14 +684,6 @@ export async function runPipeline(config: PipelineConfig & { onProgress?: (p: Pi
   activities.push(startEntry)
   addProgressActivity({ action: 'found', reason: startEntry.reason ?? '' })
   emitProgress('starting')
-
-  let jobsFound = 0
-  let jobsQualified = 0
-  let jobsApplied = 0
-  let jobsSkipped = 0
-  let jobsFailed = 0
-  let discoveredJobsOutput: PipelineResult['discoveredJobs'] = []
-  let qualifiedJobsOutput: QualifiedJobOutput[] = []
 
   // Use pre-authenticated context if provided (LinkedIn cookie), else create new
   let context: BrowserContext | null = null
