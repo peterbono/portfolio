@@ -355,7 +355,7 @@ export function LandingView({ onGetStarted, onSignIn }: LandingViewProps) {
 
           {/* Micro-copy */}
           <p style={s.heroMicro}>
-            No credit card required &middot; Free forever &middot; Setup in 2 minutes
+            No credit card required &middot; 14-day free trial &middot; Setup in 2 minutes
           </p>
         </div>
 
@@ -477,8 +477,8 @@ export function LandingView({ onGetStarted, onSignIn }: LandingViewProps) {
         <div style={s.container}>
           <SectionHeader
             label="Pricing"
-            title="Start free, scale when ready"
-            subtitle="No hidden fees. Pause anytime — resume when you need it."
+            title="14 days free, then pick your plan"
+            subtitle="Full Pro access during trial. No credit card required. Pause anytime."
           />
 
           {/* Social proof */}
@@ -514,16 +514,19 @@ export function LandingView({ onGetStarted, onSignIn }: LandingViewProps) {
               name="Free"
               price={0}
               period={billingCycle}
-              description="Try the product"
+              description="14-day full access trial"
+              trialBadge
               features={[
-                'Unlimited job tracking',
-                '25 auto-applies/month',
-                'Basic apply (direct ATS only)',
-                'Basic analytics',
-                'Ghost detection',
-                { label: 'Stealth Mode', excluded: true },
+                '14-day full access trial',
+                'Unlimited job tracking (forever)',
+                'Analytics & insights (forever)',
+                'AI Coach (forever)',
+                'Gmail sync (forever)',
+                { label: 'Auto-apply bot (trial only)', excluded: true },
+                { label: 'Stealth Mode (paid only)', excluded: true },
+                { label: 'LinkedIn access (paid only)', excluded: true },
               ]}
-              cta="Start free"
+              cta="Start 14-Day Trial"
               onCta={onGetStarted}
             />
             <PricingCard
@@ -531,9 +534,11 @@ export function LandingView({ onGetStarted, onSignIn }: LandingViewProps) {
               price={billingCycle === 'weekly' ? 9 : 29}
               period={billingCycle}
               description="For active job seekers"
+              platformLimit="10 LinkedIn applies/day · Unlimited ATS"
               features={[
-                '100 auto-applies/month',
-                'Stealth Mode — apply undetected via LinkedIn & all platforms',
+                '10 LinkedIn applies/day',
+                'Unlimited ATS applies',
+                'Stealth Mode',
                 'Full analytics',
                 '20 AI cover letters/mo',
                 'Ghost detection',
@@ -546,13 +551,14 @@ export function LandingView({ onGetStarted, onSignIn }: LandingViewProps) {
               price={billingCycle === 'weekly' ? 15 : 49}
               period={billingCycle}
               description="For serious seekers"
+              platformLimit="20 LinkedIn applies/day · Unlimited ATS"
               features={[
-                'Unlimited auto-applies',
-                'Stealth Mode — apply undetected via LinkedIn & all platforms',
+                '20 LinkedIn applies/day',
+                'Unlimited ATS applies',
+                'Stealth Mode',
                 'AI insights & coaching',
                 'Unlimited cover letters',
                 'Feedback loop',
-                'Ghost detection',
               ]}
               featured
               cta="Start this week"
@@ -563,18 +569,40 @@ export function LandingView({ onGetStarted, onSignIn }: LandingViewProps) {
               price={25}
               period={'weekly' as const}
               description="Sprint mode"
+              platformLimit="Unlimited LinkedIn · Unlimited ATS"
               features={[
+                'Unlimited LinkedIn applies',
+                'Unlimited ATS applies',
                 'Everything in Pro',
-                'Priority Stealth Mode — priority queue + undetected apply',
+                'Priority Stealth Mode',
                 'Priority ATS submission',
                 'Phone support',
                 'Your apps processed first',
-                '2-week intensive sprint',
               ]}
               cta="Start your sprint"
               onCta={onGetStarted}
               boost
             />
+          </div>
+
+          {/* After trial section */}
+          <div style={s.afterTrialBox}>
+            <p style={s.afterTrialTitle}>What happens after your 14-day trial?</p>
+            <div style={s.afterTrialContent}>
+              <div style={s.afterTrialRow}>
+                <Check size={14} color="var(--accent)" style={{ flexShrink: 0 }} />
+                <span style={s.afterTrialKeep}>
+                  <strong>Keep:</strong> Job tracking, analytics, insights, coach, Gmail sync — free forever
+                </span>
+              </div>
+              <div style={s.afterTrialRow}>
+                <X size={14} color="#ef4444" style={{ flexShrink: 0, opacity: 0.7 }} />
+                <span style={s.afterTrialLose}>
+                  <strong>Lose:</strong> Auto-apply bot, Stealth Mode, LinkedIn access
+                </span>
+              </div>
+            </div>
+            <p style={s.afterTrialCTA}>Subscribe to keep the bot running.</p>
           </div>
         </div>
       </section>
@@ -1677,6 +1705,8 @@ function PricingCard({
   features,
   featured = false,
   boost = false,
+  trialBadge = false,
+  platformLimit,
   cta,
   onCta,
 }: {
@@ -1687,6 +1717,8 @@ function PricingCard({
   features: (string | { label: string; excluded?: boolean })[]
   featured?: boolean
   boost?: boolean
+  trialBadge?: boolean
+  platformLimit?: string
   cta: string
   onCta: () => void
 }) {
@@ -1715,8 +1747,16 @@ function PricingCard({
         <div style={s.pricingBoostBadge}>2-Week Sprint</div>
       )}
       <div>
-        <h3 style={s.pricingName}>{name}</h3>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <h3 style={s.pricingName}>{name}</h3>
+          {trialBadge && (
+            <span style={s.trialBadge}>14-day trial</span>
+          )}
+        </div>
         <p style={s.pricingDescription}>{description}</p>
+        {platformLimit && (
+          <p style={boost ? s.platformLimitBoost : s.platformLimit}>{platformLimit}</p>
+        )}
       </div>
       <div style={s.pricingPriceRow}>
         {price === 0 ? (
@@ -1821,7 +1861,7 @@ function FinalCTAContent({ onGetStarted }: { onGetStarted: () => void }) {
         <ArrowRight size={18} />
       </button>
       <p style={{ ...s.heroMicro, color: 'rgba(9, 9, 11, 0.5)' }}>
-        No credit card required &middot; Free forever &middot; Cancel anytime
+        No credit card required &middot; 14-day free trial &middot; Cancel anytime
       </p>
     </div>
   )
@@ -3052,6 +3092,81 @@ const s: Record<string, React.CSSProperties> = {
     gap: 10,
     fontSize: 13,
     color: 'var(--text-secondary)',
+  },
+
+  // Trial badge
+  trialBadge: {
+    fontSize: 10,
+    fontWeight: 700,
+    color: 'var(--accent)',
+    background: 'rgba(52, 211, 153, 0.15)',
+    padding: '2px 8px',
+    borderRadius: 10,
+    letterSpacing: '0.03em',
+    textTransform: 'uppercase' as const,
+    whiteSpace: 'nowrap' as const,
+  },
+
+  // Platform limits
+  platformLimit: {
+    fontSize: 11,
+    fontWeight: 600,
+    color: 'var(--accent)',
+    marginTop: 6,
+    letterSpacing: '0.01em',
+  },
+  platformLimitBoost: {
+    fontSize: 11,
+    fontWeight: 600,
+    color: '#f59e0b',
+    marginTop: 6,
+    letterSpacing: '0.01em',
+  },
+
+  // After trial section
+  afterTrialBox: {
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid rgba(255,255,255,0.08)',
+    borderRadius: 14,
+    padding: '20px 28px',
+    marginTop: 32,
+    maxWidth: 700,
+    marginLeft: 'auto',
+    marginRight: 'auto',
+  },
+  afterTrialTitle: {
+    fontSize: 15,
+    fontWeight: 600,
+    color: '#fff',
+    marginBottom: 14,
+    textAlign: 'center' as const,
+  },
+  afterTrialContent: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 10,
+  },
+  afterTrialRow: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  afterTrialKeep: {
+    fontSize: 13,
+    color: 'var(--text-secondary)',
+    lineHeight: 1.5,
+  },
+  afterTrialLose: {
+    fontSize: 13,
+    color: 'var(--text-tertiary)',
+    lineHeight: 1.5,
+  },
+  afterTrialCTA: {
+    fontSize: 13,
+    fontWeight: 600,
+    color: 'var(--accent)',
+    marginTop: 14,
+    textAlign: 'center' as const,
   },
 
   /* ---------- Final CTA ---------- */

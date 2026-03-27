@@ -31,6 +31,9 @@ import {
   Sparkles,
   Link2,
   Briefcase,
+  List,
+  LayoutGrid,
+  BrainCircuit,
 } from 'lucide-react'
 import { useBotActivity } from '../hooks/useBotActivity'
 import { usePlan } from '../hooks/usePlan'
@@ -43,6 +46,13 @@ import { useSupabase } from '../context/SupabaseContext'
 import { useAuthWallContext } from '../context/AuthWallContext'
 import CompanyChipInput from '../components/CompanyChipInput'
 import { ProfileSetupModal, isProfileComplete } from '../components/ProfileSetupModal'
+import CardStackReview from '../components/CardStackReview'
+import {
+  recordSignal,
+  calibrateRubric,
+  getLearningStatus,
+  type FeedbackSignal,
+} from '../lib/feedback-signals'
 
 /* ------------------------------------------------------------------ */
 /*  Mobile responsive CSS injection                                    */
@@ -326,6 +336,24 @@ const REVIEW_LS_KEY = 'tracker_v2_review_queue'
 const RUN_COUNT_LS_KEY = 'tracker_v2_run_count'
 const AUTO_SUBMIT_LS_KEY = 'tracker_v2_auto_submit'
 const AUTO_SUBMIT_DISMISS_LS_KEY = 'tracker_v2_auto_submit_dismissed_at'
+const REVIEW_MODE_LS_KEY = 'tracker_v2_review_mode'
+
+type ReviewMode = 'list' | 'card'
+
+function loadReviewMode(): ReviewMode {
+  try {
+    const raw = localStorage.getItem(REVIEW_MODE_LS_KEY)
+    return raw === 'card' ? 'card' : 'list'
+  } catch {
+    return 'list'
+  }
+}
+
+function saveReviewMode(mode: ReviewMode) {
+  try {
+    localStorage.setItem(REVIEW_MODE_LS_KEY, mode)
+  } catch { /* ignore */ }
+}
 
 function loadReviewQueue(): ReviewQueueItem[] {
   try {
@@ -2109,6 +2137,8 @@ function ReviewQueue({
   onSubmitApproved,
   onPreview,
   isDemo,
+  reviewMode,
+  onToggleMode,
 }: {
   queue: ReviewQueueItem[]
   onApprove: (id: string) => void
@@ -2119,6 +2149,8 @@ function ReviewQueue({
   onSubmitApproved: () => void
   onPreview?: (id: string) => void
   isDemo: boolean
+  reviewMode: ReviewMode
+  onToggleMode: (mode: ReviewMode) => void
 }) {
   const pendingCount = queue.filter((i) => i.status === 'pending').length
   const approvedCount = queue.filter((i) => i.status === 'approved').length
@@ -2142,33 +2174,71 @@ function ReviewQueue({
             Review your matches. Nothing is submitted until you approve.
           </p>
         </div>
-        {pendingCount > 0 && (
-          <div style={reviewStyles.queueBulkActions}>
-            <button style={reviewStyles.btnApproveAll} onClick={onApproveAll}>
-              <Check size={12} />
-              <span>Approve All</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* View toggle */}
+          <div style={reviewStyles.viewToggleWrap}>
+            <button
+              style={{
+                ...reviewStyles.viewToggleBtn,
+                ...(reviewMode === 'list' ? reviewStyles.viewToggleBtnActive : {}),
+              }}
+              onClick={() => onToggleMode('list')}
+              title="List view"
+            >
+              <List size={14} />
             </button>
-            <button style={reviewStyles.btnSkipAll} onClick={onSkipAll}>
-              <X size={12} />
-              <span>Skip All</span>
+            <button
+              style={{
+                ...reviewStyles.viewToggleBtn,
+                ...(reviewMode === 'card' ? reviewStyles.viewToggleBtnActive : {}),
+              }}
+              onClick={() => onToggleMode('card')}
+              title="Card view"
+            >
+              <LayoutGrid size={14} />
             </button>
           </div>
-        )}
+          {/* Bulk actions (list mode only) */}
+          {pendingCount > 0 && reviewMode === 'list' && (
+            <div style={reviewStyles.queueBulkActions}>
+              <button style={reviewStyles.btnApproveAll} onClick={onApproveAll}>
+                <Check size={12} />
+                <span>Approve All</span>
+              </button>
+              <button style={reviewStyles.btnSkipAll} onClick={onSkipAll}>
+                <X size={12} />
+                <span>Skip All</span>
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Scrollable list */}
-      <div style={reviewStyles.queueList}>
-        {queue.map((item) => (
-          <ApplicationReviewCard
-            key={item.id}
-            item={item}
-            onApprove={onApprove}
-            onUndo={onUndo}
-            onSkip={onSkip}
-            onPreview={onPreview}
-          />
-        ))}
-      </div>
+      {/* Card Stack mode */}
+      {reviewMode === 'card' && (
+        <CardStackReview
+          queue={queue}
+          onApprove={onApprove}
+          onSkip={onSkip}
+          onUndo={onUndo}
+        />
+      )}
+
+      {/* List mode */}
+      {reviewMode === 'list' && (
+        <div style={reviewStyles.queueList}>
+          {queue.map((item) => (
+            <ApplicationReviewCard
+              key={item.id}
+              item={item}
+              onApprove={onApprove}
+              onUndo={onUndo}
+              onSkip={onSkip}
+              onPreview={onPreview}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Bottom CTA */}
       <div style={reviewStyles.queueBottom}>
@@ -2587,6 +2657,31 @@ const reviewStyles: Record<string, React.CSSProperties> = {
     border: '1px solid rgba(96, 165, 250, 0.3)',
     cursor: 'pointer',
     transition: 'border-color 0.15s, background 0.15s',
+  },
+  viewToggleWrap: {
+    display: 'inline-flex',
+    background: 'var(--bg-elevated)',
+    border: '1px solid var(--border)',
+    borderRadius: 8,
+    padding: 2,
+    gap: 2,
+  },
+  viewToggleBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 30,
+    height: 28,
+    borderRadius: 6,
+    border: 'none',
+    background: 'transparent',
+    color: 'var(--text-tertiary)',
+    cursor: 'pointer',
+    transition: 'background 0.15s, color 0.15s',
+  },
+  viewToggleBtnActive: {
+    background: 'rgba(96, 165, 250, 0.12)',
+    color: '#93c5fd',
   },
 }
 
@@ -3455,10 +3550,21 @@ export function AutopilotView() {
   // Review queue state
   const [reviewQueue, setReviewQueue] = useState<ReviewQueueItem[]>(() => loadReviewQueue())
   const [isReviewDemo] = useState(false)
+  const [reviewMode, setReviewMode] = useState<ReviewMode>(() => loadReviewMode())
+
+  const handleToggleReviewMode = useCallback((mode: ReviewMode) => {
+    setReviewMode(mode)
+    saveReviewMode(mode)
+  }, [])
 
   // Preview drawer state
   const [previewItemId, setPreviewItemId] = useState<string | null>(null)
   const previewItem = previewItemId ? reviewQueue.find(i => i.id === previewItemId) ?? null : null
+
+  // Feedback signal / bot learning state
+  const [learningToast, setLearningToast] = useState<string | null>(null)
+  const [learningStatus, setLearningStatus] = useState(() => getLearningStatus())
+  const learningToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Auto-submit state
   const [autoSubmitOn, setAutoSubmitOn] = useState(getAutoSubmitEnabled)
@@ -3710,10 +3816,50 @@ export function AutopilotView() {
     pendingBotActionRef.current = null
   }, [])
 
+  // --- Feedback signal helper ---
+  const emitFeedbackSignal = useCallback((item: ReviewQueueItem, action: 'approved' | 'skipped') => {
+    const signal: FeedbackSignal = {
+      jobId: item.id,
+      company: item.company,
+      role: item.role,
+      matchScore: item.matchScore,
+      matchReasons: item.matchReasons,
+      action,
+      timestamp: new Date().toISOString(),
+    }
+    const totalSignals = recordSignal(signal)
+
+    // Every 5th signal show a "learning" toast
+    if (totalSignals % 5 === 0) {
+      // Attempt calibration at 20+ signals
+      if (totalSignals >= 20) {
+        const cal = calibrateRubric()
+        if (cal && cal.adjustments.length > 0) {
+          setLearningToast(`Bot calibrated: ${cal.adjustments[0]}`)
+        } else {
+          setLearningToast(`Learning from your feedback (${totalSignals} signals)`)
+        }
+      } else {
+        setLearningToast(`Learning from your feedback (${totalSignals} signals)`)
+      }
+      // Auto-dismiss toast after 4 seconds
+      if (learningToastTimer.current) clearTimeout(learningToastTimer.current)
+      learningToastTimer.current = setTimeout(() => setLearningToast(null), 4000)
+    }
+
+    // Refresh the learning status indicator
+    setLearningStatus(getLearningStatus())
+  }, [])
+
   // Review queue handlers
   const handleReviewApprove = useCallback((id: string) => {
-    setReviewQueue(prev => prev.map(item => item.id === id ? { ...item, status: 'approved' as const } : item))
-  }, [])
+    setReviewQueue(prev => {
+      const updated = prev.map(item => item.id === id ? { ...item, status: 'approved' as const } : item)
+      const item = updated.find(i => i.id === id)
+      if (item) emitFeedbackSignal(item, 'approved')
+      return updated
+    })
+  }, [emitFeedbackSignal])
 
   const handleReviewUndo = useCallback((id: string) => {
     setReviewQueue((prev) =>
@@ -3722,16 +3868,38 @@ export function AutopilotView() {
   }, [])
 
   const handleReviewSkip = useCallback((id: string) => {
-    setReviewQueue(prev => prev.map(item => item.id === id ? { ...item, status: 'skipped' as const } : item))
-  }, [])
+    setReviewQueue(prev => {
+      const updated = prev.map(item => item.id === id ? { ...item, status: 'skipped' as const } : item)
+      const item = updated.find(i => i.id === id)
+      if (item) emitFeedbackSignal(item, 'skipped')
+      return updated
+    })
+  }, [emitFeedbackSignal])
 
   const handleReviewApproveAll = useCallback(() => {
-    setReviewQueue(prev => prev.map(item => item.status === 'pending' ? { ...item, status: 'approved' as const } : item))
-  }, [])
+    setReviewQueue(prev => {
+      const updated = prev.map(item => item.status === 'pending' ? { ...item, status: 'approved' as const } : item)
+      // Record signals for all newly approved items
+      updated.filter(i => i.status === 'approved').forEach(item => {
+        // Only emit for items that were pending (not already approved)
+        const wasPending = prev.find(p => p.id === item.id)?.status === 'pending'
+        if (wasPending) emitFeedbackSignal(item, 'approved')
+      })
+      return updated
+    })
+  }, [emitFeedbackSignal])
 
   const handleReviewSkipAll = useCallback(() => {
-    setReviewQueue(prev => prev.map(item => item.status === 'pending' ? { ...item, status: 'skipped' as const } : item))
-  }, [])
+    setReviewQueue(prev => {
+      const updated = prev.map(item => item.status === 'pending' ? { ...item, status: 'skipped' as const } : item)
+      // Record signals for all newly skipped items
+      updated.filter(i => i.status === 'skipped').forEach(item => {
+        const wasPending = prev.find(p => p.id === item.id)?.status === 'pending'
+        if (wasPending) emitFeedbackSignal(item, 'skipped')
+      })
+      return updated
+    })
+  }, [emitFeedbackSignal])
 
   const handleReviewPreview = useCallback((id: string) => {
     setPreviewItemId(id)
@@ -3742,13 +3910,18 @@ export function AutopilotView() {
   }, [])
 
   const handleApproveWithEdits = useCallback((id: string, edits: { editedCoverLetter?: string; editedAnswers?: Record<string, string> }) => {
-    setReviewQueue(prev => prev.map(item =>
-      item.id === id
-        ? { ...item, status: 'approved' as const, editedCoverLetter: edits.editedCoverLetter, editedAnswers: edits.editedAnswers }
-        : item
-    ))
+    setReviewQueue(prev => {
+      const updated = prev.map(item =>
+        item.id === id
+          ? { ...item, status: 'approved' as const, editedCoverLetter: edits.editedCoverLetter, editedAnswers: edits.editedAnswers }
+          : item
+      )
+      const item = updated.find(i => i.id === id)
+      if (item) emitFeedbackSignal(item, 'approved')
+      return updated
+    })
     setPreviewItemId(null)
-  }, [])
+  }, [emitFeedbackSignal])
 
   const handleSubmitApproved = useCallback(() => {
     // Future: trigger actual submission of approved jobs
@@ -3845,6 +4018,25 @@ export function AutopilotView() {
           </p>
         </div>
 
+        {/* Bot Learning Indicator (anonymous) */}
+        {learningStatus.signalCount > 0 && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '8px 14px',
+            borderRadius: 8,
+            background: 'rgba(139, 92, 246, 0.08)',
+            border: '1px solid rgba(139, 92, 246, 0.2)',
+            fontSize: 12,
+            color: '#a78bfa',
+            marginBottom: 8,
+          }}>
+            <BrainCircuit size={14} style={{ flexShrink: 0 }} />
+            <span style={{ opacity: 0.9 }}>{learningStatus.summary}</span>
+          </div>
+        )}
+
         {/* Review Queue */}
         <ReviewQueue
           queue={reviewQueue}
@@ -3856,6 +4048,8 @@ export function AutopilotView() {
           onSubmitApproved={handleSubmitApproved}
           onPreview={handleReviewPreview}
           isDemo={isReviewDemo}
+          reviewMode={reviewMode}
+          onToggleMode={handleToggleReviewMode}
         />
 
         {/* Preview Drawer */}
@@ -4366,6 +4560,39 @@ export function AutopilotView() {
             />
           )}
 
+          {/* Bot Learning Indicator */}
+          {learningStatus.signalCount > 0 && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 14px',
+              borderRadius: 8,
+              background: 'rgba(139, 92, 246, 0.08)',
+              border: '1px solid rgba(139, 92, 246, 0.2)',
+              fontSize: 12,
+              color: '#a78bfa',
+              marginBottom: 8,
+            }}>
+              <BrainCircuit size={14} style={{ flexShrink: 0 }} />
+              <span style={{ opacity: 0.9 }}>{learningStatus.summary}</span>
+              {learningStatus.calibrated && (
+                <span style={{
+                  marginLeft: 'auto',
+                  fontSize: 10,
+                  padding: '2px 6px',
+                  borderRadius: 4,
+                  background: 'rgba(139, 92, 246, 0.15)',
+                  color: '#c4b5fd',
+                  whiteSpace: 'nowrap' as const,
+                  flexShrink: 0,
+                }}>
+                  Threshold: {learningStatus.effectiveThreshold}
+                </span>
+              )}
+            </div>
+          )}
+
           {/* Review Queue (standard flow, shown when auto-submit is OFF) */}
           {!autoSubmitOn && reviewQueue.length > 0 && (
             <div ref={reviewQueueRef}>
@@ -4379,6 +4606,8 @@ export function AutopilotView() {
                 onSubmitApproved={handleSubmitApproved}
                 onPreview={handleReviewPreview}
                 isDemo={isReviewDemo}
+                reviewMode={reviewMode}
+                onToggleMode={handleToggleReviewMode}
               />
             </div>
           )}
@@ -4647,7 +4876,39 @@ export function AutopilotView() {
           0%, 100% { opacity: 1; box-shadow: 0 0 4px #34d399; }
           50% { opacity: 0.5; box-shadow: 0 0 10px #34d399, 0 0 20px rgba(52,211,153,0.3); }
         }
+        @keyframes feedbackToastIn {
+          from { transform: translateX(-50%) translateY(20px); opacity: 0; }
+          to { transform: translateX(-50%) translateY(0); opacity: 1; }
+        }
       `}</style>
+
+      {/* Learning feedback toast */}
+      {learningToast && (
+        <div style={{
+          position: 'fixed',
+          bottom: 24,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 10000,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '10px 18px',
+          borderRadius: 10,
+          background: 'rgba(139, 92, 246, 0.15)',
+          border: '1px solid rgba(139, 92, 246, 0.3)',
+          backdropFilter: 'blur(12px)',
+          fontSize: 13,
+          color: '#c4b5fd',
+          fontWeight: 500,
+          boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+          animation: 'feedbackToastIn 0.3s ease-out',
+          whiteSpace: 'nowrap' as const,
+        }}>
+          <BrainCircuit size={14} />
+          {learningToast}
+        </div>
+      )}
     </div>
   )
 }

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Check, X, Zap, Flame, Shield, Clock } from 'lucide-react'
+import { Check, X, Zap, Flame, Shield, Clock, AlertCircle } from 'lucide-react'
 import {
   PLAN_CONFIGS,
   type PlanConfig,
@@ -93,6 +93,33 @@ export function PricingViewWithResponsive() {
           ))}
         </div>
 
+        {/* After trial section */}
+        <div style={styles.afterTrialBox}>
+          <div style={styles.afterTrialHeader}>
+            <AlertCircle size={16} color="var(--accent)" />
+            <span style={styles.afterTrialTitle}>What happens after your 14-day trial?</span>
+          </div>
+          <div style={styles.afterTrialContent}>
+            <div style={styles.afterTrialColumn}>
+              <div style={styles.afterTrialRow}>
+                <Check size={14} color="var(--accent)" style={{ flexShrink: 0 }} />
+                <span style={styles.afterTrialKeep}>
+                  <strong>Keep:</strong> Job tracking, analytics, insights, coach, Gmail sync — free forever
+                </span>
+              </div>
+            </div>
+            <div style={styles.afterTrialColumn}>
+              <div style={styles.afterTrialRow}>
+                <X size={14} color="#ef4444" style={{ flexShrink: 0, opacity: 0.7 }} />
+                <span style={styles.afterTrialLose}>
+                  <strong>Lose:</strong> Auto-apply bot, Stealth Mode, LinkedIn access
+                </span>
+              </div>
+            </div>
+          </div>
+          <p style={styles.afterTrialCTA}>Subscribe to keep the bot running.</p>
+        </div>
+
         {/* Pause message */}
         <p style={styles.pauseMessage}>
           Pause anytime — resume when you need it
@@ -107,8 +134,8 @@ export function PricingViewWithResponsive() {
               a="Yes. Upgrade instantly, downgrade at the end of your billing cycle. No lock-in."
             />
             <FaqItem
-              q="What happens when I hit my quota?"
-              a="You'll get a notification and can upgrade for more. Existing applications are never interrupted."
+              q="What happens after my 14-day trial?"
+              a="You keep job tracking, analytics, insights, coach, and Gmail sync — free forever. To keep the auto-apply bot, Stealth Mode, and LinkedIn access, subscribe to any paid plan."
             />
             <FaqItem
               q="How does pausing work?"
@@ -191,7 +218,7 @@ function PricingCard({
     : loading
       ? 'Redirecting...'
       : config.tier === 'free'
-        ? 'Start free'
+        ? 'Start 14-Day Trial'
         : isBoost
           ? 'Start your sprint'
           : 'Start this week'
@@ -215,6 +242,9 @@ function PricingCard({
         <div style={styles.planNameRow}>
           {tierIcon}
           <h3 style={styles.planName}>{config.name}</h3>
+          {config.tier === 'free' && (
+            <span style={styles.trialBadge}>14-day trial</span>
+          )}
         </div>
 
         <div style={styles.priceRow}>
@@ -241,6 +271,17 @@ function PricingCard({
           <p style={styles.billedNote}>
             vs ${config.priceWeekly * 4}/mo billed weekly
           </p>
+        )}
+
+        {/* Platform limits summary for paid plans */}
+        {config.tier === 'starter' && (
+          <p style={styles.platformLimits}>10 LinkedIn applies/day &middot; Unlimited ATS</p>
+        )}
+        {config.tier === 'pro' && (
+          <p style={styles.platformLimits}>20 LinkedIn applies/day &middot; Unlimited ATS</p>
+        )}
+        {config.tier === 'boost' && (
+          <p style={styles.platformLimitsBoost}>Unlimited LinkedIn &middot; Unlimited ATS</p>
         )}
       </div>
 
@@ -551,6 +592,90 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: 'center' as const,
     marginBottom: 16,
     fontStyle: 'italic' as const,
+  },
+
+  // Trial badge
+  trialBadge: {
+    fontSize: 10,
+    fontWeight: 700,
+    color: 'var(--accent)',
+    background: 'rgba(52, 211, 153, 0.12)',
+    padding: '2px 8px',
+    borderRadius: 10,
+    letterSpacing: '0.03em',
+    textTransform: 'uppercase' as const,
+    whiteSpace: 'nowrap' as const,
+  },
+
+  // Platform limits
+  platformLimits: {
+    fontSize: 11,
+    fontWeight: 600,
+    color: 'var(--accent)',
+    marginTop: 8,
+    letterSpacing: '0.01em',
+  },
+  platformLimitsBoost: {
+    fontSize: 11,
+    fontWeight: 600,
+    color: '#f59e0b',
+    marginTop: 8,
+    letterSpacing: '0.01em',
+  },
+
+  // After trial section
+  afterTrialBox: {
+    background: 'var(--bg-surface)',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-xl)',
+    padding: '20px 24px',
+    marginBottom: 24,
+    maxWidth: 700,
+    marginLeft: 'auto',
+    marginRight: 'auto',
+  },
+  afterTrialHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 14,
+  },
+  afterTrialTitle: {
+    fontSize: 14,
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+  },
+  afterTrialContent: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 10,
+  },
+  afterTrialColumn: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 4,
+  },
+  afterTrialRow: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  afterTrialKeep: {
+    fontSize: 13,
+    color: 'var(--text-primary)',
+    lineHeight: 1.5,
+  },
+  afterTrialLose: {
+    fontSize: 13,
+    color: 'var(--text-secondary)',
+    lineHeight: 1.5,
+  },
+  afterTrialCTA: {
+    fontSize: 13,
+    fontWeight: 600,
+    color: 'var(--accent)',
+    marginTop: 14,
+    textAlign: 'center' as const,
   },
 
   // Pause message
