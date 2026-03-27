@@ -273,7 +273,7 @@ const DEFAULT_SCOUT_KEYWORDS = [
 ]
 
 /** Number of LinkedIn pages to scrape per keyword×location combo (25 results/page) */
-const PAGES_PER_SEARCH = 3
+const PAGES_PER_SEARCH = 2
 
 async function phaseScout(
   page: Page,

@@ -2,7 +2,7 @@ import { task, metadata } from "@trigger.dev/sdk/v3"
 
 export const applyJobTask = task({
   id: "apply-job-pipeline",
-  maxDuration: 300, // 5 minutes max — enough for scout + qualify 15 jobs
+  maxDuration: 600, // 10 minutes — multi-pass scout (36 API calls) + qualify 30 jobs
   run: async (payload: {
     userId: string
     maxApplications?: number
