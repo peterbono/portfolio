@@ -310,21 +310,35 @@ ${jobDescription.slice(0, 4000)}
 
 Return ONLY the JSON object, no markdown fences.`
 
+  const callHaiku = () => Promise.race([
+    client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 600,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userMessage }],
+    }),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Qualification timeout (10s)')), 10_000),
+    ),
+  ])
+
   try {
-    const response = await Promise.race([
-      client.messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 600,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userMessage }],
-      }),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Qualification timeout (10s)')), 10_000),
-      ),
-    ])
+    let response: Anthropic.Message
+    try {
+      response = await callHaiku() as Anthropic.Message
+    } catch (firstErr: unknown) {
+      const msg = firstErr instanceof Error ? firstErr.message : String(firstErr)
+      if (msg.includes('500') || msg.includes('Internal server') || msg.includes('overloaded')) {
+        console.warn(`[qualifier] Haiku 500, retrying in 2s...`)
+        await new Promise(r => setTimeout(r, 2000))
+        response = await callHaiku() as Anthropic.Message
+      } else {
+        throw firstErr
+      }
+    }
 
     // Extract text content
-    const textBlock = (response as Anthropic.Message).content.find(
+    const textBlock = response.content.find(
       (b): b is Anthropic.TextBlock => b.type === 'text',
     )
 
