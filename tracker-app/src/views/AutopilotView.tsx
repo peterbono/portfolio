@@ -4568,13 +4568,13 @@ export function AutopilotView() {
                   : jf === 0 ? 'Scanning LinkedIn...'
                   : jf < 30 ? 'Scanning LinkedIn page 2 of 3...'
                   : 'Scanning LinkedIn page 3 of 3...'
-                // Last found job
-                const lastJob = discovered.length > 0 ? discovered[discovered.length - 1] : null
-                const subtitleText = lastJob ? `Last found: ${lastJob.title} at ${lastJob.company}` : (
-                  searchConfig.keywords.length > 0
+                // Live subtitle from activity log (most recent entry)
+                const latestActivity = activities.length > 0 ? activities[0] : null
+                const subtitleText = latestActivity
+                  ? formatActivityText(latestActivity)
+                  : searchConfig.keywords.length > 0
                     ? `Looking for ${searchConfig.keywords.slice(0, 2).join(', ')}${searchConfig.keywords.length > 2 ? '...' : ''}`
                     : 'Looking for matches...'
-                )
                 return (
                   <>
                     <div style={progressBannerStyles.topRow}>
@@ -4602,18 +4602,24 @@ export function AutopilotView() {
                       </span>
                     </div>
 
-                    {/* Progress bar — solid fill based on pages scanned */}
+                    {/* Progress bar — solid fill with percentage */}
                     {isRunning && (
-                      <div style={progressBannerStyles.barTrack}>
-                        <div style={{
-                          ...progressBannerStyles.barFillLive,
-                          width: `${progressPct}%`,
-                        }} />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{ ...progressBannerStyles.barTrack, flex: 1 }}>
+                          <div style={{
+                            ...progressBannerStyles.barFillLive,
+                            width: `${progressPct}%`,
+                          }} />
+                        </div>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: '#34d399', minWidth: 32, textAlign: 'right' as const }}>{progressPct}%</span>
                       </div>
                     )}
                     {isComplete && (
-                      <div style={progressBannerStyles.barTrack}>
-                        <div style={{ ...progressBannerStyles.barFillComplete, width: '100%' }} />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{ ...progressBannerStyles.barTrack, flex: 1 }}>
+                          <div style={{ ...progressBannerStyles.barFillComplete, width: '100%' }} />
+                        </div>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: '#34d399', minWidth: 32, textAlign: 'right' as const }}>100%</span>
                       </div>
                     )}
 
