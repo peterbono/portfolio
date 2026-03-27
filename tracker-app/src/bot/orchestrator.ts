@@ -121,34 +121,80 @@ function humanDelay(baseMs: number, jitterMs: number = 500): Promise<void> {
 const APPLY_GAP_MS = 120_000
 const APPLY_GAP_JITTER_MS = 15_000
 
-/** Extract the full job description text from a job page */
+/** Extract the full job description text from a job page (with retry) */
 async function extractJobDescription(page: Page, url: string): Promise<string> {
-  try {
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20_000 })
-    await humanDelay(2000, 1000)
+  const attempt = async (waitStrategy: 'domcontentloaded' | 'networkidle'): Promise<string> => {
+    await page.goto(url, { waitUntil: waitStrategy, timeout: 30_000 })
 
-    // LinkedIn job page: try the description section
+    // Wait for JS-rendered content — LinkedIn SPAs need this
+    await humanDelay(3000, 1500)
+
+    // Try "Show more" / "See more" buttons (LinkedIn collapses JDs)
+    const showMore = page.locator('button.show-more-less-html__button--more, button[aria-label="Show more"], [class*="show-more"]').first()
+    if (await showMore.isVisible({ timeout: 1500 }).catch(() => false)) {
+      await showMore.click().catch(() => {})
+      await humanDelay(500, 300)
+    }
+
+    // Priority-ordered selectors: LinkedIn guest → LinkedIn auth → ATS → generic
     const descriptionSelectors = [
+      // LinkedIn guest view (public job pages)
+      '.show-more-less-html__markup',
+      '.description__text .show-more-less-html__markup',
+      '.description__text',
+      // LinkedIn authenticated view
       '.jobs-description__content',
       '.jobs-box__html-content',
-      '.description__text',
+      '.jobs-description-content__text',
+      // Common ATS platforms
+      '[data-testid="job-description"]',
+      '.job-description',
+      '.posting-requirements',
+      '#job-details',
+      // Greenhouse / Lever / Workable
+      '#content .section-wrapper',
+      '.posting-page .section-wrapper',
+      '.content .section-wrapper',
+      // Generic patterns
       '[class*="job-description"]',
       '[class*="jobDescription"]',
+      '[class*="job_description"]',
+      '[class*="JobDescription"]',
+      '[class*="posting-description"]',
+      // Semantic fallback
       'article',
       'main',
+      '[role="main"]',
     ]
 
     for (const sel of descriptionSelectors) {
       const el = page.locator(sel).first()
-      if (await el.isVisible({ timeout: 1000 }).catch(() => false)) {
+      if (await el.isVisible({ timeout: 1500 }).catch(() => false)) {
         const text = await el.innerText().catch(() => '')
-        if (text.length > 100) return text
+        if (text.length > 100) {
+          console.log(`[orchestrator] JD extracted via "${sel}" (${text.length} chars)`)
+          return text
+        }
       }
     }
 
     // Fallback: grab body text
     const bodyText = await page.locator('body').innerText().catch(() => '')
     return bodyText.slice(0, 5000)
+  }
+
+  try {
+    // First attempt: fast load (domcontentloaded)
+    const text = await attempt('domcontentloaded')
+    if (text.length >= 50) return text
+
+    // Retry with full page load (networkidle) — slower but catches JS-heavy pages
+    console.log(`[orchestrator] Retry JD extraction with networkidle for ${url}`)
+    const retryText = await attempt('networkidle')
+    if (retryText.length >= 50) return retryText
+
+    console.warn(`[orchestrator] JD extraction empty after retry for ${url}`)
+    return retryText
   } catch (err) {
     console.warn(`[orchestrator] Failed to extract JD from ${url}:`, (err as Error).message)
     return ''
@@ -253,7 +299,19 @@ async function phaseQualify(
   clearQualificationCache()
   const qualified: QualifiedJob[] = []
 
-  for (const job of survivingJobs) {
+  // Dedup by normalized company+title (scout may return dupes with different URL params)
+  const qualifySeenKeys = new Set<string>()
+  const dedupedSurvivors = survivingJobs.filter(j => {
+    const key = `${j.company.toLowerCase().trim()}|${j.title.toLowerCase().trim()}`
+    if (qualifySeenKeys.has(key)) return false
+    qualifySeenKeys.add(key)
+    return true
+  })
+  if (dedupedSurvivors.length < survivingJobs.length) {
+    console.log(`[pipeline] Deduped ${survivingJobs.length - dedupedSurvivors.length} duplicate jobs in qualify phase`)
+  }
+
+  for (const job of dedupedSurvivors) {
     try {
       const jobDescription = await extractJobDescription(page, job.url)
 
