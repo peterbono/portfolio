@@ -62,7 +62,7 @@ export const applyJobsTask = task({
     const { chromium } = await import("playwright")
     const { detectAdapter } = await import("../bot/adapters")
     const { APPLICANT } = await import("../bot/types")
-    const { takeScreenshot, humanDelay } = await import("../bot/helpers")
+    const { takeScreenshot, humanDelay, blockUnnecessaryResources } = await import("../bot/helpers")
     const {
       createBotRun,
       updateBotRun,
@@ -130,6 +130,9 @@ export const applyJobsTask = task({
           userAgent:
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
         })
+
+        // Moderate mode: block images, fonts, media, trackers but KEEP CSS (ATS forms need it)
+        await blockUnnecessaryResources(atsContext, 'moderate')
 
         for (let i = 0; i < atsJobs.length; i++) {
           const job = atsJobs[i]
@@ -298,6 +301,9 @@ export const applyJobsTask = task({
               sameSite: "None",
             },
           ])
+
+          // Moderate mode: block images, fonts, media, trackers but KEEP CSS (Easy Apply forms need it)
+          await blockUnnecessaryResources(linkedInContext, 'moderate')
 
           for (let i = 0; i < linkedInJobs.length; i++) {
             const job = linkedInJobs[i]

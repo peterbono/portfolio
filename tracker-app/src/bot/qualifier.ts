@@ -45,25 +45,62 @@ function cacheKey(jobDescription: string): string {
 // System prompt for the qualifier
 // ---------------------------------------------------------------------------
 
-const SYSTEM_PROMPT = `You are a job qualification AI. You evaluate job postings for a senior product designer.
+const SYSTEM_PROMPT = `You are a GENEROUS job qualification AI. You evaluate job postings for a senior product designer.
+Your goal is to let GOOD-ENOUGH jobs through. The user will review and decide — you just filter out clearly irrelevant ones.
 
 APPLICANT PROFILE:
 - 7+ years experience in Product Design, Design Systems, Design Ops
 - Specialization: Design Systems, Design Ops, Complex Product Architecture
 - Industries: iGaming, B2B SaaS, affiliate media, biometric security, public sector, aviation
-- Tools: Figma, Storybook, Zeroheight, Jira, Maze, Rive
+- Tools: Figma, Storybook, Zeroheight, Jira, Maze, Rive, Asana, Notion
 - Location: Bangkok, Thailand (GMT+7)
 - Remote preferred, open to on-site in SE Asia
 - EU citizen (French passport)
 - Bilingual French/English
 - Min salary: 70k EUR/year (on-site APAC) or 80k EUR/year (remote)
 
-SCORING RUBRIC (total 0-100):
-- Is it a design role? (Product Designer, UX/UI, Design Lead, Design Systems, Visual Designer, Staff Designer, Principal Designer, Head of Design, Design Manager): +30 if yes, 0 if no
-- Seniority match? (Senior, Lead, Staff, Principal, Head, Manager — NOT junior/entry): +20 if matched
-- Remote or location compatible with GMT+7 ±4h (APAC, India, Middle East, Australia)?: +20 if compatible
-- Salary in range? (≥70k EUR or equivalent): +15 if in range or not stated
-- Required skills match? (Figma, design systems, prototyping, user research, B2B SaaS): +15 if ≥3 skills match
+SCORING RUBRIC (total 0-100) — BE GENEROUS, give benefit of the doubt:
+
+1. DESIGN ROLE (0-30 points):
+   - Exact match (Product Designer, UX Designer, UI Designer, UX/UI, Design Systems, Visual Designer, Interaction Designer): +30
+   - Close match (Design Lead, Design Manager, Head of Design, Staff Designer, Principal Designer, Creative Director with UX focus, Brand Designer with digital focus, Service Designer, Design Ops, Design Strategist): +25
+   - Adjacent (Frontend Developer with design focus, Product Manager with design background, UX Researcher, Content Designer, Design Technologist): +15
+   - Not a design role at all (pure engineering, sales, marketing, data, etc.): 0
+
+2. SENIORITY (0-20 points):
+   - Exact level or one level up/down (Senior, Lead, Staff, Principal, Head, Manager, Director): +20
+   - Mid-level (no seniority specified, "Designer" without prefix): +15 — could be senior in practice
+   - Junior/intern/entry-level explicitly stated: +5
+
+3. LOCATION / TIMEZONE (0-20 points):
+   - Remote with no TZ restriction, or APAC-based, or async-friendly: +20
+   - Remote with "flexible hours" or overlap with APAC possible: +15
+   - Location in UTC+3 to UTC+11 range (India, Middle East, East Asia, Australia, NZ): +20
+   - Europe-based but remote-friendly: +10
+   - US-only with strict US hours: +5
+   - On-site required outside APAC: +5
+   - Cannot determine location/remote policy: +12 (benefit of the doubt)
+
+4. SALARY (0-15 points):
+   - In range (>=70k EUR or equivalent) or salary not mentioned: +15
+   - Salary not stated at all: +15 (NEVER penalize missing salary — most jobs don't list it)
+   - Slightly below range (50-70k EUR equivalent): +10
+   - Clearly below range (<50k EUR): +5
+   - Cannot determine: +12
+
+5. SKILLS MATCH (0-15 points):
+   - 4+ matching skills (Figma, design systems, prototyping, user research, B2B SaaS, design tokens, component libraries, Storybook, wireframing, usability testing, responsive design, mobile design, accessibility): +15
+   - 2-3 matching skills: +10
+   - 1 matching skill or generic "design" skills mentioned: +7
+   - No skills info available: +8 (benefit of the doubt)
+   - Completely different skill set (only coding, only marketing): +3
+
+IMPORTANT RULES:
+- When information is MISSING or UNCLEAR, give partial points (never 0).
+- A "Senior Product Designer" role should score at MINIMUM 60+ unless something is clearly wrong.
+- Salary not being listed is NORMAL — always give full salary points (15) when not stated.
+- "Remote" without timezone info = assume compatible (+15 minimum for location).
+- Score should reflect: "Would a reasonable senior designer want to apply to this?"
 
 COVER LETTER SNIPPET RULES:
 - 2-3 sentences max
@@ -170,15 +207,16 @@ Return ONLY the JSON object, no markdown fences.`
     const message = (err as Error).message
     console.error('[qualifier] Failed:', message)
 
-    // Return a conservative "unknown" result so the pipeline can decide
+    // Return a "benefit of the doubt" result — don't auto-kill jobs on errors
+    // The user can review and decide. Score 35 keeps it in the "maybe" zone.
     return {
-      score: 0,
-      isDesignRole: false,
+      score: 35,
+      isDesignRole: true,
       seniorityMatch: false,
       locationCompatible: false,
-      salaryInRange: false,
+      salaryInRange: true,
       skillsMatch: false,
-      reasoning: `Qualification failed: ${message}`,
+      reasoning: `Qualification incomplete (${message}) — scored conservatively for manual review`,
       coverLetterSnippet: '',
     }
   }

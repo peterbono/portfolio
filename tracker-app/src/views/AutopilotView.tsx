@@ -28,8 +28,13 @@ import {
   ChevronUp,
   Save,
   Pencil,
+  Sparkles,
+  Link2,
+  Briefcase,
 } from 'lucide-react'
 import { useBotActivity } from '../hooks/useBotActivity'
+import { usePlan } from '../hooks/usePlan'
+import { useUI } from '../context/UIContext'
 import type { BotActivityItem, BotRunStatus } from '../hooks/useBotActivity'
 import { triggerBotRun } from '../lib/bot-api'
 import { supabase } from '../lib/supabase'
@@ -3396,6 +3401,23 @@ export function AutopilotView() {
   // Whether the config has any meaningful content
   const hasConfig = searchConfig.keywords.length > 0 || searchConfig.locationRules.length > 0
 
+  // Plan / trial gating
+  const {
+    canUseBot,
+    isTrialActive: trialIsActive,
+    isTrialExpired: trialIsExpired,
+    trialDaysLeft,
+    effectivePlan,
+    plan: basePlan,
+    platformLimits,
+    linkedInUsedToday,
+    atsUsedToday,
+    linkedInRemainingToday,
+    atsRemainingToday,
+  } = usePlan()
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
+  const { setActiveView: navigateToView } = useUI()
+
   // Auto-save handler with debounce
   const handleConfigChange = useCallback((patch: Partial<SearchConfig>) => {
     setSearchConfig(prev => {
@@ -3670,6 +3692,11 @@ export function AutopilotView() {
 
   // Handlers with auth wall gate + profile completeness check
   const handleStartBot = useCallback(() => {
+    // Check plan gating first — trial expired + free plan = blocked
+    if (!canUseBot) {
+      setShowUpgradeModal(true)
+      return
+    }
     // Check if profile is complete first
     if (!isProfileComplete()) {
       pendingBotActionRef.current = executeBotAction
@@ -3677,7 +3704,7 @@ export function AutopilotView() {
       return
     }
     executeBotAction()
-  }, [executeBotAction])
+  }, [executeBotAction, canUseBot])
 
   // Callback when profile modal completes
   const handleProfileComplete = useCallback(() => {
@@ -4079,8 +4106,72 @@ export function AutopilotView() {
 
         {/* RIGHT: Main content */}
         <div className="autopilot-main-panel" style={layoutStyles.main}>
-          {/* Active filter tags bar */}
-          <ActiveFilterTags config={searchConfig} />
+          {/* Trial expired banner */}
+          {trialIsExpired && basePlan === 'free' && (
+            <div style={{
+              padding: '10px 16px',
+              background: 'rgba(245, 158, 11, 0.08)',
+              border: '1px solid rgba(245, 158, 11, 0.2)',
+              borderRadius: 8,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 12,
+              marginBottom: 8,
+            }}>
+              <span style={{ fontSize: 13, color: '#f59e0b', fontWeight: 500 }}>
+                Your 14-day trial has ended. Subscribe to continue auto-applying.
+              </span>
+              <button
+                onClick={() => navigateToView('pricing')}
+                style={{
+                  padding: '5px 14px',
+                  borderRadius: 6,
+                  background: 'var(--accent)',
+                  color: '#000',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  border: 'none',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
+                }}
+              >
+                Upgrade
+              </button>
+            </div>
+          )}
+
+          {/* Active filter tags bar + platform limits */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <ActiveFilterTags config={searchConfig} />
+            </div>
+            {/* Platform limit counters — shown for authenticated users with bot access */}
+            {canUseBot && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                fontSize: 11, color: 'var(--text-tertiary)', whiteSpace: 'nowrap', flexShrink: 0,
+              }}>
+                <span style={{
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  color: linkedInRemainingToday <= 2 && platformLimits.linkedInPerDay < 999
+                    ? '#f59e0b' : 'var(--text-tertiary)',
+                }}>
+                  <Link2 size={11} />
+                  {linkedInUsedToday}/{platformLimits.linkedInPerDay >= 999 ? '\u221e' : platformLimits.linkedInPerDay} LinkedIn
+                </span>
+                <span style={{
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  color: atsRemainingToday <= 3 && platformLimits.atsPerDay < 999
+                    ? '#f59e0b' : 'var(--text-tertiary)',
+                }}>
+                  <Briefcase size={11} />
+                  {atsUsedToday}/{platformLimits.atsPerDay >= 999 ? '\u221e' : platformLimits.atsPerDay} ATS
+                </span>
+              </div>
+            )}
+          </div>
 
           {/* Progress Banner — shows during and after bot runs */}
           {(isRunPolling || isRunTerminal || isTriggering || isBotActive || currentRun?.status === 'completed' || currentRun?.status === 'failed') && (
@@ -4394,6 +4485,77 @@ export function AutopilotView() {
             salary: r.minSalary ? `${getCurrencySymbol(r.currency)}${((r.minSalary) / 1000).toFixed(0)}k+` : undefined,
           }))}
         />
+      )}
+
+      {/* Upgrade Modal — shown when trial expired + free plan tries to use bot */}
+      {showUpgradeModal && (
+        <div
+          style={{
+            position: 'fixed', inset: 0,
+            background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 9999,
+          }}
+          onClick={() => setShowUpgradeModal(false)}
+        >
+          <div
+            style={{
+              background: 'var(--card-bg, #1a1a2e)',
+              border: '1px solid var(--border)',
+              borderRadius: 16,
+              padding: 32,
+              maxWidth: 420,
+              width: '90%',
+              textAlign: 'center',
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{
+              width: 56, height: 56, borderRadius: 16,
+              background: 'rgba(52, 211, 153, 0.12)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              margin: '0 auto 16px',
+            }}>
+              <Sparkles size={28} color="#34d399" />
+            </div>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 8px' }}>
+              Trial Ended
+            </h2>
+            <p style={{ fontSize: 14, color: 'var(--text-secondary)', margin: '0 0 20px', lineHeight: 1.5 }}>
+              Your 14-day free trial has expired. Upgrade to a paid plan to unlock auto-apply, Stealth Mode, and LinkedIn access.
+            </p>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+              <button
+                onClick={() => setShowUpgradeModal(false)}
+                style={{
+                  padding: '10px 20px', borderRadius: 8,
+                  background: 'none', border: '1px solid var(--border)',
+                  color: 'var(--text-secondary)', fontSize: 13, fontWeight: 500,
+                  cursor: 'pointer',
+                }}
+              >
+                Maybe later
+              </button>
+              <button
+                onClick={() => {
+                  setShowUpgradeModal(false)
+                  navigateToView('pricing')
+                }}
+                style={{
+                  padding: '10px 20px', borderRadius: 8,
+                  background: 'var(--accent)', border: 'none',
+                  color: '#000', fontSize: 13, fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                View Plans
+              </button>
+            </div>
+            <p style={{ fontSize: 11, color: 'var(--text-tertiary)', margin: '16px 0 0' }}>
+              Dashboard, pipeline, analytics, and manual tracking remain free forever.
+            </p>
+          </div>
+        </div>
       )}
 
       {/* Keyframe injection for pulsing dot + spinner */}

@@ -1,6 +1,34 @@
-import type { Page } from 'playwright'
+import type { Page, BrowserContext } from 'playwright'
 import type { ApplicantProfile } from './types'
 import { supabaseServer } from './supabase-server'
+
+// ---------------------------------------------------------------------------
+// Resource blocking — reduces Bright Data bandwidth by ~70%
+// ---------------------------------------------------------------------------
+
+/** Tracker/analytics URL patterns to block */
+const TRACKER_PATTERN = /google-analytics|googletagmanager|facebook\.net|doubleclick|hotjar|segment\.io|mixpanel/
+
+/**
+ * Block unnecessary resources on a browser context to reduce bandwidth.
+ *
+ * @param context - Playwright BrowserContext to attach route interception to
+ * @param mode - 'aggressive' blocks images, CSS, fonts, media, trackers (scout/qualify).
+ *               'moderate' keeps CSS but blocks images, fonts, media, trackers (apply phase — ATS forms need CSS).
+ */
+export async function blockUnnecessaryResources(
+  context: BrowserContext,
+  mode: 'aggressive' | 'moderate' = 'aggressive',
+): Promise<void> {
+  const blockedExtensions = mode === 'aggressive'
+    ? '**/*.{png,jpg,jpeg,gif,webp,svg,ico,bmp,css,woff,woff2,ttf,otf,eot,mp4,webm,mp3,wav}'
+    : '**/*.{png,jpg,jpeg,gif,webp,svg,ico,bmp,woff,woff2,ttf,otf,eot,mp4,webm,mp3,wav}'
+
+  await context.route(blockedExtensions, (route) => route.abort())
+  await context.route(TRACKER_PATTERN, (route) => route.abort())
+
+  console.log(`[helpers] Resource blocking enabled (mode: ${mode})`)
+}
 
 // ---------------------------------------------------------------------------
 // Standard compressed variant filenames (created by compress-pdf task)

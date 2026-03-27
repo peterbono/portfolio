@@ -4,6 +4,7 @@ import type { ApplicantProfile, ATSAdapter, ApplyResult } from './types'
 import { APPLICANT } from './types'
 import { scoutJobs, type DiscoveredJob } from './scout'
 import { qualifyJob, clearQualificationCache, type QualificationResult } from './qualifier'
+import { blockUnnecessaryResources } from './helpers'
 import {
   createBotRun,
   updateBotRun,
@@ -477,6 +478,9 @@ export async function runPipeline(config: PipelineConfig): Promise<PipelineResul
         timezoneId: 'Asia/Bangkok',
       })
     }
+
+    // Block images, CSS, fonts, media, and trackers to reduce Bright Data bandwidth (~70% savings)
+    await blockUnnecessaryResources(context, 'aggressive')
 
     page = await context.newPage()
 

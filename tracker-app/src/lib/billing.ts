@@ -18,6 +18,90 @@ export interface PlanLimits {
   hasStealth: boolean
 }
 
+// ─── Platform-Based Apply Limits ────────────────────────────────────
+export interface PlatformLimits {
+  linkedInPerDay: number
+  atsPerDay: number
+}
+
+/** Platform limits per plan tier (+ trial) */
+export const PLATFORM_LIMITS: Record<PlanTier | 'trial', PlatformLimits> = {
+  trial:   { linkedInPerDay: 5,   atsPerDay: 15  },
+  free:    { linkedInPerDay: 0,   atsPerDay: 0   },
+  starter: { linkedInPerDay: 10,  atsPerDay: 999 },
+  pro:     { linkedInPerDay: 20,  atsPerDay: 999 },
+  boost:   { linkedInPerDay: 999, atsPerDay: 999 },
+}
+
+export function getPlatformLimits(plan: PlanTier, isTrialActive: boolean): PlatformLimits {
+  if (isTrialActive && plan === 'free') return PLATFORM_LIMITS.trial
+  return PLATFORM_LIMITS[plan]
+}
+
+// ─── Trial System ───────────────────────────────────────────────────
+export const TRIAL_STORAGE_KEY = 'tracker_v2_trial_start'
+export const TRIAL_DURATION_DAYS = 14
+
+/** Initialize trial if not already set. Call on first auth / signup. */
+export function initTrial(): string {
+  try {
+    const existing = localStorage.getItem(TRIAL_STORAGE_KEY)
+    if (existing) return existing
+    const now = new Date().toISOString()
+    localStorage.setItem(TRIAL_STORAGE_KEY, now)
+    return now
+  } catch {
+    return new Date().toISOString()
+  }
+}
+
+/** Read stored trial start date */
+export function getTrialStartDate(): string | null {
+  try {
+    return localStorage.getItem(TRIAL_STORAGE_KEY)
+  } catch {
+    return null
+  }
+}
+
+/** Calculate days remaining in trial (0 if expired) */
+export function getTrialDaysLeft(startDate: string | null): number {
+  if (!startDate) return 0
+  const start = new Date(startDate).getTime()
+  if (isNaN(start)) return 0
+  const now = Date.now()
+  const elapsed = now - start
+  const remaining = TRIAL_DURATION_DAYS - elapsed / (1000 * 60 * 60 * 24)
+  return Math.max(0, Math.ceil(remaining))
+}
+
+/** Is the trial still active? */
+export function isTrialActive(startDate: string | null): boolean {
+  return getTrialDaysLeft(startDate) > 0
+}
+
+/** Is the trial expired (was started but has run out)? */
+export function isTrialExpired(startDate: string | null): boolean {
+  if (!startDate) return false
+  return getTrialDaysLeft(startDate) <= 0
+}
+
+/**
+ * Returns the effective plan: 'pro' during trial (if base plan is free),
+ * otherwise the actual plan.
+ */
+export function getEffectivePlan(basePlan: PlanTier, trialStartDate: string | null): PlanTier {
+  if (basePlan !== 'free') return basePlan
+  if (isTrialActive(trialStartDate)) return 'pro'
+  return 'free'
+}
+
+/** Whether the user can use the auto-apply bot */
+export function canUseBotCheck(basePlan: PlanTier, trialStartDate: string | null): boolean {
+  if (basePlan !== 'free') return true
+  return isTrialActive(trialStartDate)
+}
+
 export interface PlanConfig {
   name: string
   tier: PlanTier
@@ -41,9 +125,9 @@ const ALL_ATS = [
 
 const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
   free: {
-    botAppliesPerMonth: 25,
-    atsAdapters: ['Greenhouse', 'Lever'],
-    coverLettersPerMonth: 10,
+    botAppliesPerMonth: 0,
+    atsAdapters: [],
+    coverLettersPerMonth: 0,
     hasAICoach: true,
     aiCoachLevel: 'basic',
     hasFeedbackLoop: false,
@@ -108,13 +192,15 @@ export const PLAN_CONFIGS: PlanConfig[] = [
     features: [
       { label: 'Unlimited job tracking', included: true },
       { label: 'Manual applications', included: true },
+      { label: 'Dashboard, Pipeline, Table', included: true },
       { label: 'Basic analytics', included: true },
       { label: 'AI Coach', included: true, detail: 'Basic' },
-      { label: 'Bot auto-apply', included: true, detail: '25/month' },
-      { label: 'Basic apply (direct ATS only)', included: true, detail: 'Greenhouse, Lever' },
+      { label: 'Gmail sync', included: true },
       { label: 'Ghost detection', included: true },
-      { label: 'Cover letter AI', included: true, detail: '10/month' },
-      { label: 'Stealth Mode — apply undetected via LinkedIn & all platforms', included: false },
+      { label: 'Bot auto-apply', included: false, detail: 'Paid plans only' },
+      { label: 'Stealth Mode', included: false },
+      { label: 'LinkedIn access', included: false },
+      { label: 'Cover letter AI', included: false },
       { label: 'Feedback loop', included: false },
       { label: 'Priority support', included: false },
     ],
@@ -191,6 +277,7 @@ export function getPlanConfig(plan: PlanTier): PlanConfig {
 
 type GatableFeature =
   | 'bot-apply'
+  | 'bot_apply'
   | 'ai-coach'
   | 'full-analytics'
   | 'feedback-loop'
@@ -198,12 +285,14 @@ type GatableFeature =
   | 'cover-letter'
   | 'priority-support'
   | 'stealth'
+  | 'linkedin-access'
 
 /** Check if a feature is available on the given plan */
 export function canUseFeature(plan: PlanTier, feature: GatableFeature): boolean {
   const limits = getPlanLimits(plan)
   switch (feature) {
     case 'bot-apply':
+    case 'bot_apply':
       return limits.botAppliesPerMonth > 0
     case 'ai-coach':
       return limits.hasAICoach
@@ -219,6 +308,8 @@ export function canUseFeature(plan: PlanTier, feature: GatableFeature): boolean 
       return limits.hasPrioritySupport
     case 'stealth':
       return limits.hasStealth
+    case 'linkedin-access':
+      return limits.hasStealth // same gating as stealth — requires paid plan
     default:
       return false
   }

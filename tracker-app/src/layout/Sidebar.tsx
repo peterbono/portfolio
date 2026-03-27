@@ -55,7 +55,7 @@ export function Sidebar({ onBackToLanding }: { onBackToLanding?: () => void }) {
   const { activeView, setActiveView, sidebarCollapsed, toggleSidebar } = useUI()
   const { jobs } = useJobs()
   const { user, signOut } = useSupabase()
-  const { plan } = usePlan()
+  const { plan, effectivePlan, isTrialActive, isTrialExpired, trialDaysLeft } = usePlan()
 
   const userEmail = user?.email ?? ''
   const userName = user?.user_metadata?.full_name ?? userEmail
@@ -320,6 +320,7 @@ export function Sidebar({ onBackToLanding }: { onBackToLanding?: () => void }) {
               >
                 {userEmail}
               </div>
+              {/* Plan badge */}
               <span
                 style={{
                   display: 'inline-block',
@@ -330,12 +331,56 @@ export function Sidebar({ onBackToLanding }: { onBackToLanding?: () => void }) {
                   letterSpacing: '0.06em',
                   padding: '1px 6px',
                   borderRadius: 4,
-                  background: PLAN_BADGE_COLORS[plan].bg,
-                  color: PLAN_BADGE_COLORS[plan].color,
+                  background: isTrialActive
+                    ? 'rgba(52, 211, 153, 0.15)'
+                    : isTrialExpired && plan === 'free'
+                      ? 'rgba(113, 113, 122, 0.15)'
+                      : PLAN_BADGE_COLORS[plan].bg,
+                  color: isTrialActive
+                    ? '#34d399'
+                    : isTrialExpired && plan === 'free'
+                      ? '#71717a'
+                      : PLAN_BADGE_COLORS[plan].color,
                 }}
               >
-                {plan}
+                {isTrialActive ? 'Pro Trial' : isTrialExpired && plan === 'free' ? 'Free Plan' : plan}
               </span>
+              {/* Trial status line */}
+              {isTrialActive && (
+                <div
+                  style={{
+                    fontSize: 10,
+                    marginTop: 3,
+                    color: trialDaysLeft <= 3 ? '#f59e0b' : 'var(--text-tertiary)',
+                    fontWeight: trialDaysLeft <= 3 ? 600 : 400,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4,
+                  }}
+                >
+                  {trialDaysLeft <= 3 ? '\u26a0' : '\u23f1'} Trial: {trialDaysLeft} day{trialDaysLeft !== 1 ? 's' : ''} left
+                </div>
+              )}
+              {isTrialExpired && plan === 'free' && (
+                <button
+                  onClick={() => setActiveView('pricing')}
+                  style={{
+                    display: 'block',
+                    marginTop: 3,
+                    fontSize: 10,
+                    fontWeight: 600,
+                    color: '#34d399',
+                    background: 'none',
+                    border: 'none',
+                    padding: 0,
+                    cursor: 'pointer',
+                    textDecoration: 'underline',
+                    textUnderlineOffset: 2,
+                  }}
+                >
+                  Upgrade
+                </button>
+              )}
             </div>
           )}
           {!sidebarCollapsed && (
