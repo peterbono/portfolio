@@ -4609,7 +4609,17 @@ export function AutopilotView() {
                           <div style={{
                             ...progressBannerStyles.barFillLive,
                             width: `${progressPct}%`,
-                          }} />
+                            position: 'relative' as const,
+                            overflow: 'hidden',
+                          }}>
+                            {/* Shimmer sweep to show active processing */}
+                            <div style={{
+                              position: 'absolute' as const,
+                              top: 0, left: 0, right: 0, bottom: 0,
+                              background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 50%, transparent 100%)',
+                              animation: 'shimmerSweep 1.8s ease-in-out infinite',
+                            }} />
+                          </div>
                         </div>
                         <span style={{ fontSize: 11, fontWeight: 600, color: '#34d399', minWidth: 32, textAlign: 'right' as const }}>{progressPct}%</span>
                       </div>
@@ -4623,9 +4633,24 @@ export function AutopilotView() {
                       </div>
                     )}
 
-                    {/* Subtitle: last found job or keywords */}
+                    {/* Subtitle: live activity text with thinking animation */}
                     {isRunning && (
-                      <span style={progressBannerStyles.subtitle}>{subtitleText}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {/* Thinking dots */}
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+                          {[0, 1, 2].map(i => (
+                            <span key={i} style={{
+                              width: 4, height: 4, borderRadius: '50%',
+                              background: '#34d399',
+                              animation: `thinkingBounce 1.4s ease-in-out ${i * 0.16}s infinite`,
+                            }} />
+                          ))}
+                        </span>
+                        <span style={{
+                          ...progressBannerStyles.subtitle,
+                          animation: latestActivity ? 'subtitleFade 4s ease-in-out' : undefined,
+                        }}>{subtitleText}</span>
+                      </div>
                     )}
 
                     {/* Completed: stats + review button */}
@@ -5039,6 +5064,20 @@ export function AutopilotView() {
         @keyframes dotPulse {
           0%, 100% { opacity: 1; box-shadow: 0 0 4px #34d399; }
           50% { opacity: 0.5; box-shadow: 0 0 10px #34d399, 0 0 20px rgba(52,211,153,0.3); }
+        }
+        @keyframes shimmerSweep {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(200%); }
+        }
+        @keyframes subtitleFade {
+          0% { opacity: 0; transform: translateY(4px); }
+          10% { opacity: 1; transform: translateY(0); }
+          90% { opacity: 1; transform: translateY(0); }
+          100% { opacity: 0; transform: translateY(-4px); }
+        }
+        @keyframes thinkingBounce {
+          0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+          40% { transform: scale(1); opacity: 1; }
         }
         @keyframes feedbackToastIn {
           from { transform: translateX(-50%) translateY(20px); opacity: 0; }
