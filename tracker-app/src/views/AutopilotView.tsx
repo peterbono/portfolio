@@ -34,6 +34,7 @@ import {
   List,
   LayoutGrid,
   BrainCircuit,
+  ExternalLink,
 } from 'lucide-react'
 import { useBotActivity } from '../hooks/useBotActivity'
 import { usePlan } from '../hooks/usePlan'
@@ -1809,7 +1810,23 @@ function ApplicationReviewCard({
       <div style={reviewStyles.cardTop}>
         <div style={reviewStyles.cardInfo}>
           <span style={reviewStyles.cardCompany}>{item.company}</span>
-          <span style={reviewStyles.cardRole}>{item.role}</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={reviewStyles.cardRole}>{item.role}</span>
+            {item.jobUrl && (
+              <a
+                href={item.jobUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Open job posting"
+                onClick={(e) => e.stopPropagation()}
+                style={{ display: 'inline-flex', opacity: 0.5, color: 'inherit', transition: 'opacity 0.15s' }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.opacity = '1' }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.opacity = '0.5' }}
+              >
+                <ExternalLink size={12} />
+              </a>
+            )}
+          </span>
         </div>
         <div
           style={{
@@ -2266,6 +2283,7 @@ function ReviewQueue({
           onApprove={onApprove}
           onSkip={onSkip}
           onUndo={onUndo}
+          onPreview={onPreview}
         />
       )}
 
@@ -3625,9 +3643,12 @@ export function AutopilotView() {
     jobsProcessed?: number
     jobsQualified?: number
     jobsPreFiltered?: number
+    scoutSearchesTotal?: number
     currentJob?: { company: string; role: string } | null
     activities?: Array<{ action: string; company?: string; role?: string; reason?: string; timestamp: string }>
   } | null>(null)
+  // Cycling subtitle index for rotating through recent activities
+  const [subtitleCycleIdx, setSubtitleCycleIdx] = useState(0)
 
   // Review queue state
   const [reviewQueue, setReviewQueue] = useState<ReviewQueueItem[]>(() => loadReviewQueue())
@@ -3823,6 +3844,7 @@ export function AutopilotView() {
               jobsProcessed: progress.jobsProcessed as number | undefined,
               jobsQualified: progress.jobsQualified as number | undefined,
               jobsPreFiltered: progress.jobsPreFiltered as number | undefined,
+              scoutSearchesTotal: progress.scoutSearchesTotal as number | undefined,
               currentJob: progress.currentJob as { company: string; role: string } | null | undefined,
               activities: progress.activities as Array<{ action: string; company?: string; role?: string; reason?: string; timestamp: string }> | undefined,
             })
@@ -3857,6 +3879,20 @@ export function AutopilotView() {
     const interval = setInterval(poll, 3000)
     return () => clearInterval(interval)
   }, [activeRunId])
+
+  // ---- Subtitle cycling timer: rotate through recent activities every 4s ----
+  useEffect(() => {
+    if (!activeRunId) return // Only cycle when a run is active
+    const timer = setInterval(() => {
+      setSubtitleCycleIdx(prev => prev + 1)
+    }, 4000)
+    return () => clearInterval(timer)
+  }, [activeRunId])
+
+  // Reset cycle index when new metadata arrives (so we start from the newest)
+  useEffect(() => {
+    setSubtitleCycleIdx(0)
+  }, [polledMetadata?.activities?.length])
 
   // ---- Convert discoveredJobs/qualifiedJobs into ReviewQueueItems when run completes ---
   useEffect(() => {
@@ -4753,6 +4789,7 @@ export function AutopilotView() {
                 const metaPhase = polledMetadata?.phase
                 const metaProcessed = polledMetadata?.jobsProcessed ?? 0
                 const metaTotal = jf || 10 // avoid divide by zero
+                const scoutSearchesTotal = polledMetadata?.scoutSearchesTotal ?? 0
                 let progressPct: number
                 if (isComplete) progressPct = 100
                 else if (isFailed) progressPct = 0
@@ -4762,29 +4799,44 @@ export function AutopilotView() {
                   progressPct = 33 + Math.round((metaProcessed / Math.max(metaTotal, 1)) * 57)
                 }
                 else if (metaPhase === 'pre-filter') progressPct = 30
-                else if (metaPhase === 'scout') progressPct = jf === 0 ? 10 : 25
-                else if (metaPhase === 'starting') progressPct = 5
-                else progressPct = jf === 0 ? 10 : jf < 20 ? 33 : jf < 40 ? 66 : 90
+                else if (metaPhase === 'scout') {
+                  // Scout is 5-28%: incremental progress based on search completion
+                  if (scoutSearchesTotal > 0 && metaProcessed > 0) {
+                    progressPct = 5 + Math.round((metaProcessed / scoutSearchesTotal) * 23)
+                  } else {
+                    progressPct = 5
+                  }
+                }
+                else if (metaPhase === 'starting') progressPct = 3
+                else progressPct = jf === 0 ? 5 : jf < 20 ? 33 : jf < 40 ? 66 : 90
 
                 // Status text — use metadata phase for more specific text
+                const scoutStatusDetail = scoutSearchesTotal > 0 && metaProcessed > 0
+                  ? ` (search ${metaProcessed}/${scoutSearchesTotal})`
+                  : ''
                 const statusText = isFailed ? 'Search failed'
                   : isComplete ? 'Search complete'
                   : polledRunStatus === 'QUEUED' || polledRunStatus === 'REATTEMPTING' || isTriggering ? 'Starting search...'
                   : metaPhase === 'qualify' ? `Qualifying jobs... (${metaProcessed}/${metaTotal})`
                   : metaPhase === 'pre-filter' ? 'Pre-filtering candidates...'
-                  : metaPhase === 'scout' ? (jf === 0 ? 'Scanning LinkedIn...' : `Found ${jf} candidates, scanning more...`)
+                  : metaPhase === 'scout' ? (jf === 0 ? `Scanning LinkedIn...${scoutStatusDetail}` : `Found ${jf} candidates, scanning more...${scoutStatusDetail}`)
                   : jf === 0 ? 'Scanning LinkedIn...'
                   : `Scanning... (${jf} found)`
 
-                // Live subtitle: prefer metadata activities (updated every 3s) over Supabase realtime
+                // Live subtitle: cycle through recent metadata activities for dynamic feel
                 const metaActivities = polledMetadata?.activities
-                const latestMetaActivity = metaActivities && metaActivities.length > 0 ? metaActivities[0] : null
                 const latestActivity = activities.length > 0 ? activities[0] : null
 
-                // Use metadata activity if it's newer, otherwise use Supabase activity
+                // Build subtitle by cycling through the last 3 activities
                 let subtitleText: string
-                if (latestMetaActivity?.reason) {
-                  subtitleText = latestMetaActivity.reason
+                if (metaActivities && metaActivities.length > 0) {
+                  const recentActivities = metaActivities.slice(0, 3).filter(a => a.reason)
+                  if (recentActivities.length > 0) {
+                    const idx = subtitleCycleIdx % recentActivities.length
+                    subtitleText = recentActivities[idx]?.reason ?? 'Searching...'
+                  } else {
+                    subtitleText = metaActivities[0]?.reason ?? 'Searching...'
+                  }
                 } else if (latestActivity) {
                   subtitleText = formatActivityText(latestActivity)
                 } else if (searchConfig.keywords.length > 0) {

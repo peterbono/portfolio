@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Check, X, Shield, RotateCcw, ExternalLink } from 'lucide-react'
+import { Check, X, Shield, RotateCcw, ExternalLink, Eye } from 'lucide-react'
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -25,6 +25,7 @@ interface CardStackReviewProps {
   onApprove: (id: string) => void
   onSkip: (id: string) => void
   onUndo: (id: string) => void
+  onPreview?: (id: string) => void
 }
 
 /* ------------------------------------------------------------------ */
@@ -42,6 +43,7 @@ export default function CardStackReview({
   onApprove,
   onSkip,
   onUndo,
+  onPreview,
 }: CardStackReviewProps) {
   const pendingItems = queue.filter((i) => i.status === 'pending')
   const totalPending = pendingItems.length
@@ -308,6 +310,16 @@ export default function CardStackReview({
           <X size={22} />
           <span>Skip</span>
         </button>
+        {onPreview && (
+          <button
+            style={cs.btnPreview}
+            onClick={() => onPreview(currentItem.id)}
+            title="Preview & edit application"
+          >
+            <Eye size={20} />
+            <span>Preview</span>
+          </button>
+        )}
         <button
           style={cs.btnApprove}
           onClick={() => handleAction('approve')}
@@ -560,6 +572,21 @@ const cs: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     transition: 'background 0.15s, border-color 0.15s',
   },
+  btnPreview: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    background: 'rgba(168, 85, 247, 0.08)',
+    color: '#a855f7',
+    fontWeight: 700,
+    fontSize: 14,
+    padding: '14px 18px',
+    borderRadius: 14,
+    border: '2px solid rgba(168, 85, 247, 0.25)',
+    cursor: 'pointer',
+    transition: 'background 0.15s, border-color 0.15s',
+  } as React.CSSProperties,
   btnApprove: {
     flex: 1,
     display: 'flex',
