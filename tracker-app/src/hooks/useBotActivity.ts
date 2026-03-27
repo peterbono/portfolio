@@ -36,7 +36,7 @@ interface UseBotActivityReturn {
 }
 
 const ACTIVITY_LIMIT = 50
-const POLL_INTERVAL_MS = 4000 // Fallback polling every 4 seconds
+const POLL_INTERVAL_MS = 3000 // Fallback polling every 3 seconds (matches Trigger.dev polling)
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */

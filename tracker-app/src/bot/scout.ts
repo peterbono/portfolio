@@ -13,6 +13,7 @@ export interface DiscoveredJob {
   isEasyApply: boolean
   postedDate: string
   matchScore?: number
+  source?: 'linkedin' | 'indeed' | 'remoteok' | 'wellfound'
 }
 
 export interface ScoutResult {
@@ -26,7 +27,7 @@ export interface ScoutResult {
 // ---------------------------------------------------------------------------
 
 /** Companies that must never appear in results */
-const DEFAULT_EXCLUDED = [
+export const DEFAULT_EXCLUDED = [
   'betrivers',
   'rush street interactive',
   'clickout media',
@@ -63,7 +64,7 @@ const INCOMPATIBLE_TZ_KEYWORDS = [
 // ---------------------------------------------------------------------------
 
 /** Random delay between min and max ms (human-like) */
-function randomDelay(min: number, max: number): Promise<void> {
+export function randomDelay(min: number, max: number): Promise<void> {
   const ms = Math.floor(Math.random() * (max - min + 1)) + min
   return new Promise(resolve => setTimeout(resolve, ms))
 }
@@ -147,7 +148,7 @@ function buildGuestApiUrl(
 }
 
 /** Check if a location string is timezone-compatible with GMT+7 */
-function isTimezoneCompatible(location: string): boolean {
+export function isTimezoneCompatible(location: string): boolean {
   const lower = location.toLowerCase()
 
   // Reject if explicitly mentions incompatible timezone
@@ -170,12 +171,12 @@ function isTimezoneCompatible(location: string): boolean {
 }
 
 /** Normalize company name for dedup */
-function normalizeForDedup(str: string): string {
+export function normalizeForDedup(str: string): string {
   return str.toLowerCase().trim().replace(/[^a-z0-9 ]/g, '')
 }
 
 /** Check if a company is in the excluded list */
-function isExcludedCompany(company: string, excluded: string[]): boolean {
+export function isExcludedCompany(company: string, excluded: string[]): boolean {
   const norm = normalizeForDedup(company)
   return excluded.some(ex => norm.includes(normalizeForDedup(ex)))
 }
@@ -655,6 +656,7 @@ export async function scoutJobs(
       url,
       isEasyApply: card.isEasyApply,
       postedDate: card.postedDate || new Date().toISOString(),
+      source: 'linkedin',
     })
   }
 
@@ -689,10 +691,22 @@ export async function scoutJobs(
 // Multi-pass scout: keyword × location cross-product with global dedup
 // ---------------------------------------------------------------------------
 
+/** Callback fired after each individual keyword x location search completes */
+export interface ScoutProgressUpdate {
+  searchIndex: number       // 0-based index of current search
+  totalSearches: number     // total keyword x location combos
+  keyword: string
+  location: string
+  newJobsThisSearch: number // unique new jobs found in this search
+  totalUniqueJobs: number   // cumulative unique jobs so far
+}
+
 export interface MultiPassConfig {
   keywords: string[]
   locations: string[]
   pagesPerSearch: number // pages to scrape per keyword×location combo
+  /** Optional callback for per-search progress reporting */
+  onSearchProgress?: (update: ScoutProgressUpdate) => void
 }
 
 /**
@@ -711,7 +725,7 @@ export async function scoutJobsMultiPass(
   existingApplications: string[],
   multiPass: MultiPassConfig,
 ): Promise<ScoutResult> {
-  const { keywords, locations, pagesPerSearch } = multiPass
+  const { keywords, locations, pagesPerSearch, onSearchProgress } = multiPass
 
   // Build the search matrix
   const combos: Array<{ keyword: string; location: string }> = []
@@ -774,6 +788,20 @@ export async function scoutJobsMultiPass(
         `[scout:multi-pass] "${keyword}" × "${location}": ${result.jobs.length} candidates, ${newInThisPass} new unique`,
       )
 
+      // Report per-search progress for live UI updates
+      try {
+        onSearchProgress?.({
+          searchIndex: i,
+          totalSearches: combos.length,
+          keyword,
+          location,
+          newJobsThisSearch: newInThisPass,
+          totalUniqueJobs: allJobs.length,
+        })
+      } catch {
+        // Don't let callback errors crash the scout
+      }
+
       // Delay between searches to avoid rate limiting
       if (i < combos.length - 1) {
         await randomDelay(2000, 4000)
@@ -782,6 +810,20 @@ export async function scoutJobsMultiPass(
       console.warn(
         `[scout:multi-pass] Search "${keyword}" × "${location}" failed: ${(err as Error).message}`,
       )
+
+      // Still report progress even on failure so UI doesn't freeze
+      try {
+        onSearchProgress?.({
+          searchIndex: i,
+          totalSearches: combos.length,
+          keyword,
+          location,
+          newJobsThisSearch: 0,
+          totalUniqueJobs: allJobs.length,
+        })
+      } catch {
+        // Don't let callback errors crash the scout
+      }
       // Continue with next combo instead of aborting
     }
   }

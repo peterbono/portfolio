@@ -2,7 +2,8 @@ import type { Page, Browser, BrowserContext } from 'playwright'
 import type { SearchProfile } from '../types/database'
 import type { ApplicantProfile, ATSAdapter, ApplyResult } from './types'
 import { APPLICANT } from './types'
-import { scoutJobs, scoutJobsMultiPass, type DiscoveredJob, type MultiPassConfig } from './scout'
+import { scoutJobs, scoutJobsMultiPass, normalizeForDedup, type DiscoveredJob, type MultiPassConfig, type ScoutProgressUpdate } from './scout'
+import { scoutIndeedMultiPass } from './scout-indeed'
 import {
   qualifyJob,
   clearQualificationCache,
@@ -46,6 +47,8 @@ export interface PipelineProgress {
   jobsProcessed: number
   jobsQualified: number
   jobsPreFiltered: number
+  /** During scout phase: total number of keyword x location searches to run */
+  scoutSearchesTotal?: number
   currentJob: { company: string; role: string } | null
   activities: Array<{
     action: string
@@ -280,6 +283,7 @@ async function phaseScout(
   config: PipelineConfig,
   runId: string,
   activities: ActivityLogEntry[],
+  onScoutProgress?: (update: ScoutProgressUpdate) => void,
 ): Promise<DiscoveredJob[]> {
   console.log('[pipeline] Phase 1: SCOUT (multi-pass)')
 
@@ -317,24 +321,108 @@ async function phaseScout(
     keywords: uniqueKeywords,
     locations: uniqueLocations,
     pagesPerSearch: PAGES_PER_SEARCH,
+    // Pass through per-search progress callback for live UI updates
+    onSearchProgress: onScoutProgress,
   }
 
-  const result = await scoutJobsMultiPass(page, config.searchProfile, existing, multiPassConfig)
+  // --- LinkedIn multi-pass ---
+  const linkedinResult = await scoutJobsMultiPass(page, config.searchProfile, existing, multiPassConfig)
+
+  const linkedinDone: ActivityLogEntry = {
+    user_id: config.userId,
+    run_id: runId,
+    action: 'scout_linkedin_complete',
+    reason: `LinkedIn: ${uniqueKeywords.length}kw × ${uniqueLocations.length}loc = ${uniqueKeywords.length * uniqueLocations.length} searches. Found ${linkedinResult.totalFound}, filtered ${linkedinResult.filteredOut}, unique: ${linkedinResult.jobs.length}`,
+  }
+  await logBotActivity(linkedinDone)
+  activities.push(linkedinDone)
+
+  // --- Indeed multi-pass ---
+  console.log('[pipeline] Phase 1b: SCOUT Indeed (multi-pass)')
+  const indeedLogEntry: ActivityLogEntry = {
+    user_id: config.userId,
+    run_id: runId,
+    action: 'scout_indeed_start',
+    reason: `Indeed: ${uniqueKeywords.length} keywords × ${uniqueLocations.length} locations × ${PAGES_PER_SEARCH} pages`,
+  }
+  await logBotActivity(indeedLogEntry)
+  activities.push(indeedLogEntry)
+
+  let indeedJobs: DiscoveredJob[] = []
+  try {
+    const indeedResult = await scoutIndeedMultiPass(
+      page,
+      config.searchProfile,
+      existing,
+      multiPassConfig,
+    )
+
+    const indeedDone: ActivityLogEntry = {
+      user_id: config.userId,
+      run_id: runId,
+      action: 'scout_indeed_complete',
+      reason: `Indeed: found ${indeedResult.totalFound}, filtered ${indeedResult.filteredOut}, unique: ${indeedResult.jobs.length}`,
+    }
+    await logBotActivity(indeedDone)
+    activities.push(indeedDone)
+
+    indeedJobs = indeedResult.jobs
+  } catch (err) {
+    const indeedErr: ActivityLogEntry = {
+      user_id: config.userId,
+      run_id: runId,
+      action: 'scout_indeed_error',
+      reason: `Indeed scraping failed: ${(err as Error).message}`,
+    }
+    await logBotActivity(indeedErr)
+    activities.push(indeedErr)
+    console.warn('[pipeline] Indeed scout failed, continuing with LinkedIn results only:', (err as Error).message)
+  }
+
+  // --- Merge & cross-source dedup ---
+  const mergedJobs: DiscoveredJob[] = [...linkedinResult.jobs]
+  const seenCompanyTitle = new Set<string>()
+
+  // Index LinkedIn jobs for dedup
+  for (const job of linkedinResult.jobs) {
+    const key = `${normalizeForDedup(job.company)}|${normalizeForDedup(job.title)}`
+    seenCompanyTitle.add(key)
+  }
+
+  // Add Indeed jobs that aren't duplicates of LinkedIn results
+  let indeedDedupCount = 0
+  for (const job of indeedJobs) {
+    const key = `${normalizeForDedup(job.company)}|${normalizeForDedup(job.title)}`
+    if (seenCompanyTitle.has(key)) {
+      indeedDedupCount++
+      continue
+    }
+    seenCompanyTitle.add(key)
+    mergedJobs.push(job)
+  }
+
+  if (indeedDedupCount > 0) {
+    console.log(`[pipeline] Cross-source dedup: removed ${indeedDedupCount} Indeed duplicates already found on LinkedIn`)
+  }
+
+  console.log(
+    `[pipeline] Scout complete: LinkedIn ${linkedinResult.jobs.length} + Indeed ${indeedJobs.length} - ${indeedDedupCount} dupes = ${mergedJobs.length} unique candidates`,
+  )
 
   const scoutDone: ActivityLogEntry = {
     user_id: config.userId,
     run_id: runId,
     action: 'scout_complete',
-    reason: `Multi-pass: ${uniqueKeywords.length}kw × ${uniqueLocations.length}loc = ${uniqueKeywords.length * uniqueLocations.length} searches. Found ${result.totalFound}, filtered ${result.filteredOut}, unique candidates: ${result.jobs.length}`,
+    reason: `LinkedIn: ${linkedinResult.jobs.length}, Indeed: ${indeedJobs.length}, cross-dedup: -${indeedDedupCount}, total unique: ${mergedJobs.length}`,
   }
   await logBotActivity(scoutDone)
   activities.push(scoutDone)
 
   await updateBotRun(runId, {
-    jobs_found: result.jobs.length,
+    jobs_found: mergedJobs.length,
   })
 
-  return result.jobs
+  return mergedJobs
 }
 
 // ---------------------------------------------------------------------------
@@ -792,7 +880,22 @@ export async function runPipeline(config: PipelineConfig & { onProgress?: (p: Pi
     // --- Phase 1: Scout ---
     addProgressActivity({ action: 'found', reason: `Keywords: ${config.searchProfile.keywords?.join(', ') ?? 'default'}` })
     emitProgress('scout')
-    const discoveredJobs = await phaseScout(page, effectiveConfig, runId, activities)
+    const discoveredJobs = await phaseScout(page, effectiveConfig, runId, activities,
+      // Per-search progress callback: fires after each keyword x location search
+      (update) => {
+        jobsFound = update.totalUniqueJobs
+        addProgressActivity({
+          action: 'found',
+          reason: `Searching '${update.keyword}' in ${update.location}... (${update.searchIndex + 1}/${update.totalSearches}) — ${update.totalUniqueJobs} unique so far`,
+        })
+        emitProgress('scout', {
+          jobsFound: update.totalUniqueJobs,
+          // Encode scout sub-progress: searchIndex/totalSearches for frontend % calc
+          jobsProcessed: update.searchIndex + 1,
+          scoutSearchesTotal: update.totalSearches,
+        })
+      },
+    )
     jobsFound = discoveredJobs.length
     addProgressActivity({ action: 'found', reason: `Found ${jobsFound} candidates from LinkedIn` })
     emitProgress('scout', { jobsFound })

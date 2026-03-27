@@ -1,4 +1,4 @@
-import{r as HP,a as D,R as _}from"./icons-ByKoT90s.js";import{c as ka,g as se}from"./supabase-DrdKa2Hv.js";var Ju={exports:{}},Ye={};/**
+import{r as HP,a as D,R as _}from"./icons-BiXSCDYq.js";import{c as ka,g as se}from"./supabase-DrdKa2Hv.js";var Ju={exports:{}},Ye={};/**
  * @license React
  * react-dom.production.js
  *
