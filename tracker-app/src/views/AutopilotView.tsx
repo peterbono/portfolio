@@ -4406,8 +4406,22 @@ export function AutopilotView() {
               Searching...
             </span>
           )}
-          {isBotActive && !isTriggering && (
-            <button style={styles.btnStopBot} onClick={() => {/* future: cancel run */}}>
+          {(isBotActive || isRunPolling) && !isTriggering && (
+            <button style={styles.btnStopBot} onClick={async () => {
+              // Stop the bot: clear local state + update Supabase run to cancelled
+              setActiveRunId(null)
+              setPolledRunStatus(null)
+              setPolledRunOutput(null)
+              setPolledMetadata(null)
+              if (currentRun?.id) {
+                try {
+                  await supabase.from('bot_runs').update({
+                    status: 'cancelled',
+                    completed_at: new Date().toISOString(),
+                  }).eq('id', currentRun.id)
+                } catch { /* best effort */ }
+              }
+            }}>
               <Square size={14} />
               <span>Stop</span>
             </button>

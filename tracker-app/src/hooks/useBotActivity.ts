@@ -105,7 +105,22 @@ export function useBotActivity(): UseBotActivityReturn {
         .limit(1)
 
       if (runData && runData.length > 0) {
-        setCurrentRun(toRunStatus(runData[0]))
+        const run = toRunStatus(runData[0])
+        // Auto-expire: if run has been 'running' for > 10 minutes, treat as stale/failed
+        if (run.status === 'running' && run.startedAt) {
+          const elapsed = Date.now() - new Date(run.startedAt).getTime()
+          if (elapsed > 10 * 60 * 1000) {
+            run.status = 'failed'
+            run.errorMessage = 'Run expired (stale > 10 minutes)'
+            // Also update Supabase so it doesn't keep coming back
+            supabase.from('bot_runs').update({
+              status: 'failed',
+              completed_at: new Date().toISOString(),
+              error_message: 'Auto-expired: stale run > 10 minutes',
+            }).eq('id', run.id).then(() => {})
+          }
+        }
+        setCurrentRun(run)
       }
     } catch {
       // Supabase unreachable -- stay in offline mode with empty data
