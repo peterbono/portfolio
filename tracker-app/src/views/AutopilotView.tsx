@@ -3543,7 +3543,6 @@ export function AutopilotView() {
   // Run polling state (real-time progress tracking)
   const [activeRunId, setActiveRunId] = useState<string | null>(null)
   const [runStartTime, setRunStartTime] = useState<number | null>(null)
-  const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [polledRunStatus, setPolledRunStatus] = useState<'QUEUED' | 'EXECUTING' | 'COMPLETED' | 'FAILED' | 'CRASHED' | 'REATTEMPTING' | null>(null)
   const [polledRunOutput, setPolledRunOutput] = useState<{ jobsFound?: number; jobsQualified?: number; discoveredJobs?: DiscoveredJob[] } | null>(null)
 
@@ -3645,7 +3644,6 @@ export function AutopilotView() {
     // Reset polling state
     setActiveRunId(null)
     setRunStartTime(null)
-    setElapsedSeconds(0)
     setPolledRunStatus(null)
     setPolledRunOutput(null)
     try {
@@ -3719,17 +3717,6 @@ export function AutopilotView() {
     return () => clearInterval(interval)
   }, [activeRunId])
 
-  // ---- Elapsed time counter (every 1s while a run is active) ---------
-  useEffect(() => {
-    if (!runStartTime || !activeRunId) return
-    const tick = () => {
-      setElapsedSeconds(Math.floor((Date.now() - runStartTime) / 1000))
-    }
-    tick()
-    const interval = setInterval(tick, 1000)
-    return () => clearInterval(interval)
-  }, [runStartTime, activeRunId])
-
   // ---- Convert discoveredJobs into ReviewQueueItems when run completes ---
   useEffect(() => {
     if (polledRunStatus !== 'COMPLETED') return
@@ -3767,13 +3754,6 @@ export function AutopilotView() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [polledRunStatus])
-
-  // Helper: format elapsed seconds as M:SS
-  const formatElapsed = (secs: number): string => {
-    const m = Math.floor(secs / 60)
-    const s = secs % 60
-    return `${m}:${s.toString().padStart(2, '0')}`
-  }
 
   // Derived: is a polled run actively in progress
   const isRunPolling = activeRunId !== null
@@ -4433,104 +4413,119 @@ export function AutopilotView() {
           {/* Progress Banner — shows during and after bot runs */}
           {(isRunPolling || isRunTerminal || isTriggering || isBotActive || currentRun?.status === 'completed' || currentRun?.status === 'failed') && (
             <section style={progressBannerStyles.container}>
-              {/* Top row: status + elapsed */}
-              <div style={progressBannerStyles.topRow}>
-                <div style={progressBannerStyles.statusLabel}>
-                  {(isTriggering || polledRunStatus === 'QUEUED' || polledRunStatus === 'REATTEMPTING') && (
-                    <>
-                      <span style={progressBannerStyles.pulsingDot} />
-                      <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>Searching for jobs...</span>
-                    </>
-                  )}
-                  {(polledRunStatus === 'EXECUTING' || (isBotActive && !isTriggering && !isRunPolling)) && (
-                    <>
-                      <span style={progressBannerStyles.pulsingDot} />
-                      <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>Searching for jobs...</span>
-                    </>
-                  )}
-                  {(polledRunStatus === 'COMPLETED' || (!isRunPolling && !isTriggering && currentRun?.status === 'completed')) && (
-                    <>
-                      <CheckCircle2 size={16} color="#34d399" />
-                      <span style={{ fontWeight: 600, color: '#34d399' }}>Search complete</span>
-                    </>
-                  )}
-                  {(polledRunStatus === 'FAILED' || polledRunStatus === 'CRASHED' || (!isRunPolling && !isTriggering && currentRun?.status === 'failed')) && (
-                    <>
-                      <XCircle size={16} color="#f43f5e" />
-                      <span style={{ fontWeight: 600, color: '#f43f5e' }}>Search failed</span>
-                    </>
-                  )}
-                </div>
-                {(runStartTime || currentRun?.startedAt) && (
-                  <span style={progressBannerStyles.elapsed}>
-                    <Clock size={12} />
-                    {activeRunId
-                      ? formatElapsed(elapsedSeconds)
-                      : currentRun?.completedAt && currentRun?.startedAt
-                        ? formatElapsed(Math.floor((new Date(currentRun.completedAt).getTime() - new Date(currentRun.startedAt).getTime()) / 1000))
-                        : ''
-                    }
-                  </span>
-                )}
-              </div>
+              {/* Top row: status + live job count */}
+              {(() => {
+                const jf = polledRunOutput?.jobsFound ?? currentRun?.jobsFound ?? 0
+                const discovered = polledRunOutput?.discoveredJobs ?? []
+                const isRunning = (isTriggering || isRunPolling || isBotActive) && !(polledRunStatus === 'COMPLETED' || polledRunStatus === 'FAILED' || polledRunStatus === 'CRASHED')
+                const isComplete = polledRunStatus === 'COMPLETED' || (!isRunPolling && !isTriggering && currentRun?.status === 'completed')
+                const isFailed = polledRunStatus === 'FAILED' || polledRunStatus === 'CRASHED' || (!isRunPolling && !isTriggering && currentRun?.status === 'failed')
+                // Progress: approximate based on jobs found across 3 pages
+                const progressPct = isComplete ? 100 : isFailed ? 0 : jf === 0 ? 10 : jf < 20 ? 33 : jf < 40 ? 66 : 90
+                // Status text
+                const statusText = isFailed ? 'Search failed'
+                  : isComplete ? 'Search complete'
+                  : polledRunStatus === 'QUEUED' || polledRunStatus === 'REATTEMPTING' || isTriggering ? 'Starting search...'
+                  : jf === 0 ? 'Scanning LinkedIn...'
+                  : jf < 30 ? 'Scanning LinkedIn page 2 of 3...'
+                  : 'Scanning LinkedIn page 3 of 3...'
+                // Last found job
+                const lastJob = discovered.length > 0 ? discovered[discovered.length - 1] : null
+                const subtitleText = lastJob ? `Last found: ${lastJob.title} at ${lastJob.company}` : (
+                  searchConfig.keywords.length > 0
+                    ? `Looking for ${searchConfig.keywords.slice(0, 2).join(', ')}${searchConfig.keywords.length > 2 ? '...' : ''}`
+                    : 'Looking for matches...'
+                )
+                return (
+                  <>
+                    <div style={progressBannerStyles.topRow}>
+                      <div style={progressBannerStyles.statusLabel}>
+                        {isFailed ? (
+                          <>
+                            <XCircle size={16} color="#f43f5e" />
+                            <span style={{ fontWeight: 600, color: '#f43f5e' }}>{statusText}</span>
+                          </>
+                        ) : isComplete ? (
+                          <>
+                            <CheckCircle2 size={16} color="#34d399" />
+                            <span style={{ fontWeight: 600, color: '#34d399' }}>{statusText}</span>
+                          </>
+                        ) : (
+                          <>
+                            <span style={progressBannerStyles.pulsingDot} />
+                            <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{statusText}</span>
+                          </>
+                        )}
+                      </div>
+                      <span style={progressBannerStyles.liveCount}>
+                        <Briefcase size={12} />
+                        {jf} job{jf !== 1 ? 's' : ''} found
+                      </span>
+                    </div>
 
-              {/* Pulsing progress bar (only while running) */}
-              {(isTriggering || isRunPolling || isBotActive) && !(polledRunStatus === 'COMPLETED' || polledRunStatus === 'FAILED' || polledRunStatus === 'CRASHED') && (
-                <div style={progressBannerStyles.barTrack}>
-                  <div style={progressBannerStyles.barFill} />
-                </div>
-              )}
-
-              {/* Subtitle: search query while running */}
-              {(isTriggering || isRunPolling || isBotActive) && !(polledRunStatus === 'COMPLETED' || polledRunStatus === 'FAILED' || polledRunStatus === 'CRASHED') && (
-                <span style={progressBannerStyles.subtitle}>
-                  Finding matches for {searchConfig.keywords.length > 0
-                    ? `"${searchConfig.keywords.slice(0, 2).join(', ')}${searchConfig.keywords.length > 2 ? '...' : ''}"`
-                    : 'your criteria'
-                  }
-                </span>
-              )}
-
-              {/* Completed: stats + review button */}
-              {(polledRunStatus === 'COMPLETED' || (!isRunPolling && !isTriggering && currentRun?.status === 'completed')) && (
-                <div style={progressBannerStyles.resultRow}>
-                  <span style={progressBannerStyles.resultText}>
-                    Found {polledRunOutput?.jobsFound ?? currentRun?.jobsFound ?? 0} match{(polledRunOutput?.jobsFound ?? currentRun?.jobsFound ?? 0) !== 1 ? 'es' : ''}
-                    {(polledRunOutput?.jobsQualified ?? currentRun?.jobsApplied) != null && (
-                      <> &middot; {polledRunOutput?.jobsQualified ?? currentRun?.jobsApplied} qualified</>
+                    {/* Progress bar — solid fill based on pages scanned */}
+                    {isRunning && (
+                      <div style={progressBannerStyles.barTrack}>
+                        <div style={{
+                          ...progressBannerStyles.barFillLive,
+                          width: `${progressPct}%`,
+                        }} />
+                      </div>
                     )}
-                  </span>
-                  {reviewQueue.filter(i => i.status === 'pending').length > 0 && (
-                    <button
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        color: 'var(--accent, #818cf8)',
-                        cursor: 'pointer',
-                        fontSize: 13,
-                        fontWeight: 600,
-                        textDecoration: 'underline',
-                        padding: '2px 6px',
-                      }}
-                      onClick={() => reviewQueueRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                    >
-                      Review below &darr;
-                    </button>
-                  )}
-                </div>
-              )}
+                    {isComplete && (
+                      <div style={progressBannerStyles.barTrack}>
+                        <div style={{ ...progressBannerStyles.barFillComplete, width: '100%' }} />
+                      </div>
+                    )}
 
-              {/* Failed: error message + retry */}
-              {(polledRunStatus === 'FAILED' || polledRunStatus === 'CRASHED' || (!isRunPolling && !isTriggering && currentRun?.status === 'failed')) && (
-                <div style={progressBannerStyles.resultRow}>
-                  <span style={{ ...progressBannerStyles.resultText, color: '#f87171' }}>
-                    Something went wrong. Try again?
-                  </span>
-                  <button style={progressBannerStyles.retryBtn} onClick={handleStartBot}>
-                    Retry
-                  </button>
-                </div>
-              )}
+                    {/* Subtitle: last found job or keywords */}
+                    {isRunning && (
+                      <span style={progressBannerStyles.subtitle}>{subtitleText}</span>
+                    )}
+
+                    {/* Completed: stats + review button */}
+                    {isComplete && (
+                      <div style={progressBannerStyles.resultRow}>
+                        <span style={progressBannerStyles.resultText}>
+                          Found {jf} match{jf !== 1 ? 'es' : ''}
+                          {(polledRunOutput?.jobsQualified ?? currentRun?.jobsApplied) != null && (
+                            <> &middot; {polledRunOutput?.jobsQualified ?? currentRun?.jobsApplied} qualified</>
+                          )}
+                        </span>
+                        {reviewQueue.filter(i => i.status === 'pending').length > 0 && (
+                          <button
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: 'var(--accent, #818cf8)',
+                              cursor: 'pointer',
+                              fontSize: 13,
+                              fontWeight: 600,
+                              textDecoration: 'underline',
+                              padding: '2px 6px',
+                            }}
+                            onClick={() => reviewQueueRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                          >
+                            Review below &darr;
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Failed: error message + retry */}
+                    {isFailed && (
+                      <div style={progressBannerStyles.resultRow}>
+                        <span style={{ ...progressBannerStyles.resultText, color: '#f87171' }}>
+                          Something went wrong. Try again?
+                        </span>
+                        <button style={progressBannerStyles.retryBtn} onClick={handleStartBot}>
+                          Retry
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )
+              })()}
             </section>
           )}
 
@@ -5084,12 +5079,12 @@ const progressBannerStyles: Record<string, React.CSSProperties> = {
     flexShrink: 0,
     animation: 'dotPulse 1.5s ease-in-out infinite',
   },
-  elapsed: {
+  liveCount: {
     display: 'inline-flex',
     alignItems: 'center',
     gap: 4,
     fontSize: 13,
-    fontWeight: 500,
+    fontWeight: 600,
     color: 'var(--text-secondary)',
     fontVariantNumeric: 'tabular-nums',
   },
@@ -5101,15 +5096,16 @@ const progressBannerStyles: Record<string, React.CSSProperties> = {
     overflow: 'hidden',
     position: 'relative',
   },
-  barFill: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    width: '50%',
+  barFillLive: {
     height: '100%',
     borderRadius: 2,
-    background: 'linear-gradient(90deg, transparent, #34d399, transparent)',
-    animation: 'progressPulse 1.8s ease-in-out infinite',
+    background: '#34d399',
+    transition: 'width 0.6s ease-in-out',
+  },
+  barFillComplete: {
+    height: '100%',
+    borderRadius: 2,
+    background: '#34d399',
   },
   subtitle: {
     fontSize: 13,
