@@ -19,8 +19,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    // Trigger.dev v3 doesn't have a /runs/{id} endpoint.
-    // Use the list endpoint and filter by the run ID.
+    // Try v3 single-run endpoint first (returns full output + metadata)
+    const v3Res = await fetch(`https://api.trigger.dev/api/v3/runs/${runId}`, {
+      headers: { 'Authorization': `Bearer ${TRIGGER_SECRET}` },
+    })
+
+    if (v3Res.ok) {
+      const run = await v3Res.json()
+      return res.status(200).json(run)
+    }
+
+    // Fallback: v1 list endpoint (older run IDs or handle mismatch)
     const response = await fetch(`https://api.trigger.dev/api/v1/runs?limit=10`, {
       headers: { 'Authorization': `Bearer ${TRIGGER_SECRET}` },
     })
@@ -30,22 +39,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(response.status).json(data)
     }
 
-    // Trigger.dev returns handle IDs from trigger, but list API uses internal IDs.
-    // Strategy: find matching run by ID, or return the most recent non-terminal run,
-    // or fallback to the most recent run of any status.
     const runs = (data?.data || []) as Record<string, unknown>[]
 
-    // Try exact match first
+    // Try exact match
     const exact = runs.find((r) => r.id === runId)
     if (exact) return res.status(200).json(exact)
 
-    // Find the most recent run that's still active (QUEUED, EXECUTING, REATTEMPTING)
+    // Find most recent active run
     const active = runs.find((r) =>
       ['QUEUED', 'EXECUTING', 'REATTEMPTING', 'WAITING_FOR_DEPLOY'].includes(r.status as string)
     )
     if (active) return res.status(200).json(active)
 
-    // Fallback: most recent run (likely just completed)
+    // Fallback: most recent run
     if (runs.length > 0) return res.status(200).json(runs[0])
 
     return res.status(404).json({ error: 'No runs found' })

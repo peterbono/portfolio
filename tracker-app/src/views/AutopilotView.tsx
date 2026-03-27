@@ -504,6 +504,7 @@ function formatActivityText(item: BotActivityItem): string {
     case 'failed':
       return `Failed "${item.role}" at ${item.company}${item.reason ? ` \u2014 ${item.reason}` : ''}`
     case 'found':
+      if (!item.role && !item.company) return item.reason || 'Search in progress…'
       return `Found "${item.role}" at ${item.company}${atsLabel}`
     case 'qualified':
       return `Qualified "${item.role}" at ${item.company}`
@@ -3706,6 +3707,16 @@ export function AutopilotView() {
 
         if (!data) return
         const status = data.status as string
+
+        // If we get a FAILED/CRASHED status within the first 15 seconds,
+        // it's likely a stale run from the proxy fallback, not our run.
+        // Keep polling until we see our actual run.
+        const elapsedSinceStart = runStartTime ? Date.now() - runStartTime : 0
+        if (['FAILED', 'CRASHED'].includes(status) && elapsedSinceStart < 15000) {
+          console.log('[polling] Ignoring stale FAILED run within 15s grace period')
+          return // don't update state, keep polling
+        }
+
         setPolledRunStatus(status as typeof polledRunStatus)
 
         // Try to extract output/stats from the run data
@@ -4260,7 +4271,7 @@ export function AutopilotView() {
             onClick={() => setShowProfileEditModal(true)}
             style={{
               display: 'flex', alignItems: 'center', gap: 6,
-              padding: '8px 16px', borderRadius: 'var(--radius-md)',
+              padding: '7px 16px', borderRadius: 'var(--radius-md)',
               background: 'none',
               border: '1px solid var(--border)',
               color: 'var(--text-secondary)',
@@ -4406,7 +4417,7 @@ export function AutopilotView() {
                   const liUsed = linkedInUsedToday
                   const liIsUnlimited = liMax === Infinity
                   const liPct = liIsUnlimited ? (liUsed > 0 ? 30 : 0) : (liMax > 0 ? (liUsed / liMax) * 100 : 0)
-                  const liBarColor = liRemaining === 0 ? '#ef4444' : liRemaining <= 2 ? '#f59e0b' : 'var(--text-tertiary)'
+                  const liBarColor = liRemaining === 0 ? '#ef4444' : liPct >= 60 ? '#f59e0b' : '#34d399'
                   return (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', minWidth: 52 }}>LinkedIn</span>
@@ -4436,7 +4447,7 @@ export function AutopilotView() {
                   const atsUsed = atsUsedToday
                   const atsIsUnlimited = atsMax === Infinity
                   const atsPct = atsIsUnlimited ? (atsUsed > 0 ? 30 : 0) : (atsMax > 0 ? (atsUsed / atsMax) * 100 : 0)
-                  const atsBarColor = atsRemaining === 0 ? '#ef4444' : atsRemaining <= 3 ? '#f59e0b' : 'var(--text-tertiary)'
+                  const atsBarColor = atsRemaining === 0 ? '#ef4444' : atsPct >= 60 ? '#f59e0b' : '#34d399'
                   return (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', minWidth: 24 }}>ATS</span>
