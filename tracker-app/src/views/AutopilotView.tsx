@@ -4343,8 +4343,8 @@ export function AutopilotView() {
                   const liRemaining = linkedInRemainingToday
                   const liUsed = linkedInUsedToday
                   const liIsUnlimited = liMax === Infinity
-                  const liPct = liIsUnlimited ? 100 : (liMax > 0 ? ((liMax - liUsed) / liMax) * 100 : 0)
-                  const liBarColor = liRemaining === 0 ? '#ef4444' : liRemaining <= 2 ? '#f59e0b' : '#34d399'
+                  const liPct = liIsUnlimited ? (liUsed > 0 ? 30 : 0) : (liMax > 0 ? (liUsed / liMax) * 100 : 0)
+                  const liBarColor = liRemaining === 0 ? '#ef4444' : liRemaining <= 2 ? '#f59e0b' : 'var(--text-tertiary)'
                   return (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', minWidth: 52 }}>LinkedIn</span>
@@ -4361,7 +4361,7 @@ export function AutopilotView() {
                         }} />
                       </div>
                       <span style={{ fontSize: 11, fontWeight: 500, color: liBarColor, minWidth: 44 }}>
-                        {liIsUnlimited ? `${liUsed}/\u221e` : `${liRemaining}/${liMax}`}
+                        {liIsUnlimited ? `${liUsed} used` : `${liUsed}/${liMax} used`}
                       </span>
                     </div>
                   )
@@ -4373,8 +4373,8 @@ export function AutopilotView() {
                   const atsRemaining = atsRemainingToday
                   const atsUsed = atsUsedToday
                   const atsIsUnlimited = atsMax === Infinity
-                  const atsPct = atsIsUnlimited ? 100 : (atsMax > 0 ? ((atsMax - atsUsed) / atsMax) * 100 : 0)
-                  const atsBarColor = atsRemaining === 0 ? '#ef4444' : atsRemaining <= 3 ? '#f59e0b' : '#34d399'
+                  const atsPct = atsIsUnlimited ? (atsUsed > 0 ? 30 : 0) : (atsMax > 0 ? (atsUsed / atsMax) * 100 : 0)
+                  const atsBarColor = atsRemaining === 0 ? '#ef4444' : atsRemaining <= 3 ? '#f59e0b' : 'var(--text-tertiary)'
                   return (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', minWidth: 24 }}>ATS</span>
@@ -4391,7 +4391,7 @@ export function AutopilotView() {
                         }} />
                       </div>
                       <span style={{ fontSize: 11, fontWeight: 500, color: atsBarColor, minWidth: 44 }}>
-                        {atsIsUnlimited ? `${atsUsed}/\u221e` : `${atsRemaining}/${atsMax}`}
+                        {atsIsUnlimited ? `${atsUsed} used` : `${atsUsed}/${atsMax} used`}
                       </span>
                     </div>
                   )
