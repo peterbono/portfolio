@@ -30,20 +30,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(response.status).json(data)
     }
 
-    // Find the matching run in the list
-    const runs = data?.data || []
-    const matchingRun = runs.find((r: { id: string }) => r.id === runId)
+    // Trigger.dev returns handle IDs from trigger, but list API uses internal IDs.
+    // Strategy: find matching run by ID, or return the most recent non-terminal run,
+    // or fallback to the most recent run of any status.
+    const runs = (data?.data || []) as Record<string, unknown>[]
 
-    if (matchingRun) {
-      return res.status(200).json(matchingRun)
-    }
+    // Try exact match first
+    const exact = runs.find((r) => r.id === runId)
+    if (exact) return res.status(200).json(exact)
 
-    // If not found in recent runs, return the most recent run as fallback
-    if (runs.length > 0) {
-      return res.status(200).json({ ...runs[0], _fallback: true })
-    }
+    // Find the most recent run that's still active (QUEUED, EXECUTING, REATTEMPTING)
+    const active = runs.find((r) =>
+      ['QUEUED', 'EXECUTING', 'REATTEMPTING', 'WAITING_FOR_DEPLOY'].includes(r.status as string)
+    )
+    if (active) return res.status(200).json(active)
 
-    return res.status(404).json({ error: 'Run not found' })
+    // Fallback: most recent run (likely just completed)
+    if (runs.length > 0) return res.status(200).json(runs[0])
+
+    return res.status(404).json({ error: 'No runs found' })
   } catch {
     return res.status(502).json({ error: 'Failed to reach Trigger.dev' })
   }
