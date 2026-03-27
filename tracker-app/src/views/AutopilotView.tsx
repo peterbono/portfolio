@@ -4415,7 +4415,7 @@ export function AutopilotView() {
               setPolledMetadata(null)
               if (currentRun?.id) {
                 try {
-                  await supabase.from('bot_runs').update({
+                  await (supabase as any).from('bot_runs').update({
                     status: 'cancelled',
                     completed_at: new Date().toISOString(),
                   }).eq('id', currentRun.id)

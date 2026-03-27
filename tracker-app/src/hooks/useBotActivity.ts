@@ -113,7 +113,7 @@ export function useBotActivity(): UseBotActivityReturn {
             run.status = 'failed'
             run.errorMessage = 'Run expired (stale > 10 minutes)'
             // Also update Supabase so it doesn't keep coming back
-            supabase.from('bot_runs').update({
+            ;(supabase as any).from('bot_runs').update({
               status: 'failed',
               completed_at: new Date().toISOString(),
               error_message: 'Auto-expired: stale run > 10 minutes',
