@@ -38,6 +38,7 @@ import {
 import { useBotActivity } from '../hooks/useBotActivity'
 import { usePlan } from '../hooks/usePlan'
 import { useUI } from '../context/UIContext'
+import { useJobs } from '../context/JobsContext'
 import type { BotActivityItem, BotRunStatus } from '../hooks/useBotActivity'
 import { triggerBotRun } from '../lib/bot-api'
 import { supabase } from '../lib/supabase'
@@ -337,6 +338,24 @@ const RUN_COUNT_LS_KEY = 'tracker_v2_run_count'
 const AUTO_SUBMIT_LS_KEY = 'tracker_v2_auto_submit'
 const AUTO_SUBMIT_DISMISS_LS_KEY = 'tracker_v2_auto_submit_dismissed_at'
 const REVIEW_MODE_LS_KEY = 'tracker_v2_review_mode'
+const SKIPPED_JOBS_LS_KEY = 'tracker_v2_skipped_jobs'
+
+function loadSkippedJobUrls(): Set<string> {
+  try {
+    const raw = localStorage.getItem(SKIPPED_JOBS_LS_KEY)
+    return raw ? new Set(JSON.parse(raw) as string[]) : new Set()
+  } catch {
+    return new Set()
+  }
+}
+
+function addSkippedJobUrl(url: string) {
+  try {
+    const existing = loadSkippedJobUrls()
+    existing.add(url)
+    localStorage.setItem(SKIPPED_JOBS_LS_KEY, JSON.stringify([...existing]))
+  } catch { /* ignore */ }
+}
 
 type ReviewMode = 'list' | 'card'
 
@@ -3502,6 +3521,7 @@ export function AutopilotView() {
   } = usePlan()
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const { setActiveView: navigateToView } = useUI()
+  const { allJobs } = useJobs()
 
   // Auto-save handler with debounce
   const handleConfigChange = useCallback((patch: Partial<SearchConfig>) => {
@@ -3719,9 +3739,16 @@ export function AutopilotView() {
 
   // ---- Convert discoveredJobs into ReviewQueueItems when run completes ---
   useEffect(() => {
+    console.log('[AutopilotView] discoveredJobs useEffect fired — polledRunStatus:', polledRunStatus)
     if (polledRunStatus !== 'COMPLETED') return
     const jobs = polledRunOutput?.discoveredJobs
-    if (!jobs || jobs.length === 0) return
+    console.log('[AutopilotView] polledRunOutput:', JSON.stringify(polledRunOutput))
+    console.log('[AutopilotView] discoveredJobs:', jobs)
+    if (!jobs || jobs.length === 0) {
+      console.log('[AutopilotView] No discoveredJobs found in output — skipping queue conversion')
+      return
+    }
+    console.log(`[AutopilotView] Converting ${jobs.length} discoveredJobs into ReviewQueueItems`)
 
     // Load user profile for CV name
     let cvName = 'cvflo.pdf'
@@ -3733,10 +3760,41 @@ export function AutopilotView() {
       }
     } catch { /* ignore */ }
 
-    // Build new review queue items, avoiding duplicates by URL
+    // Dedup against existing review queue (any status)
     const existingUrls = new Set(reviewQueue.map(i => i.jobUrl).filter(Boolean))
+
+    // Dedup against user's already-applied/processed jobs from the main tracker
+    const appliedJobKeys = new Set(
+      allJobs
+        .filter(j => ['submitted', 'screening', 'interviewing', 'offer', 'rejected', 'withdrawn', 'skipped', 'challenge', 'negotiation'].includes(j.status))
+        .map(j => `${j.company?.toLowerCase()?.trim()}|${j.role?.toLowerCase()?.trim()}`)
+    )
+
+    // Dedup against previously skipped jobs stored in localStorage
+    const skippedUrls = loadSkippedJobUrls()
+
+    // Filter out already-seen jobs
     const newItems: ReviewQueueItem[] = jobs
-      .filter(job => !existingUrls.has(job.url))
+      .filter(job => {
+        if (!job.url) {
+          console.log(`[AutopilotView] Skipping job with no URL: ${job.company} - ${job.title}`)
+          return false
+        }
+        if (existingUrls.has(job.url)) {
+          console.log(`[AutopilotView] Skipping duplicate (already in queue): ${job.url}`)
+          return false
+        }
+        if (skippedUrls.has(job.url)) {
+          console.log(`[AutopilotView] Skipping previously skipped job: ${job.url}`)
+          return false
+        }
+        const key = `${job.company?.toLowerCase()?.trim()}|${job.title?.toLowerCase()?.trim()}`
+        if (appliedJobKeys.has(key)) {
+          console.log(`[AutopilotView] Skipping already-applied job: ${key}`)
+          return false
+        }
+        return true
+      })
       .map((job, index) => ({
         id: `discovered-${Date.now()}-${index}`,
         company: job.company,
@@ -3748,6 +3806,8 @@ export function AutopilotView() {
         status: 'pending' as const,
         jobUrl: job.url,
       }))
+
+    console.log(`[AutopilotView] After dedup: ${newItems.length} new items to add (from ${jobs.length} total)`)
 
     if (newItems.length > 0) {
       setReviewQueue(prev => [...newItems, ...prev])
@@ -3851,7 +3911,11 @@ export function AutopilotView() {
     setReviewQueue(prev => {
       const updated = prev.map(item => item.id === id ? { ...item, status: 'skipped' as const } : item)
       const item = updated.find(i => i.id === id)
-      if (item) emitFeedbackSignal(item, 'skipped')
+      if (item) {
+        emitFeedbackSignal(item, 'skipped')
+        // Persist skipped URL so the bot won't propose it again
+        if (item.jobUrl) addSkippedJobUrl(item.jobUrl)
+      }
       return updated
     })
   }, [emitFeedbackSignal])
@@ -3875,7 +3939,11 @@ export function AutopilotView() {
       // Record signals for all newly skipped items
       updated.filter(i => i.status === 'skipped').forEach(item => {
         const wasPending = prev.find(p => p.id === item.id)?.status === 'pending'
-        if (wasPending) emitFeedbackSignal(item, 'skipped')
+        if (wasPending) {
+          emitFeedbackSignal(item, 'skipped')
+          // Persist skipped URL so the bot won't propose it again
+          if (item.jobUrl) addSkippedJobUrl(item.jobUrl)
+        }
       })
       return updated
     })
