@@ -57,15 +57,35 @@ export interface InlinePipelineConfig {
   dryRun?: boolean
 }
 
+export interface QualifiedJobOutput {
+  title: string
+  company: string
+  location: string
+  url: string
+  isEasyApply?: boolean
+  score: number
+  matchReasons: string[]
+  coverLetterSnippet: string
+}
+
 export interface PipelineResult {
   runId: string
   jobsFound: number
+  jobsPreFiltered?: number
   jobsQualified: number
   jobsApplied: number
   jobsSkipped: number
   jobsFailed: number
   duration: number // ms
   activities: ActivityLogEntry[]
+  discoveredJobs?: Array<{
+    title: string
+    company: string
+    location: string
+    url: string
+    isEasyApply: boolean
+  }>
+  qualifiedJobs?: QualifiedJobOutput[]
 }
 
 // ---------------------------------------------------------------------------
@@ -502,6 +522,8 @@ export async function runPipeline(config: PipelineConfig): Promise<PipelineResul
   let jobsApplied = 0
   let jobsSkipped = 0
   let jobsFailed = 0
+  let discoveredJobsOutput: PipelineResult['discoveredJobs'] = []
+  let qualifiedJobsOutput: QualifiedJobOutput[] = []
 
   // Use pre-authenticated context if provided (LinkedIn cookie), else create new
   let context: BrowserContext | null = null
@@ -553,43 +575,9 @@ export async function runPipeline(config: PipelineConfig): Promise<PipelineResul
       }
     }
 
-    // For now: skip Phase 2 (Qualify) and Phase 3 (Apply).
-    // Return discovered jobs immediately so the frontend can show them.
-    // Qualification and application will be separate user-triggered actions.
-    console.log(`[pipeline] Scout complete: ${discoveredJobs.length} jobs found. Skipping qualify+apply (scout-only mode).`)
-
-    const duration = Date.now() - startTime
-    await updateBotRun(runId, {
-      status: 'completed',
-      completed_at: new Date().toISOString(),
-      jobs_found: discoveredJobs.length,
-      jobs_applied: 0,
-      jobs_skipped: 0,
-      jobs_failed: 0,
-    }).catch(() => {})
-
-    return {
-      runId,
-      jobsFound: discoveredJobs.length,
-      jobsQualified: 0,
-      jobsApplied: 0,
-      jobsSkipped: 0,
-      jobsFailed: 0,
-      duration,
-      activities,
-      // Include discovered jobs in the result so frontend can display them
-      discoveredJobs: discoveredJobs.map(j => ({
-        title: j.title,
-        company: j.company,
-        location: j.location,
-        url: j.url,
-        isEasyApply: j.isEasyApply,
-      })),
-    }
-
-    /* Phase 2 & 3 disabled — will be separate user-triggered runs
+    // --- Phase 2: Qualify (inline — rules pre-filter + Haiku scoring) ---
     const qualifiedJobs = await phaseQualify(
-      page,
+      page!,
       discoveredJobs,
       effectiveConfig,
       runId,
@@ -598,17 +586,35 @@ export async function runPipeline(config: PipelineConfig): Promise<PipelineResul
     jobsQualified = qualifiedJobs.length
     jobsSkipped += discoveredJobs.length - qualifiedJobs.length
 
-    const applyResults = await phaseApply(
-      page,
-      qualifiedJobs,
-      effectiveConfig,
-      runId,
-      activities,
-    )
-    jobsApplied = applyResults.applied
-    jobsSkipped += applyResults.skipped
-    jobsFailed = applyResults.failed
-    */ // end of disabled Phase 2 & 3
+    // Build output arrays for the frontend
+    discoveredJobsOutput = discoveredJobs.map(j => ({
+      title: j.title,
+      company: j.company,
+      location: j.location,
+      url: j.url,
+      isEasyApply: j.isEasyApply,
+    }))
+
+    qualifiedJobsOutput = qualifiedJobs.map(qj => ({
+      title: qj.job.title,
+      company: qj.job.company,
+      location: qj.job.location,
+      url: qj.job.url,
+      isEasyApply: qj.job.isEasyApply,
+      score: qj.qualification.score,
+      matchReasons: [
+        qj.qualification.isDesignRole ? 'Design role' : null,
+        qj.qualification.seniorityMatch ? 'Seniority match' : null,
+        qj.qualification.locationCompatible ? 'Location compatible' : null,
+        qj.qualification.skillsMatch ? 'Skills match' : null,
+        qj.job.isEasyApply ? 'Easy Apply' : null,
+        qj.job.location || null,
+      ].filter((r): r is string => r !== null),
+      coverLetterSnippet: qj.qualification.coverLetterSnippet,
+    }))
+
+    // Phase 3 (Apply) disabled — will be a separate user-triggered action
+    console.log(`[pipeline] Scout+Qualify complete: ${discoveredJobs.length} found, ${qualifiedJobs.length} qualified. Skipping apply phase.`)
   } catch (err) {
     const errorMessage = (err as Error).message
     console.error('[pipeline] Fatal error:', errorMessage)
@@ -673,6 +679,8 @@ export async function runPipeline(config: PipelineConfig): Promise<PipelineResul
     jobsFailed,
     duration,
     activities,
+    discoveredJobs: discoveredJobsOutput,
+    qualifiedJobs: qualifiedJobsOutput,
   }
 }
 

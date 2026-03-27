@@ -64,11 +64,14 @@ export const applyJobTask = task({
       return {
         runId: result.runId,
         jobsFound: result.jobsFound,
+        jobsPreFiltered: (result.jobsFound ?? 0) - (result.jobsQualified ?? 0),
         jobsQualified: result.jobsQualified,
         jobsApplied: result.jobsApplied,
         jobsSkipped: result.jobsSkipped,
         jobsFailed: result.jobsFailed,
         duration: result.duration,
+        discoveredJobs: result.discoveredJobs ?? [],
+        qualifiedJobs: result.qualifiedJobs ?? [],
       }
     } finally {
       if (browserContext) {

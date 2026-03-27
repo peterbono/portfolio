@@ -333,6 +333,17 @@ interface DiscoveredJob {
   isEasyApply: boolean
 }
 
+interface QualifiedJob {
+  title: string
+  company: string
+  location: string
+  url: string
+  isEasyApply?: boolean
+  score: number
+  matchReasons: string[]
+  coverLetterSnippet: string
+}
+
 const REVIEW_LS_KEY = 'tracker_v2_review_queue'
 const RUN_COUNT_LS_KEY = 'tracker_v2_run_count'
 const AUTO_SUBMIT_LS_KEY = 'tracker_v2_auto_submit'
@@ -3564,7 +3575,7 @@ export function AutopilotView() {
   const [activeRunId, setActiveRunId] = useState<string | null>(null)
   const [runStartTime, setRunStartTime] = useState<number | null>(null)
   const [polledRunStatus, setPolledRunStatus] = useState<'QUEUED' | 'EXECUTING' | 'COMPLETED' | 'FAILED' | 'CRASHED' | 'REATTEMPTING' | null>(null)
-  const [polledRunOutput, setPolledRunOutput] = useState<{ jobsFound?: number; jobsQualified?: number; discoveredJobs?: DiscoveredJob[] } | null>(null)
+  const [polledRunOutput, setPolledRunOutput] = useState<{ jobsFound?: number; jobsQualified?: number; jobsPreFiltered?: number; discoveredJobs?: DiscoveredJob[]; qualifiedJobs?: QualifiedJob[] } | null>(null)
 
   // Review queue state
   const [reviewQueue, setReviewQueue] = useState<ReviewQueueItem[]>(() => loadReviewQueue())
@@ -3701,10 +3712,13 @@ export function AutopilotView() {
         const output = data.output as Record<string, unknown> | undefined
         if (output) {
           const discovered = (output.discoveredJobs ?? output.discovered_jobs) as DiscoveredJob[] | undefined
+          const qualified = (output.qualifiedJobs ?? output.qualified_jobs) as QualifiedJob[] | undefined
           setPolledRunOutput({
             jobsFound: (output.jobsFound ?? output.jobs_found) as number | undefined,
             jobsQualified: (output.jobsQualified ?? output.jobs_qualified) as number | undefined,
+            jobsPreFiltered: (output.jobsPreFiltered ?? output.jobs_pre_filtered) as number | undefined,
             discoveredJobs: Array.isArray(discovered) ? discovered : undefined,
+            qualifiedJobs: Array.isArray(qualified) ? qualified : undefined,
           })
         }
 
@@ -3723,18 +3737,27 @@ export function AutopilotView() {
     return () => clearInterval(interval)
   }, [activeRunId])
 
-  // ---- Convert discoveredJobs into ReviewQueueItems when run completes ---
+  // ---- Convert discoveredJobs/qualifiedJobs into ReviewQueueItems when run completes ---
   useEffect(() => {
     console.log('[AutopilotView] discoveredJobs useEffect fired — polledRunStatus:', polledRunStatus)
     if (polledRunStatus !== 'COMPLETED') return
-    const jobs = polledRunOutput?.discoveredJobs
+
+    // Prefer qualifiedJobs (have scores + reasons) over raw discoveredJobs
+    const qualifiedJobs = polledRunOutput?.qualifiedJobs
+    const discoveredJobs = polledRunOutput?.discoveredJobs
+
     console.log('[AutopilotView] polledRunOutput:', JSON.stringify(polledRunOutput))
-    console.log('[AutopilotView] discoveredJobs:', jobs)
+    console.log('[AutopilotView] qualifiedJobs:', qualifiedJobs?.length ?? 0, 'discoveredJobs:', discoveredJobs?.length ?? 0)
+
+    // Use qualifiedJobs if available, otherwise fall back to discoveredJobs
+    const hasQualified = qualifiedJobs && qualifiedJobs.length > 0
+    const jobs = hasQualified ? qualifiedJobs : discoveredJobs
+
     if (!jobs || jobs.length === 0) {
-      console.log('[AutopilotView] No discoveredJobs found in output — skipping queue conversion')
+      console.log('[AutopilotView] No jobs found in output — skipping queue conversion')
       return
     }
-    console.log(`[AutopilotView] Converting ${jobs.length} discoveredJobs into ReviewQueueItems`)
+    console.log(`[AutopilotView] Converting ${jobs.length} ${hasQualified ? 'qualifiedJobs' : 'discoveredJobs'} into ReviewQueueItems`)
 
     // Load user profile for CV name
     let cvName = 'cvflo.pdf'
@@ -3781,17 +3804,22 @@ export function AutopilotView() {
         }
         return true
       })
-      .map((job, index) => ({
-        id: `discovered-${Date.now()}-${index}`,
-        company: job.company,
-        role: job.title,
-        matchScore: 0,
-        matchReasons: [job.location, job.isEasyApply ? 'Easy Apply' : 'External'].filter(Boolean),
-        cvName,
-        coverLetterSnippet: '',
-        status: 'pending' as const,
-        jobUrl: job.url,
-      }))
+      .map((job, index) => {
+        // If this is a QualifiedJob, it has score + matchReasons + coverLetterSnippet
+        const isQualified = hasQualified && 'score' in job
+        const qJob = isQualified ? (job as QualifiedJob) : null
+        return {
+          id: `discovered-${Date.now()}-${index}`,
+          company: job.company,
+          role: job.title,
+          matchScore: qJob?.score ?? 0,
+          matchReasons: qJob?.matchReasons ?? [job.location, ('isEasyApply' in job && job.isEasyApply) ? 'Easy Apply' : 'External'].filter(Boolean) as string[],
+          cvName,
+          coverLetterSnippet: qJob?.coverLetterSnippet ?? '',
+          status: 'pending' as const,
+          jobUrl: job.url,
+        }
+      })
 
     console.log(`[AutopilotView] After dedup: ${newItems.length} new items to add (from ${jobs.length} total)`)
 
@@ -4544,6 +4572,9 @@ export function AutopilotView() {
                           Found {jf} match{jf !== 1 ? 'es' : ''}
                           {(polledRunOutput?.jobsQualified ?? currentRun?.jobsApplied) != null && (
                             <> &middot; {polledRunOutput?.jobsQualified ?? currentRun?.jobsApplied} qualified</>
+                          )}
+                          {polledRunOutput?.qualifiedJobs && polledRunOutput.qualifiedJobs.length > 0 && (
+                            <> (scored by AI)</>
                           )}
                         </span>
                         {reviewQueue.filter(i => i.status === 'pending').length > 0 && (
