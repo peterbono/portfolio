@@ -157,20 +157,34 @@ BLACKLISTED:
 - Seniority: intern, junior, associate (too junior for ${yearsExp}+ years)
 
 ═══════════════════════════════════════════════
-SCORING (0-100)
+SCORING (0-100) — BE GENEROUS
 ═══════════════════════════════════════════════
 
-First check HARD REQUIREMENTS. If ANY fail, return score 0.
-If all pass, score on 0-100 starting from base 40:
+HARD DISQUALIFIERS (score 0 ONLY if one of these is TRUE):
+- Company is BetRivers, Rush Street Interactive, or ClickOut Media
+- Industry is poker or unregulated gambling
+- Title is clearly intern/junior/associate level
+- Title has ZERO design relevance (e.g. "Sales Manager", "Backend Engineer")
 
-- Role fit (0-25): Title + JD alignment with "Senior Product Designer" / design systems / design ops / complex product architecture. Exact match=25, close match=20, adjacent=12, weak=5.
-- Industry match (0-15): B2B SaaS=high, regulated industries=high, consumer app=medium, crypto/unregulated gambling=low. Unknown=8.
-- Skill overlap (0-20): How many key skills appear in JD? 5+=20, 3-4=15, 1-2=10, none mentioned=8.
-- Remote/location fit (0-15): Remote APAC=15, remote global async=12, hybrid SEA=10, on-site SEA=8, remote EU=3, US TZ only=0, unknown=10.
-- Compensation signal (0-10): In range (>=70k EUR)=10, no info=5, low signal=0.
-- Growth opportunity (0-15): Design system work=high, leadership=high, complex products=high, regulated=high. Generic=5, unknown=7.
+If none of the above, score on 0-100 starting from base 40:
 
-IMPORTANT: Missing info = partial points (benefit of the doubt), never 0. "Senior Product Designer" with no red flags = 65+ minimum. No salary listed = 5/10. "Remote" without TZ info = 10/15.
+- Role fit (0-25): Title + JD alignment with "Senior Product Designer" / design systems / design ops / complex product architecture. Exact "Product Designer"=22, "UX/UI Designer"=20, "Design Lead/Staff/Principal"=23, adjacent design role=15, weak=8.
+- Industry match (0-15): B2B SaaS=15, regulated industries=14, iGaming=15, consumer app=10, crypto/unregulated gambling=0. Unknown=8.
+- Skill overlap (0-20): How many key skills appear in JD? 5+=20, 3-4=15, 1-2=10, none mentioned=8. BONUS: if JD mentions "design systems" or "B2B SaaS" or "iGaming" → add +5 on top.
+- Remote/location fit (0-15): Remote APAC=15, remote global async=12, hybrid SEA=10, on-site SEA=8, remote EU=5 (soft filter, not hard block), US TZ only=2 (some are flexible), unknown=10.
+- Compensation signal (0-10): In range (>=70k EUR)=10, no info=6, low signal=2.
+- Growth opportunity (0-15): Design system work=15, leadership=14, complex products=13, regulated=13. Generic=7, unknown=8.
+
+CRITICAL SCORING RULES:
+- Missing info = partial points (benefit of the doubt), NEVER 0.
+- "Product Designer" with no red flags = 55+ MINIMUM.
+- "Senior Product Designer" with no red flags = 65+ MINIMUM.
+- "Design Lead" / "Staff Designer" / "Principal Designer" = 60+ MINIMUM.
+- "UX/UI Designer" in APAC = 50+ MINIMUM.
+- No salary listed = 6/10 (assume decent).
+- "Remote" without TZ info = 10/15 (assume flexible).
+- Timezone is a SOFT filter — some remote APAC roles have flexible hours. Only score 0 for location if the JD explicitly says "must be US-based" or similar hard requirement.
+- BONUS +15 total cap: if JD mentions "design systems" (+5), "B2B SaaS" (+5), or "iGaming" (+5).
 
 ═══════════════════════════════════════════════
 COVER LETTER SNIPPET — THIS IS CRITICAL
@@ -380,16 +394,69 @@ function buildMatchReasons(result: {
  * Build a synthetic job description from scout metadata when the actual
  * JD page couldn't be loaded or parsed. This gives Haiku enough context
  * to make a basic qualification decision instead of auto-failing.
+ *
+ * The synthetic JD includes title-based scoring hints so Haiku can
+ * still produce a meaningful score (40-65 range) instead of 0.
  */
 function buildFallbackJD(job: DiscoveredJob): string {
+  const titleLower = job.title.toLowerCase()
+  const locationLower = (job.location || "").toLowerCase()
+
+  // Detect title quality signals
+  const exactTitleMatch = /product designer|ux\/ui designer|ux designer|ui designer/i.test(job.title)
+  const seniorMatch = /senior|sr\.?|lead|staff|principal|head of/i.test(job.title)
+  const designSystemMatch = /design system|design ops/i.test(titleLower)
+  const managerMatch = /design manager|creative director|head of design/i.test(titleLower)
+
+  // Detect location/remote signals
+  const apacSignal = /asia|apac|singapore|thailand|bangkok|india|australia|japan|korea|vietnam|indonesia|malaysia|philippines|hong kong|taiwan|remote|worldwide|global/i.test(locationLower)
+  const dubaiSignal = /dubai|uae|middle east/i.test(locationLower)
+
+  // Detect bonus keywords in title
+  const bonusKeywords: string[] = []
+  if (designSystemMatch) bonusKeywords.push("design systems")
+  if (/saas|b2b|platform|enterprise/i.test(titleLower)) bonusKeywords.push("B2B/SaaS/Platform")
+  if (/gaming|igaming/i.test(titleLower)) bonusKeywords.push("iGaming")
+  if (/fintech|finance/i.test(titleLower)) bonusKeywords.push("fintech")
+
+  // Build scoring guidance
+  const hints: string[] = []
+  if (exactTitleMatch && seniorMatch) {
+    hints.push("STRONG TITLE MATCH: Senior-level design role — score at least 55-65.")
+  } else if (exactTitleMatch) {
+    hints.push("GOOD TITLE MATCH: Design role matching candidate specialization — score at least 50-60.")
+  } else if (seniorMatch) {
+    hints.push("SENIORITY MATCH: Senior-level role — score at least 45-55 if design-adjacent.")
+  } else if (managerMatch) {
+    hints.push("LEADERSHIP MATCH: Design leadership role — score at least 50-60.")
+  }
+
+  if (apacSignal || dubaiSignal) {
+    hints.push("LOCATION COMPATIBLE: Location appears APAC-friendly or remote-compatible.")
+  }
+
+  if (bonusKeywords.length > 0) {
+    hints.push(`BONUS KEYWORDS in title: ${bonusKeywords.join(", ")} — add +10-15 to score.`)
+  }
+
   return [
     `Job Title: ${job.title}`,
     `Company: ${job.company}`,
     `Location: ${job.location || "Not specified"}`,
+    `LinkedIn Easy Apply: ${job.isEasyApply ? "Yes" : "No"}`,
     ``,
     `NOTE: The full job description could not be extracted from the job page.`,
-    `Please score based on the job title, company, and location above.`,
-    `Give benefit of the doubt for missing information.`,
+    `This is a METADATA-ONLY qualification. Score based on the title, company, and location above.`,
+    ``,
+    `SCORING GUIDANCE FOR PARTIAL DATA:`,
+    `- Give STRONG benefit of the doubt for missing information.`,
+    `- Missing JD = assume neutral/positive for all unknown dimensions.`,
+    `- A "Product Designer" or "UX/UI Designer" title with no red flags should score 50+.`,
+    `- A "Senior Product Designer" title should score 55-65 even without JD.`,
+    `- Only score below 40 if the title is clearly wrong (graphic designer, intern, etc.)`,
+    `- Set salaryInRange=true (unknown = benefit of doubt).`,
+    `- Set skillsMatch=true for any design role (likely overlap).`,
+    ...hints.map(h => `- ${h}`),
   ].join("\n")
 }
 
@@ -399,7 +466,7 @@ function buildFallbackJD(job: DiscoveredJob): string {
 
 export const qualifyJobsTask = task({
   id: "qualify-jobs",
-  maxDuration: 300, // 5 min max
+  maxDuration: 600, // 10 min max — parallel batches make this faster but keep margin
   retry: {
     maxAttempts: 1, // Don't retry — costs Haiku tokens
   },
@@ -430,12 +497,13 @@ export const qualifyJobsTask = task({
     // Build search config for preQualify
     const excludedCompanies = (payload.searchConfig?.excludedCompanies ??
       payload.searchConfig?.excluded_companies) as string[] | undefined
+    const searchKeywords = (payload.searchConfig?.keywords) as string[] | undefined
 
     for (const job of payload.jobs) {
       const result = preQualify(
         { title: job.title, company: job.company, location: job.location, url: job.url },
         applicantForPreFilter,
-        { excludedCompanies: excludedCompanies ?? null },
+        { excludedCompanies: excludedCompanies ?? null, keywords: searchKeywords ?? [] },
       )
 
       if (result.pass) {
@@ -620,26 +688,33 @@ export const qualifyJobsTask = task({
             console.error(`[qualify-jobs] Error for ${job.url}: ${msg}`)
 
             // Benefit of the doubt: instead of just recording an error,
-            // create a partial qualification with score 35 so the user can
-            // still review it. Only clearly irrelevant jobs should be auto-killed.
+            // create a partial qualification with score 42 so the user can
+            // still review it. Score is above QUALIFY_THRESHOLD (40) so
+            // errored design-role jobs appear in the qualified list for manual review.
+            const titleLooksRelevant = /designer|design|ux|ui/i.test(job.title)
+            const fallbackScore = titleLooksRelevant ? 42 : 25
             const fallbackJob: QualifiedJob = {
               url: job.url,
               title: job.title,
               company: job.company,
               location: job.location,
               isEasyApply: job.isEasyApply,
-              score: 35,
-              isDesignRole: true, // assume yes based on scout filter
-              seniorityMatch: false,
+              score: fallbackScore,
+              isDesignRole: titleLooksRelevant,
+              seniorityMatch: /senior|sr\.?|lead|staff|principal|head/i.test(job.title),
               locationCompatible: false,
               salaryInRange: true, // don't penalize unknown salary
-              skillsMatch: false,
+              skillsMatch: titleLooksRelevant,
               matchReasons: [`Qualification error (${msg}) — needs manual review`],
               coverLetterSnippet: "",
-              qualified: false, // 35 < 40 threshold — shows in disqualified but not errors
+              qualified: fallbackScore >= QUALIFY_THRESHOLD,
               error: msg,
             }
-            disqualified.push(fallbackJob)
+            if (fallbackJob.qualified) {
+              qualified.push(fallbackJob)
+            } else {
+              disqualified.push(fallbackJob)
+            }
           }
         }
       } finally {

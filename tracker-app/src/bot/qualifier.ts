@@ -69,6 +69,28 @@ const BLACKLISTED_INDUSTRY_KEYWORDS = [
 ]
 
 /**
+ * Title-based blacklist patterns — eliminates obviously irrelevant roles
+ * BEFORE sending to Haiku. Each entry is matched case-insensitively against
+ * the job title. Easy to extend: just add a new string to the array.
+ *
+ * Why these patterns:
+ * - "graphic designer" / "web designer" / "visual merchandis" — different discipline from Product/UX/UI
+ * - "shopify" / "wordpress" — e-commerce template roles, not product design
+ * - "part-time" — user targets full-time (unless search keywords include it)
+ * - "intern " / "internship" — already in JUNIOR_KEYWORDS but duplicated here for clarity
+ * - "junior" — user is Senior level (7+ years)
+ */
+const TITLE_BLACKLIST_PATTERNS = [
+  'graphic designer',
+  'visual merchandis', // catches "visual merchandiser" and "visual merchandising"
+  'shopify',
+  'wordpress',
+  'web designer',
+  'part-time',
+  'part time',
+]
+
+/**
  * Pass 1: Deterministic rules-based filter.
  * Runs instantly with zero API cost. Eliminates obviously bad matches
  * before sending survivors to Haiku (Pass 2).
@@ -79,7 +101,7 @@ const BLACKLISTED_INDUSTRY_KEYWORDS = [
 export function preQualify(
   job: PreQualifyInput,
   applicantProfile: ApplicantProfile,
-  searchConfig?: { excludedCompanies?: string[] | null },
+  searchConfig?: { excludedCompanies?: string[] | null; keywords?: string[] },
 ): PreQualifyResult {
   const titleLower = job.title.toLowerCase()
   const companyLower = job.company.toLowerCase()
@@ -115,6 +137,21 @@ export function preQualify(
     return { pass: false, reason: `Blacklisted industry keyword in "${job.title}" or "${job.company}"`, rule: 'blacklisted_industry' }
   }
 
+  // Rule 5: Title blacklist patterns — irrelevant role types
+  // Skip "part-time" filter if user's search keywords explicitly include it
+  const userKeywords = searchConfig?.keywords ?? []
+  const userKeywordsLower = userKeywords.map((k: string) => k.toLowerCase())
+  const matchedBlacklist = TITLE_BLACKLIST_PATTERNS.find(pattern => {
+    // Allow "part-time"/"part time" if user keywords mention it
+    if ((pattern === 'part-time' || pattern === 'part time') && userKeywordsLower.some(k => k.includes('part-time') || k.includes('part time'))) {
+      return false
+    }
+    return titleLower.includes(pattern)
+  })
+  if (matchedBlacklist) {
+    return { pass: false, reason: `Irrelevant role type "${matchedBlacklist}" in title: "${job.title}"`, rule: 'title_blacklist' }
+  }
+
   // All rules passed — this job proceeds to Haiku scoring
   return { pass: true }
 }
@@ -127,7 +164,7 @@ export function preQualify(
 export function preQualifyBatch(
   jobs: PreQualifyInput[],
   applicantProfile: ApplicantProfile,
-  searchConfig?: { excludedCompanies?: string[] | null },
+  searchConfig?: { excludedCompanies?: string[] | null; keywords?: string[] },
 ): { survivors: PreQualifyInput[]; filtered: PreQualifyInput[]; stats: PreQualifyStats } {
   const survivors: PreQualifyInput[] = []
   const filtered: PreQualifyInput[] = []
@@ -172,6 +209,7 @@ export function formatPreQualifyStats(stats: PreQualifyStats): string {
     too_junior: 'too junior',
     excluded_company: 'excluded company',
     blacklisted_industry: 'blacklisted industry',
+    title_blacklist: 'irrelevant role type',
   }
 
   for (const [rule, count] of Object.entries(stats.breakdown)) {
@@ -346,20 +384,34 @@ BLACKLISTED:
 - Seniority: intern, junior, associate (too junior for ${applicantProfile.yearsExperience}+ years)
 
 ═══════════════════════════════════════════════
-SCORING (0-100)
+SCORING (0-100) — BE GENEROUS
 ═══════════════════════════════════════════════
 
-First check HARD REQUIREMENTS. If ANY fail, return score 0.
-If all pass, score on 0-100 starting from base 40:
+HARD DISQUALIFIERS (score 0 ONLY if one of these is TRUE):
+- Company is BetRivers, Rush Street Interactive, or ClickOut Media
+- Industry is poker or unregulated gambling
+- Title is clearly intern/junior/associate level
+- Title has ZERO design relevance (e.g. "Sales Manager", "Backend Engineer")
 
-- Role fit (0-25): Title + JD alignment with "Senior Product Designer" / design systems / design ops / complex product architecture. Exact match=25, close match=20, adjacent=12, weak=5.
-- Industry match (0-15): B2B SaaS=high, regulated industries=high, consumer app=medium, crypto/unregulated gambling=low. Unknown=8.
-- Skill overlap (0-20): How many key skills appear in JD? 5+=20, 3-4=15, 1-2=10, none mentioned=8.
-- Remote/location fit (0-15): Remote APAC=15, remote global async=12, hybrid SEA=10, on-site SEA=8, remote EU=3, US TZ only=0, unknown=10.
-- Compensation signal (0-10): In range (>=70k EUR)=10, no info=5, low signal=0.
-- Growth opportunity (0-15): Design system work=high, leadership=high, complex products=high, regulated=high. Generic=5, unknown=7.
+If none of the above, score on 0-100 starting from base 40:
 
-IMPORTANT: Missing info = partial points (benefit of the doubt), never 0. "Senior Product Designer" with no red flags = 65+ minimum. No salary listed = 5/10. "Remote" without TZ info = 10/15.
+- Role fit (0-25): Title + JD alignment with "Senior Product Designer" / design systems / design ops / complex product architecture. Exact "Product Designer"=22, "UX/UI Designer"=20, "Design Lead/Staff/Principal"=23, adjacent design role=15, weak=8.
+- Industry match (0-15): B2B SaaS=15, regulated industries=14, iGaming=15, consumer app=10, crypto/unregulated gambling=0. Unknown=8.
+- Skill overlap (0-20): How many key skills appear in JD? 5+=20, 3-4=15, 1-2=10, none mentioned=8. BONUS: if JD mentions "design systems" or "B2B SaaS" or "iGaming" → add +5 on top.
+- Remote/location fit (0-15): Remote APAC=15, remote global async=12, hybrid SEA=10, on-site SEA=8, remote EU=5 (soft filter, not hard block), US TZ only=2 (some are flexible), unknown=10.
+- Compensation signal (0-10): In range (>=70k EUR)=10, no info=6, low signal=2.
+- Growth opportunity (0-15): Design system work=15, leadership=14, complex products=13, regulated=13. Generic=7, unknown=8.
+
+CRITICAL SCORING RULES:
+- Missing info = partial points (benefit of the doubt), NEVER 0.
+- "Product Designer" with no red flags = 55+ MINIMUM.
+- "Senior Product Designer" with no red flags = 65+ MINIMUM.
+- "Design Lead" / "Staff Designer" / "Principal Designer" = 60+ MINIMUM.
+- "UX/UI Designer" in APAC = 50+ MINIMUM.
+- No salary listed = 6/10 (assume decent).
+- "Remote" without TZ info = 10/15 (assume flexible).
+- Timezone is a SOFT filter — some remote APAC roles have flexible hours. Only score 0 for location if the JD explicitly says "must be US-based" or similar hard requirement.
+- BONUS +15 total cap: if JD mentions "design systems" (+5), "B2B SaaS" (+5), or "iGaming" (+5).
 
 ═══════════════════════════════════════════════
 COVER LETTER SNIPPET — THIS IS CRITICAL

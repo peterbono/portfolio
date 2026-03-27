@@ -362,7 +362,7 @@ async function phaseQualify(
   const { survivors, stats } = preQualifyBatch(
     jobs.map(j => ({ title: j.title, company: j.company, location: j.location, url: j.url })),
     APPLICANT,
-    { excludedCompanies: config.searchProfile.excluded_companies ?? null },
+    { excludedCompanies: config.searchProfile.excluded_companies ?? null, keywords: config.searchProfile.keywords ?? [] },
   )
 
   const preFilterSummary = formatPreQualifyStats(stats)
@@ -408,47 +408,96 @@ async function phaseQualify(
     console.log(`[pipeline] Deduped ${survivingJobs.length - dedupedSurvivors.length} duplicate jobs in qualify phase`)
   }
 
-  let processedCount = 0
+  // -------------------------------------------------------------------------
+  // Step 2a: Extract JDs sequentially (shares single browser page)
+  // -------------------------------------------------------------------------
+  const jobsWithJD: Array<{ job: DiscoveredJob; jd: string }> = []
+  let extractedCount = 0
+
   for (const job of dedupedSurvivors) {
-    // Emit progress: currently processing this job
     onQualifyProgress?.({
       action: 'found',
       company: job.company,
       role: job.title,
-      reason: `Analyzing "${job.title}" at ${job.company}...`,
-      processed: processedCount,
+      reason: `Extracting JD [${extractedCount + 1}/${dedupedSurvivors.length}]: "${job.title}" at ${job.company}...`,
+      processed: extractedCount,
       qualified: qualified.length,
       preFiltered: stats.filtered,
     })
 
+    let jobDescription = ''
     try {
-      let jobDescription = ''
-      try {
-        jobDescription = await extractJobDescription(page, job.url)
-      } catch (extractErr) {
-        console.warn(`[pipeline] JD extraction error for ${job.company}: ${(extractErr as Error).message}`)
-      }
+      jobDescription = await extractJobDescription(page, job.url)
+    } catch (extractErr) {
+      console.warn(`[pipeline] JD extraction error for ${job.company}: ${(extractErr as Error).message}`)
+    }
 
-      // Fallback: build synthetic JD from scout metadata instead of skipping
-      if (jobDescription.length < 50) {
-        console.log(`[pipeline] JD too short for ${job.company} — using fallback metadata`)
-        jobDescription = [
-          `Job Title: ${job.title}`,
-          `Company: ${job.company}`,
-          `Location: ${job.location || 'Not specified'}`,
-          ``,
-          `NOTE: Full job description could not be extracted.`,
-          `Score based on title, company, and location. Give benefit of the doubt.`,
-        ].join('\n')
-      }
+    // Fallback: build synthetic JD from scout metadata instead of skipping
+    if (jobDescription.length < 50) {
+      console.log(`[pipeline] JD too short for ${job.company} — using fallback metadata`)
+      jobDescription = [
+        `Job Title: ${job.title}`,
+        `Company: ${job.company}`,
+        `Location: ${job.location || 'Not specified'}`,
+        ``,
+        `NOTE: Full job description could not be extracted.`,
+        `Score based on title, company, and location. Give benefit of the doubt.`,
+      ].join('\n')
+    }
 
-      const result = await qualifyJob(
-        jobDescription,
-        config.searchProfile,
-        APPLICANT,
-      )
+    jobsWithJD.push({ job, jd: jobDescription })
+    extractedCount++
 
+    // Small delay between JD fetches for human-like behavior
+    await humanDelay(1500, 800)
+  }
+
+  // -------------------------------------------------------------------------
+  // Step 2b: Qualify via Haiku in parallel batches of QUALIFY_BATCH_SIZE
+  // -------------------------------------------------------------------------
+  const QUALIFY_BATCH_SIZE = 5
+  let processedCount = 0
+
+  console.log(`[pipeline] Qualifying ${jobsWithJD.length} jobs in parallel batches of ${QUALIFY_BATCH_SIZE}`)
+
+  for (let batchStart = 0; batchStart < jobsWithJD.length; batchStart += QUALIFY_BATCH_SIZE) {
+    const batch = jobsWithJD.slice(batchStart, batchStart + QUALIFY_BATCH_SIZE)
+    const batchNum = Math.floor(batchStart / QUALIFY_BATCH_SIZE) + 1
+    const totalBatches = Math.ceil(jobsWithJD.length / QUALIFY_BATCH_SIZE)
+    console.log(`[pipeline] Haiku batch ${batchNum}/${totalBatches} (${batch.length} jobs)`)
+
+    const batchResults = await Promise.all(
+      batch.map(async ({ job, jd }) => {
+        try {
+          const result = await qualifyJob(jd, config.searchProfile, APPLICANT)
+          return { job, result, error: null as Error | null }
+        } catch (err) {
+          return { job, result: null as QualificationResult | null, error: err as Error }
+        }
+      }),
+    )
+
+    // Process batch results sequentially (for logging and progress updates)
+    for (const { job, result, error } of batchResults) {
       processedCount++
+
+      if (error || !result) {
+        console.warn(
+          `[pipeline] Qualification error for ${job.company}:`,
+          error?.message ?? 'unknown error',
+        )
+        const errEntry: ActivityLogEntry = {
+          user_id: config.userId,
+          run_id: runId,
+          action: 'qualify_error',
+          company: job.company,
+          role: job.title,
+          reason: error?.message ?? 'unknown error',
+        }
+        await logBotActivity(errEntry)
+        activities.push(errEntry)
+        continue
+      }
 
       const qualEntry: ActivityLogEntry = {
         user_id: config.userId,
@@ -475,24 +524,6 @@ async function phaseQualify(
       if (result.score >= config.minScore) {
         qualified.push({ job, qualification: result })
       }
-
-      // Small delay between JD fetches for human-like behavior
-      await humanDelay(1500, 800)
-    } catch (err) {
-      console.warn(
-        `[pipeline] Qualification error for ${job.company}:`,
-        (err as Error).message,
-      )
-      const errEntry: ActivityLogEntry = {
-        user_id: config.userId,
-        run_id: runId,
-        action: 'qualify_error',
-        company: job.company,
-        role: job.title,
-        reason: (err as Error).message,
-      }
-      await logBotActivity(errEntry)
-      activities.push(errEntry)
     }
   }
 
