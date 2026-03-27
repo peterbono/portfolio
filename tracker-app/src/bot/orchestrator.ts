@@ -3,7 +3,13 @@ import type { SearchProfile } from '../types/database'
 import type { ApplicantProfile, ATSAdapter, ApplyResult } from './types'
 import { APPLICANT } from './types'
 import { scoutJobs, type DiscoveredJob } from './scout'
-import { qualifyJob, clearQualificationCache, type QualificationResult } from './qualifier'
+import {
+  qualifyJob,
+  clearQualificationCache,
+  preQualifyBatch,
+  formatPreQualifyStats,
+  type QualificationResult,
+} from './qualifier'
 import { blockUnnecessaryResources } from './helpers'
 import {
   createBotRun,
@@ -188,10 +194,46 @@ async function phaseQualify(
 ): Promise<QualifiedJob[]> {
   console.log(`[pipeline] Phase 2: QUALIFY (${jobs.length} candidates)`)
 
+  // -------------------------------------------------------------------------
+  // Pass 1: Rules-based pre-filter (instant, $0 cost)
+  // -------------------------------------------------------------------------
+  const { survivors, stats } = preQualifyBatch(
+    jobs.map(j => ({ title: j.title, company: j.company, location: j.location, url: j.url })),
+    APPLICANT,
+    { excludedCompanies: config.searchProfile.excluded_companies ?? null },
+  )
+
+  const preFilterSummary = formatPreQualifyStats(stats)
+  console.log(`[pipeline] ${preFilterSummary}`)
+
+  // Log pre-filter results
+  const preFilterEntry: ActivityLogEntry = {
+    user_id: config.userId,
+    run_id: runId,
+    action: 'qualify_prefilter',
+    reason: preFilterSummary,
+  }
+  await logBotActivity(preFilterEntry)
+  activities.push(preFilterEntry)
+
+  // Map surviving URLs back to DiscoveredJob objects
+  const survivorUrls = new Set(survivors.map(s => s.url))
+  const survivingJobs = jobs.filter(j => survivorUrls.has(j.url))
+
+  if (survivingJobs.length === 0) {
+    console.log('[pipeline] All jobs eliminated by pre-filter. No Haiku calls needed.')
+    return []
+  }
+
+  // -------------------------------------------------------------------------
+  // Pass 2: LLM scoring (only on Pass 1 survivors)
+  // -------------------------------------------------------------------------
+  console.log(`[pipeline] Pass 2: Sending ${survivingJobs.length} jobs to Haiku`)
+
   clearQualificationCache()
   const qualified: QualifiedJob[] = []
 
-  for (const job of jobs) {
+  for (const job of survivingJobs) {
     try {
       const jobDescription = await extractJobDescription(page, job.url)
 
@@ -250,7 +292,7 @@ async function phaseQualify(
     }
   }
 
-  console.log(`[pipeline] Qualified: ${qualified.length}/${jobs.length}`)
+  console.log(`[pipeline] Qualified: ${qualified.length}/${jobs.length} (${stats.filtered} pre-filtered, ${survivingJobs.length} scored by AI)`)
   return qualified
 }
 

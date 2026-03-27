@@ -28,6 +28,7 @@ export interface QualifiedJob {
   coverLetterSnippet: string
   qualified: boolean // score >= QUALIFY_THRESHOLD (40)
   error?: string
+  preFilterReason?: string // set if eliminated by rules-based pre-filter (Pass 1)
 }
 
 interface QualifyPayload {
@@ -37,12 +38,22 @@ interface QualifyPayload {
   searchConfig: Record<string, unknown>
 }
 
+interface PreFilterStats {
+  total: number
+  passed: number
+  filtered: number
+  breakdown: Record<string, number>
+}
+
 interface QualifyResult {
   qualified: QualifiedJob[]
   disqualified: QualifiedJob[]
+  preFiltered: QualifiedJob[] // jobs eliminated by rules-based Pass 1 (score 0, no API cost)
+  preFilterStats: PreFilterStats
   errors: Array<{ url: string; error: string }>
   totalProcessed: number
   totalQualified: number
+  totalPreFiltered: number
   costEstimate: number // USD
 }
 
@@ -57,74 +68,61 @@ const HAIKU_TIMEOUT = 10_000 // 10s per Haiku call
 const CONCURRENCY = 5
 
 // ---------------------------------------------------------------------------
-// Haiku qualifier prompt (matches bot/qualifier.ts)
+// Haiku qualifier prompt — dynamic, injects user profile for accuracy
 // ---------------------------------------------------------------------------
 
-const SYSTEM_PROMPT = `You are a GENEROUS job qualification AI. You evaluate job postings for a senior product designer.
-Your goal is to let GOOD-ENOUGH jobs through. The user will review and decide — you just filter out clearly irrelevant ones.
+function buildSystemPrompt(userProfile: Record<string, unknown>): string {
+  const firstName = userProfile.firstName ?? 'Florian'
+  const lastName = userProfile.lastName ?? 'Gouloubi'
+  const yearsExp = userProfile.yearsExperience ?? 7
+  const location = userProfile.location ?? 'Bangkok, Thailand'
+  const timezone = userProfile.timezone ?? 'GMT+7'
+  const portfolio = userProfile.portfolio ?? 'https://www.floriangouloubi.com'
 
-APPLICANT PROFILE:
-- 7+ years experience in Product Design, Design Systems, Design Ops
+  return `You are a job qualification engine for an automated job search tool.
+
+CANDIDATE PROFILE:
+- Name: ${firstName} ${lastName}
+- Current role: Senior Product Designer
 - Specialization: Design Systems, Design Ops, Complex Product Architecture
-- Industries: iGaming, B2B SaaS, affiliate media, biometric security, public sector, aviation
-- Tools: Figma, Storybook, Zeroheight, Jira, Maze, Rive, Asana, Notion
-- Location: Bangkok, Thailand (GMT+7)
-- Remote preferred, open to on-site in SE Asia
-- EU citizen (French passport)
-- Bilingual French/English
-- Min salary: 70k EUR/year (on-site APAC) or 80k EUR/year (remote)
+- Experience: ${yearsExp}+ years
+- Industries: iGaming (regulated), B2B SaaS, affiliate/SEO media, biometric security, public sector, aviation
+- Key skills: Figma, Storybook, Zeroheight, design systems governance, complex information architecture, user research, Jira, Maze, Rive
+- Location: ${location} (${timezone})
+- Acceptable timezone range: UTC+3 to UTC+11 (4h max difference)
+- Work mode: P1 Remote APAC, P2 On-site Philippines/Thailand, P3 Remote within TZ range
+- Minimum compensation: 70k EUR/year (on-site) or 80k EUR/year (remote freelance)
+- Languages: French (native), English (bilingual)
+- Portfolio: ${portfolio}
 
-SCORING RUBRIC (total 0-100) — BE GENEROUS, give benefit of the doubt:
+BLACKLISTED:
+- Companies: BetRivers, Rush Street Interactive, ClickOut Media
+- Industries: poker, unregulated gambling
+- Seniority: intern, junior, associate (too junior for ${yearsExp}+ years)
 
-1. DESIGN ROLE (0-30 points):
-   - Exact match (Product Designer, UX Designer, UI Designer, UX/UI, Design Systems, Visual Designer, Interaction Designer): +30
-   - Close match (Design Lead, Design Manager, Head of Design, Staff Designer, Principal Designer, Creative Director with UX focus, Brand Designer with digital focus, Service Designer, Design Ops, Design Strategist): +25
-   - Adjacent (Frontend Developer with design focus, Product Manager with design background, UX Researcher, Content Designer, Design Technologist): +15
-   - Not a design role at all (pure engineering, sales, marketing, data, etc.): 0
+SCORING INSTRUCTIONS:
+First check HARD REQUIREMENTS. If ANY fail, return score 0 with hard_fail reason.
+If all pass, score on 0-100 scale starting from base 40:
 
-2. SENIORITY (0-20 points):
-   - Exact level or one level up/down (Senior, Lead, Staff, Principal, Head, Manager, Director): +20
-   - Mid-level (no seniority specified, "Designer" without prefix): +15 — could be senior in practice
-   - Junior/intern/entry-level explicitly stated: +5
+- Role fit (0-25): Title + JD alignment with "Senior Product Designer" / design systems / design ops / complex product architecture. Exact match=25, close match=20, adjacent=12, weak=5.
+- Industry match (0-15): B2B SaaS=high, regulated industries=high, consumer app=medium, crypto/unregulated gambling=low. Unknown=8 (benefit of doubt).
+- Skill overlap (0-20): How many of the candidate's key skills (Figma, Storybook, Zeroheight, design systems, component libraries, design tokens, prototyping, user research, accessibility) are mentioned or implied? 5+=20, 3-4=15, 1-2=10, none mentioned=8 (benefit of doubt).
+- Remote/location fit (0-15): Remote APAC=15, remote global async=12, hybrid SEA=10, on-site SEA=8, remote EU (5-7h diff)=3, US timezone only=0, unknown=10 (benefit of doubt).
+- Compensation signal (0-10): Mentions salary in range (>=70k EUR)=10, no salary info=5 (neutral, never penalize), low salary signal=0.
+- Growth opportunity (0-15): Design system work=high, leadership opportunity=high, complex products=high, regulated environments=high. Generic role=5, unknown=7.
 
-3. LOCATION / TIMEZONE (0-20 points):
-   - Remote with no TZ restriction, or APAC-based, or async-friendly: +20
-   - Remote with "flexible hours" or overlap with APAC possible: +15
-   - Location in UTC+3 to UTC+11 range (India, Middle East, East Asia, Australia, NZ): +20
-   - Europe-based but remote-friendly: +10
-   - US-only with strict US hours: +5
-   - On-site required outside APAC: +5
-   - Cannot determine location/remote policy: +12 (benefit of the doubt)
+IMPORTANT:
+- When information is MISSING, give partial points (benefit of the doubt), never 0.
+- A "Senior Product Designer" role with no red flags should score 65+ minimum.
+- Salary not listed is NORMAL — give 5/10, never 0.
+- "Remote" without timezone info = assume compatible (10/15).
 
-4. SALARY (0-15 points):
-   - In range (>=70k EUR or equivalent) or salary not mentioned: +15
-   - Salary not stated at all: +15 (NEVER penalize missing salary — most jobs don't list it)
-   - Slightly below range (50-70k EUR equivalent): +10
-   - Clearly below range (<50k EUR): +5
-   - Cannot determine: +12
+COVER LETTER SNIPPET:
+- 2-3 sentences max referencing something specific from the JD
+- Connect it to the candidate's design systems / complex architecture experience
+- Professional but warm tone, never generic
 
-5. SKILLS MATCH (0-15 points):
-   - 4+ matching skills (Figma, design systems, prototyping, user research, B2B SaaS, design tokens, component libraries, Storybook, wireframing, usability testing, responsive design, mobile design, accessibility): +15
-   - 2-3 matching skills: +10
-   - 1 matching skill or generic "design" skills mentioned: +7
-   - No skills info available: +8 (benefit of the doubt)
-   - Completely different skill set (only coding, only marketing): +3
-
-IMPORTANT RULES:
-- When information is MISSING or UNCLEAR, give partial points (never 0).
-- A "Senior Product Designer" role should score at MINIMUM 60+ unless something is clearly wrong.
-- Salary not being listed is NORMAL — always give full salary points (15) when not stated.
-- "Remote" without timezone info = assume compatible (+15 minimum for location).
-- Score should reflect: "Would a reasonable senior designer want to apply to this?"
-
-COVER LETTER SNIPPET RULES:
-- 2-3 sentences max
-- Reference something specific from the job description
-- Connect it to the applicant's experience
-- Professional but warm tone
-- Never generic
-
-Respond ONLY with valid JSON matching this schema:
+Respond ONLY with valid JSON:
 {
   "score": number,
   "isDesignRole": boolean,
@@ -135,6 +133,7 @@ Respond ONLY with valid JSON matching this schema:
   "reasoning": "1-2 sentence explanation",
   "coverLetterSnippet": "2-3 personalized sentences"
 }`
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -197,6 +196,7 @@ async function callHaikuQualifier(
   client: import("@anthropic-ai/sdk").default,
   jobDescription: string,
   searchConfig: Record<string, unknown>,
+  userProfile: Record<string, unknown>,
 ): Promise<{
   score: number
   isDesignRole: boolean
@@ -210,6 +210,9 @@ async function callHaikuQualifier(
   const keywords = (searchConfig as Record<string, unknown>).keywords
   const location = (searchConfig as Record<string, unknown>).location
   const minSalary = (searchConfig as Record<string, unknown>).min_salary ?? (searchConfig as Record<string, unknown>).minSalary
+
+  // Build dynamic system prompt with actual user profile
+  const systemPrompt = buildSystemPrompt(userProfile)
 
   const userMessage = `Evaluate this job posting for the applicant described in the system prompt.
 
@@ -230,7 +233,7 @@ Return ONLY the JSON object, no markdown fences.`
     client.messages.create({
       model: "claude-haiku-4-5-20251001",
       max_tokens: 600,
-      system: SYSTEM_PROMPT,
+      system: systemPrompt,
       messages: [{ role: "user", content: userMessage }],
     }),
     new Promise<never>((_, reject) =>
@@ -307,16 +310,109 @@ export const qualifyJobsTask = task({
     const { chromium } = await import("playwright")
     const Anthropic = (await import("@anthropic-ai/sdk")).default
     const { blockUnnecessaryResources } = await import("../bot/helpers")
+    const { preQualify, formatPreQualifyStats } = await import("../bot/qualifier")
+    const { APPLICANT } = await import("../bot/types")
 
-    // Cap jobs to process
-    const jobsToProcess = payload.jobs.slice(0, MAX_JOBS_PER_RUN)
-    if (payload.jobs.length > MAX_JOBS_PER_RUN) {
+    console.log(`[qualify-jobs] Starting qualification of ${payload.jobs.length} jobs`)
+
+    // -----------------------------------------------------------------------
+    // PASS 1: Rules-based pre-filter (instant, $0 cost)
+    // Eliminates obviously bad matches before any API call or browser launch.
+    // -----------------------------------------------------------------------
+    const preFiltered: QualifiedJob[] = []
+    const passSurvivors: DiscoveredJob[] = []
+    const preFilterBreakdown: Record<string, number> = {}
+
+    // Build the applicant profile for preQualify — use payload.userProfile or defaults
+    const applicantForPreFilter = {
+      ...APPLICANT,
+      ...(payload.userProfile as Record<string, unknown>),
+      yearsExperience: (payload.userProfile?.yearsExperience as number) ?? APPLICANT.yearsExperience,
+    }
+
+    // Build search config for preQualify
+    const excludedCompanies = (payload.searchConfig?.excludedCompanies ??
+      payload.searchConfig?.excluded_companies) as string[] | undefined
+
+    for (const job of payload.jobs) {
+      const result = preQualify(
+        { title: job.title, company: job.company, location: job.location, url: job.url },
+        applicantForPreFilter,
+        { excludedCompanies: excludedCompanies ?? null },
+      )
+
+      if (result.pass) {
+        passSurvivors.push(job)
+      } else {
+        // Record as pre-filtered with score 0 — no API cost
+        preFiltered.push({
+          url: job.url,
+          title: job.title,
+          company: job.company,
+          location: job.location,
+          isEasyApply: job.isEasyApply,
+          score: 0,
+          isDesignRole: false,
+          seniorityMatch: false,
+          locationCompatible: false,
+          salaryInRange: false,
+          skillsMatch: false,
+          matchReasons: [],
+          coverLetterSnippet: "",
+          qualified: false,
+          preFilterReason: result.reason,
+        })
+        if (result.rule) {
+          preFilterBreakdown[result.rule] = (preFilterBreakdown[result.rule] ?? 0) + 1
+        }
+      }
+    }
+
+    const preFilterStats: PreFilterStats = {
+      total: payload.jobs.length,
+      passed: passSurvivors.length,
+      filtered: preFiltered.length,
+      breakdown: preFilterBreakdown,
+    }
+
+    console.log(
+      `[qualify-jobs] ${formatPreQualifyStats({
+        total: preFilterStats.total,
+        passed: preFilterStats.passed,
+        filtered: preFilterStats.filtered,
+        breakdown: preFilterStats.breakdown,
+      })}`,
+    )
+
+    // If everything was pre-filtered, return early — no need to launch browser or Haiku
+    if (passSurvivors.length === 0) {
+      console.log("[qualify-jobs] All jobs eliminated by pre-filter. No Haiku calls needed.")
+      return {
+        qualified: [],
+        disqualified: [],
+        preFiltered,
+        preFilterStats,
+        errors: [],
+        totalProcessed: payload.jobs.length,
+        totalQualified: 0,
+        totalPreFiltered: preFiltered.length,
+        costEstimate: 0,
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // PASS 2: LLM scoring (only on Pass 1 survivors)
+    // -----------------------------------------------------------------------
+
+    // Cap survivors to process (save API cost)
+    const jobsToProcess = passSurvivors.slice(0, MAX_JOBS_PER_RUN)
+    if (passSurvivors.length > MAX_JOBS_PER_RUN) {
       console.log(
-        `[qualify-jobs] Capped at ${MAX_JOBS_PER_RUN} jobs (${payload.jobs.length} provided)`,
+        `[qualify-jobs] Capped at ${MAX_JOBS_PER_RUN} jobs for Haiku (${passSurvivors.length} passed pre-filter)`,
       )
     }
 
-    console.log(`[qualify-jobs] Starting qualification of ${jobsToProcess.length} jobs`)
+    console.log(`[qualify-jobs] Pass 2: Sending ${jobsToProcess.length} jobs to Haiku for LLM scoring`)
 
     // -----------------------------------------------------------------------
     // 1. Launch Bright Data browser (or local fallback)
@@ -383,11 +479,12 @@ export const qualifyJobsTask = task({
               jdText = buildFallbackJD(job)
             }
 
-            // Call Haiku to qualify
+            // Call Haiku to qualify (Pass 2: LLM scoring on survivors only)
             const result = await callHaikuQualifier(
               anthropic,
               jdText,
               payload.searchConfig,
+              payload.userProfile,
             )
 
             const qualifiedJob: QualifiedJob = {
@@ -464,21 +561,27 @@ export const qualifyJobsTask = task({
     }
 
     // -----------------------------------------------------------------------
-    // 4. Return results
+    // 4. Return results (Pass 1 pre-filter + Pass 2 LLM scoring)
     // -----------------------------------------------------------------------
-    const totalProcessed = qualified.length + disqualified.length + errors.length
+    const totalProcessed = preFiltered.length + qualified.length + disqualified.length + errors.length
     const costEstimate = (qualified.length + disqualified.length) * 0.003
+    const costSaved = preFiltered.length * 0.003
 
     console.log(
-      `[qualify-jobs] Done. ${qualified.length} qualified, ${disqualified.length} disqualified, ${errors.length} errors. Cost: ~$${costEstimate.toFixed(3)}`,
+      `[qualify-jobs] Done. ${qualified.length} qualified, ${disqualified.length} disqualified, ` +
+      `${preFiltered.length} pre-filtered, ${errors.length} errors. ` +
+      `Cost: ~$${costEstimate.toFixed(3)} (saved ~$${costSaved.toFixed(3)} from pre-filter)`,
     )
 
     return {
       qualified,
       disqualified,
+      preFiltered,
+      preFilterStats,
       errors,
       totalProcessed,
       totalQualified: qualified.length,
+      totalPreFiltered: preFiltered.length,
       costEstimate,
     }
   },

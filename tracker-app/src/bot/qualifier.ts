@@ -17,6 +17,166 @@ export interface QualificationResult {
   coverLetterSnippet: string
 }
 
+/** Input shape for pre-qualification — matches scout DiscoveredJob */
+export interface PreQualifyInput {
+  title: string
+  company: string
+  location: string
+  url?: string
+}
+
+/** Result of the rules-based pre-qualification (Pass 1) */
+export interface PreQualifyResult {
+  pass: boolean
+  reason?: string
+  rule?: string // which rule triggered the rejection
+}
+
+/** Aggregated stats from a preQualify batch run */
+export interface PreQualifyStats {
+  total: number
+  passed: number
+  filtered: number
+  breakdown: Record<string, number> // rule name -> count of jobs filtered by it
+}
+
+// ---------------------------------------------------------------------------
+// Pass 1: Rules-based pre-qualifier (instant, $0 cost)
+// ---------------------------------------------------------------------------
+
+/** Design-related keywords that indicate a relevant role */
+const DESIGN_KEYWORDS = [
+  'designer', 'design', 'ux', 'ui', 'product design', 'visual design',
+  'interaction design', 'design system', 'design lead', 'creative director',
+  'design ops', 'design manager', 'head of design', 'staff designer',
+  'principal designer', 'design strategist', 'service designer',
+  'design technologist', 'content designer', 'brand designer',
+]
+
+/** Junior/entry-level indicators — skip if user has 5+ years experience */
+const JUNIOR_KEYWORDS = [
+  'intern', 'internship', 'trainee', 'apprentice', 'entry level',
+  'entry-level', 'junior', 'jr.', 'jr ',
+]
+
+/** Industries/keywords to always reject */
+const BLACKLISTED_INDUSTRY_KEYWORDS = [
+  'poker', 'gambling', 'casino', 'betting', 'adult', 'tobacco',
+]
+
+/**
+ * Pass 1: Deterministic rules-based filter.
+ * Runs instantly with zero API cost. Eliminates obviously bad matches
+ * before sending survivors to Haiku (Pass 2).
+ *
+ * Returns { pass: true } if the job should proceed to LLM scoring,
+ * or { pass: false, reason, rule } if it should be filtered out.
+ */
+export function preQualify(
+  job: PreQualifyInput,
+  applicantProfile: ApplicantProfile,
+  searchConfig?: { excludedCompanies?: string[] | null },
+): PreQualifyResult {
+  const titleLower = job.title.toLowerCase()
+  const companyLower = job.company.toLowerCase()
+
+  // Rule 1: Title must contain at least one design keyword
+  const hasDesignKeyword = DESIGN_KEYWORDS.some(kw => titleLower.includes(kw))
+  if (!hasDesignKeyword) {
+    return { pass: false, reason: `Not a design role: "${job.title}"`, rule: 'not_design_role' }
+  }
+
+  // Rule 2: Seniority filter — reject if title has junior indicators AND user is senior
+  if (applicantProfile.yearsExperience > 5) {
+    const hasJunior = JUNIOR_KEYWORDS.some(kw => titleLower.includes(kw))
+    if (hasJunior) {
+      return { pass: false, reason: `Too junior for ${applicantProfile.yearsExperience}+ years experience`, rule: 'too_junior' }
+    }
+  }
+
+  // Rule 3: Excluded companies from search config
+  const excludedCompanies = searchConfig?.excludedCompanies ?? []
+  const isExcluded = excludedCompanies.some(
+    c => c && companyLower.includes(c.toLowerCase()),
+  )
+  if (isExcluded) {
+    return { pass: false, reason: `Excluded company: "${job.company}"`, rule: 'excluded_company' }
+  }
+
+  // Rule 4: Blacklisted industry keywords in title or company name
+  const hasBlacklisted = BLACKLISTED_INDUSTRY_KEYWORDS.some(
+    kw => titleLower.includes(kw) || companyLower.includes(kw),
+  )
+  if (hasBlacklisted) {
+    return { pass: false, reason: `Blacklisted industry keyword in "${job.title}" or "${job.company}"`, rule: 'blacklisted_industry' }
+  }
+
+  // All rules passed — this job proceeds to Haiku scoring
+  return { pass: true }
+}
+
+/**
+ * Run preQualify on a batch of jobs and return survivors + stats.
+ * Useful for logging a summary like:
+ * "Pre-filtered: 45 removed (30 not design, 10 too junior, 5 excluded)"
+ */
+export function preQualifyBatch(
+  jobs: PreQualifyInput[],
+  applicantProfile: ApplicantProfile,
+  searchConfig?: { excludedCompanies?: string[] | null },
+): { survivors: PreQualifyInput[]; filtered: PreQualifyInput[]; stats: PreQualifyStats } {
+  const survivors: PreQualifyInput[] = []
+  const filtered: PreQualifyInput[] = []
+  const breakdown: Record<string, number> = {}
+
+  for (const job of jobs) {
+    const result = preQualify(job, applicantProfile, searchConfig)
+    if (result.pass) {
+      survivors.push(job)
+    } else {
+      filtered.push(job)
+      if (result.rule) {
+        breakdown[result.rule] = (breakdown[result.rule] ?? 0) + 1
+      }
+    }
+  }
+
+  return {
+    survivors,
+    filtered,
+    stats: {
+      total: jobs.length,
+      passed: survivors.length,
+      filtered: filtered.length,
+      breakdown,
+    },
+  }
+}
+
+/**
+ * Format preQualify stats into a human-readable log line.
+ * Example: "Pre-filtered: 45 removed (30 not design, 10 too junior, 5 excluded)"
+ */
+export function formatPreQualifyStats(stats: PreQualifyStats): string {
+  if (stats.filtered === 0) {
+    return `Pre-filter: all ${stats.total} jobs passed rules check`
+  }
+
+  const parts: string[] = []
+  const ruleLabels: Record<string, string> = {
+    not_design_role: 'not design',
+    too_junior: 'too junior',
+    excluded_company: 'excluded company',
+    blacklisted_industry: 'blacklisted industry',
+  }
+
+  for (const [rule, count] of Object.entries(stats.breakdown)) {
+    parts.push(`${count} ${ruleLabels[rule] ?? rule}`)
+  }
+
+  return `Pre-filtered: ${stats.filtered} removed (${parts.join(', ')}). ${stats.passed}/${stats.total} sent to AI scoring.`
+}
+
 // ---------------------------------------------------------------------------
 // Client
 // ---------------------------------------------------------------------------
@@ -42,74 +202,58 @@ function cacheKey(jobDescription: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// System prompt for the qualifier
+// System prompt builder — injects user profile data for accurate scoring
 // ---------------------------------------------------------------------------
 
-const SYSTEM_PROMPT = `You are a GENEROUS job qualification AI. You evaluate job postings for a senior product designer.
-Your goal is to let GOOD-ENOUGH jobs through. The user will review and decide — you just filter out clearly irrelevant ones.
+/**
+ * Build the Haiku system prompt with the actual user profile injected.
+ * This makes scoring much more accurate than a hardcoded generic rubric.
+ */
+function buildSystemPrompt(applicantProfile: ApplicantProfile): string {
+  return `You are a job qualification engine for an automated job search tool.
 
-APPLICANT PROFILE:
-- 7+ years experience in Product Design, Design Systems, Design Ops
+CANDIDATE PROFILE:
+- Name: ${applicantProfile.firstName} ${applicantProfile.lastName}
+- Current role: Senior Product Designer
 - Specialization: Design Systems, Design Ops, Complex Product Architecture
-- Industries: iGaming, B2B SaaS, affiliate media, biometric security, public sector, aviation
-- Tools: Figma, Storybook, Zeroheight, Jira, Maze, Rive, Asana, Notion
-- Location: Bangkok, Thailand (GMT+7)
-- Remote preferred, open to on-site in SE Asia
-- EU citizen (French passport)
-- Bilingual French/English
-- Min salary: 70k EUR/year (on-site APAC) or 80k EUR/year (remote)
+- Experience: ${applicantProfile.yearsExperience}+ years
+- Industries: iGaming (regulated), B2B SaaS, affiliate/SEO media, biometric security, public sector, aviation
+- Key skills: Figma, Storybook, Zeroheight, design systems governance, complex information architecture, user research, Jira, Maze, Rive
+- Location: ${applicantProfile.location} (${applicantProfile.timezone})
+- Acceptable timezone range: UTC+3 to UTC+11 (4h max difference)
+- Work mode: P1 Remote APAC, P2 On-site Philippines/Thailand, P3 Remote within TZ range
+- Minimum compensation: 70k EUR/year (on-site) or 80k EUR/year (remote freelance)
+- Languages: French (native), English (bilingual)
+- Portfolio: ${applicantProfile.portfolio}
 
-SCORING RUBRIC (total 0-100) — BE GENEROUS, give benefit of the doubt:
+BLACKLISTED:
+- Companies: BetRivers, Rush Street Interactive, ClickOut Media
+- Industries: poker, unregulated gambling
+- Seniority: intern, junior, associate (too junior for ${applicantProfile.yearsExperience}+ years)
 
-1. DESIGN ROLE (0-30 points):
-   - Exact match (Product Designer, UX Designer, UI Designer, UX/UI, Design Systems, Visual Designer, Interaction Designer): +30
-   - Close match (Design Lead, Design Manager, Head of Design, Staff Designer, Principal Designer, Creative Director with UX focus, Brand Designer with digital focus, Service Designer, Design Ops, Design Strategist): +25
-   - Adjacent (Frontend Developer with design focus, Product Manager with design background, UX Researcher, Content Designer, Design Technologist): +15
-   - Not a design role at all (pure engineering, sales, marketing, data, etc.): 0
+SCORING INSTRUCTIONS:
+First check HARD REQUIREMENTS. If ANY fail, return score 0 with hard_fail reason.
+If all pass, score on 0-100 scale starting from base 40:
 
-2. SENIORITY (0-20 points):
-   - Exact level or one level up/down (Senior, Lead, Staff, Principal, Head, Manager, Director): +20
-   - Mid-level (no seniority specified, "Designer" without prefix): +15 — could be senior in practice
-   - Junior/intern/entry-level explicitly stated: +5
+- Role fit (0-25): Title + JD alignment with "Senior Product Designer" / design systems / design ops / complex product architecture. Exact match=25, close match=20, adjacent=12, weak=5.
+- Industry match (0-15): B2B SaaS=high, regulated industries=high, consumer app=medium, crypto/unregulated gambling=low. Unknown=8 (benefit of doubt).
+- Skill overlap (0-20): How many of the candidate's key skills (Figma, Storybook, Zeroheight, design systems, component libraries, design tokens, prototyping, user research, accessibility) are mentioned or implied? 5+=20, 3-4=15, 1-2=10, none mentioned=8 (benefit of doubt).
+- Remote/location fit (0-15): Remote APAC=15, remote global async=12, hybrid SEA=10, on-site SEA=8, remote EU (5-7h diff)=3, US timezone only=0, unknown=10 (benefit of doubt).
+- Compensation signal (0-10): Mentions salary in range (>=70k EUR)=10, no salary info=5 (neutral, never penalize), low salary signal=0.
+- Growth opportunity (0-15): Design system work=high, leadership opportunity=high, complex products=high, regulated environments=high. Generic role=5, unknown=7.
 
-3. LOCATION / TIMEZONE (0-20 points):
-   - Remote with no TZ restriction, or APAC-based, or async-friendly: +20
-   - Remote with "flexible hours" or overlap with APAC possible: +15
-   - Location in UTC+3 to UTC+11 range (India, Middle East, East Asia, Australia, NZ): +20
-   - Europe-based but remote-friendly: +10
-   - US-only with strict US hours: +5
-   - On-site required outside APAC: +5
-   - Cannot determine location/remote policy: +12 (benefit of the doubt)
+IMPORTANT:
+- When information is MISSING, give partial points (benefit of the doubt), never 0.
+- A "Senior Product Designer" role with no red flags should score 65+ minimum.
+- Salary not listed is NORMAL — give 5/10, never 0.
+- "Remote" without timezone info = assume compatible (10/15).
 
-4. SALARY (0-15 points):
-   - In range (>=70k EUR or equivalent) or salary not mentioned: +15
-   - Salary not stated at all: +15 (NEVER penalize missing salary — most jobs don't list it)
-   - Slightly below range (50-70k EUR equivalent): +10
-   - Clearly below range (<50k EUR): +5
-   - Cannot determine: +12
+COVER LETTER SNIPPET:
+- 2-3 sentences max referencing something specific from the JD
+- Connect it to the candidate's design systems / complex architecture experience
+- Professional but warm tone, never generic
 
-5. SKILLS MATCH (0-15 points):
-   - 4+ matching skills (Figma, design systems, prototyping, user research, B2B SaaS, design tokens, component libraries, Storybook, wireframing, usability testing, responsive design, mobile design, accessibility): +15
-   - 2-3 matching skills: +10
-   - 1 matching skill or generic "design" skills mentioned: +7
-   - No skills info available: +8 (benefit of the doubt)
-   - Completely different skill set (only coding, only marketing): +3
-
-IMPORTANT RULES:
-- When information is MISSING or UNCLEAR, give partial points (never 0).
-- A "Senior Product Designer" role should score at MINIMUM 60+ unless something is clearly wrong.
-- Salary not being listed is NORMAL — always give full salary points (15) when not stated.
-- "Remote" without timezone info = assume compatible (+15 minimum for location).
-- Score should reflect: "Would a reasonable senior designer want to apply to this?"
-
-COVER LETTER SNIPPET RULES:
-- 2-3 sentences max
-- Reference something specific from the job description
-- Connect it to the applicant's experience
-- Professional but warm tone
-- Never generic
-
-Respond ONLY with valid JSON matching this schema:
+Respond ONLY with valid JSON:
 {
   "score": number,
   "isDesignRole": boolean,
@@ -120,6 +264,7 @@ Respond ONLY with valid JSON matching this schema:
   "reasoning": "1-2 sentence explanation",
   "coverLetterSnippet": "2-3 personalized sentences"
 }`
+}
 
 // ---------------------------------------------------------------------------
 // Main qualification function
@@ -146,6 +291,9 @@ export async function qualifyJob(
 
   const client = getClient()
 
+  // Build dynamic system prompt with user profile injected
+  const systemPrompt = buildSystemPrompt(applicantProfile)
+
   // Build user message with context
   const userMessage = `Evaluate this job posting for the applicant described in the system prompt.
 
@@ -167,7 +315,7 @@ Return ONLY the JSON object, no markdown fences.`
       client.messages.create({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 600,
-        system: SYSTEM_PROMPT,
+        system: systemPrompt,
         messages: [{ role: 'user', content: userMessage }],
       }),
       new Promise<never>((_, reject) =>

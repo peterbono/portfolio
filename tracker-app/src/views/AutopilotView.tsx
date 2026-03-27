@@ -3003,17 +3003,7 @@ function FilterSidebar({
         />
       </div>
 
-      {/* Edit Profile link */}
-      {onEditProfile && (
-        <button
-          type="button"
-          onClick={onEditProfile}
-          style={sidebarStyles.editProfileLink}
-        >
-          <Pencil size={12} />
-          Edit Bot Profile
-        </button>
-      )}
+      {/* Edit Profile link removed — now in top bar */}
     </div>
   )
 }
@@ -3973,7 +3963,7 @@ export function AutopilotView() {
   /* ------------------------------------------------------------------ */
   return (
     <div style={layoutStyles.root}>
-      {/* Top bar: title + Filters toggle */}
+      {/* Top bar: title + Hide Filters (left) | Bot Profile + Find Jobs (right) */}
       <div className="autopilot-top-bar" style={layoutStyles.topBar}>
         <div style={layoutStyles.topBarLeft}>
           <Bot size={20} color="var(--accent)" />
@@ -3984,7 +3974,32 @@ export function AutopilotView() {
               LIVE
             </span>
           )}
-          {/* Bot Profile button — always visible */}
+          {/* Filter toggle — left side, next to title */}
+          <button
+            style={{
+              ...layoutStyles.filterToggle,
+              ...(sidebarOpen ? layoutStyles.filterToggleActive : {}),
+            }}
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+          >
+            {sidebarOpen ? <ChevronLeft size={14} /> : <SlidersHorizontal size={14} />}
+            <span>{sidebarOpen ? 'Hide Filters' : 'Filters'}</span>
+            {hasConfig && !sidebarOpen && (
+              <span style={layoutStyles.filterCount}>{searchConfig.keywords.length + searchConfig.locationRules.length}</span>
+            )}
+          </button>
+        </div>
+        <div className="autopilot-top-bar-right" style={layoutStyles.topBarRight}>
+          {/* Auto-submit badge when ON */}
+          {autoSubmitOn && (
+            <span style={autoSubmitStyles.topBarBadge}>
+              <Zap size={12} />
+              Auto-submit: ON (90%+)
+              <button style={autoSubmitStyles.topBarBadgeOff as React.CSSProperties} onClick={handleDisableAutoSubmit}>[Turn off]</button>
+            </span>
+          )}
+
+          {/* Bot Profile button — secondary/outline style */}
           <button
             onClick={() => setShowProfileEditModal(true)}
             style={{
@@ -4005,16 +4020,6 @@ export function AutopilotView() {
             Bot Profile
             <Pencil size={10} style={{ opacity: 0.5 }} />
           </button>
-        </div>
-        <div className="autopilot-top-bar-right" style={layoutStyles.topBarRight}>
-          {/* Auto-submit badge when ON */}
-          {autoSubmitOn && (
-            <span style={autoSubmitStyles.topBarBadge}>
-              <Zap size={12} />
-              Auto-submit: ON (90%+)
-              <button style={autoSubmitStyles.topBarBadgeOff as React.CSSProperties} onClick={handleDisableAutoSubmit}>[Turn off]</button>
-            </span>
-          )}
 
           {/* Bot controls */}
           {hasConfig && !isBotActive && !isTriggering && (
@@ -4038,21 +4043,6 @@ export function AutopilotView() {
               <span>Stop</span>
             </button>
           )}
-
-          {/* Filter toggle */}
-          <button
-            style={{
-              ...layoutStyles.filterToggle,
-              ...(sidebarOpen ? layoutStyles.filterToggleActive : {}),
-            }}
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-          >
-            {sidebarOpen ? <ChevronLeft size={14} /> : <SlidersHorizontal size={14} />}
-            <span>{sidebarOpen ? 'Hide Filters' : 'Filters'}</span>
-            {hasConfig && !sidebarOpen && (
-              <span style={layoutStyles.filterCount}>{searchConfig.keywords.length + searchConfig.locationRules.length}</span>
-            )}
-          </button>
         </div>
       </div>
 
@@ -4142,32 +4132,105 @@ export function AutopilotView() {
             </div>
           )}
 
-          {/* Active filter tags bar + platform limits */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {/* Active filter tags bar + platform credit bars */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <ActiveFilterTags config={searchConfig} />
             </div>
-            {/* Platform limit counters — shown for authenticated users with bot access */}
+            {/* Platform credit bars — polished mini progress bars */}
             {canUseBot && (
               <div style={{
-                display: 'flex', alignItems: 'center', gap: 10,
-                fontSize: 11, color: 'var(--text-tertiary)', whiteSpace: 'nowrap', flexShrink: 0,
+                display: 'flex', alignItems: 'center', gap: 16,
+                flexShrink: 0,
               }}>
-                <span style={{
-                  display: 'flex', alignItems: 'center', gap: 4,
-                  color: linkedInRemainingToday <= 2 && platformLimits.linkedInPerDay < 999
-                    ? '#f59e0b' : 'var(--text-tertiary)',
-                }}>
-                  <Link2 size={11} />
-                  {linkedInUsedToday}/{platformLimits.linkedInPerDay >= 999 ? '\u221e' : platformLimits.linkedInPerDay} LinkedIn
-                </span>
-                <span style={{
-                  display: 'flex', alignItems: 'center', gap: 4,
-                  color: atsRemainingToday <= 3 && platformLimits.atsPerDay < 999
-                    ? '#f59e0b' : 'var(--text-tertiary)',
-                }}>
-                  <Briefcase size={11} />
-                  {atsUsedToday}/{platformLimits.atsPerDay >= 999 ? '\u221e' : platformLimits.atsPerDay} ATS
+                {/* LinkedIn credit bar */}
+                {(() => {
+                  const liMax = platformLimits.linkedInPerDay >= 999 ? Infinity : platformLimits.linkedInPerDay
+                  const liRemaining = linkedInRemainingToday
+                  const liUsed = linkedInUsedToday
+                  const liIsUnlimited = liMax === Infinity
+                  const liPct = liIsUnlimited ? 100 : (liMax > 0 ? ((liMax - liUsed) / liMax) * 100 : 0)
+                  const liBarColor = liRemaining === 0 ? '#ef4444' : liRemaining <= 2 ? '#f59e0b' : '#34d399'
+                  return (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', minWidth: 52 }}>LinkedIn</span>
+                      <div style={{
+                        width: 80, height: 4, borderRadius: 2,
+                        background: 'rgba(255,255,255,0.06)',
+                        overflow: 'hidden', flexShrink: 0,
+                      }}>
+                        <div style={{
+                          width: liIsUnlimited ? '100%' : `${Math.max(liPct, 0)}%`,
+                          height: '100%', borderRadius: 2,
+                          background: liBarColor,
+                          transition: 'width 0.3s ease, background 0.3s ease',
+                        }} />
+                      </div>
+                      <span style={{ fontSize: 11, fontWeight: 500, color: liBarColor, minWidth: 44 }}>
+                        {liIsUnlimited ? `${liUsed}/\u221e` : `${liRemaining}/${liMax}`}
+                      </span>
+                    </div>
+                  )
+                })()}
+
+                {/* ATS credit bar */}
+                {(() => {
+                  const atsMax = platformLimits.atsPerDay >= 999 ? Infinity : platformLimits.atsPerDay
+                  const atsRemaining = atsRemainingToday
+                  const atsUsed = atsUsedToday
+                  const atsIsUnlimited = atsMax === Infinity
+                  const atsPct = atsIsUnlimited ? 100 : (atsMax > 0 ? ((atsMax - atsUsed) / atsMax) * 100 : 0)
+                  const atsBarColor = atsRemaining === 0 ? '#ef4444' : atsRemaining <= 3 ? '#f59e0b' : '#34d399'
+                  return (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', minWidth: 24 }}>ATS</span>
+                      <div style={{
+                        width: 80, height: 4, borderRadius: 2,
+                        background: 'rgba(255,255,255,0.06)',
+                        overflow: 'hidden', flexShrink: 0,
+                      }}>
+                        <div style={{
+                          width: atsIsUnlimited ? '100%' : `${Math.max(atsPct, 0)}%`,
+                          height: '100%', borderRadius: 2,
+                          background: atsBarColor,
+                          transition: 'width 0.3s ease, background 0.3s ease',
+                        }} />
+                      </div>
+                      <span style={{ fontSize: 11, fontWeight: 500, color: atsBarColor, minWidth: 44 }}>
+                        {atsIsUnlimited ? `${atsUsed}/\u221e` : `${atsRemaining}/${atsMax}`}
+                      </span>
+                    </div>
+                  )
+                })()}
+
+                {/* LinkedIn exhausted — auto-switch badge */}
+                {linkedInRemainingToday === 0 && platformLimits.linkedInPerDay < 999 && (
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                    padding: '3px 10px', borderRadius: 12,
+                    background: 'rgba(96, 165, 250, 0.1)',
+                    border: '1px solid rgba(96, 165, 250, 0.2)',
+                    fontSize: 10, fontWeight: 600,
+                    color: '#93c5fd', whiteSpace: 'nowrap',
+                  }}>
+                    <Briefcase size={10} />
+                    ATS only mode
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* LinkedIn limit reached info banner */}
+            {canUseBot && linkedInRemainingToday === 0 && platformLimits.linkedInPerDay < 999 && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                padding: '6px 12px', borderRadius: 6,
+                background: 'rgba(96, 165, 250, 0.06)',
+                border: '1px solid rgba(96, 165, 250, 0.12)',
+              }}>
+                <AlertTriangle size={12} color="#93c5fd" />
+                <span style={{ fontSize: 11, color: '#93c5fd', fontWeight: 500 }}>
+                  LinkedIn daily limit reached — applying via direct ATS only
                 </span>
               </div>
             )}
