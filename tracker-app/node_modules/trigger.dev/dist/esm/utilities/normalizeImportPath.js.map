@@ -1,0 +1,1 @@
+{"version":3,"file":"normalizeImportPath.js","sourceRoot":"","sources":["../../../src/utilities/normalizeImportPath.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,aAAa,EAAE,MAAM,KAAK,CAAC;AAEpC,MAAM,UAAU,mBAAmB,CAAC,UAAkB;IACpD,OAAO,aAAa,CAAC,UAAU,CAAC,CAAC,IAAI,CAAC;AACxC,CAAC"}

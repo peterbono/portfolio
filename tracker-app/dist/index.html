@@ -3,16 +3,39 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy" content="
+      default-src 'self';
+      script-src 'self';
+      style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+      font-src 'self' https://fonts.gstatic.com;
+      img-src 'self' data: https:;
+      connect-src 'self'
+        https://*.supabase.co
+        https://api.trigger.dev
+        https://api.anthropic.com
+        https://api.teleport.org
+        https://script.google.com
+        https://*.googleusercontent.com
+        https://gmail.googleapis.com
+        https://autocomplete.clearbit.com;
+      frame-src 'none';
+      object-src 'none';
+      base-uri 'self';
+      form-action 'self';
+    " />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <title>Job Tracker Dashboard</title>
+    <title>JobTracker — Land your next role on autopilot</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
       rel="stylesheet"
     />
-    <script type="module" crossorigin src="/assets/index-BzXK4GJz.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-CB-0TQRV.css">
+    <script type="module" crossorigin src="/assets/index-B2bcfghR.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/supabase-DrdKa2Hv.js">
+    <link rel="modulepreload" crossorigin href="/assets/icons-ByKoT90s.js">
+    <link rel="modulepreload" crossorigin href="/assets/recharts-Cid0RqwC.js">
+    <link rel="stylesheet" crossorigin href="/assets/index-C5Avd9to.css">
   </head>
   <body>
     <div id="root"></div>

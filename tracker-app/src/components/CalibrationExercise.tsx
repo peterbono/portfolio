@@ -34,7 +34,7 @@ export default function CalibrationExercise({ onComplete, onSkipAll }: Calibrati
       jobId: job.id,
       matchScore: job.matchScore,
       matchReasons: job.matchReasons,
-      action,
+      action: action === 'approve' ? 'approved' : 'skipped',
     })
 
     const newDecisions = [...decisions, action]
