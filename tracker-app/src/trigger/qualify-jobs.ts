@@ -143,30 +143,60 @@ async function extractJobDescription(
   page: import("playwright").Page,
   url: string,
 ): Promise<string> {
+  // For LinkedIn job URLs, try the guest API endpoint first (simpler HTML)
+  const linkedInJobIdMatch = url.match(/linkedin\.com\/jobs\/view\/(\d+)/)
+  if (linkedInJobIdMatch) {
+    try {
+      const guestUrl = `https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/${linkedInJobIdMatch[1]}`
+      console.log(`[qualify-jobs] Trying LinkedIn guest API for job ${linkedInJobIdMatch[1]}`)
+      await page.goto(guestUrl, { waitUntil: "domcontentloaded", timeout: JD_EXTRACT_TIMEOUT })
+      await page.waitForTimeout(1500)
+
+      const guestSelectors = [
+        '.show-more-less-html__markup',
+        '.description__text',
+        '.decorated-job-posting__details',
+        'section.description',
+      ]
+      for (const sel of guestSelectors) {
+        try {
+          const el = await page.$(sel)
+          if (el) {
+            const text = await el.innerText()
+            if (text && text.length > 100) {
+              console.log(`[qualify-jobs] JD via LinkedIn guest API "${sel}" (${text.length} chars)`)
+              return text.slice(0, 6000)
+            }
+          }
+        } catch { /* try next */ }
+      }
+      const bodyText = await page.innerText("body").catch(() => "")
+      if (bodyText.length > 100) {
+        return bodyText.slice(0, 6000)
+      }
+    } catch (err) {
+      console.warn(`[qualify-jobs] LinkedIn guest API failed: ${(err as Error).message}`)
+    }
+  }
+
+  // Standard extraction for non-LinkedIn or fallback
   try {
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: JD_EXTRACT_TIMEOUT })
-
-    // Wait a bit for JS-rendered content
     await page.waitForTimeout(2000)
 
-    // Try common JD selectors first (covers most ATS platforms)
     const selectors = [
-      // Greenhouse
+      '.show-more-less-html__markup',
+      '.description__text',
       '#content',
-      // Lever
       '.posting-page',
-      // Workable
       '[data-ui="job-description"]',
-      // Ashby
       '.ashby-job-posting-brief-description',
-      // Generic
       '[class*="job-description"]',
       '[class*="jobDescription"]',
       '[class*="posting-description"]',
       '[id*="job-description"]',
       'article',
       'main',
-      // Fallback: body
       'body',
     ]
 
@@ -176,15 +206,12 @@ async function extractJobDescription(
         if (el) {
           const text = await el.innerText()
           if (text && text.length > 100) {
-            return text.slice(0, 6000) // Cap at 6k chars for Haiku
+            return text.slice(0, 6000)
           }
         }
-      } catch {
-        // Selector not found, try next
-      }
+      } catch { /* try next */ }
     }
 
-    // Ultimate fallback: grab visible text from body
     const bodyText = await page.innerText("body").catch(() => "")
     return bodyText.slice(0, 6000)
   } catch (err) {

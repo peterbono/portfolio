@@ -123,45 +123,74 @@ const APPLY_GAP_JITTER_MS = 15_000
 
 /** Extract the full job description text from a job page (with retry) */
 async function extractJobDescription(page: Page, url: string): Promise<string> {
+  // For LinkedIn job URLs, try the guest view endpoint first (simpler HTML, no SPA)
+  const linkedInJobIdMatch = url.match(/linkedin\.com\/jobs\/view\/(\d+)/)
+  if (linkedInJobIdMatch) {
+    try {
+      const guestUrl = `https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/${linkedInJobIdMatch[1]}`
+      console.log(`[orchestrator] Trying LinkedIn guest API for job ${linkedInJobIdMatch[1]}`)
+      await page.goto(guestUrl, { waitUntil: 'domcontentloaded', timeout: 15_000 })
+      await page.waitForTimeout(1500)
+
+      // Guest API returns simpler HTML with these selectors
+      const guestSelectors = [
+        '.show-more-less-html__markup',
+        '.description__text',
+        '.decorated-job-posting__details',
+        'section.description',
+      ]
+      for (const sel of guestSelectors) {
+        const el = page.locator(sel).first()
+        if (await el.isVisible({ timeout: 2000 }).catch(() => false)) {
+          const text = await el.innerText().catch(() => '')
+          if (text.length > 100) {
+            console.log(`[orchestrator] JD via LinkedIn guest API "${sel}" (${text.length} chars)`)
+            return text.slice(0, 6000)
+          }
+        }
+      }
+      // Try full body as fallback for guest API
+      const bodyText = await page.locator('body').innerText().catch(() => '')
+      if (bodyText.length > 100) {
+        console.log(`[orchestrator] JD via LinkedIn guest API body (${bodyText.length} chars)`)
+        return bodyText.slice(0, 6000)
+      }
+    } catch (err) {
+      console.warn(`[orchestrator] LinkedIn guest API failed: ${(err as Error).message}`)
+    }
+  }
+
+  // Standard extraction: navigate to the URL directly
   const attempt = async (waitStrategy: 'domcontentloaded' | 'networkidle'): Promise<string> => {
-    await page.goto(url, { waitUntil: waitStrategy, timeout: 30_000 })
+    await page.goto(url, { waitUntil: waitStrategy, timeout: 15_000 })
+    await page.waitForTimeout(2000)
 
-    // Wait for JS-rendered content — LinkedIn SPAs need this
-    await humanDelay(3000, 1500)
-
-    // Try "Show more" / "See more" buttons (LinkedIn collapses JDs)
+    // Try "Show more" buttons (LinkedIn collapses JDs)
     const showMore = page.locator('button.show-more-less-html__button--more, button[aria-label="Show more"], [class*="show-more"]').first()
     if (await showMore.isVisible({ timeout: 1500 }).catch(() => false)) {
       await showMore.click().catch(() => {})
-      await humanDelay(500, 300)
+      await page.waitForTimeout(500)
     }
 
-    // Priority-ordered selectors: LinkedIn guest → LinkedIn auth → ATS → generic
     const descriptionSelectors = [
-      // LinkedIn guest view (public job pages)
       '.show-more-less-html__markup',
       '.description__text .show-more-less-html__markup',
       '.description__text',
-      // LinkedIn authenticated view
       '.jobs-description__content',
       '.jobs-box__html-content',
       '.jobs-description-content__text',
-      // Common ATS platforms
       '[data-testid="job-description"]',
       '.job-description',
       '.posting-requirements',
       '#job-details',
-      // Greenhouse / Lever / Workable
       '#content .section-wrapper',
       '.posting-page .section-wrapper',
       '.content .section-wrapper',
-      // Generic patterns
       '[class*="job-description"]',
       '[class*="jobDescription"]',
       '[class*="job_description"]',
       '[class*="JobDescription"]',
       '[class*="posting-description"]',
-      // Semantic fallback
       'article',
       'main',
       '[role="main"]',
@@ -173,22 +202,19 @@ async function extractJobDescription(page: Page, url: string): Promise<string> {
         const text = await el.innerText().catch(() => '')
         if (text.length > 100) {
           console.log(`[orchestrator] JD extracted via "${sel}" (${text.length} chars)`)
-          return text
+          return text.slice(0, 6000)
         }
       }
     }
 
-    // Fallback: grab body text
     const bodyText = await page.locator('body').innerText().catch(() => '')
     return bodyText.slice(0, 5000)
   }
 
   try {
-    // First attempt: fast load (domcontentloaded)
     const text = await attempt('domcontentloaded')
     if (text.length >= 50) return text
 
-    // Retry with full page load (networkidle) — slower but catches JS-heavy pages
     console.log(`[orchestrator] Retry JD extraction with networkidle for ${url}`)
     const retryText = await attempt('networkidle')
     if (retryText.length >= 50) return retryText
@@ -313,20 +339,24 @@ async function phaseQualify(
 
   for (const job of dedupedSurvivors) {
     try {
-      const jobDescription = await extractJobDescription(page, job.url)
+      let jobDescription = ''
+      try {
+        jobDescription = await extractJobDescription(page, job.url)
+      } catch (extractErr) {
+        console.warn(`[pipeline] JD extraction error for ${job.company}: ${(extractErr as Error).message}`)
+      }
 
+      // Fallback: build synthetic JD from scout metadata instead of skipping
       if (jobDescription.length < 50) {
-        const skipEntry: ActivityLogEntry = {
-          user_id: config.userId,
-          run_id: runId,
-          action: 'qualify_skip',
-          company: job.company,
-          role: job.title,
-          reason: 'Could not extract job description',
-        }
-        await logBotActivity(skipEntry)
-        activities.push(skipEntry)
-        continue
+        console.log(`[pipeline] JD too short for ${job.company} — using fallback metadata`)
+        jobDescription = [
+          `Job Title: ${job.title}`,
+          `Company: ${job.company}`,
+          `Location: ${job.location || 'Not specified'}`,
+          ``,
+          `NOTE: Full job description could not be extracted.`,
+          `Score based on title, company, and location. Give benefit of the doubt.`,
+        ].join('\n')
       }
 
       const result = await qualifyJob(
