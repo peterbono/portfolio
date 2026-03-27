@@ -3576,8 +3576,35 @@ export function AutopilotView() {
   const [triggerError, setTriggerError] = useState<string | null>(null)
 
   // Run polling state (real-time progress tracking)
-  const [activeRunId, setActiveRunId] = useState<string | null>(null)
-  const [runStartTime, setRunStartTime] = useState<number | null>(null)
+  // Persist activeRunId + startTime in localStorage so polling survives page refresh
+  const [activeRunId, _setActiveRunId] = useState<string | null>(() => {
+    try {
+      const saved = localStorage.getItem('tracker_v2_active_run')
+      if (!saved) return null
+      const { runId, startTime } = JSON.parse(saved)
+      // Auto-expire after 10 minutes (run should be done by then)
+      if (startTime && Date.now() - startTime > 10 * 60 * 1000) {
+        localStorage.removeItem('tracker_v2_active_run')
+        return null
+      }
+      return runId ?? null
+    } catch { return null }
+  })
+  const setActiveRunId = useCallback((id: string | null) => {
+    _setActiveRunId(id)
+    if (id) {
+      localStorage.setItem('tracker_v2_active_run', JSON.stringify({ runId: id, startTime: Date.now() }))
+    } else {
+      localStorage.removeItem('tracker_v2_active_run')
+    }
+  }, [])
+  const [runStartTime, setRunStartTime] = useState<number | null>(() => {
+    try {
+      const saved = localStorage.getItem('tracker_v2_active_run')
+      if (!saved) return null
+      return JSON.parse(saved).startTime ?? null
+    } catch { return null }
+  })
   const [polledRunStatus, setPolledRunStatus] = useState<'QUEUED' | 'EXECUTING' | 'COMPLETED' | 'FAILED' | 'CRASHED' | 'REATTEMPTING' | null>(null)
   const [polledRunOutput, setPolledRunOutput] = useState<{ jobsFound?: number; jobsQualified?: number; jobsPreFiltered?: number; discoveredJobs?: DiscoveredJob[]; qualifiedJobs?: QualifiedJob[] } | null>(null)
   // Live metadata from Trigger.dev (updated during execution, not just at completion)
