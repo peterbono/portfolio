@@ -114,6 +114,17 @@ const autopilotResponsiveCSS = `
     overflow-x: auto !important;
     -webkit-overflow-scrolling: touch;
   }
+  /* Mode selector: icon-only on mobile */
+  .mode-selector-label {
+    display: none !important;
+  }
+  .mode-selector-pill {
+    padding: 6px 8px !important;
+  }
+}
+@keyframes modeDropFadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 `
 if (typeof document !== 'undefined') {
@@ -3679,6 +3690,39 @@ export function AutopilotView() {
   // Computed: is the bot currently active
   const isBotActive = currentRun?.status === 'running' || currentRun?.status === 'pending'
 
+  // Autonomy mode state (synced with SettingsView via localStorage)
+  const [autonomyMode, setAutonomyMode] = useState<'preview' | 'copilot' | 'autopilot'>(() => {
+    try {
+      const prefs = JSON.parse(localStorage.getItem('tracker_v2_bot_prefs') || '{}')
+      return prefs.autonomy || 'copilot'
+    } catch { return 'copilot' }
+  })
+  const [modeDropdownOpen, setModeDropdownOpen] = useState(false)
+  const modeDropdownRef = useRef<HTMLDivElement>(null)
+
+  // Click outside to close mode dropdown
+  useEffect(() => {
+    if (!modeDropdownOpen) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (modeDropdownRef.current && !modeDropdownRef.current.contains(e.target as Node)) {
+        setModeDropdownOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [modeDropdownOpen])
+
+  const handleModeChange = useCallback((mode: 'preview' | 'copilot' | 'autopilot') => {
+    if (isBotActive && !window.confirm('Switching mode during a run will affect remaining jobs. Continue?')) {
+      return
+    }
+    const prefs = JSON.parse(localStorage.getItem('tracker_v2_bot_prefs') || '{}')
+    const updated = { ...prefs, autonomy: mode }
+    localStorage.setItem('tracker_v2_bot_prefs', JSON.stringify(updated))
+    setAutonomyMode(mode)
+    setModeDropdownOpen(false)
+  }, [isBotActive])
+
   // Load run history on mount
   useEffect(() => {
     async function loadHistory() {
@@ -4389,6 +4433,79 @@ export function AutopilotView() {
             Bot Profile
             <Pencil size={10} style={{ opacity: 0.5 }} />
           </button>
+
+          {/* Autonomy mode selector pill */}
+          <div ref={modeDropdownRef} style={{ position: 'relative' }}>
+            <button
+              className="mode-selector-pill"
+              onClick={() => setModeDropdownOpen(!modeDropdownOpen)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '6px 12px', borderRadius: 8,
+                background: autonomyMode === 'copilot' ? 'rgba(251, 191, 36, 0.08)'
+                  : autonomyMode === 'autopilot' ? 'rgba(168, 85, 247, 0.08)'
+                  : 'transparent',
+                border: '1px solid rgba(255,255,255,0.15)',
+                color: autonomyMode === 'copilot' ? '#fbbf24'
+                  : autonomyMode === 'autopilot' ? '#a855f7'
+                  : 'var(--text-secondary)',
+                fontSize: 13, fontWeight: 600,
+                cursor: 'pointer', whiteSpace: 'nowrap',
+                height: 34,
+                transition: 'all 150ms ease',
+              }}
+            >
+              {autonomyMode === 'preview' && <Eye size={14} />}
+              {autonomyMode === 'copilot' && <Play size={14} />}
+              {autonomyMode === 'autopilot' && <Zap size={14} />}
+              <span className="mode-selector-label" style={{ textTransform: 'capitalize' }}>
+                {autonomyMode === 'copilot' ? 'Co-pilot' : autonomyMode}
+              </span>
+              <ChevronDown size={12} style={{
+                transition: 'transform 200ms ease',
+                transform: modeDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                opacity: 0.6,
+              }} />
+            </button>
+            {modeDropdownOpen && (
+              <div style={{
+                position: 'absolute', top: 'calc(100% + 6px)', right: 0,
+                background: '#1e1e2e', border: '1px solid rgba(255,255,255,0.12)',
+                borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+                zIndex: 100, minWidth: 220, overflow: 'hidden',
+                animation: 'modeDropFadeIn 150ms ease',
+              }}>
+                {([
+                  { mode: 'preview' as const, icon: <Eye size={15} />, label: 'Preview', desc: 'You review every job', color: 'var(--text-secondary)' },
+                  { mode: 'copilot' as const, icon: <Play size={15} />, label: 'Co-pilot', desc: 'Bot asks on edge cases', color: '#fbbf24' },
+                  { mode: 'autopilot' as const, icon: <Zap size={15} />, label: 'Autopilot', desc: 'Fully automatic', color: '#a855f7' },
+                ]).map(opt => (
+                  <button
+                    key={opt.mode}
+                    onClick={() => handleModeChange(opt.mode)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      width: '100%', padding: '10px 14px',
+                      background: autonomyMode === opt.mode ? 'rgba(255,255,255,0.06)' : 'transparent',
+                      border: 'none', cursor: 'pointer',
+                      color: autonomyMode === opt.mode ? opt.color : 'var(--text-secondary)',
+                      textAlign: 'left', fontSize: 13,
+                      transition: 'background 100ms ease',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)' }}
+                    onMouseLeave={e => { e.currentTarget.style.background = autonomyMode === opt.mode ? 'rgba(255,255,255,0.06)' : 'transparent' }}
+                  >
+                    <span style={{ color: opt.color, display: 'flex', alignItems: 'center' }}>{opt.icon}</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 600, marginBottom: 1 }}>{opt.label}</div>
+                      <div style={{ fontSize: 11, opacity: 0.55 }}>{opt.desc}</div>
+                    </div>
+                    {autonomyMode === opt.mode && <Check size={14} style={{ color: opt.color, flexShrink: 0 }} />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
           {/* Bot controls */}
           {hasConfig && !isBotActive && !isTriggering && (
