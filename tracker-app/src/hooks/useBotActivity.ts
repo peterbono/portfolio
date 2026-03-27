@@ -31,9 +31,12 @@ interface UseBotActivityReturn {
   activities: BotActivityItem[]
   currentRun: BotRunStatus | null
   isLive: boolean
+  /** Force-refresh activities from Supabase (useful when realtime is down) */
+  refresh: () => Promise<void>
 }
 
 const ACTIVITY_LIMIT = 50
+const POLL_INTERVAL_MS = 4000 // Fallback polling every 4 seconds
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -72,9 +75,10 @@ export function useBotActivity(): UseBotActivityReturn {
   const [currentRun, setCurrentRun] = useState<BotRunStatus | null>(null)
   const [isLive, setIsLive] = useState(false)
   const channelsRef = useRef<RealtimeChannel[]>([])
+  const lastActivityIdRef = useRef<string | null>(null)
 
-  // ---- Load initial data on mount --------------------------------
-  const loadInitialData = useCallback(async () => {
+  // ---- Load / refresh data from Supabase --------------------------------
+  const loadActivities = useCallback(async () => {
     try {
       // Fetch last 50 activity log entries, newest first
       const { data: activityData } = await supabase
@@ -83,8 +87,14 @@ export function useBotActivity(): UseBotActivityReturn {
         .order('created_at', { ascending: false })
         .limit(ACTIVITY_LIMIT)
 
-      if (activityData) {
-        setActivities(activityData.map(toActivityItem))
+      if (activityData && activityData.length > 0) {
+        const items = activityData.map(toActivityItem)
+        // Only update if we got new data (compare first item id)
+        const newFirstId = items[0]?.id
+        if (newFirstId !== lastActivityIdRef.current) {
+          lastActivityIdRef.current = newFirstId
+          setActivities(items)
+        }
       }
 
       // Fetch the most recent non-cancelled bot run
@@ -102,9 +112,10 @@ export function useBotActivity(): UseBotActivityReturn {
     }
   }, [])
 
+  // Load on mount
   useEffect(() => {
-    loadInitialData()
-  }, [loadInitialData])
+    loadActivities()
+  }, [loadActivities])
 
   // ---- Realtime subscriptions ------------------------------------
   useEffect(() => {
@@ -123,6 +134,7 @@ export function useBotActivity(): UseBotActivityReturn {
         (payload) => {
           if (!mounted) return
           const item = toActivityItem(payload.new)
+          lastActivityIdRef.current = item.id
           setActivities((prev) => {
             const next = [item, ...prev]
             // Keep only the latest N items
@@ -183,5 +195,21 @@ export function useBotActivity(): UseBotActivityReturn {
     }
   }, [])
 
-  return { activities, currentRun, isLive }
+  // ---- Fallback polling when realtime isn't working ----
+  // If `isLive` is false (realtime subscription failed), poll every 4 seconds
+  // Also poll if there's an active run (belt and suspenders)
+  useEffect(() => {
+    const hasActiveRun = currentRun?.status === 'running' || currentRun?.status === 'pending'
+    const shouldPoll = !isLive || hasActiveRun
+
+    if (!shouldPoll) return
+
+    const interval = setInterval(() => {
+      loadActivities()
+    }, POLL_INTERVAL_MS)
+
+    return () => clearInterval(interval)
+  }, [isLive, currentRun?.status, loadActivities])
+
+  return { activities, currentRun, isLive, refresh: loadActivities }
 }

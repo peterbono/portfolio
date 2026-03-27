@@ -3580,6 +3580,16 @@ export function AutopilotView() {
   const [runStartTime, setRunStartTime] = useState<number | null>(null)
   const [polledRunStatus, setPolledRunStatus] = useState<'QUEUED' | 'EXECUTING' | 'COMPLETED' | 'FAILED' | 'CRASHED' | 'REATTEMPTING' | null>(null)
   const [polledRunOutput, setPolledRunOutput] = useState<{ jobsFound?: number; jobsQualified?: number; jobsPreFiltered?: number; discoveredJobs?: DiscoveredJob[]; qualifiedJobs?: QualifiedJob[] } | null>(null)
+  // Live metadata from Trigger.dev (updated during execution, not just at completion)
+  const [polledMetadata, setPolledMetadata] = useState<{
+    phase?: string
+    jobsFound?: number
+    jobsProcessed?: number
+    jobsQualified?: number
+    jobsPreFiltered?: number
+    currentJob?: { company: string; role: string } | null
+    activities?: Array<{ action: string; company?: string; role?: string; reason?: string; timestamp: string }>
+  } | null>(null)
 
   // Review queue state
   const [reviewQueue, setReviewQueue] = useState<ReviewQueueItem[]>(() => loadReviewQueue())
@@ -3688,6 +3698,7 @@ export function AutopilotView() {
     setRunStartTime(null)
     setPolledRunStatus(null)
     setPolledRunOutput(null)
+    setPolledMetadata(null)
     try {
       const result = await triggerBotRun('search_config')
       // Start polling
@@ -3729,7 +3740,25 @@ export function AutopilotView() {
 
         setPolledRunStatus(status as typeof polledRunStatus)
 
-        // Try to extract output/stats from the run data
+        // ---- Extract live metadata (available DURING execution) ----
+        const rawMetadata = data.metadata as Record<string, unknown> | undefined
+        if (rawMetadata) {
+          // Trigger.dev stores metadata as key-value pairs
+          const progress = rawMetadata.progress as Record<string, unknown> | undefined
+          if (progress) {
+            setPolledMetadata({
+              phase: progress.phase as string | undefined,
+              jobsFound: progress.jobsFound as number | undefined,
+              jobsProcessed: progress.jobsProcessed as number | undefined,
+              jobsQualified: progress.jobsQualified as number | undefined,
+              jobsPreFiltered: progress.jobsPreFiltered as number | undefined,
+              currentJob: progress.currentJob as { company: string; role: string } | null | undefined,
+              activities: progress.activities as Array<{ action: string; company?: string; role?: string; reason?: string; timestamp: string }> | undefined,
+            })
+          }
+        }
+
+        // Try to extract output/stats from the run data (available on completion)
         const output = data.output as Record<string, unknown> | undefined
         if (output) {
           const discovered = (output.discoveredJobs ?? output.discovered_jobs) as DiscoveredJob[] | undefined
@@ -3752,9 +3781,9 @@ export function AutopilotView() {
       }
     }
 
-    // Poll immediately, then every 5 seconds
+    // Poll immediately, then every 3 seconds (faster for live updates)
     poll()
-    const interval = setInterval(poll, 5000)
+    const interval = setInterval(poll, 3000)
     return () => clearInterval(interval)
   }, [activeRunId])
 
@@ -4554,27 +4583,57 @@ export function AutopilotView() {
             <section style={progressBannerStyles.container}>
               {/* Top row: status + live job count */}
               {(() => {
-                const jf = polledRunOutput?.jobsFound ?? currentRun?.jobsFound ?? 0
+                // Prefer live metadata (available during execution) over output (only at end)
+                const metaJf = polledMetadata?.jobsFound
+                const jf = metaJf ?? polledRunOutput?.jobsFound ?? currentRun?.jobsFound ?? 0
                 const discovered = polledRunOutput?.discoveredJobs ?? []
                 const isRunning = (isTriggering || isRunPolling || isBotActive) && !(polledRunStatus === 'COMPLETED' || polledRunStatus === 'FAILED' || polledRunStatus === 'CRASHED')
                 const isComplete = polledRunStatus === 'COMPLETED' || (!isRunPolling && !isTriggering && currentRun?.status === 'completed')
                 const isFailed = polledRunStatus === 'FAILED' || polledRunStatus === 'CRASHED' || (!isRunPolling && !isTriggering && currentRun?.status === 'failed')
-                // Progress: approximate based on jobs found across 3 pages
-                const progressPct = isComplete ? 100 : isFailed ? 0 : jf === 0 ? 10 : jf < 20 ? 33 : jf < 40 ? 66 : 90
-                // Status text
+
+                // Smart progress: use metadata phase for accurate progress
+                const metaPhase = polledMetadata?.phase
+                const metaProcessed = polledMetadata?.jobsProcessed ?? 0
+                const metaTotal = jf || 10 // avoid divide by zero
+                let progressPct: number
+                if (isComplete) progressPct = 100
+                else if (isFailed) progressPct = 0
+                else if (metaPhase === 'done') progressPct = 100
+                else if (metaPhase === 'qualify') {
+                  // Qualify is 33-90%, proportional to processed/total
+                  progressPct = 33 + Math.round((metaProcessed / Math.max(metaTotal, 1)) * 57)
+                }
+                else if (metaPhase === 'pre-filter') progressPct = 30
+                else if (metaPhase === 'scout') progressPct = jf === 0 ? 10 : 25
+                else if (metaPhase === 'starting') progressPct = 5
+                else progressPct = jf === 0 ? 10 : jf < 20 ? 33 : jf < 40 ? 66 : 90
+
+                // Status text — use metadata phase for more specific text
                 const statusText = isFailed ? 'Search failed'
                   : isComplete ? 'Search complete'
                   : polledRunStatus === 'QUEUED' || polledRunStatus === 'REATTEMPTING' || isTriggering ? 'Starting search...'
+                  : metaPhase === 'qualify' ? `Qualifying jobs... (${metaProcessed}/${metaTotal})`
+                  : metaPhase === 'pre-filter' ? 'Pre-filtering candidates...'
+                  : metaPhase === 'scout' ? (jf === 0 ? 'Scanning LinkedIn...' : `Found ${jf} candidates, scanning more...`)
                   : jf === 0 ? 'Scanning LinkedIn...'
-                  : jf < 30 ? 'Scanning LinkedIn page 2 of 3...'
-                  : 'Scanning LinkedIn page 3 of 3...'
-                // Live subtitle from activity log (most recent entry)
+                  : `Scanning... (${jf} found)`
+
+                // Live subtitle: prefer metadata activities (updated every 3s) over Supabase realtime
+                const metaActivities = polledMetadata?.activities
+                const latestMetaActivity = metaActivities && metaActivities.length > 0 ? metaActivities[0] : null
                 const latestActivity = activities.length > 0 ? activities[0] : null
-                const subtitleText = latestActivity
-                  ? formatActivityText(latestActivity)
-                  : searchConfig.keywords.length > 0
-                    ? `Looking for ${searchConfig.keywords.slice(0, 2).join(', ')}${searchConfig.keywords.length > 2 ? '...' : ''}`
-                    : 'Looking for matches...'
+
+                // Use metadata activity if it's newer, otherwise use Supabase activity
+                let subtitleText: string
+                if (latestMetaActivity?.reason) {
+                  subtitleText = latestMetaActivity.reason
+                } else if (latestActivity) {
+                  subtitleText = formatActivityText(latestActivity)
+                } else if (searchConfig.keywords.length > 0) {
+                  subtitleText = `Looking for ${searchConfig.keywords.slice(0, 2).join(', ')}${searchConfig.keywords.length > 2 ? '...' : ''}`
+                } else {
+                  subtitleText = 'Looking for matches...'
+                }
                 return (
                   <>
                     <div style={progressBannerStyles.topRow}>

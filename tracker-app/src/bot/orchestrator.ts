@@ -35,6 +35,23 @@ export interface PipelineConfig {
   minScore: number // Minimum qualification score, default 60
 }
 
+/** Progress data sent via onProgress callback for live UI updates */
+export interface PipelineProgress {
+  phase: 'starting' | 'scout' | 'pre-filter' | 'qualify' | 'apply' | 'done' | 'error'
+  jobsFound: number
+  jobsProcessed: number
+  jobsQualified: number
+  jobsPreFiltered: number
+  currentJob: { company: string; role: string } | null
+  activities: Array<{
+    action: string
+    company?: string
+    role?: string
+    reason?: string
+    timestamp: string
+  }>
+}
+
 /** Inline config passed from frontend (no Supabase lookup needed) */
 export interface InlinePipelineConfig {
   userId: string
@@ -55,6 +72,8 @@ export interface InlinePipelineConfig {
   userProfile: Record<string, unknown>
   maxApplications?: number
   dryRun?: boolean
+  /** Optional callback for live progress updates (used by Trigger.dev metadata) */
+  onProgress?: (progress: PipelineProgress) => void
 }
 
 export interface QualifiedJobOutput {
@@ -283,6 +302,7 @@ async function phaseQualify(
   config: PipelineConfig,
   runId: string,
   activities: ActivityLogEntry[],
+  onQualifyProgress?: (update: { action: string; company?: string; role?: string; reason?: string; processed?: number; qualified?: number; preFiltered?: number }) => void,
 ): Promise<QualifiedJob[]> {
   console.log(`[pipeline] Phase 2: QUALIFY (${jobs.length} candidates)`)
 
@@ -307,6 +327,7 @@ async function phaseQualify(
   }
   await logBotActivity(preFilterEntry)
   activities.push(preFilterEntry)
+  onQualifyProgress?.({ action: 'found', reason: preFilterSummary, preFiltered: stats.filtered })
 
   // Map surviving URLs back to DiscoveredJob objects
   const survivorUrls = new Set(survivors.map(s => s.url))
@@ -337,7 +358,19 @@ async function phaseQualify(
     console.log(`[pipeline] Deduped ${survivingJobs.length - dedupedSurvivors.length} duplicate jobs in qualify phase`)
   }
 
+  let processedCount = 0
   for (const job of dedupedSurvivors) {
+    // Emit progress: currently processing this job
+    onQualifyProgress?.({
+      action: 'found',
+      company: job.company,
+      role: job.title,
+      reason: `Analyzing "${job.title}" at ${job.company}...`,
+      processed: processedCount,
+      qualified: qualified.length,
+      preFiltered: stats.filtered,
+    })
+
     try {
       let jobDescription = ''
       try {
@@ -365,6 +398,8 @@ async function phaseQualify(
         APPLICANT,
       )
 
+      processedCount++
+
       const qualEntry: ActivityLogEntry = {
         user_id: config.userId,
         run_id: runId,
@@ -375,6 +410,17 @@ async function phaseQualify(
       }
       await logBotActivity(qualEntry)
       activities.push(qualEntry)
+
+      // Emit progress after qualification
+      onQualifyProgress?.({
+        action: result.score >= config.minScore ? 'qualified' : 'disqualified',
+        company: job.company,
+        role: job.title,
+        reason: `Score ${result.score}: ${result.reasoning}`,
+        processed: processedCount,
+        qualified: qualified.length + (result.score >= config.minScore ? 1 : 0),
+        preFiltered: stats.filtered,
+      })
 
       if (result.score >= config.minScore) {
         qualified.push({ job, qualification: result })
@@ -582,14 +628,37 @@ async function phaseApply(
  * @param config - Pipeline configuration including user, search profile, and limits
  * @returns Summary of the pipeline run
  */
-export async function runPipeline(config: PipelineConfig): Promise<PipelineResult> {
+export async function runPipeline(config: PipelineConfig & { onProgress?: (p: PipelineProgress) => void }): Promise<PipelineResult> {
   const startTime = Date.now()
   const activities: ActivityLogEntry[] = []
+  const progressActivities: PipelineProgress['activities'] = []
 
   // Default values
   const minScore = config.minScore ?? 60
   const maxApplications = config.maxApplications ?? 20
   const effectiveConfig = { ...config, minScore, maxApplications }
+
+  // Helper to emit progress
+  const emitProgress = (phase: PipelineProgress['phase'], extra?: Partial<PipelineProgress>) => {
+    if (!config.onProgress) return
+    config.onProgress({
+      phase,
+      jobsFound,
+      jobsProcessed: 0,
+      jobsQualified,
+      jobsPreFiltered: 0,
+      currentJob: null,
+      activities: [...progressActivities],
+      ...extra,
+    })
+  }
+
+  // Helper to add a progress activity
+  const addProgressActivity = (entry: { action: string; company?: string; role?: string; reason?: string }) => {
+    progressActivities.unshift({ ...entry, timestamp: new Date().toISOString() })
+    // Keep only last 30 activities
+    if (progressActivities.length > 30) progressActivities.length = 30
+  }
 
   // Create a bot run record
   const runId = await createBotRun(config.userId, config.searchProfile.id)
@@ -604,6 +673,8 @@ export async function runPipeline(config: PipelineConfig): Promise<PipelineResul
   }
   await logBotActivity(startEntry)
   activities.push(startEntry)
+  addProgressActivity({ action: 'found', reason: startEntry.reason ?? '' })
+  emitProgress('starting')
 
   let jobsFound = 0
   let jobsQualified = 0
@@ -637,8 +708,12 @@ export async function runPipeline(config: PipelineConfig): Promise<PipelineResul
     page = await context.newPage()
 
     // --- Phase 1: Scout ---
+    addProgressActivity({ action: 'found', reason: `Keywords: ${config.searchProfile.keywords?.join(', ') ?? 'default'}` })
+    emitProgress('scout')
     const discoveredJobs = await phaseScout(page, effectiveConfig, runId, activities)
     jobsFound = discoveredJobs.length
+    addProgressActivity({ action: 'found', reason: `Found ${jobsFound} candidates from LinkedIn` })
+    emitProgress('scout', { jobsFound })
 
     if (discoveredJobs.length === 0) {
       console.log('[pipeline] No jobs found — ending early')
@@ -664,12 +739,24 @@ export async function runPipeline(config: PipelineConfig): Promise<PipelineResul
     }
 
     // --- Phase 2: Qualify (inline — rules pre-filter + Haiku scoring) ---
+    emitProgress('qualify', { jobsFound })
     const qualifiedJobs = await phaseQualify(
       page!,
       discoveredJobs,
       effectiveConfig,
       runId,
       activities,
+      // Progress callback for each qualified/disqualified job
+      (update) => {
+        addProgressActivity(update)
+        emitProgress('qualify', {
+          jobsFound,
+          jobsProcessed: update.processed ?? 0,
+          jobsQualified: update.qualified ?? jobsQualified,
+          jobsPreFiltered: update.preFiltered ?? 0,
+          currentJob: update.company && update.role ? { company: update.company, role: update.role } : null,
+        })
+      },
     )
     jobsQualified = qualifiedJobs.length
     jobsSkipped += discoveredJobs.length - qualifiedJobs.length
@@ -703,6 +790,8 @@ export async function runPipeline(config: PipelineConfig): Promise<PipelineResul
 
     // Phase 3 (Apply) disabled — will be a separate user-triggered action
     console.log(`[pipeline] Scout+Qualify complete: ${discoveredJobs.length} found, ${qualifiedJobs.length} qualified. Skipping apply phase.`)
+    addProgressActivity({ action: 'found', reason: `Complete: ${jobsFound} found, ${jobsQualified} qualified` })
+    emitProgress('done', { jobsFound, jobsQualified })
   } catch (err) {
     const errorMessage = (err as Error).message
     console.error('[pipeline] Fatal error:', errorMessage)
@@ -827,6 +916,7 @@ export async function runPipelineFromInline(cfg: InlinePipelineConfig): Promise<
   return runPipeline({
     userId: cfg.userId,
     searchProfile,
+    onProgress: cfg.onProgress,
     browser: cfg.browser,
     browserContext: cfg.browserContext, // pass pre-authenticated context
     maxApplications: cfg.maxApplications ?? 20,

@@ -1,4 +1,4 @@
-import { task } from "@trigger.dev/sdk/v3"
+import { task, metadata } from "@trigger.dev/sdk/v3"
 
 export const applyJobTask = task({
   id: "apply-job-pipeline",
@@ -32,6 +32,25 @@ export const applyJobTask = task({
       throw new Error("No search config provided. Set up keywords in Autopilot first.")
     }
 
+    // ---- Set initial metadata for live progress polling ----
+    metadata.set("progress", {
+      phase: "starting",
+      jobsFound: 0,
+      jobsProcessed: 0,
+      jobsQualified: 0,
+      jobsPreFiltered: 0,
+      currentJob: null,
+      activities: [{
+        action: "found",
+        reason: `Keywords: ${config.keywords.join(', ')}`,
+        timestamp: new Date().toISOString(),
+      }, {
+        action: "found",
+        reason: `Profile: Search from dashboard, max: ${payload.maxApplications ?? 20}, dryRun: ${payload.dryRun ?? false}`,
+        timestamp: new Date().toISOString(),
+      }],
+    })
+
     // Bright Data blocks ALL LinkedIn cookie injection (Storage + Network).
     // Strategy: use Bright Data for scouting (public LinkedIn job search
     // doesn't require auth). Use local Chromium + cookie for Easy Apply.
@@ -59,6 +78,14 @@ export const applyJobTask = task({
         userProfile: payload.userProfile || {},
         maxApplications: payload.maxApplications ?? 20,
         dryRun: payload.dryRun ?? false,
+        // ---- Progress callback for live metadata updates ----
+        onProgress: (progress) => {
+          try {
+            metadata.set("progress", progress)
+          } catch {
+            // metadata API may fail in edge cases — don't crash the pipeline
+          }
+        },
       })
 
       return {
