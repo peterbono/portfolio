@@ -48,6 +48,7 @@ import { useAuthWallContext } from '../context/AuthWallContext'
 import CompanyChipInput from '../components/CompanyChipInput'
 import { ProfileSetupModal, isProfileComplete } from '../components/ProfileSetupModal'
 import CardStackReview from '../components/CardStackReview'
+import CalibrationExercise from '../components/CalibrationExercise'
 import {
   recordSignal,
   calibrateRubric,
@@ -3621,6 +3622,13 @@ export function AutopilotView() {
     }
   }, [autoSubmitOn, runCount, reviewQueue])
 
+  // Calibration exercise state
+  const CALIBRATION_LS_KEY = 'tracker_v2_calibration_done'
+  const [showCalibration, setShowCalibration] = useState(false)
+  const isCalibrationDone = useCallback(() => {
+    try { return localStorage.getItem(CALIBRATION_LS_KEY) === 'true' } catch { return false }
+  }, [])
+
   // Profile setup modal state
   const [showProfileModal, setShowProfileModal] = useState(false)
   const [showProfileEditModal, setShowProfileEditModal] = useState(false)
@@ -3873,11 +3881,16 @@ export function AutopilotView() {
   // Callback when profile modal completes
   const handleProfileComplete = useCallback(() => {
     setShowProfileModal(false)
+    // Show calibration exercise if not done yet
+    if (!isCalibrationDone()) {
+      setShowCalibration(true)
+      return
+    }
     // Auto-trigger the bot run that was interrupted
     const pending = pendingBotActionRef.current
     pendingBotActionRef.current = null
     if (pending) pending()
-  }, [])
+  }, [isCalibrationDone])
 
   const handleProfileDismiss = useCallback(() => {
     setShowProfileModal(false)
@@ -4883,6 +4896,27 @@ export function AutopilotView() {
             workArrangement: r.workArrangement,
             salary: r.minSalary ? `${getCurrencySymbol(r.currency)}${((r.minSalary) / 1000).toFixed(0)}k+` : undefined,
           }))}
+        />
+      )}
+
+      {/* Calibration Exercise (post profile setup) */}
+      {showCalibration && (
+        <CalibrationExercise
+          onComplete={() => {
+            localStorage.setItem(CALIBRATION_LS_KEY, 'true')
+            setShowCalibration(false)
+            // Resume pending bot action
+            const pending = pendingBotActionRef.current
+            pendingBotActionRef.current = null
+            if (pending) pending()
+          }}
+          onSkipAll={() => {
+            localStorage.setItem(CALIBRATION_LS_KEY, 'true')
+            setShowCalibration(false)
+            const pending = pendingBotActionRef.current
+            pendingBotActionRef.current = null
+            if (pending) pending()
+          }}
         />
       )}
 

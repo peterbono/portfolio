@@ -11,8 +11,38 @@ interface ClearbitCompany {
 }
 
 // ---------------------------------------------------------------------------
-// Clearbit autocomplete hook (free, no key needed)
+// Clearbit autocomplete hook (free, no key needed) — with localStorage cache
 // ---------------------------------------------------------------------------
+
+const CLEARBIT_CACHE_KEY = 'tracker_v2_clearbit_cache'
+const CLEARBIT_CACHE_TTL = 7 * 24 * 60 * 60 * 1000 // 7 days
+
+function getCachedClearbit(query: string): ClearbitCompany[] | null {
+  try {
+    const raw = localStorage.getItem(CLEARBIT_CACHE_KEY)
+    if (!raw) return null
+    const cache: Record<string, { data: ClearbitCompany[]; ts: number }> = JSON.parse(raw)
+    const entry = cache[query.toLowerCase()]
+    if (entry && Date.now() - entry.ts < CLEARBIT_CACHE_TTL) return entry.data
+    return null
+  } catch { return null }
+}
+
+function setCachedClearbit(query: string, data: ClearbitCompany[]): void {
+  try {
+    const raw = localStorage.getItem(CLEARBIT_CACHE_KEY)
+    const cache: Record<string, { data: ClearbitCompany[]; ts: number }> = raw ? JSON.parse(raw) : {}
+    cache[query.toLowerCase()] = { data, ts: Date.now() }
+    // Prune to max 200 entries
+    const keys = Object.keys(cache)
+    if (keys.length > 200) {
+      const sorted = keys.sort((a, b) => cache[a].ts - cache[b].ts)
+      for (let i = 0; i < keys.length - 200; i++) delete cache[sorted[i]]
+    }
+    localStorage.setItem(CLEARBIT_CACHE_KEY, JSON.stringify(cache))
+  } catch { /* ignore */ }
+}
+
 function useClearbitAutocomplete() {
   const [results, setResults] = useState<ClearbitCompany[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -32,6 +62,15 @@ function useClearbitAutocomplete() {
       return
     }
 
+    // Check cache first
+    const cached = getCachedClearbit(query)
+    if (cached) {
+      setResults(cached)
+      setNoResults(cached.length === 0)
+      setIsLoading(false)
+      return
+    }
+
     setIsLoading(true)
     setNoResults(false)
 
@@ -47,6 +86,7 @@ function useClearbitAutocomplete() {
         if (!res.ok) throw new Error('API error')
         const data: ClearbitCompany[] = await res.json()
         const sliced = data.slice(0, 6)
+        setCachedClearbit(query, sliced)
         setResults(sliced)
         setNoResults(sliced.length === 0)
       } catch (err: unknown) {
