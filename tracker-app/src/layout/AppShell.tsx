@@ -4,11 +4,11 @@ import { DetailDrawer } from './DetailDrawer'
 import { useUI, type TimeRange, type AreaFilter, type WorkMode } from '../context/UIContext'
 import { useJobs } from '../context/JobsContext'
 import { useSupabase } from '../context/SupabaseContext'
-import { TableView } from '../views/TableView'
-import { PipelineView } from '../views/PipelineView'
 import { AutopilotView } from '../views/AutopilotView'
-import { SettingsView } from '../views/SettingsView'
 
+const LazyTableView = React.lazy(() => import('../views/TableView').then(m => ({ default: m.TableView })))
+const LazyPipelineView = React.lazy(() => import('../views/PipelineView').then(m => ({ default: m.PipelineView })))
+const LazySettingsView = React.lazy(() => import('../views/SettingsView').then(m => ({ default: m.SettingsView })))
 const LazyAnalyticsView = React.lazy(() => import('../views/AnalyticsView').then(m => ({ default: m.AnalyticsView })))
 const LazyCoachView = React.lazy(() => import('../views/CoachView').then(m => ({ default: m.CoachView })))
 const LazyInsightsView = React.lazy(() => import('../views/InsightsView').then(m => ({ default: m.InsightsView })))
@@ -174,13 +174,13 @@ function ActiveViewContent({ view }: { view: string }) {
   )
 
   switch (view) {
-    case 'table': return <TableView />
-    case 'pipeline': return <PipelineView />
+    case 'table': return <Suspense fallback={fallback}><LazyTableView /></Suspense>
+    case 'pipeline': return <Suspense fallback={fallback}><LazyPipelineView /></Suspense>
     case 'analytics': return <Suspense fallback={fallback}><LazyAnalyticsView /></Suspense>
     case 'coach': return <Suspense fallback={fallback}><LazyCoachView /></Suspense>
     case 'insights': return <Suspense fallback={fallback}><LazyInsightsView /></Suspense>
     case 'autopilot': return <AutopilotView />
-    case 'settings': return <SettingsView />
+    case 'settings': return <Suspense fallback={fallback}><LazySettingsView /></Suspense>
     case 'pricing': return <Suspense fallback={fallback}><LazyPricingView /></Suspense>
     default: return null
   }

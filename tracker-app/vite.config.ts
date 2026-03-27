@@ -13,6 +13,7 @@ export default defineConfig({
         manualChunks: {
           recharts: ['recharts'],
           supabase: ['@supabase/supabase-js'],
+          icons: ['lucide-react'],
         },
       },
     },
