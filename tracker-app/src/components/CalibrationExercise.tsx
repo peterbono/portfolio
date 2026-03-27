@@ -32,9 +32,12 @@ export default function CalibrationExercise({ onComplete, onSkipAll }: Calibrati
     // Record feedback signal for calibration
     recordSignal({
       jobId: job.id,
+      company: job.company,
+      role: job.role,
       matchScore: job.matchScore,
       matchReasons: job.matchReasons,
       action: action === 'approve' ? 'approved' : 'skipped',
+      timestamp: new Date().toISOString(),
     })
 
     const newDecisions = [...decisions, action]

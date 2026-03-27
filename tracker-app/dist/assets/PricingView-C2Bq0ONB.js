@@ -1,4 +1,4 @@
-import{e as W,j as e,n as C,o as L,p as R,r as A}from"./index-B2bcfghR.js";import{a as d,y as I,s as q,h as u,X as b,n as P,F as H,Z as N}from"./icons-ByKoT90s.js";import"./recharts-Cid0RqwC.js";import"./supabase-DrdKa2Hv.js";const M=`
+import{e as W,j as e,n as C,o as L,p as R,r as A}from"./index-DESuzIUO.js";import{a as d,y as I,s as q,h as u,X as b,n as P,F as H,Z as N}from"./icons-ByKoT90s.js";import"./recharts-Cid0RqwC.js";import"./supabase-DrdKa2Hv.js";const M=`
 @media (max-width: 1100px) {
   .pricing-grid { grid-template-columns: repeat(2, 1fr) !important; }
 }
