@@ -1,6 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { SearchProfile } from '../types/database'
 import type { ApplicantProfile } from './types'
+import type { ArmStats, CoverLetterVariant } from '../types/intelligence'
+import { COVER_LETTER_VARIANTS, VARIANT_PROMPTS } from '../types/intelligence'
+import { thompsonSample, initializeArms } from '../utils/thompson-sampling'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -15,6 +18,7 @@ export interface QualificationResult {
   skillsMatch: boolean
   reasoning: string
   coverLetterSnippet: string
+  coverLetterVariant?: CoverLetterVariant
 }
 
 /** Input shape for pre-qualification — matches scout DiscoveredJob */
@@ -191,6 +195,79 @@ function getClient(): Anthropic {
 }
 
 // ---------------------------------------------------------------------------
+// Cover Letter Variant Selection (Thompson Sampling)
+// ---------------------------------------------------------------------------
+
+/** In-memory variant arms — re-initialized from localStorage stats each session */
+let variantArms: ArmStats[] | null = null
+
+const VARIANT_STATS_KEY = 'tracker_v2_cl_variant_stats'
+
+interface VariantStats {
+  variant: CoverLetterVariant
+  sent: number
+  gotResponse: number
+}
+
+function loadVariantStats(): VariantStats[] {
+  try {
+    const raw = typeof localStorage !== 'undefined'
+      ? localStorage.getItem(VARIANT_STATS_KEY)
+      : null
+    if (raw) return JSON.parse(raw)
+  } catch { /* ignore */ }
+  return COVER_LETTER_VARIANTS.map(v => ({ variant: v, sent: 0, gotResponse: 0 }))
+}
+
+function saveVariantStats(stats: VariantStats[]): void {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(VARIANT_STATS_KEY, JSON.stringify(stats))
+    }
+  } catch { /* ignore */ }
+}
+
+/** Record that a variant was sent. Call after application submission. */
+export function recordVariantSent(variant: CoverLetterVariant): void {
+  const stats = loadVariantStats()
+  const entry = stats.find(s => s.variant === variant)
+  if (entry) entry.sent++
+  saveVariantStats(stats)
+  variantArms = null // force re-init
+}
+
+/** Record that a variant got a response. Call from Gmail sync. */
+export function recordVariantResponse(variant: CoverLetterVariant): void {
+  const stats = loadVariantStats()
+  const entry = stats.find(s => s.variant === variant)
+  if (entry) entry.gotResponse++
+  saveVariantStats(stats)
+  variantArms = null
+}
+
+/**
+ * Select the best cover letter variant using Thompson Sampling.
+ * With no data, samples uniformly. As data accumulates, exploits winners.
+ */
+export function selectCoverLetterVariant(): CoverLetterVariant {
+  if (!variantArms) {
+    const stats = loadVariantStats()
+    variantArms = initializeArms(
+      stats.map(s => ({
+        ats: s.variant,
+        totalApplied: s.sent,
+        gotResponse: s.gotResponse,
+        responseRate: s.sent > 0 ? s.gotResponse / s.sent : 0,
+        avgDaysToResponse: 0,
+        ghostRate: 0,
+      }))
+    )
+  }
+  const selected = thompsonSample(variantArms)
+  return selected.id as CoverLetterVariant
+}
+
+// ---------------------------------------------------------------------------
 // Cache — avoids re-qualifying the same job description
 // ---------------------------------------------------------------------------
 
@@ -209,7 +286,8 @@ function cacheKey(jobDescription: string): string {
  * Build the Haiku system prompt with the actual user profile injected.
  * This makes scoring much more accurate than a hardcoded generic rubric.
  */
-function buildSystemPrompt(applicantProfile: ApplicantProfile): string {
+function buildSystemPrompt(applicantProfile: ApplicantProfile, variant?: CoverLetterVariant): string {
+  const variantStyle = variant ? VARIANT_PROMPTS[variant] : 'Write naturally — professional but warm tone.'
   return `You are a job qualification engine for an automated job search tool.
 
 CANDIDATE PROFILE:
@@ -252,6 +330,7 @@ COVER LETTER SNIPPET:
 - 2-3 sentences max referencing something specific from the JD
 - Connect it to the candidate's design systems / complex architecture experience
 - Professional but warm tone, never generic
+- STYLE DIRECTIVE: ${variantStyle}
 
 Respond ONLY with valid JSON:
 {
@@ -291,8 +370,12 @@ export async function qualifyJob(
 
   const client = getClient()
 
+  // Select cover letter variant via Thompson Sampling
+  const variant = selectCoverLetterVariant()
+  console.log(`[qualifier] Selected cover letter variant: ${variant}`)
+
   // Build dynamic system prompt with user profile injected
-  const systemPrompt = buildSystemPrompt(applicantProfile)
+  const systemPrompt = buildSystemPrompt(applicantProfile, variant)
 
   // Build user message with context
   const userMessage = `Evaluate this job posting for the applicant described in the system prompt.
@@ -356,6 +439,9 @@ Return ONLY the JSON object, no markdown fences.`
 
     // Clamp score to 0-100
     result.score = Math.max(0, Math.min(100, result.score))
+
+    // Tag with selected variant
+    result.coverLetterVariant = variant
 
     // Cache it
     qualificationCache.set(key, result)

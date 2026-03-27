@@ -40,7 +40,7 @@ import { usePlan } from '../hooks/usePlan'
 import { useUI } from '../context/UIContext'
 import { useJobs } from '../context/JobsContext'
 import type { BotActivityItem, BotRunStatus } from '../hooks/useBotActivity'
-import { triggerBotRun } from '../lib/bot-api'
+import { triggerBotRun, triggerApplyJobs } from '../lib/bot-api'
 import { supabase } from '../lib/supabase'
 import { useAuthWall } from '../hooks/useAuthWall'
 import { useSupabase } from '../context/SupabaseContext'
@@ -319,6 +319,7 @@ interface ReviewQueueItem {
   matchReasons: string[]
   cvName: string
   coverLetterSnippet: string
+  coverLetterVariant?: string
   status: 'pending' | 'approved' | 'skipped'
   editedCoverLetter?: string
   editedAnswers?: Record<string, string>
@@ -342,6 +343,7 @@ interface QualifiedJob {
   score: number
   matchReasons: string[]
   coverLetterSnippet: string
+  coverLetterVariant?: string
 }
 
 const REVIEW_LS_KEY = 'tracker_v2_review_queue'
@@ -3600,7 +3602,7 @@ export function AutopilotView() {
   // Auto-submit state
   const [autoSubmitOn, setAutoSubmitOn] = useState(getAutoSubmitEnabled)
   const [showAutoSubmitSuggestion, setShowAutoSubmitSuggestion] = useState(false)
-  const [runCount] = useState(getRunCount)
+  const [runCount, setRunCount] = useState(getRunCount)
 
   // Persist review queue on change
   useEffect(() => {
@@ -3827,6 +3829,7 @@ export function AutopilotView() {
           matchReasons: qJob?.matchReasons ?? [job.location, ('isEasyApply' in job && job.isEasyApply) ? 'Easy Apply' : 'External'].filter(Boolean) as string[],
           cvName,
           coverLetterSnippet: qJob?.coverLetterSnippet ?? '',
+          coverLetterVariant: qJob?.coverLetterVariant,
           status: 'pending' as const,
           jobUrl: job.url,
         }
@@ -3848,7 +3851,7 @@ export function AutopilotView() {
   const executeBotAction = useCallback(() => {
     if (!requireAuth('start_bot', () => { doStartBot() })) return
     doStartBot()
-    incrementRunCount()
+    setRunCount(incrementRunCount())
   }, [requireAuth, doStartBot])
 
   // Handlers with auth wall gate + profile completeness check
@@ -3996,11 +3999,41 @@ export function AutopilotView() {
     setPreviewItemId(null)
   }, [emitFeedbackSignal])
 
-  const handleSubmitApproved = useCallback(() => {
-    // Future: trigger actual submission of approved jobs
-    if (!requireAuth('start_bot', () => { doStartBot() })) return
-    doStartBot()
-  }, [requireAuth, doStartBot])
+  const handleSubmitApproved = useCallback(async () => {
+    if (!requireAuth('start_bot', () => {})) return
+
+    const approved = reviewQueue.filter(i => i.status === 'approved')
+    if (approved.length === 0) return
+
+    const jobsToApply = approved.map(item => ({
+      url: item.jobUrl || '',
+      company: item.company,
+      role: item.role,
+      coverLetterSnippet: item.editedCoverLetter || item.coverLetterSnippet,
+      matchScore: item.matchScore,
+    }))
+
+    try {
+      setIsTriggering(true)
+      setActiveRunId(null)
+      setPolledRunStatus(null)
+      setPolledRunOutput(null)
+
+      const result = await triggerApplyJobs(jobsToApply)
+      setActiveRunId(result.runId)
+      setRunStartTime(Date.now())
+      setPolledRunStatus('QUEUED')
+
+      // Mark approved items as submitting in queue
+      setReviewQueue(prev => prev.map(item =>
+        item.status === 'approved' ? { ...item, status: 'approved' as const } : item
+      ))
+    } catch (err) {
+      setTriggerError(err instanceof Error ? err.message : 'Failed to start applications')
+    } finally {
+      setIsTriggering(false)
+    }
+  }, [requireAuth, reviewQueue])
 
   const handleEnableAutoSubmit = useCallback(() => {
     setAutoSubmitOn(true)

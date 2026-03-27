@@ -13,6 +13,7 @@ interface ReviewQueueItem {
   matchReasons: string[]
   cvName: string
   coverLetterSnippet: string
+  coverLetterVariant?: string
   status: 'pending' | 'approved' | 'skipped'
   editedCoverLetter?: string
   editedAnswers?: Record<string, string>
@@ -269,7 +270,7 @@ export default function CardStackReview({
 
           {/* Cover letter snippet */}
           <div style={cs.coverSection}>
-            <span style={cs.coverLabel}>Cover letter</span>
+            <span style={cs.coverLabel}>Cover letter{currentItem.coverLetterVariant ? <span style={{ fontSize: 9, fontWeight: 500, color: 'var(--accent, #34d399)', marginLeft: 6, opacity: 0.7 }}>{currentItem.coverLetterVariant}</span> : null}</span>
             <p style={cs.coverText}>
               {currentItem.editedCoverLetter || currentItem.coverLetterSnippet}
             </p>
