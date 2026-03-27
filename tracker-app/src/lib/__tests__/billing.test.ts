@@ -16,15 +16,15 @@ import type { PlanTier } from '../billing'
 describe('getPlanLimits', () => {
   it('returns correct limits for free tier', () => {
     const limits = getPlanLimits('free')
-    expect(limits.botAppliesPerMonth).toBe(25)
-    expect(limits.coverLettersPerMonth).toBe(10)
+    expect(limits.botAppliesPerMonth).toBe(0)
+    expect(limits.coverLettersPerMonth).toBe(0)
     expect(limits.hasGhostDetection).toBe(true)
     expect(limits.hasAICoach).toBe(true)
     expect(limits.aiCoachLevel).toBe('basic')
     expect(limits.hasFeedbackLoop).toBe(false)
     expect(limits.hasFullAnalytics).toBe(false)
     expect(limits.hasPrioritySupport).toBe(false)
-    expect(limits.atsAdapters).toEqual(['Greenhouse', 'Lever'])
+    expect(limits.atsAdapters).toEqual([])
   })
 
   it('returns correct limits for starter tier', () => {
@@ -66,7 +66,7 @@ describe('getPlanLimits', () => {
 
   it('falls back to free tier for unknown plan', () => {
     const limits = getPlanLimits('nonexistent' as PlanTier)
-    expect(limits.botAppliesPerMonth).toBe(25)
+    expect(limits.botAppliesPerMonth).toBe(0)
   })
 
   it('all four tiers have hasAICoach = true', () => {
@@ -81,8 +81,8 @@ describe('getPlanLimits', () => {
     expect(getPlanLimits('boost').atsAdapters).toHaveLength(10)
   })
 
-  it('free has 2 ATS adapters, starter has 4', () => {
-    expect(getPlanLimits('free').atsAdapters).toHaveLength(2)
+  it('free has 0 ATS adapters, starter has 4', () => {
+    expect(getPlanLimits('free').atsAdapters).toHaveLength(0)
     expect(getPlanLimits('starter').atsAdapters).toHaveLength(4)
   })
 })
@@ -143,9 +143,9 @@ describe('getPlanConfig', () => {
 // ═══════════════════════════════════════════════════════════════════════
 
 describe('canUseFeature', () => {
-  // bot-apply: all tiers have > 0 applies
-  it('bot-apply is available on all tiers', () => {
-    expect(canUseFeature('free', 'bot-apply')).toBe(true)
+  // bot-apply: free has 0 applies, paid tiers have > 0
+  it('bot-apply is NOT on free, but IS on starter+', () => {
+    expect(canUseFeature('free', 'bot-apply')).toBe(false)
     expect(canUseFeature('starter', 'bot-apply')).toBe(true)
     expect(canUseFeature('pro', 'bot-apply')).toBe(true)
     expect(canUseFeature('boost', 'bot-apply')).toBe(true)
@@ -183,9 +183,9 @@ describe('canUseFeature', () => {
     expect(canUseFeature('boost', 'ghost-detection')).toBe(true)
   })
 
-  // cover-letter: all tiers now have > 0
-  it('cover-letter is available on all tiers', () => {
-    expect(canUseFeature('free', 'cover-letter')).toBe(true)
+  // cover-letter: free has 0, paid tiers have > 0
+  it('cover-letter is NOT on free, but IS on starter+', () => {
+    expect(canUseFeature('free', 'cover-letter')).toBe(false)
     expect(canUseFeature('starter', 'cover-letter')).toBe(true)
     expect(canUseFeature('pro', 'cover-letter')).toBe(true)
     expect(canUseFeature('boost', 'cover-letter')).toBe(true)
@@ -209,8 +209,8 @@ describe('canUseFeature', () => {
 // ═══════════════════════════════════════════════════════════════════════
 
 describe('getMinimumPlan', () => {
-  it('bot-apply minimum is free', () => {
-    expect(getMinimumPlan('bot-apply')).toBe('free')
+  it('bot-apply minimum is starter', () => {
+    expect(getMinimumPlan('bot-apply')).toBe('starter')
   })
 
   it('ai-coach minimum is free', () => {
@@ -229,8 +229,8 @@ describe('getMinimumPlan', () => {
     expect(getMinimumPlan('ghost-detection')).toBe('free')
   })
 
-  it('cover-letter minimum is free', () => {
-    expect(getMinimumPlan('cover-letter')).toBe('free')
+  it('cover-letter minimum is starter', () => {
+    expect(getMinimumPlan('cover-letter')).toBe('starter')
   })
 
   it('priority-support minimum is boost', () => {
@@ -243,12 +243,12 @@ describe('getMinimumPlan', () => {
 // ═══════════════════════════════════════════════════════════════════════
 
 describe('getRemainingQuota', () => {
-  it('bot-apply: free tier has 25 total, 10 used = 15 remaining', () => {
-    expect(getRemainingQuota('free', 10, 'bot-apply')).toBe(15)
+  it('bot-apply: free tier has 0 total, any used = 0 remaining', () => {
+    expect(getRemainingQuota('free', 0, 'bot-apply')).toBe(0)
   })
 
-  it('bot-apply: free tier, 25 used = 0 remaining', () => {
-    expect(getRemainingQuota('free', 25, 'bot-apply')).toBe(0)
+  it('bot-apply: free tier, 10 used = 0 remaining', () => {
+    expect(getRemainingQuota('free', 10, 'bot-apply')).toBe(0)
   })
 
   it('bot-apply: free tier, 30 used = 0 remaining (clamped)', () => {
@@ -267,8 +267,8 @@ describe('getRemainingQuota', () => {
     expect(getRemainingQuota('boost', 9999, 'bot-apply')).toBe(Infinity)
   })
 
-  it('cover-letter: free tier has 10 total', () => {
-    expect(getRemainingQuota('free', 5, 'cover-letter')).toBe(5)
+  it('cover-letter: free tier has 0 total', () => {
+    expect(getRemainingQuota('free', 5, 'cover-letter')).toBe(0)
   })
 
   it('cover-letter: starter tier has 20 total', () => {
@@ -284,8 +284,10 @@ describe('getRemainingQuota', () => {
   })
 
   it('0 used returns full quota', () => {
-    expect(getRemainingQuota('free', 0, 'bot-apply')).toBe(25)
-    expect(getRemainingQuota('free', 0, 'cover-letter')).toBe(10)
+    expect(getRemainingQuota('free', 0, 'bot-apply')).toBe(0)
+    expect(getRemainingQuota('free', 0, 'cover-letter')).toBe(0)
+    expect(getRemainingQuota('starter', 0, 'bot-apply')).toBe(100)
+    expect(getRemainingQuota('starter', 0, 'cover-letter')).toBe(20)
   })
 
   it('returns 0 for unknown feature', () => {
