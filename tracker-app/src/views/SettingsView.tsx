@@ -26,6 +26,9 @@ import {
   Pause,
   RefreshCw,
   Pencil,
+  Sparkles,
+  CheckCircle,
+  Loader2,
 } from 'lucide-react'
 import { useJobs } from '../context/JobsContext'
 import { useGmailAPI } from '../hooks/useGmailAPI'
@@ -35,6 +38,9 @@ import { useUI } from '../context/UIContext'
 import { useAuthWall } from '../hooks/useAuthWall'
 import { getPlanConfig, createPortalSession } from '../lib/billing'
 import { ProfileSetupModal, isProfileComplete } from '../components/ProfileSetupModal'
+import { triggerEnrichProfile } from '../lib/bot-api'
+import { LS_ENRICHED_PROFILE } from '../types/enriched-profile'
+import type { EnrichedProfile } from '../types/enriched-profile'
 import type { Job } from '../types/job'
 
 /* ------------------------------------------------------------------ */
@@ -424,6 +430,81 @@ export function SettingsView() {
   // ---------- Profile Setup Modal (edit mode) ----------
   const [showProfileEditModal, setShowProfileEditModal] = useState(false)
 
+  // ---------- Profile Enrichment state ----------
+  const [enrichLoading, setEnrichLoading] = useState(false)
+  const [enrichError, setEnrichError] = useState<string | null>(null)
+  const [enrichedProfile, setEnrichedProfile] = useState<EnrichedProfile | null>(() => {
+    try {
+      const raw = localStorage.getItem(LS_ENRICHED_PROFILE)
+      return raw ? JSON.parse(raw) as EnrichedProfile : null
+    } catch { return null }
+  })
+
+  const handleEnrichProfile = useCallback(async () => {
+    setEnrichLoading(true)
+    setEnrichError(null)
+    try {
+      // Get CV URL from the bot profile in localStorage
+      const botProfile = localStorage.getItem('tracker_v2_bot_profile')
+      const parsed = botProfile ? JSON.parse(botProfile) : {}
+      const cvUrl = parsed.cvUrl || 'https://raw.githubusercontent.com/peterbono/portfolio/main/cvflo.pdf'
+      const portfolioUrl = 'https://raw.githubusercontent.com/peterbono/portfolio/main/portfolio.pdf'
+
+      const { runId } = await triggerEnrichProfile(cvUrl, portfolioUrl)
+
+      // Poll for results (Trigger.dev tasks are async)
+      // We poll via the same proxy endpoint with a GET-like check
+      let attempts = 0
+      const maxAttempts = 60 // 2 minutes max (2s intervals)
+
+      const pollInterval = setInterval(async () => {
+        attempts++
+        try {
+          const res = await fetch(`/api/trigger-task?runId=${runId}`)
+          if (!res.ok) {
+            if (attempts >= maxAttempts) {
+              clearInterval(pollInterval)
+              setEnrichLoading(false)
+              setEnrichError('Profile analysis timed out. Please try again.')
+            }
+            return
+          }
+          const data = await res.json()
+
+          if (data.status === 'COMPLETED' && data.output) {
+            clearInterval(pollInterval)
+            const result = data.output
+            if (result.success && result.enrichedProfile) {
+              localStorage.setItem(LS_ENRICHED_PROFILE, JSON.stringify(result.enrichedProfile))
+              setEnrichedProfile(result.enrichedProfile)
+              setEnrichLoading(false)
+            } else {
+              setEnrichError(result.error || 'Profile analysis failed.')
+              setEnrichLoading(false)
+            }
+          } else if (data.status === 'FAILED' || data.status === 'CANCELED') {
+            clearInterval(pollInterval)
+            setEnrichError(`Profile analysis ${data.status.toLowerCase()}. Please try again.`)
+            setEnrichLoading(false)
+          } else if (attempts >= maxAttempts) {
+            clearInterval(pollInterval)
+            setEnrichLoading(false)
+            setEnrichError('Profile analysis timed out. Please try again.')
+          }
+        } catch {
+          if (attempts >= maxAttempts) {
+            clearInterval(pollInterval)
+            setEnrichLoading(false)
+            setEnrichError('Failed to check analysis status.')
+          }
+        }
+      }, 2000)
+    } catch (err) {
+      setEnrichLoading(false)
+      setEnrichError(err instanceof Error ? err.message : 'Failed to start profile analysis.')
+    }
+  }, [])
+
   /* ================================================================== */
   /*  Responsive                                                          */
   /* ================================================================== */
@@ -547,6 +628,112 @@ export function SettingsView() {
           >
             <Pencil size={14} style={{ marginRight: 6 }} />
             {isProfileComplete() ? 'Edit Bot Profile' : 'Set Up Bot Profile'}
+          </button>
+        </div>
+
+        {/* AI Profile Enrichment — analyze CV + portfolio */}
+        <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <Sparkles size={14} color="#a855f7" />
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+              AI Profile Analysis
+            </span>
+            {enrichedProfile && (
+              <span style={{
+                fontSize: 11,
+                fontWeight: 600,
+                padding: '2px 8px',
+                borderRadius: 999,
+                background: 'rgba(52, 211, 153, 0.1)',
+                color: '#34d399',
+                border: '1px solid rgba(52, 211, 153, 0.2)',
+              }}>Enriched</span>
+            )}
+          </div>
+          <p style={s.hint}>
+            Analyze your CV and portfolio with AI to extract key achievements, skills, and experience.
+            This data improves job matching accuracy and cover letter quality.
+          </p>
+
+          {enrichLoading ? (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              padding: '12px 16px',
+              borderRadius: 'var(--radius-md)',
+              background: 'rgba(168, 85, 247, 0.08)',
+              border: '1px solid rgba(168, 85, 247, 0.2)',
+            }}>
+              <Loader2 size={16} color="#a855f7" style={{ animation: 'spin 1s linear infinite' }} />
+              <span style={{ fontSize: 13, color: '#a855f7' }}>
+                Analyzing your CV and portfolio...
+              </span>
+            </div>
+          ) : enrichedProfile ? (
+            <div style={{
+              padding: '12px 16px',
+              borderRadius: 'var(--radius-md)',
+              background: 'rgba(52, 211, 153, 0.06)',
+              border: '1px solid rgba(52, 211, 153, 0.15)',
+              marginBottom: 12,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                <CheckCircle size={14} color="#34d399" />
+                <span style={{ fontSize: 12, fontWeight: 600, color: '#34d399' }}>
+                  Profile enriched {enrichedProfile.enrichedAt
+                    ? `on ${new Date(enrichedProfile.enrichedAt).toLocaleDateString()}`
+                    : ''}
+                </span>
+              </div>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '4px 16px',
+                fontSize: 12,
+                color: 'var(--text-secondary)',
+              }}>
+                <span>{enrichedProfile.achievements?.length ?? 0} achievements extracted</span>
+                <span>{enrichedProfile.skills?.length ?? 0} skills identified</span>
+                <span>{enrichedProfile.projects?.length ?? 0} projects catalogued</span>
+                <span>{enrichedProfile.industries?.length ?? 0} industries mapped</span>
+                <span>{enrichedProfile.uniqueSellingPoints?.length ?? 0} unique differentiators</span>
+                <span>{enrichedProfile.totalYearsExperience ?? 0}+ years experience</span>
+              </div>
+              {enrichedProfile.professionalSummary && (
+                <p style={{
+                  fontSize: 12,
+                  color: 'var(--text-tertiary)',
+                  marginTop: 8,
+                  lineHeight: 1.5,
+                  fontStyle: 'italic',
+                }}>
+                  {enrichedProfile.professionalSummary.slice(0, 200)}
+                  {enrichedProfile.professionalSummary.length > 200 ? '...' : ''}
+                </p>
+              )}
+            </div>
+          ) : null}
+
+          {enrichError && (
+            <span style={s.errorText}>{enrichError}</span>
+          )}
+
+          <button
+            style={{
+              ...s.btnSecondary,
+              borderColor: 'rgba(168, 85, 247, 0.3)',
+              color: '#a855f7',
+              opacity: enrichLoading ? 0.5 : 1,
+            }}
+            onClick={() => {
+              if (!requireAuth('enrich_profile', () => handleEnrichProfile())) return
+              handleEnrichProfile()
+            }}
+            disabled={enrichLoading}
+          >
+            <Sparkles size={14} style={{ marginRight: 6 }} />
+            {enrichedProfile ? 'Re-analyze Profile' : 'Process Profile'}
           </button>
         </div>
       </AccordionSection>

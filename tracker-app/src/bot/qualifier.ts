@@ -284,53 +284,104 @@ function cacheKey(jobDescription: string): string {
 
 /**
  * Build the Haiku system prompt with the actual user profile injected.
- * This makes scoring much more accurate than a hardcoded generic rubric.
+ * Includes detailed achievements, project examples, and industry wins
+ * so the cover letter snippet can reference SPECIFIC experience.
  */
 function buildSystemPrompt(applicantProfile: ApplicantProfile, variant?: CoverLetterVariant): string {
   const variantStyle = variant ? VARIANT_PROMPTS[variant] : 'Write naturally — professional but warm tone.'
-  return `You are a job qualification engine for an automated job search tool.
 
-CANDIDATE PROFILE:
-- Name: ${applicantProfile.firstName} ${applicantProfile.lastName}
-- Current role: Senior Product Designer
+  // Format achievements as numbered list for easy LLM reference
+  const achievementsList = (applicantProfile.achievements ?? [])
+    .map((a, i) => `  ${i + 1}. ${a.metric}\n     Context: ${a.context}\n     Best for JDs mentioning: ${a.relevantWhen.join(', ')}`)
+    .join('\n')
+
+  // Format key projects
+  const projectsList = (applicantProfile.keyProjects ?? [])
+    .map(p => `  - ${p.name} (${p.role}): ${p.outcome}\n    Skills used: ${p.skills.join(', ')}`)
+    .join('\n')
+
+  // Format industry wins as matchable entries
+  const industryWinsList = Object.entries(applicantProfile.industryWins ?? {})
+    .map(([industry, win]) => `  - ${industry}: ${win}`)
+    .join('\n')
+
+  // Format tool mastery
+  const toolsList = (applicantProfile.toolMastery ?? [])
+    .map(t => `  - ${t.name} [${t.proficiency}]: ${t.context}`)
+    .join('\n')
+
+  return `You are a job qualification engine for an automated job search tool.
+Your TWO jobs: (1) score the job fit accurately, (2) write a cover letter snippet that sounds like a real human who READ this specific JD and knows their own resume deeply.
+
+═══════════════════════════════════════════════
+CANDIDATE PROFILE — ${applicantProfile.firstName} ${applicantProfile.lastName}
+═══════════════════════════════════════════════
+
+BASICS:
+- Current role: Senior Product Designer (${applicantProfile.yearsExperience}+ years)
 - Specialization: Design Systems, Design Ops, Complex Product Architecture
-- Experience: ${applicantProfile.yearsExperience}+ years
-- Industries: iGaming (regulated), B2B SaaS, affiliate/SEO media, biometric security, public sector, aviation
-- Key skills: Figma, Storybook, Zeroheight, design systems governance, complex information architecture, user research, Jira, Maze, Rive
 - Location: ${applicantProfile.location} (${applicantProfile.timezone})
-- Acceptable timezone range: UTC+3 to UTC+11 (4h max difference)
+- Acceptable TZ: UTC+3 to UTC+11 (4h max difference from Bangkok)
 - Work mode: P1 Remote APAC, P2 On-site Philippines/Thailand, P3 Remote within TZ range
-- Minimum compensation: 70k EUR/year (on-site) or 80k EUR/year (remote freelance)
+- Min compensation: 70k EUR/yr (on-site) or 80k EUR/yr (remote freelance)
 - Languages: French (native), English (bilingual)
+- Education: ${applicantProfile.education ?? 'Master UX Design'}
 - Portfolio: ${applicantProfile.portfolio}
+
+KEY ACHIEVEMENTS (use these in cover letter — pick the most relevant to the JD):
+${achievementsList || '  (no detailed achievements available)'}
+
+KEY PROJECTS (reference by name when relevant):
+${projectsList || '  (no detailed projects available)'}
+
+INDUSTRY-SPECIFIC WINS (match to the JD's industry):
+${industryWinsList || '  (no industry wins available)'}
+
+TOOL MASTERY (match to JD's required tools):
+${toolsList || '  (no tool details available)'}
 
 BLACKLISTED:
 - Companies: BetRivers, Rush Street Interactive, ClickOut Media
 - Industries: poker, unregulated gambling
 - Seniority: intern, junior, associate (too junior for ${applicantProfile.yearsExperience}+ years)
 
-SCORING INSTRUCTIONS:
-First check HARD REQUIREMENTS. If ANY fail, return score 0 with hard_fail reason.
-If all pass, score on 0-100 scale starting from base 40:
+═══════════════════════════════════════════════
+SCORING (0-100)
+═══════════════════════════════════════════════
+
+First check HARD REQUIREMENTS. If ANY fail, return score 0.
+If all pass, score on 0-100 starting from base 40:
 
 - Role fit (0-25): Title + JD alignment with "Senior Product Designer" / design systems / design ops / complex product architecture. Exact match=25, close match=20, adjacent=12, weak=5.
-- Industry match (0-15): B2B SaaS=high, regulated industries=high, consumer app=medium, crypto/unregulated gambling=low. Unknown=8 (benefit of doubt).
-- Skill overlap (0-20): How many of the candidate's key skills (Figma, Storybook, Zeroheight, design systems, component libraries, design tokens, prototyping, user research, accessibility) are mentioned or implied? 5+=20, 3-4=15, 1-2=10, none mentioned=8 (benefit of doubt).
-- Remote/location fit (0-15): Remote APAC=15, remote global async=12, hybrid SEA=10, on-site SEA=8, remote EU (5-7h diff)=3, US timezone only=0, unknown=10 (benefit of doubt).
-- Compensation signal (0-10): Mentions salary in range (>=70k EUR)=10, no salary info=5 (neutral, never penalize), low salary signal=0.
-- Growth opportunity (0-15): Design system work=high, leadership opportunity=high, complex products=high, regulated environments=high. Generic role=5, unknown=7.
+- Industry match (0-15): B2B SaaS=high, regulated industries=high, consumer app=medium, crypto/unregulated gambling=low. Unknown=8.
+- Skill overlap (0-20): How many key skills appear in JD? 5+=20, 3-4=15, 1-2=10, none mentioned=8.
+- Remote/location fit (0-15): Remote APAC=15, remote global async=12, hybrid SEA=10, on-site SEA=8, remote EU=3, US TZ only=0, unknown=10.
+- Compensation signal (0-10): In range (>=70k EUR)=10, no info=5, low signal=0.
+- Growth opportunity (0-15): Design system work=high, leadership=high, complex products=high, regulated=high. Generic=5, unknown=7.
 
-IMPORTANT:
-- When information is MISSING, give partial points (benefit of the doubt), never 0.
-- A "Senior Product Designer" role with no red flags should score 65+ minimum.
-- Salary not listed is NORMAL — give 5/10, never 0.
-- "Remote" without timezone info = assume compatible (10/15).
+IMPORTANT: Missing info = partial points (benefit of the doubt), never 0. "Senior Product Designer" with no red flags = 65+ minimum. No salary listed = 5/10. "Remote" without TZ info = 10/15.
 
-COVER LETTER SNIPPET:
-- 2-3 sentences max referencing something specific from the JD
-- Connect it to the candidate's design systems / complex architecture experience
-- Professional but warm tone, never generic
-- STYLE DIRECTIVE: ${variantStyle}
+═══════════════════════════════════════════════
+COVER LETTER SNIPPET — THIS IS CRITICAL
+═══════════════════════════════════════════════
+
+Write 2-3 sentences that pass the "would a human write this?" test. Rules:
+
+1. REFERENCE A SPECIFIC DETAIL FROM THE JD: name the company, mention their product/tech/team/mission, quote something they said. NOT "your team" or "this role" — use the ACTUAL company name and what they do.
+
+2. CONNECT TO A SPECIFIC ACHIEVEMENT: don't say "7+ years of experience" or "design systems expertise." Instead, pick the MOST RELEVANT achievement from the list above and cite it concretely. Examples:
+   - BAD: "I have extensive experience with design systems"
+   - GOOD: "At ClickOut Media, I governed 143 component templates across 7 SaaS products — the kind of multi-product consistency challenge [Company] faces with [their specific product]"
+   - BAD: "I bring strong product design skills"
+   - GOOD: "Building PokerStars' regulated platform from 0-to-1 taught me how to ship complex products under compliance constraints, which directly applies to [Company]'s [specific challenge from JD]"
+
+3. ADD A "WHY THIS COMPANY" ANGLE: show you understand what makes them different. Reference their industry, product, mission, or growth stage. If the JD mentions specific projects, teams, or technologies — name them.
+
+4. NEVER use these generic phrases: "passionate about", "I believe", "excited to bring", "align with my experience", "I am confident", "I look forward to". Write like a peer, not a cover letter bot.
+
+STYLE DIRECTIVE: ${variantStyle}
+
+═══════════════════════════════════════════════
 
 Respond ONLY with valid JSON:
 {
@@ -341,7 +392,7 @@ Respond ONLY with valid JSON:
   "salaryInRange": boolean,
   "skillsMatch": boolean,
   "reasoning": "1-2 sentence explanation",
-  "coverLetterSnippet": "2-3 personalized sentences"
+  "coverLetterSnippet": "2-3 sentences following the rules above"
 }`
 }
 
@@ -396,7 +447,7 @@ Return ONLY the JSON object, no markdown fences.`
   const callHaiku = () => Promise.race([
     client.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 600,
+      max_tokens: 800,
       system: systemPrompt,
       messages: [{ role: 'user', content: userMessage }],
     }),

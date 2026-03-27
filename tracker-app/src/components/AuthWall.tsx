@@ -12,6 +12,7 @@ import {
   Shield,
   Zap,
   CheckCircle,
+  Sparkles,
 } from 'lucide-react'
 import { useSupabase } from '../context/SupabaseContext'
 import { useAuthWallContext, type AuthWallTrigger } from '../context/AuthWallContext'
@@ -82,6 +83,18 @@ function getTriggerContent(
           'Full data export in JSON',
           'Import into spreadsheets',
           'Your data, your way',
+        ],
+      }
+    case 'enrich_profile':
+      return {
+        icon: Sparkles,
+        iconColor: '#a855f7',
+        title: 'Create an account to analyze your profile',
+        subtitle: 'AI-powered analysis of your CV and portfolio for better job matching',
+        bullets: [
+          'Extract key achievements with metrics',
+          'Identify skills and proficiency levels',
+          'Improve cover letter personalization',
         ],
       }
   }

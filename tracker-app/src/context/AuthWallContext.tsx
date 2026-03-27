@@ -11,6 +11,7 @@ export type AuthWallTrigger =
   | 'start_bot'
   | 'save_cloud'
   | 'export_data'
+  | 'enrich_profile'
   | null
 
 interface AuthWallState {

@@ -68,19 +68,23 @@ function randomDelay(min: number, max: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
-/** Build a LinkedIn job search URL from the search profile */
-function buildLinkedInSearchUrl(profile: SearchProfile): string {
+/** Build a LinkedIn job search URL from the search profile (or explicit overrides) */
+function buildLinkedInSearchUrl(
+  profile: SearchProfile,
+  keywordOverride?: string,
+  locationOverride?: string,
+): string {
   const base = 'https://www.linkedin.com/jobs/search/'
   const params = new URLSearchParams()
 
-  // Keywords — use first keyword only (LinkedIn search works best with single terms)
-  // Multiple keywords are searched across separate scout passes
-  const keywords = profile.keywords?.[0] ?? 'Product Designer'
+  // Keywords — use override if provided, otherwise first keyword
+  const keywords = keywordOverride ?? profile.keywords?.[0] ?? 'Product Designer'
   params.set('keywords', keywords)
 
-  // Location — use profile.location or default to "Asia Pacific" for APAC searches
-  if (profile.location) {
-    params.set('location', profile.location)
+  // Location — use override if provided, otherwise profile.location
+  const location = locationOverride ?? profile.location
+  if (location) {
+    params.set('location', location)
   } else {
     // Default: worldwide remote jobs
     params.set('location', 'Worldwide')
@@ -106,15 +110,21 @@ function buildLinkedInSearchUrl(profile: SearchProfile): string {
  * Build the LinkedIn guest API URL for fetching job listings without authentication.
  * This endpoint returns HTML fragments that are easier to parse than the full page.
  */
-function buildGuestApiUrl(profile: SearchProfile, start: number = 0): string {
+function buildGuestApiUrl(
+  profile: SearchProfile,
+  start: number = 0,
+  keywordOverride?: string,
+  locationOverride?: string,
+): string {
   const base = 'https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search'
   const params = new URLSearchParams()
 
-  const keywords = profile.keywords?.[0] ?? 'Product Designer'
+  const keywords = keywordOverride ?? profile.keywords?.[0] ?? 'Product Designer'
   params.set('keywords', keywords)
 
-  if (profile.location) {
-    params.set('location', profile.location)
+  const location = locationOverride ?? profile.location
+  if (location) {
+    params.set('location', location)
   } else {
     params.set('location', 'Worldwide')
   }
@@ -183,12 +193,14 @@ async function scrapeViaGuestApi(
   page: Page,
   searchProfile: SearchProfile,
   maxPages: number,
+  keywordOverride?: string,
+  locationOverride?: string,
 ): Promise<RawJobCard[]> {
   const allCards: RawJobCard[] = []
 
   for (let pageNum = 0; pageNum < maxPages; pageNum++) {
     const start = pageNum * 25
-    const apiUrl = buildGuestApiUrl(searchProfile, start)
+    const apiUrl = buildGuestApiUrl(searchProfile, start, keywordOverride, locationOverride)
     console.log(`[scout:guest-api] Fetching page ${pageNum + 1}: ${apiUrl}`)
 
     try {
@@ -302,10 +314,12 @@ async function scrapeViaFullPage(
   page: Page,
   searchProfile: SearchProfile,
   maxPages: number,
+  keywordOverride?: string,
+  locationOverride?: string,
 ): Promise<RawJobCard[]> {
   const allCards: RawJobCard[] = []
 
-  const searchUrl = buildLinkedInSearchUrl(searchProfile)
+  const searchUrl = buildLinkedInSearchUrl(searchProfile, keywordOverride, locationOverride)
   console.log(`[scout:full-page] Navigating to: ${searchUrl}`)
   await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 })
   await randomDelay(2000, 4000)
@@ -540,12 +554,17 @@ interface RawJobCard {
  *   1. Guest API endpoint (faster, no auth needed, more stable HTML)
  *   2. Full page scraping fallback (works with authentication)
  * Filters by timezone compatibility, exclusion list, and duplicates.
+ *
+ * @param keywordOverride - If provided, overrides profile.keywords[0]
+ * @param locationOverride - If provided, overrides profile.location
  */
 export async function scoutJobs(
   page: Page,
   searchProfile: SearchProfile,
   existingApplications: string[], // "company|role" lowercase combos
   maxPages: number = 3,
+  keywordOverride?: string,
+  locationOverride?: string,
 ): Promise<ScoutResult> {
   let totalFound = 0
   let filteredOut = 0
@@ -560,13 +579,15 @@ export async function scoutJobs(
   const existingSet = new Set(existingApplications)
 
   // --- Strategy 1: Try guest API first (more reliable selectors) ---
-  console.log('[scout] Strategy 1: Guest API endpoint')
-  let rawCards = await scrapeViaGuestApi(page, searchProfile, maxPages)
+  const kw = keywordOverride ?? searchProfile.keywords?.[0] ?? 'Product Designer'
+  const loc = locationOverride ?? searchProfile.location ?? 'Worldwide'
+  console.log(`[scout] Strategy 1: Guest API endpoint (keyword="${kw}", location="${loc}")`)
+  let rawCards = await scrapeViaGuestApi(page, searchProfile, maxPages, keywordOverride, locationOverride)
 
   // --- Strategy 2: Fall back to full page if guest API returned nothing ---
   if (rawCards.length === 0) {
     console.log('[scout] Guest API returned 0 cards, falling back to full page scraping')
-    rawCards = await scrapeViaFullPage(page, searchProfile, maxPages)
+    rawCards = await scrapeViaFullPage(page, searchProfile, maxPages, keywordOverride, locationOverride)
   }
 
   console.log(`[scout] Raw cards extracted: ${rawCards.length}`)
@@ -661,5 +682,118 @@ export async function scoutJobs(
     jobs: deduped,
     totalFound,
     filteredOut,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Multi-pass scout: keyword × location cross-product with global dedup
+// ---------------------------------------------------------------------------
+
+export interface MultiPassConfig {
+  keywords: string[]
+  locations: string[]
+  pagesPerSearch: number // pages to scrape per keyword×location combo
+}
+
+/**
+ * Run scout across ALL keyword × location combinations, then deduplicate.
+ * This dramatically increases discovery volume compared to the single-pass scout.
+ *
+ * For N keywords and M locations, runs N×M searches (each fetching `pagesPerSearch`
+ * pages of 25 results). Deduplicates globally by URL and company+title.
+ *
+ * Example: 3 keywords × 3 locations × 3 pages = 27 API calls → up to 675 raw cards
+ * After filtering & dedup, expect 40-80 unique candidates.
+ */
+export async function scoutJobsMultiPass(
+  page: Page,
+  searchProfile: SearchProfile,
+  existingApplications: string[],
+  multiPass: MultiPassConfig,
+): Promise<ScoutResult> {
+  const { keywords, locations, pagesPerSearch } = multiPass
+
+  // Build the search matrix
+  const combos: Array<{ keyword: string; location: string }> = []
+  for (const kw of keywords) {
+    for (const loc of locations) {
+      combos.push({ keyword: kw, location: loc })
+    }
+  }
+
+  console.log(
+    `[scout:multi-pass] Starting ${combos.length} searches ` +
+    `(${keywords.length} keywords × ${locations.length} locations × ${pagesPerSearch} pages)`,
+  )
+
+  let globalTotalFound = 0
+  let globalFilteredOut = 0
+  const allJobs: DiscoveredJob[] = []
+
+  // Track seen URLs and company+title pairs across ALL passes for dedup
+  const seenUrls = new Set<string>()
+  const seenCompanyTitle = new Set<string>()
+
+  for (let i = 0; i < combos.length; i++) {
+    const { keyword, location } = combos[i]
+    console.log(
+      `[scout:multi-pass] Search ${i + 1}/${combos.length}: "${keyword}" in "${location}"`,
+    )
+
+    try {
+      const result = await scoutJobs(
+        page,
+        searchProfile,
+        existingApplications,
+        pagesPerSearch,
+        keyword,
+        location,
+      )
+
+      globalTotalFound += result.totalFound
+      globalFilteredOut += result.filteredOut
+
+      // Deduplicate against all previous passes
+      let newInThisPass = 0
+      for (const job of result.jobs) {
+        // URL dedup
+        if (job.url && seenUrls.has(job.url)) continue
+
+        // Company+title dedup (catches same job posted with different URL params)
+        const companyTitleKey = `${job.company.toLowerCase().trim()}|${job.title.toLowerCase().trim()}`
+        if (seenCompanyTitle.has(companyTitleKey)) continue
+
+        // New unique job
+        if (job.url) seenUrls.add(job.url)
+        seenCompanyTitle.add(companyTitleKey)
+        allJobs.push(job)
+        newInThisPass++
+      }
+
+      console.log(
+        `[scout:multi-pass] "${keyword}" × "${location}": ${result.jobs.length} candidates, ${newInThisPass} new unique`,
+      )
+
+      // Delay between searches to avoid rate limiting
+      if (i < combos.length - 1) {
+        await randomDelay(2000, 4000)
+      }
+    } catch (err) {
+      console.warn(
+        `[scout:multi-pass] Search "${keyword}" × "${location}" failed: ${(err as Error).message}`,
+      )
+      // Continue with next combo instead of aborting
+    }
+  }
+
+  console.log(
+    `[scout:multi-pass] Complete: ${combos.length} searches, ${globalTotalFound} total found, ` +
+    `${globalFilteredOut} filtered, ${allJobs.length} unique candidates`,
+  )
+
+  return {
+    jobs: allJobs,
+    totalFound: globalTotalFound,
+    filteredOut: globalFilteredOut,
   }
 }

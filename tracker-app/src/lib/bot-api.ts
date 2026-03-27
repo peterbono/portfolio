@@ -37,6 +37,14 @@ function getLinkedInCookie(): string | null {
   } catch { return null }
 }
 
+/** Load enriched profile from localStorage (set by enrich-profile task) */
+function getEnrichedProfile(): Record<string, unknown> | null {
+  try {
+    const raw = localStorage.getItem('tracker_v2_enriched_profile')
+    return raw ? JSON.parse(raw) : null
+  } catch { return null }
+}
+
 export interface TriggerBotResponse {
   runId: string
 }
@@ -58,6 +66,8 @@ export async function triggerBotRun(
     throw new Error('No search criteria configured. Set up your keywords first.')
   }
 
+  const enrichedProfile = getEnrichedProfile()
+
   const payload: Record<string, unknown> = {
     userId,
     maxApplications: options?.maxApplications ?? 20,
@@ -65,6 +75,8 @@ export async function triggerBotRun(
     // Pass config inline — worker uses this instead of Supabase lookup
     searchConfig,
     userProfile,
+    // Include enriched profile data (from CV/portfolio analysis) if available
+    enrichedProfile,
   }
 
   // Include LinkedIn session cookie if available (from Chrome extension)
@@ -115,6 +127,7 @@ export async function triggerQualifyJobs(
   const userId = await getCurrentUserId()
   const searchConfig = getSearchConfig()
   const userProfile = getUserProfile()
+  const enrichedProfile = getEnrichedProfile()
 
   if (!searchConfig) {
     throw new Error('No search criteria configured. Set up your keywords first.')
@@ -125,6 +138,8 @@ export async function triggerQualifyJobs(
     jobs,
     searchConfig,
     userProfile: userProfile || {},
+    // Include enriched profile data (from CV/portfolio analysis) if available
+    enrichedProfile: enrichedProfile || undefined,
   }
 
   const response = await fetch(PROXY_TASK_URL, {
@@ -173,11 +188,14 @@ export async function triggerApplyJobs(
   const userId = await getCurrentUserId()
   const userProfile = getUserProfile()
   const linkedInCookie = getLinkedInCookie()
+  const enrichedProfile = getEnrichedProfile()
 
   const payload: Record<string, unknown> = {
     userId,
     jobs,
     userProfile: userProfile || {},
+    // Include enriched profile data (from CV/portfolio analysis) if available
+    enrichedProfile: enrichedProfile || undefined,
   }
 
   // Include LinkedIn session cookie if available (needed for Easy Apply)
@@ -194,6 +212,47 @@ export async function triggerApplyJobs(
   if (!response.ok) {
     const errorText = await response.text().catch(() => 'Unknown error')
     throw new Error(`Failed to start job applications: ${response.status} ${errorText}`)
+  }
+
+  const data = await response.json()
+  return { runId: data.id }
+}
+
+// ---------------------------------------------------------------------------
+// Profile Enrichment: Analyze CV + Portfolio with AI
+// ---------------------------------------------------------------------------
+
+/**
+ * Trigger profile enrichment task.
+ * Fetches CV and portfolio PDFs, extracts text, analyzes with Haiku.
+ * Returns a runId — poll for results, then store in localStorage.
+ * Cost: ~$0.008 per enrichment.
+ */
+export async function triggerEnrichProfile(
+  cvUrl: string,
+  portfolioUrl?: string,
+): Promise<TriggerBotResponse> {
+  if (!cvUrl) {
+    throw new Error('CV URL is required for profile enrichment.')
+  }
+
+  const userId = await getCurrentUserId()
+
+  const payload = {
+    userId,
+    cvUrl,
+    portfolioUrl: portfolioUrl || undefined,
+  }
+
+  const response = await fetch(PROXY_TASK_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ taskId: 'enrich-profile', payload }),
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error')
+    throw new Error(`Failed to start profile enrichment: ${response.status} ${errorText}`)
   }
 
   const data = await response.json()

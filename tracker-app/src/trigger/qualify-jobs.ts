@@ -61,7 +61,7 @@ interface QualifyResult {
 // Constants
 // ---------------------------------------------------------------------------
 
-const MAX_JOBS_PER_RUN = 15
+const MAX_JOBS_PER_RUN = 30
 const QUALIFY_THRESHOLD = 40 // score >= 40 passes — let more jobs through for user review
 const JD_EXTRACT_TIMEOUT = 15_000 // 15s per page
 const HAIKU_TIMEOUT = 10_000 // 10s per Haiku call
@@ -78,49 +78,119 @@ function buildSystemPrompt(userProfile: Record<string, unknown>): string {
   const location = userProfile.location ?? 'Bangkok, Thailand'
   const timezone = userProfile.timezone ?? 'GMT+7'
   const portfolio = userProfile.portfolio ?? 'https://www.floriangouloubi.com'
+  const education = userProfile.education ?? 'Master UX Design, ESD (Ecole Superieure du Digital), RNCP niveau 7'
+
+  // Extract enriched profile data if available (from APPLICANT in types.ts)
+  const achievements = userProfile.achievements as Array<{ metric: string; context: string; relevantWhen: string[] }> | undefined
+  const keyProjects = userProfile.keyProjects as Array<{ name: string; role: string; outcome: string; skills: string[] }> | undefined
+  const industryWins = userProfile.industryWins as Record<string, string> | undefined
+  const toolMastery = userProfile.toolMastery as Array<{ name: string; proficiency: string; context: string }> | undefined
+
+  // Format achievements
+  const achievementsList = achievements?.length
+    ? achievements.map((a, i) => `  ${i + 1}. ${a.metric}\n     Context: ${a.context}\n     Best for JDs mentioning: ${a.relevantWhen.join(', ')}`).join('\n')
+    : `  1. Built the #1 US online poker product (PokerStars MI/NJ) end-to-end — regulated iGaming, 0-to-1
+  2. 90% improvement in developer-designer feedback loop — Storybook-driven specs, Zeroheight docs, Figma-to-code validation
+  3. Managed 143 production component templates across 7 SaaS products — multi-product design system governance
+  4. Designed biometric verification flows for 50+ airport checkpoints (IDEMIA) — security-critical, sub-3s processing UX
+  5. Shipped design system 0-to-1 with full Figma-Storybook-Zeroheight pipeline — tokens consumed by 3 frontend teams
+  6. Led UX research program with 30+ Maze studies — 40% reduction in post-launch redesign cycles`
+
+  // Format key projects
+  const projectsList = keyProjects?.length
+    ? keyProjects.map(p => `  - ${p.name} (${p.role}): ${p.outcome}\n    Skills: ${p.skills.join(', ')}`).join('\n')
+    : `  - PokerStars MI/NJ (Lead Product Designer): #1 US poker product, passed regulatory audits first submission
+  - ClickOut Media Design System (Senior DS Lead): 143 components, 7 products, 90% dev feedback improvement
+  - IDEMIA Airport Biometrics (UX/UI Designer): 50+ airport checkpoints, sub-3s processing UX
+  - Continuous Discovery Program (UX Research Lead): 30+ Maze studies, 40% less post-launch redesign`
+
+  // Format industry wins
+  const industryWinsList = industryWins
+    ? Object.entries(industryWins).map(([k, v]) => `  - ${k}: ${v}`).join('\n')
+    : `  - igaming: Built #1 US poker product, deep regulatory compliance and responsible gaming UX
+  - b2b_saas: 143 templates across 7 products, multi-product consistency expert
+  - biometric_security: Airport biometric verification for 50+ checkpoints at IDEMIA
+  - fintech: Regulated product experience (KYC, AML, compliance) transferable from iGaming`
+
+  // Format tool mastery
+  const toolsList = toolMastery?.length
+    ? toolMastery.map(t => `  - ${t.name} [${t.proficiency}]: ${t.context}`).join('\n')
+    : `  - Figma [expert]: 5+ years daily, auto-layout, variants, component properties, Dev Mode, design tokens
+  - Storybook [expert]: 3 production design systems, interactive docs, CI/CD integration
+  - Zeroheight [advanced]: Published design guidelines for multi-team consumption
+  - Maze [advanced]: 30+ unmoderated studies, mission-based testing, quantitative analysis
+  - Jira [advanced]: Design backlogs, sprint planning, cross-functional workflows`
 
   return `You are a job qualification engine for an automated job search tool.
+Your TWO jobs: (1) score the job fit accurately, (2) write a cover letter snippet that sounds like a real human who READ this specific JD and knows their own resume deeply.
 
-CANDIDATE PROFILE:
-- Name: ${firstName} ${lastName}
-- Current role: Senior Product Designer
+═══════════════════════════════════════════════
+CANDIDATE PROFILE — ${firstName} ${lastName}
+═══════════════════════════════════════════════
+
+BASICS:
+- Current role: Senior Product Designer (${yearsExp}+ years)
 - Specialization: Design Systems, Design Ops, Complex Product Architecture
-- Experience: ${yearsExp}+ years
-- Industries: iGaming (regulated), B2B SaaS, affiliate/SEO media, biometric security, public sector, aviation
-- Key skills: Figma, Storybook, Zeroheight, design systems governance, complex information architecture, user research, Jira, Maze, Rive
 - Location: ${location} (${timezone})
-- Acceptable timezone range: UTC+3 to UTC+11 (4h max difference)
+- Acceptable TZ: UTC+3 to UTC+11 (4h max difference from Bangkok)
 - Work mode: P1 Remote APAC, P2 On-site Philippines/Thailand, P3 Remote within TZ range
-- Minimum compensation: 70k EUR/year (on-site) or 80k EUR/year (remote freelance)
+- Min compensation: 70k EUR/yr (on-site) or 80k EUR/yr (remote freelance)
 - Languages: French (native), English (bilingual)
+- Education: ${education}
 - Portfolio: ${portfolio}
+
+KEY ACHIEVEMENTS (use these in cover letter — pick the most relevant to the JD):
+${achievementsList}
+
+KEY PROJECTS (reference by name when relevant):
+${projectsList}
+
+INDUSTRY-SPECIFIC WINS (match to the JD's industry):
+${industryWinsList}
+
+TOOL MASTERY (match to JD's required tools):
+${toolsList}
 
 BLACKLISTED:
 - Companies: BetRivers, Rush Street Interactive, ClickOut Media
 - Industries: poker, unregulated gambling
 - Seniority: intern, junior, associate (too junior for ${yearsExp}+ years)
 
-SCORING INSTRUCTIONS:
-First check HARD REQUIREMENTS. If ANY fail, return score 0 with hard_fail reason.
-If all pass, score on 0-100 scale starting from base 40:
+═══════════════════════════════════════════════
+SCORING (0-100)
+═══════════════════════════════════════════════
+
+First check HARD REQUIREMENTS. If ANY fail, return score 0.
+If all pass, score on 0-100 starting from base 40:
 
 - Role fit (0-25): Title + JD alignment with "Senior Product Designer" / design systems / design ops / complex product architecture. Exact match=25, close match=20, adjacent=12, weak=5.
-- Industry match (0-15): B2B SaaS=high, regulated industries=high, consumer app=medium, crypto/unregulated gambling=low. Unknown=8 (benefit of doubt).
-- Skill overlap (0-20): How many of the candidate's key skills (Figma, Storybook, Zeroheight, design systems, component libraries, design tokens, prototyping, user research, accessibility) are mentioned or implied? 5+=20, 3-4=15, 1-2=10, none mentioned=8 (benefit of doubt).
-- Remote/location fit (0-15): Remote APAC=15, remote global async=12, hybrid SEA=10, on-site SEA=8, remote EU (5-7h diff)=3, US timezone only=0, unknown=10 (benefit of doubt).
-- Compensation signal (0-10): Mentions salary in range (>=70k EUR)=10, no salary info=5 (neutral, never penalize), low salary signal=0.
-- Growth opportunity (0-15): Design system work=high, leadership opportunity=high, complex products=high, regulated environments=high. Generic role=5, unknown=7.
+- Industry match (0-15): B2B SaaS=high, regulated industries=high, consumer app=medium, crypto/unregulated gambling=low. Unknown=8.
+- Skill overlap (0-20): How many key skills appear in JD? 5+=20, 3-4=15, 1-2=10, none mentioned=8.
+- Remote/location fit (0-15): Remote APAC=15, remote global async=12, hybrid SEA=10, on-site SEA=8, remote EU=3, US TZ only=0, unknown=10.
+- Compensation signal (0-10): In range (>=70k EUR)=10, no info=5, low signal=0.
+- Growth opportunity (0-15): Design system work=high, leadership=high, complex products=high, regulated=high. Generic=5, unknown=7.
 
-IMPORTANT:
-- When information is MISSING, give partial points (benefit of the doubt), never 0.
-- A "Senior Product Designer" role with no red flags should score 65+ minimum.
-- Salary not listed is NORMAL — give 5/10, never 0.
-- "Remote" without timezone info = assume compatible (10/15).
+IMPORTANT: Missing info = partial points (benefit of the doubt), never 0. "Senior Product Designer" with no red flags = 65+ minimum. No salary listed = 5/10. "Remote" without TZ info = 10/15.
 
-COVER LETTER SNIPPET:
-- 2-3 sentences max referencing something specific from the JD
-- Connect it to the candidate's design systems / complex architecture experience
-- Professional but warm tone, never generic
+═══════════════════════════════════════════════
+COVER LETTER SNIPPET — THIS IS CRITICAL
+═══════════════════════════════════════════════
+
+Write 2-3 sentences that pass the "would a human write this?" test. Rules:
+
+1. REFERENCE A SPECIFIC DETAIL FROM THE JD: name the company, mention their product/tech/team/mission, quote something they said. NOT "your team" or "this role" — use the ACTUAL company name and what they do.
+
+2. CONNECT TO A SPECIFIC ACHIEVEMENT: don't say "7+ years of experience" or "design systems expertise." Instead, pick the MOST RELEVANT achievement from the list above and cite it concretely. Examples:
+   - BAD: "I have extensive experience with design systems"
+   - GOOD: "At ClickOut Media, I governed 143 component templates across 7 SaaS products — the kind of multi-product consistency challenge [Company] faces with [their specific product]"
+   - BAD: "I bring strong product design skills"
+   - GOOD: "Building PokerStars' regulated platform from 0-to-1 taught me how to ship complex products under compliance constraints, which directly applies to [Company]'s [specific challenge from JD]"
+
+3. ADD A "WHY THIS COMPANY" ANGLE: show you understand what makes them different. Reference their industry, product, mission, or growth stage. If the JD mentions specific projects, teams, or technologies — name them.
+
+4. NEVER use these generic phrases: "passionate about", "I believe", "excited to bring", "align with my experience", "I am confident", "I look forward to". Write like a peer, not a cover letter bot.
+
+═══════════════════════════════════════════════
 
 Respond ONLY with valid JSON:
 {
@@ -131,7 +201,7 @@ Respond ONLY with valid JSON:
   "salaryInRange": boolean,
   "skillsMatch": boolean,
   "reasoning": "1-2 sentence explanation",
-  "coverLetterSnippet": "2-3 personalized sentences"
+  "coverLetterSnippet": "2-3 sentences following the rules above"
 }`
 }
 
@@ -259,7 +329,7 @@ Return ONLY the JSON object, no markdown fences.`
   const response = await Promise.race([
     client.messages.create({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 600,
+      max_tokens: 800,
       system: systemPrompt,
       messages: [{ role: "user", content: userMessage }],
     }),

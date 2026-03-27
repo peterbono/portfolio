@@ -2,7 +2,7 @@ import type { Page, Browser, BrowserContext } from 'playwright'
 import type { SearchProfile } from '../types/database'
 import type { ApplicantProfile, ATSAdapter, ApplyResult } from './types'
 import { APPLICANT } from './types'
-import { scoutJobs, type DiscoveredJob } from './scout'
+import { scoutJobs, scoutJobsMultiPass, type DiscoveredJob, type MultiPassConfig } from './scout'
 import {
   qualifyJob,
   clearQualificationCache,
@@ -33,6 +33,10 @@ export interface PipelineConfig {
   browser: Browser // Playwright browser instance
   browserContext?: BrowserContext // pre-authenticated context (LinkedIn cookie)
   minScore: number // Minimum qualification score, default 60
+  /** All location rules from search config — used by multi-pass scout */
+  allLocations?: string[]
+  /** All keywords from search config — used by multi-pass scout */
+  allKeywords?: string[]
 }
 
 /** Progress data sent via onProgress callback for live UI updates */
@@ -250,32 +254,78 @@ async function extractJobDescription(page: Page, url: string): Promise<string> {
 // Phase 1: Scout
 // ---------------------------------------------------------------------------
 
+/** Default locations to search if none are configured */
+const DEFAULT_SCOUT_LOCATIONS = [
+  'Asia Pacific',
+  'Singapore',
+  'Philippines',
+  'Thailand',
+  'India',
+  'Australia',
+]
+
+/** Default minimum set of keywords to ensure broad coverage */
+const DEFAULT_SCOUT_KEYWORDS = [
+  'Product Designer',
+  'UX Designer',
+  'UX UI Designer',
+  'UI Designer',
+]
+
+/** Number of LinkedIn pages to scrape per keyword×location combo (25 results/page) */
+const PAGES_PER_SEARCH = 3
+
 async function phaseScout(
   page: Page,
   config: PipelineConfig,
   runId: string,
   activities: ActivityLogEntry[],
 ): Promise<DiscoveredJob[]> {
-  console.log('[pipeline] Phase 1: SCOUT')
+  console.log('[pipeline] Phase 1: SCOUT (multi-pass)')
 
   const existing = await getExistingApplications(config.userId)
+
+  // Build the keyword list: use allKeywords if provided, else profile keywords, else defaults
+  const keywords = (config.allKeywords && config.allKeywords.length > 0)
+    ? config.allKeywords
+    : (config.searchProfile.keywords && config.searchProfile.keywords.length > 0)
+      ? config.searchProfile.keywords
+      : DEFAULT_SCOUT_KEYWORDS
+
+  // Build the location list: use allLocations if provided, else profile location, else defaults
+  const locations = (config.allLocations && config.allLocations.length > 0)
+    ? config.allLocations
+    : config.searchProfile.location
+      ? [config.searchProfile.location]
+      : DEFAULT_SCOUT_LOCATIONS
+
+  // Deduplicate keywords and locations (case-insensitive)
+  const uniqueKeywords = [...new Set(keywords.map(k => k.trim()).filter(Boolean))]
+  const uniqueLocations = [...new Set(locations.map(l => l.trim()).filter(Boolean))]
 
   const logEntry: ActivityLogEntry = {
     user_id: config.userId,
     run_id: runId,
     action: 'scout_start',
-    reason: `Keywords: ${config.searchProfile.keywords?.join(', ') ?? 'default'}`,
+    reason: `Multi-pass: ${uniqueKeywords.length} keywords × ${uniqueLocations.length} locations × ${PAGES_PER_SEARCH} pages (keywords: ${uniqueKeywords.join(', ')})`,
   }
   await logBotActivity(logEntry)
   activities.push(logEntry)
 
-  const result = await scoutJobs(page, config.searchProfile, existing)
+  // Use multi-pass scout for maximum coverage
+  const multiPassConfig: MultiPassConfig = {
+    keywords: uniqueKeywords,
+    locations: uniqueLocations,
+    pagesPerSearch: PAGES_PER_SEARCH,
+  }
+
+  const result = await scoutJobsMultiPass(page, config.searchProfile, existing, multiPassConfig)
 
   const scoutDone: ActivityLogEntry = {
     user_id: config.userId,
     run_id: runId,
     action: 'scout_complete',
-    reason: `Found ${result.totalFound}, filtered ${result.filteredOut}, candidates: ${result.jobs.length}`,
+    reason: `Multi-pass: ${uniqueKeywords.length}kw × ${uniqueLocations.length}loc = ${uniqueKeywords.length * uniqueLocations.length} searches. Found ${result.totalFound}, filtered ${result.filteredOut}, unique candidates: ${result.jobs.length}`,
   }
   await logBotActivity(scoutDone)
   activities.push(scoutDone)
@@ -899,13 +949,19 @@ export async function runPipelineForUser(
  * No Supabase lookup needed — config is in the payload.
  */
 export async function runPipelineFromInline(cfg: InlinePipelineConfig): Promise<PipelineResult> {
+  // Extract ALL location values from locationRules for multi-pass scout
+  const allLocations = (cfg.searchConfig.locationRules ?? [])
+    .map(r => r.value)
+    .filter(Boolean)
+
   // Build a SearchProfile-compatible object from inline config
+  // The single `location` field is kept for backward compatibility (used as fallback)
   const searchProfile: SearchProfile = {
     id: 'inline-' + Date.now(),
     user_id: cfg.userId,
     name: 'Search from dashboard',
     keywords: cfg.searchConfig.keywords,
-    location: cfg.searchConfig.locationRules?.[0]?.value || '',
+    location: allLocations[0] || '',
     remote_only: cfg.searchConfig.locationRules?.some(r => r.workArrangement === 'remote') ?? false,
     min_salary: cfg.searchConfig.locationRules?.find(r => r.minSalary)?.minSalary ?? 0,
     excluded_companies: cfg.searchConfig.excludedCompanies,
@@ -923,5 +979,8 @@ export async function runPipelineFromInline(cfg: InlinePipelineConfig): Promise<
     maxApplications: cfg.maxApplications ?? 20,
     dryRun: cfg.dryRun ?? false,
     minScore: 60,
+    // Pass ALL locations and keywords for multi-pass scout
+    allLocations,
+    allKeywords: cfg.searchConfig.keywords,
   })
 }

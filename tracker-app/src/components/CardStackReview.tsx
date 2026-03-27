@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Check, X, Shield, RotateCcw } from 'lucide-react'
+import { Check, X, Shield, RotateCcw, ExternalLink } from 'lucide-react'
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -256,7 +256,21 @@ export default function CardStackReview({
           {/* Company + Role */}
           <div style={cs.mainInfo}>
             <h3 style={cs.company}>{currentItem.company}</h3>
-            <p style={cs.role}>{currentItem.role}</p>
+            <p style={cs.role}>
+              {currentItem.role}
+              {currentItem.jobUrl && (
+                <a
+                  href={currentItem.jobUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={cs.jobLink}
+                  title="Open job posting"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <ExternalLink size={12} />
+                </a>
+              )}
+            </p>
           </div>
 
           {/* Match reasons */}
@@ -447,6 +461,16 @@ const cs: Record<string, React.CSSProperties> = {
     fontSize: 15,
     color: 'var(--text-secondary)',
     margin: '4px 0 0',
+  },
+  jobLink: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    marginLeft: 6,
+    color: 'var(--text-tertiary)',
+    opacity: 0.6,
+    verticalAlign: 'middle',
+    transition: 'opacity 0.15s, color 0.15s',
+    textDecoration: 'none',
   },
 
   /* Reasons */
