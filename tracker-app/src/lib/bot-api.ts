@@ -1,15 +1,9 @@
 /**
- * Client-side API for triggering bot runs via Trigger.dev REST API.
+ * Client-side API for triggering bot runs via Vercel proxy (avoids CORS).
+ * The proxy at /api/trigger-task forwards requests to Trigger.dev server-side.
  */
 
-const TRIGGER_API_BASE = 'https://api.trigger.dev/api/v1/tasks'
-const TRIGGER_API_URL = `${TRIGGER_API_BASE}/apply-job-pipeline/trigger`
-const TRIGGER_QUALIFY_URL = `${TRIGGER_API_BASE}/qualify-jobs/trigger`
-const TRIGGER_APPLY_URL = `${TRIGGER_API_BASE}/apply-jobs/trigger`
-
-function getTriggerKey(): string {
-  return import.meta.env.VITE_TRIGGER_PUBLIC_KEY || ''
-}
+const PROXY_TASK_URL = '/api/trigger-task'
 
 async function getCurrentUserId(): Promise<string> {
   const { supabase } = await import('./supabase')
@@ -55,11 +49,6 @@ export async function triggerBotRun(
   _searchProfileId: string,
   options?: { maxApplications?: number },
 ): Promise<TriggerBotResponse> {
-  const key = getTriggerKey()
-  if (!key) {
-    throw new Error('Bot is not configured. Please contact support.')
-  }
-
   const userId = await getCurrentUserId()
   const searchConfig = getSearchConfig()
   const userProfile = getUserProfile()
@@ -83,13 +72,10 @@ export async function triggerBotRun(
     payload.linkedInCookie = linkedInCookie
   }
 
-  const response = await fetch(TRIGGER_API_URL, {
+  const response = await fetch(PROXY_TASK_URL, {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${key}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ payload }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ taskId: 'apply-job-pipeline', payload }),
   })
 
   if (!response.ok) {
@@ -122,11 +108,6 @@ export interface DiscoveredJobInput {
 export async function triggerQualifyJobs(
   jobs: DiscoveredJobInput[],
 ): Promise<TriggerBotResponse> {
-  const key = getTriggerKey()
-  if (!key) {
-    throw new Error('Bot is not configured. Please contact support.')
-  }
-
   if (jobs.length === 0) {
     throw new Error('No jobs provided for qualification.')
   }
@@ -146,13 +127,10 @@ export async function triggerQualifyJobs(
     userProfile: userProfile || {},
   }
 
-  const response = await fetch(TRIGGER_QUALIFY_URL, {
+  const response = await fetch(PROXY_TASK_URL, {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${key}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ payload }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ taskId: 'qualify-jobs', payload }),
   })
 
   if (!response.ok) {
@@ -188,11 +166,6 @@ export interface ApprovedJobInput {
 export async function triggerApplyJobs(
   jobs: ApprovedJobInput[],
 ): Promise<TriggerBotResponse> {
-  const key = getTriggerKey()
-  if (!key) {
-    throw new Error('Bot is not configured. Please contact support.')
-  }
-
   if (jobs.length === 0) {
     throw new Error('No approved jobs provided for application.')
   }
@@ -212,13 +185,10 @@ export async function triggerApplyJobs(
     payload.linkedInCookie = linkedInCookie
   }
 
-  const response = await fetch(TRIGGER_APPLY_URL, {
+  const response = await fetch(PROXY_TASK_URL, {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${key}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ payload }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ taskId: 'apply-jobs', payload }),
   })
 
   if (!response.ok) {

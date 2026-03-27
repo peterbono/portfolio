@@ -3679,32 +3679,18 @@ export function AutopilotView() {
     }
   }, [hasConfig])
 
-  // ---- Trigger.dev run polling (every 5s) ----------------------------
+  // ---- Trigger.dev run polling via Vercel proxy (every 5s) -----------
   useEffect(() => {
     if (!activeRunId) return
     const TERMINAL = ['COMPLETED', 'FAILED', 'CRASHED', 'CANCELED', 'SYSTEM_FAILURE']
-    const triggerKey = import.meta.env.VITE_TRIGGER_PUBLIC_KEY || ''
 
     const poll = async () => {
       try {
-        // Try the individual run endpoint first
+        // Poll via Vercel proxy (no CORS issues, auth added server-side)
         let data: Record<string, unknown> | null = null
-        const res = await fetch(`https://api.trigger.dev/api/v1/runs/${activeRunId}`, {
-          headers: { Authorization: `Bearer ${triggerKey}` },
-        })
+        const res = await fetch(`/api/trigger-run?runId=${activeRunId}`)
         if (res.ok) {
           data = await res.json()
-        } else if (res.status === 404) {
-          // Fallback: use list endpoint and find our run
-          const listRes = await fetch(`https://api.trigger.dev/api/v1/runs?limit=5`, {
-            headers: { Authorization: `Bearer ${triggerKey}` },
-          })
-          if (listRes.ok) {
-            const listData = await listRes.json()
-            const runs = listData.data || listData.runs || []
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            data = runs.find((r: any) => r.id === activeRunId) || (runs.length > 0 ? runs[0] : null)
-          }
         }
 
         if (!data) return

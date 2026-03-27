@@ -12,7 +12,7 @@ import { supabase } from './supabase'
 // ---------------------------------------------------------------------------
 
 const STORAGE_BUCKET = 'documents'
-const TRIGGER_COMPRESS_URL = 'https://api.trigger.dev/api/v1/tasks/compress-pdf/trigger'
+const PROXY_TASK_URL = '/api/trigger-task'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -89,18 +89,11 @@ export async function triggerCompression(
   storagePath: string,
   fileName: string,
 ): Promise<{ runId: string }> {
-  const key = import.meta.env.VITE_TRIGGER_PUBLIC_KEY || ''
-  if (!key) {
-    throw new Error('VITE_TRIGGER_PUBLIC_KEY is not configured — cannot trigger compression')
-  }
-
-  const response = await fetch(TRIGGER_COMPRESS_URL, {
+  const response = await fetch(PROXY_TASK_URL, {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${key}`,
-      'Content-Type': 'application/json',
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
+      taskId: 'compress-pdf',
       payload: { userId, storagePath, fileName },
     }),
   })

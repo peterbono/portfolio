@@ -37,6 +37,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@types/three": "^0.162.0",
+    "@vercel/node": "^5.6.21",
     "@vitejs/plugin-react": "^4.3.0",
     "cheerio": "^1.0.0-rc.12",
     "jsdom": "^26.1.0",
