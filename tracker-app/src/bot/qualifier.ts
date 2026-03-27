@@ -328,9 +328,9 @@ function cacheKey(jobDescription: string): string {
 function buildSystemPrompt(applicantProfile: ApplicantProfile, variant?: CoverLetterVariant): string {
   const variantStyle = variant ? VARIANT_PROMPTS[variant] : 'Write naturally — professional but warm tone.'
 
-  // Format achievements as numbered list for easy LLM reference
+  // Format achievements as numbered list for easy LLM reference — include company for anti-hallucination
   const achievementsList = (applicantProfile.achievements ?? [])
-    .map((a, i) => `  ${i + 1}. ${a.metric}\n     Context: ${a.context}\n     Best for JDs mentioning: ${a.relevantWhen.join(', ')}`)
+    .map((a, i) => `  ${i + 1}. [${(a as { company?: string }).company ?? 'Unknown'}] ${a.metric}\n     Context: ${a.context}\n     Best for JDs mentioning: ${a.relevantWhen.join(', ')}`)
     .join('\n')
 
   // Format key projects
@@ -417,19 +417,24 @@ CRITICAL SCORING RULES:
 COVER LETTER SNIPPET — THIS IS CRITICAL
 ═══════════════════════════════════════════════
 
+CRITICAL ANTI-HALLUCINATION RULE:
+When citing the applicant's achievements, you MUST use the EXACT company name listed in the [brackets] with each achievement above. NEVER attribute an achievement to a different company. NEVER invent product names (e.g. do NOT say "PokerStars" — the product is "BetRivers Poker" at Rush Street Interactive). The 143 templates across 7 B2B SaaS products was at PERNOD RICARD, NOT ClickOut Media. The 90% dev feedback improvement was at RUSH STREET INTERACTIVE, NOT ClickOut Media. If unsure which achievement fits a JD, use a generic statement instead of risking a wrong company attribution.
+
 Write 2-3 sentences that pass the "would a human write this?" test. Rules:
 
 1. REFERENCE A SPECIFIC DETAIL FROM THE JD: name the company, mention their product/tech/team/mission, quote something they said. NOT "your team" or "this role" — use the ACTUAL company name and what they do.
 
-2. CONNECT TO A SPECIFIC ACHIEVEMENT: don't say "7+ years of experience" or "design systems expertise." Instead, pick the MOST RELEVANT achievement from the list above and cite it concretely. Examples:
+2. CONNECT TO A SPECIFIC ACHIEVEMENT: don't say "7+ years of experience" or "design systems expertise." Instead, pick the MOST RELEVANT achievement from the list above and cite it concretely — ALWAYS using the correct company name from the achievement. Examples:
    - BAD: "I have extensive experience with design systems"
-   - GOOD: "At ClickOut Media, I governed 143 component templates across 7 SaaS products — the kind of multi-product consistency challenge [Company] faces with [their specific product]"
+   - GOOD: "At Pernod Ricard, I governed 143 component templates across 7 B2B SaaS products — the kind of multi-product consistency challenge [Company] faces with [their specific product]"
    - BAD: "I bring strong product design skills"
-   - GOOD: "Building PokerStars' regulated platform from 0-to-1 taught me how to ship complex products under compliance constraints, which directly applies to [Company]'s [specific challenge from JD]"
+   - GOOD: "Building BetRivers Poker at Rush Street Interactive from 0-to-1 taught me how to ship complex products under compliance constraints, which directly applies to [Company]'s [specific challenge from JD]"
 
 3. ADD A "WHY THIS COMPANY" ANGLE: show you understand what makes them different. Reference their industry, product, mission, or growth stage. If the JD mentions specific projects, teams, or technologies — name them.
 
 4. NEVER use these generic phrases: "passionate about", "I believe", "excited to bring", "align with my experience", "I am confident", "I look forward to". Write like a peer, not a cover letter bot.
+
+5. NEVER invent or substitute product/company names. Use ONLY: "BetRivers Poker" (NOT PokerStars), "Rush Street Interactive" (NOT BetRivers alone for company), "Pernod Ricard" (for 143 templates/7 SaaS products), "ClickOut Media" (for 0-to-1 design system, Maze studies), "IDEMIA" (for biometric/airport).
 
 STYLE DIRECTIVE: ${variantStyle}
 

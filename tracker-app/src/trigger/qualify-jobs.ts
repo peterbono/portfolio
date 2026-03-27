@@ -86,31 +86,35 @@ function buildSystemPrompt(userProfile: Record<string, unknown>): string {
   const industryWins = userProfile.industryWins as Record<string, string> | undefined
   const toolMastery = userProfile.toolMastery as Array<{ name: string; proficiency: string; context: string }> | undefined
 
-  // Format achievements
+  // Format achievements — include company name for anti-hallucination
   const achievementsList = achievements?.length
-    ? achievements.map((a, i) => `  ${i + 1}. ${a.metric}\n     Context: ${a.context}\n     Best for JDs mentioning: ${a.relevantWhen.join(', ')}`).join('\n')
-    : `  1. Built the #1 US online poker product (PokerStars MI/NJ) end-to-end — regulated iGaming, 0-to-1
-  2. 90% improvement in developer-designer feedback loop — Storybook-driven specs, Zeroheight docs, Figma-to-code validation
-  3. Managed 143 production component templates across 7 SaaS products — multi-product design system governance
-  4. Designed biometric verification flows for 50+ airport checkpoints (IDEMIA) — security-critical, sub-3s processing UX
-  5. Shipped design system 0-to-1 with full Figma-Storybook-Zeroheight pipeline — tokens consumed by 3 frontend teams
-  6. Led UX research program with 30+ Maze studies — 40% reduction in post-launch redesign cycles`
+    ? achievements.map((a, i) => {
+        const company = (a as { company?: string }).company ? `[${(a as { company?: string }).company}] ` : ''
+        return `  ${i + 1}. ${company}${a.metric}\n     Context: ${a.context}\n     Best for JDs mentioning: ${a.relevantWhen.join(', ')}`
+      }).join('\n')
+    : `  1. [Rush Street Interactive] At Rush Street Interactive: Built the #1 US online poker product (BetRivers Poker) end-to-end — regulated iGaming, 0-to-1
+  2. [Rush Street Interactive] At Rush Street Interactive: 90% improvement in developer-designer feedback loop on the design system — Storybook-driven specs, Zeroheight docs, Figma-to-code validation
+  3. [Pernod Ricard] At Pernod Ricard: Governed 143 component templates across 7 B2B SaaS products — multi-product design system governance
+  4. [IDEMIA] At IDEMIA: Designed biometric verification flows for 50+ airport checkpoints — security-critical, sub-3s processing UX
+  5. [ClickOut Media] At ClickOut Media: Shipped design system 0-to-1 with full Figma-Storybook-Zeroheight pipeline — tokens consumed by 3 frontend teams
+  6. [ClickOut Media] At ClickOut Media: Led UX research program with 30+ Maze studies — 40% reduction in post-launch redesign cycles`
 
   // Format key projects
   const projectsList = keyProjects?.length
     ? keyProjects.map(p => `  - ${p.name} (${p.role}): ${p.outcome}\n    Skills: ${p.skills.join(', ')}`).join('\n')
-    : `  - PokerStars MI/NJ (Lead Product Designer): #1 US poker product, passed regulatory audits first submission
-  - ClickOut Media Design System (Senior DS Lead): 143 components, 7 products, 90% dev feedback improvement
-  - IDEMIA Airport Biometrics (UX/UI Designer): 50+ airport checkpoints, sub-3s processing UX
-  - Continuous Discovery Program (UX Research Lead): 30+ Maze studies, 40% less post-launch redesign`
+    : `  - BetRivers Poker at Rush Street Interactive (Senior Product Designer): #1 US poker product, passed regulatory audits first submission
+  - Pernod Ricard Multi-Product Design System (UX/UI Designer): 143 component templates across 7 B2B SaaS products, global deployment
+  - ClickOut Media Design System & Design Ops (Senior Product Designer): 0-to-1 design system, 90% dev feedback improvement, 30+ Maze studies
+  - IDEMIA Airport Biometrics (UX Designer): 50+ airport checkpoints, sub-3s processing UX`
 
   // Format industry wins
   const industryWinsList = industryWins
     ? Object.entries(industryWins).map(([k, v]) => `  - ${k}: ${v}`).join('\n')
-    : `  - igaming: Built #1 US poker product, deep regulatory compliance and responsible gaming UX
-  - b2b_saas: 143 templates across 7 products, multi-product consistency expert
-  - biometric_security: Airport biometric verification for 50+ checkpoints at IDEMIA
-  - fintech: Regulated product experience (KYC, AML, compliance) transferable from iGaming`
+    : `  - igaming: At Rush Street Interactive — Built #1 US poker product (BetRivers Poker), deep regulatory compliance and responsible gaming UX
+  - b2b_saas: At Pernod Ricard — 143 templates across 7 B2B SaaS products, multi-product consistency expert
+  - biometric_security: At IDEMIA — Airport biometric verification for 50+ checkpoints
+  - affiliate_seo: At ClickOut Media — Design system from 0-to-1, design ops, SEO-optimized affiliate platforms
+  - fintech: At Rush Street Interactive — Regulated product experience (KYC, AML, compliance) transferable from iGaming`
 
   // Format tool mastery
   const toolsList = toolMastery?.length
@@ -190,19 +194,24 @@ CRITICAL SCORING RULES:
 COVER LETTER SNIPPET — THIS IS CRITICAL
 ═══════════════════════════════════════════════
 
+CRITICAL ANTI-HALLUCINATION RULE:
+When citing the applicant's achievements, you MUST use the EXACT company name listed in the [brackets] with each achievement above. NEVER attribute an achievement to a different company. NEVER invent product names (e.g. do NOT say "PokerStars" — the product is "BetRivers Poker" at Rush Street Interactive). The 143 templates across 7 B2B SaaS products was at PERNOD RICARD, NOT ClickOut Media. The 90% dev feedback improvement was at RUSH STREET INTERACTIVE, NOT ClickOut Media. If unsure which achievement fits a JD, use a generic statement instead of risking a wrong company attribution.
+
 Write 2-3 sentences that pass the "would a human write this?" test. Rules:
 
 1. REFERENCE A SPECIFIC DETAIL FROM THE JD: name the company, mention their product/tech/team/mission, quote something they said. NOT "your team" or "this role" — use the ACTUAL company name and what they do.
 
-2. CONNECT TO A SPECIFIC ACHIEVEMENT: don't say "7+ years of experience" or "design systems expertise." Instead, pick the MOST RELEVANT achievement from the list above and cite it concretely. Examples:
+2. CONNECT TO A SPECIFIC ACHIEVEMENT: don't say "7+ years of experience" or "design systems expertise." Instead, pick the MOST RELEVANT achievement from the list above and cite it concretely — ALWAYS using the correct company name from the achievement. Examples:
    - BAD: "I have extensive experience with design systems"
-   - GOOD: "At ClickOut Media, I governed 143 component templates across 7 SaaS products — the kind of multi-product consistency challenge [Company] faces with [their specific product]"
+   - GOOD: "At Pernod Ricard, I governed 143 component templates across 7 B2B SaaS products — the kind of multi-product consistency challenge [Company] faces with [their specific product]"
    - BAD: "I bring strong product design skills"
-   - GOOD: "Building PokerStars' regulated platform from 0-to-1 taught me how to ship complex products under compliance constraints, which directly applies to [Company]'s [specific challenge from JD]"
+   - GOOD: "Building BetRivers Poker at Rush Street Interactive from 0-to-1 taught me how to ship complex products under compliance constraints, which directly applies to [Company]'s [specific challenge from JD]"
 
 3. ADD A "WHY THIS COMPANY" ANGLE: show you understand what makes them different. Reference their industry, product, mission, or growth stage. If the JD mentions specific projects, teams, or technologies — name them.
 
 4. NEVER use these generic phrases: "passionate about", "I believe", "excited to bring", "align with my experience", "I am confident", "I look forward to". Write like a peer, not a cover letter bot.
+
+5. NEVER invent or substitute product/company names. Use ONLY: "BetRivers Poker" (NOT PokerStars), "Rush Street Interactive" (NOT BetRivers alone for company), "Pernod Ricard" (for 143 templates/7 SaaS products), "ClickOut Media" (for 0-to-1 design system, Maze studies), "IDEMIA" (for biometric/airport).
 
 ═══════════════════════════════════════════════
 

@@ -28,6 +28,8 @@ export interface ApplicantProfile {
 
 export interface ApplicantAchievement {
   metric: string
+  /** The EXACT company where this achievement happened — Haiku MUST use this, never invent a different company */
+  company: string
   context: string
   /** Which types of JDs this achievement is most relevant for */
   relevantWhen: string[]
@@ -82,75 +84,81 @@ export const APPLICANT: ApplicantProfile = {
 
   achievements: [
     {
-      metric: 'Built the #1 US online poker product (PokerStars MI/NJ) end-to-end',
-      context: 'Led product design for regulated iGaming product from 0-to-1 in Michigan and New Jersey markets, navigating complex compliance and licensing requirements',
+      metric: 'At Rush Street Interactive: Built the #1 US online poker product (BetRivers Poker) end-to-end',
+      company: 'Rush Street Interactive',
+      context: 'Led product design for BetRivers Poker, a regulated iGaming product, from 0-to-1 in Michigan and New Jersey markets, navigating complex compliance and licensing requirements',
       relevantWhen: ['igaming', 'regulated industry', 'fintech', 'complex product', '0-to-1', 'product design'],
     },
     {
-      metric: '90% improvement in developer-designer feedback loop efficiency',
-      context: 'Redesigned the handoff workflow at ClickOut Media by introducing Storybook-driven component specs, design token documentation in Zeroheight, and automated Figma-to-code validation',
+      metric: 'At Rush Street Interactive: 90% improvement in developer-designer feedback loop efficiency on the design system',
+      company: 'Rush Street Interactive',
+      context: 'Redesigned the handoff workflow at Rush Street Interactive by introducing Storybook-driven component specs, design token documentation in Zeroheight, and automated Figma-to-code validation for the BetRivers design system',
       relevantWhen: ['design systems', 'design ops', 'developer handoff', 'storybook', 'design tokens', 'efficiency'],
     },
     {
-      metric: 'Managed 143 production component templates across 7 SaaS products',
-      context: 'Governed a multi-product design system serving 7 distinct B2B SaaS products at ClickOut Media, maintaining consistency while accommodating product-specific needs across teams in 4 time zones',
+      metric: 'At Pernod Ricard: Governed 143 component templates across 7 B2B SaaS products via unified design system',
+      company: 'Pernod Ricard',
+      context: 'Governed a multi-product design system serving 7 distinct B2B SaaS products at Pernod Ricard, maintaining consistency while accommodating product-specific needs across global teams',
       relevantWhen: ['design systems', 'multi-product', 'component library', 'governance', 'scale', 'saas', 'b2b'],
     },
     {
-      metric: 'Designed biometric identity verification flows used by 50+ airport security checkpoints',
+      metric: 'At IDEMIA: Designed biometric identity verification flows used by 50+ airport security checkpoints',
+      company: 'IDEMIA',
       context: 'Created complex user flows for biometric scanning (facial recognition, fingerprint) at IDEMIA, balancing security requirements with sub-3-second processing UX in high-stress airport environments',
       relevantWhen: ['security', 'biometrics', 'identity', 'complex flows', 'enterprise', 'aviation', 'public sector'],
     },
     {
-      metric: 'Shipped design system from 0-to-1 with full Figma-Storybook-Zeroheight pipeline',
-      context: 'Architected the entire design system infrastructure: Figma component library with auto-layout + variants, Storybook documentation with interactive examples, Zeroheight for design guidelines, and design token JSON consumed by 3 frontend teams',
+      metric: 'At ClickOut Media: Shipped design system from 0-to-1 with full Figma-Storybook-Zeroheight pipeline',
+      company: 'ClickOut Media',
+      context: 'Architected the entire design system infrastructure at ClickOut Media: Figma component library with auto-layout + variants, Storybook documentation with interactive examples, Zeroheight for design guidelines, and design token JSON consumed by 3 frontend teams',
       relevantWhen: ['design systems', 'figma', 'storybook', 'zeroheight', 'design tokens', 'infrastructure', 'architecture'],
     },
     {
-      metric: 'Led UX research program with Maze usability testing across 4 product lines',
-      context: 'Established and ran a continuous discovery program using Maze for unmoderated testing, conducting 30+ studies that directly informed product roadmap priorities and reduced post-launch redesign cycles by 40%',
+      metric: 'At ClickOut Media: Led UX research program with Maze usability testing across 4 product lines',
+      company: 'ClickOut Media',
+      context: 'Established and ran a continuous discovery program at ClickOut Media using Maze for unmoderated testing, conducting 30+ studies that directly informed product roadmap priorities and reduced post-launch redesign cycles by 40%',
       relevantWhen: ['user research', 'usability testing', 'maze', 'discovery', 'data-driven design', 'ux research'],
     },
   ],
 
   industryWins: {
-    'igaming': 'Built the #1 US poker product (PokerStars MI/NJ), deeply familiar with regulatory compliance, responsible gaming UX patterns, and geo-fenced product experiences',
-    'b2b_saas': 'Governed design systems across 7 B2B SaaS products (143 templates), expert in multi-product consistency, enterprise UX patterns, and complex information architecture',
-    'affiliate_seo': 'Designed high-conversion affiliate platforms at ClickOut Media, optimizing content-heavy layouts for SEO performance while maintaining brand consistency across 20+ properties',
-    'biometric_security': 'Designed biometric identity verification at IDEMIA for 50+ airport checkpoints, expert in security-critical UX where errors have real-world consequences',
-    'public_sector': 'Experience designing for government and public-sector clients at IDEMIA, navigating procurement requirements, accessibility standards (WCAG 2.1 AA), and multi-stakeholder approval processes',
-    'aviation': 'Designed passenger-facing and operator-facing systems for airport security at IDEMIA, experienced with high-throughput environments and mission-critical interfaces',
-    'fintech': 'Deep experience in regulated financial products through iGaming (similar compliance frameworks to fintech: KYC, AML, transaction monitoring, responsible use)',
+    'igaming': 'At Rush Street Interactive: Built the #1 US poker product (BetRivers Poker), deeply familiar with regulatory compliance, responsible gaming UX patterns, and geo-fenced product experiences',
+    'b2b_saas': 'At Pernod Ricard: Governed design systems across 7 B2B SaaS products (143 templates), expert in multi-product consistency, enterprise UX patterns, and complex information architecture',
+    'affiliate_seo': 'At ClickOut Media: Designed high-conversion affiliate platforms, optimizing content-heavy layouts for SEO performance while maintaining brand consistency across 20+ properties',
+    'biometric_security': 'At IDEMIA: Designed biometric identity verification for 50+ airport checkpoints, expert in security-critical UX where errors have real-world consequences',
+    'public_sector': 'At DILA (French Government): Experience designing for government and public-sector clients, navigating accessibility standards (WCAG 2.1 AA) and multi-stakeholder approval processes. Also at IDEMIA for public-sector biometric systems.',
+    'aviation': 'At IDEMIA: Designed passenger-facing and operator-facing systems for airport security, experienced with high-throughput environments and mission-critical interfaces. Also internship at Airbus.',
+    'fintech': 'At Rush Street Interactive: Deep experience in regulated financial products through iGaming (similar compliance frameworks to fintech: KYC, AML, transaction monitoring, responsible use)',
   },
 
   keyProjects: [
     {
-      name: 'PokerStars MI/NJ Regulated Platform',
-      role: 'Lead Product Designer',
-      outcome: 'Launched #1 US online poker product, passed regulatory audits in Michigan and New Jersey on first submission',
+      name: 'BetRivers Poker (Rush Street Interactive) — Regulated iGaming Platform',
+      role: 'Senior Product Designer',
+      outcome: 'Launched #1 US online poker product (BetRivers Poker), passed regulatory audits in Michigan and New Jersey on first submission',
       skills: ['Figma', 'complex product architecture', 'regulatory compliance', 'user research', 'prototyping'],
       industry: 'igaming',
     },
     {
-      name: 'ClickOut Media Multi-Product Design System',
-      role: 'Senior Design System Lead',
-      outcome: '143 components governed across 7 SaaS products, 90% dev feedback improvement, adopted by 4 cross-functional teams',
-      skills: ['Figma', 'Storybook', 'Zeroheight', 'design tokens', 'component governance', 'cross-team collaboration'],
+      name: 'Pernod Ricard — Multi-Product B2B SaaS Design System',
+      role: 'UX/UI Designer',
+      outcome: '143 component templates governed across 7 B2B SaaS products, global deployment',
+      skills: ['Figma', 'design tokens', 'component governance', 'cross-team collaboration', 'multi-product design system'],
       industry: 'b2b_saas',
     },
     {
-      name: 'IDEMIA Airport Biometric Security',
-      role: 'UX/UI Designer',
+      name: 'ClickOut Media — Design System & Design Ops',
+      role: 'Senior Product Designer',
+      outcome: 'Built design system from 0-to-1 with Figma-Storybook-Zeroheight pipeline, 90% dev feedback improvement, 30+ Maze usability studies',
+      skills: ['Figma', 'Storybook', 'Zeroheight', 'design tokens', 'Maze', 'design ops'],
+      industry: 'affiliate_seo',
+    },
+    {
+      name: 'IDEMIA — Airport Biometric Security',
+      role: 'UX Designer',
       outcome: 'Deployed across 50+ airport security checkpoints, sub-3-second biometric processing UX',
       skills: ['complex user flows', 'security-critical design', 'accessibility', 'enterprise UX'],
       industry: 'biometric_security',
-    },
-    {
-      name: 'Continuous Discovery Research Program',
-      role: 'UX Research Lead',
-      outcome: '30+ Maze studies conducted, 40% reduction in post-launch redesign cycles',
-      skills: ['Maze', 'usability testing', 'user research', 'data analysis', 'stakeholder presentations'],
-      industry: 'b2b_saas',
     },
   ],
 
