@@ -4004,11 +4004,11 @@ export function AutopilotView() {
             onClick={() => setShowProfileEditModal(true)}
             style={{
               display: 'flex', alignItems: 'center', gap: 6,
-              padding: '5px 12px', borderRadius: 6,
+              padding: '8px 16px', borderRadius: 'var(--radius-md)',
               background: 'none',
               border: '1px solid var(--border)',
               color: 'var(--text-secondary)',
-              fontSize: 12, fontWeight: 500,
+              fontSize: 13, fontWeight: 600,
               cursor: 'pointer', whiteSpace: 'nowrap',
               transition: 'all 150ms ease',
             }}
@@ -4705,9 +4705,9 @@ const layoutStyles: Record<string, React.CSSProperties> = {
     whiteSpace: 'nowrap',
   },
   filterToggleActive: {
-    background: 'rgba(96, 165, 250, 0.08)',
-    border: '1px solid rgba(96, 165, 250, 0.3)',
-    color: '#93c5fd',
+    background: 'rgba(255, 255, 255, 0.04)',
+    border: '1px solid rgba(255, 255, 255, 0.15)',
+    color: 'var(--text-primary)',
   },
   filterCount: {
     display: 'inline-flex',
@@ -4716,7 +4716,7 @@ const layoutStyles: Record<string, React.CSSProperties> = {
     width: 18,
     height: 18,
     borderRadius: '50%',
-    background: 'rgba(96, 165, 250, 0.2)',
+    background: 'rgba(255, 255, 255, 0.1)',
     color: '#93c5fd',
     fontSize: 10,
     fontWeight: 700,
