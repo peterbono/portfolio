@@ -333,7 +333,7 @@ interface ReviewQueueItem {
   cvName: string
   coverLetterSnippet: string
   coverLetterVariant?: string
-  status: 'pending' | 'approved' | 'skipped'
+  status: 'pending' | 'approved' | 'skipped' | 'submitting'
   editedCoverLetter?: string
   editedAnswers?: Record<string, string>
   jobUrl?: string
@@ -1904,6 +1904,14 @@ function ApplicationReviewCard({
           >
             Undo
           </button>
+        </div>
+      )}
+      {item.status === 'submitting' && (
+        <div style={reviewStyles.cardActions}>
+          <div style={reviewStyles.statusLabel}>
+            <Loader2 size={12} color="#60a5fa" className="animate-spin" />
+            <span style={{ color: '#60a5fa', fontSize: 12, fontWeight: 600 }}>Submitting...</span>
+          </div>
         </div>
       )}
       {item.status === 'skipped' && (
@@ -3635,6 +3643,9 @@ export function AutopilotView() {
     } catch { return null }
   })
   const [polledRunStatus, setPolledRunStatus] = useState<'QUEUED' | 'EXECUTING' | 'COMPLETED' | 'FAILED' | 'CRASHED' | 'REATTEMPTING' | null>(null)
+  const [applyRunId, setApplyRunId] = useState<string | null>(null) // Tracks apply-jobs runs (vs find-jobs runs)
+  const [showActivityDrawer, setShowActivityDrawer] = useState(false)
+  const [showRunHistory, setShowRunHistory] = useState(false)
   const [polledRunOutput, setPolledRunOutput] = useState<{ jobsFound?: number; jobsQualified?: number; jobsPreFiltered?: number; discoveredJobs?: DiscoveredJob[]; qualifiedJobs?: QualifiedJob[] } | null>(null)
   // Live metadata from Trigger.dev (updated during execution, not just at completion)
   const [polledMetadata, setPolledMetadata] = useState<{
@@ -3987,6 +3998,52 @@ export function AutopilotView() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [polledRunStatus])
 
+  // ---- Handle apply-jobs completion: update 'submitting' items to final status ----
+  useEffect(() => {
+    if (!applyRunId) return
+    if (polledRunStatus !== 'COMPLETED' && polledRunStatus !== 'FAILED' && polledRunStatus !== 'CRASHED') return
+
+    console.log('[AutopilotView] Apply run completed with status:', polledRunStatus)
+
+    // Parse apply results from polledRunOutput if available
+    const output = polledRunOutput as Record<string, unknown> | null
+    const appliedCount = (output?.applied as number) ?? 0
+    const failedCount = (output?.failed as number) ?? 0
+    const results = (output?.results as Array<{ company?: string; status?: string; reason?: string }>) ?? []
+
+    // Update submitting items based on results
+    setReviewQueue(prev => prev.map(item => {
+      if (item.status !== 'submitting') return item
+
+      // Try to match by company name
+      const matchingResult = results.find(r =>
+        r.company?.toLowerCase().trim() === item.company.toLowerCase().trim()
+      )
+
+      if (matchingResult?.status === 'applied') {
+        return { ...item, status: 'approved' as const } // Keep as approved — it was submitted
+      }
+
+      // For failed/needs_manual/skipped — revert to approved so user can retry or skip
+      return { ...item, status: 'approved' as const }
+    }))
+
+    // Show feedback to user
+    if (polledRunStatus === 'COMPLETED') {
+      if (appliedCount > 0) {
+        console.log(`[AutopilotView] Apply complete: ${appliedCount} applied, ${failedCount} failed`)
+      } else {
+        setTriggerError(`Application returned: ${results.map(r => `${r.company}: ${r.status} — ${r.reason}`).join('; ') || 'No applications were submitted. Jobs may require manual application.'}`)
+      }
+    } else {
+      setTriggerError(`Application run ${polledRunStatus.toLowerCase()}. Please retry.`)
+    }
+
+    // Clear apply run tracking
+    setApplyRunId(null)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [polledRunStatus, applyRunId])
+
   // Derived: is a polled run actively in progress
   const isRunPolling = activeRunId !== null
   const isRunTerminal = polledRunStatus === 'COMPLETED' || polledRunStatus === 'FAILED' || polledRunStatus === 'CRASHED'
@@ -4154,34 +4211,128 @@ export function AutopilotView() {
     const approved = reviewQueue.filter(i => i.status === 'approved')
     if (approved.length === 0) return
 
-    const jobsToApply = approved.map(item => ({
-      url: item.jobUrl || '',
-      company: item.company,
-      role: item.role,
-      coverLetterSnippet: item.editedCoverLetter || item.coverLetterSnippet,
-      matchScore: item.matchScore,
-    }))
+    // Split into 2 channels:
+    // 1. ALL LinkedIn jobs → extension (linkedin-apply.js detects Easy Apply on-page)
+    // 2. ATS jobs (non-LinkedIn) → Trigger.dev cloud apply
+    // Extension handles both Easy Apply (auto-fill+submit) and external apply (redirect to ATS)
+    const linkedInJobs = approved.filter(i =>
+      i.jobUrl && /linkedin\.com\/jobs/i.test(i.jobUrl)
+    )
+    const atsJobs = approved.filter(i => i.jobUrl && !/linkedin\.com\/jobs/i.test(i.jobUrl))
 
-    try {
-      setIsTriggering(true)
-      setActiveRunId(null)
-      setPolledRunStatus(null)
-      setPolledRunOutput(null)
+    setIsTriggering(true)
 
-      const result = await triggerApplyJobs(jobsToApply)
-      setActiveRunId(result.runId)
-      setRunStartTime(Date.now())
-      setPolledRunStatus('QUEUED')
+    // Mark all approved as submitting
+    setReviewQueue(prev => prev.map(item =>
+      item.status === 'approved' ? { ...item, status: 'submitting' as const } : item
+    ))
 
-      // Mark approved items as submitting in queue
-      setReviewQueue(prev => prev.map(item =>
-        item.status === 'approved' ? { ...item, status: 'approved' as const } : item
-      ))
-    } catch (err) {
-      setTriggerError(err instanceof Error ? err.message : 'Failed to start applications')
-    } finally {
-      setIsTriggering(false)
+    const results: Array<{ company: string; status: string; reason: string }> = []
+
+    // ─── LinkedIn jobs: fully automated via extension (content.js relay → background.js → linkedin-apply.js) ───
+    for (const item of linkedInJobs) {
+      try {
+        const url = (item.jobUrl || '').replace(/https?:\/\/[a-z]{2}\.linkedin\.com/, 'https://www.linkedin.com')
+        console.log(`[Submit] LinkedIn auto-apply via extension: ${item.company}`)
+
+        // Send to extension via content.js relay → background.js opens tab + injects linkedin-apply.js
+        const extensionResult = await new Promise<{ success: boolean; status: string; reason: string }>((resolve) => {
+          const timeout = setTimeout(() => {
+            window.removeEventListener('message', handler)
+            console.log(`[Submit] Extension timeout for ${item.company} — opening manually`)
+            window.open(url, '_blank')
+            const cl = item.editedCoverLetter || item.coverLetterSnippet
+            if (cl) navigator.clipboard.writeText(cl).catch(() => {})
+            resolve({ success: true, status: 'opened', reason: 'Extension timeout — opened manually' })
+          }, 120000) // 2 min timeout (apply takes time)
+
+          const handler = (event: MessageEvent) => {
+            if (event.data?.type !== 'JOBTRACKER_APPLY_RESULT') return
+            if (event.data?.company !== item.company) return
+            clearTimeout(timeout)
+            window.removeEventListener('message', handler)
+            console.log(`[Submit] Extension result for ${item.company}:`, event.data)
+            resolve({
+              success: event.data.success || false,
+              status: event.data.status || 'unknown',
+              reason: event.data.reason || event.data.error || '',
+            })
+          }
+          window.addEventListener('message', handler)
+
+          window.postMessage({
+            type: 'JOBTRACKER_APPLY_VIA_EXTENSION',
+            jobData: { url, company: item.company, role: item.role, coverLetterSnippet: item.editedCoverLetter || item.coverLetterSnippet, matchScore: item.matchScore },
+          }, '*')
+        })
+
+        // If no Easy Apply, fall back to manual (open in browser + copy cover letter)
+        if (extensionResult.status === 'no_easy_apply') {
+          console.log(`[Submit] ${item.company}: no Easy Apply — falling back to manual`)
+          window.open(url, '_blank')
+          const cl = item.editedCoverLetter || item.coverLetterSnippet
+          if (cl) navigator.clipboard.writeText(cl).catch(() => {})
+          results.push({ company: item.company, status: 'opened', reason: 'No Easy Apply — opened in browser, cover letter copied' })
+        } else {
+          results.push({ company: item.company, status: extensionResult.status, reason: extensionResult.reason || '' })
+        }
+
+        // Update queue item based on result
+        setReviewQueue(prev => prev.map(q =>
+          q.id === item.id
+            ? { ...q, status: extensionResult.success ? 'approved' as const : 'approved' as const }
+            : q
+        ))
+
+        // Small delay between jobs (human-like pacing)
+        await new Promise(r => setTimeout(r, 3000))
+      } catch (err) {
+        results.push({ company: item.company, status: 'failed', reason: err instanceof Error ? err.message : 'Unknown error' })
+      }
     }
+
+    // ─── ATS jobs: apply via cloud (Trigger.dev) ───
+    if (atsJobs.length > 0) {
+      try {
+        const jobsToApply = atsJobs.map(item => ({
+          url: item.jobUrl || '',
+          company: item.company,
+          role: item.role,
+          coverLetterSnippet: item.editedCoverLetter || item.coverLetterSnippet,
+          matchScore: item.matchScore,
+        }))
+
+        const cloudResult = await triggerApplyJobs(jobsToApply)
+        setActiveRunId(cloudResult.runId)
+        setApplyRunId(cloudResult.runId)
+        setRunStartTime(Date.now())
+        setPolledRunStatus('QUEUED')
+      } catch (err) {
+        for (const item of atsJobs) {
+          results.push({ company: item.company, status: 'failed', reason: err instanceof Error ? err.message : 'Cloud apply failed' })
+        }
+      }
+    }
+
+    // Show results for LinkedIn jobs (ATS results come via polling)
+    const linkedInResults = results.filter(r => linkedInJobs.some(j => j.company === r.company))
+    if (linkedInResults.length > 0) {
+      const applied = linkedInResults.filter(r => r.status === 'applied').length
+      const failed = linkedInResults.filter(r => r.status !== 'applied').length
+      if (applied > 0) {
+        setTriggerError(null) // Clear any previous error
+        console.log(`[Submit] LinkedIn: ${applied} applied, ${failed} failed`)
+      } else if (failed > 0) {
+        setTriggerError(`LinkedIn: ${linkedInResults.map(r => `${r.company}: ${r.reason}`).join('; ')}`)
+      }
+    }
+
+    // Revert remaining submitting items back to approved
+    setReviewQueue(prev => prev.map(item =>
+      item.status === 'submitting' ? { ...item, status: 'approved' as const } : item
+    ))
+
+    setIsTriggering(false)
   }, [requireAuth, reviewQueue])
 
   const handleEnableAutoSubmit = useCallback(() => {
@@ -4579,6 +4730,37 @@ export function AutopilotView() {
               <span>Stop</span>
             </button>
           )}
+
+          {/* ─── Activity + History icon buttons (visual divider) ─── */}
+          <div style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 4px' }} />
+          <button
+            onClick={() => setShowActivityDrawer(prev => !prev)}
+            title="Activity log"
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: 34, height: 34, borderRadius: 'var(--radius-md)',
+              background: showActivityDrawer ? 'rgba(96, 165, 250, 0.12)' : 'transparent',
+              border: '1px solid', borderColor: showActivityDrawer ? 'rgba(96, 165, 250, 0.3)' : 'var(--border)',
+              color: showActivityDrawer ? '#60a5fa' : 'var(--text-tertiary)',
+              cursor: 'pointer', transition: 'all 150ms ease',
+            }}
+          >
+            <Clock size={15} />
+          </button>
+          <button
+            onClick={() => setShowRunHistory(prev => !prev)}
+            title="Run history"
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: 34, height: 34, borderRadius: 'var(--radius-md)',
+              background: showRunHistory ? 'rgba(96, 165, 250, 0.12)' : 'transparent',
+              border: '1px solid', borderColor: showRunHistory ? 'rgba(96, 165, 250, 0.3)' : 'var(--border)',
+              color: showRunHistory ? '#60a5fa' : 'var(--text-tertiary)',
+              cursor: 'pointer', transition: 'all 150ms ease',
+            }}
+          >
+            <History size={15} />
+          </button>
         </div>
       </div>
 
@@ -5059,127 +5241,119 @@ export function AutopilotView() {
             />
           )}
 
-          {/* Activity Log */}
-          <section style={styles.section}>
-            <div style={styles.sectionHeader}>
-              <div>
-                <h2 style={styles.sectionTitle}>Activity</h2>
-                <p style={styles.sectionSubtitle}>
-                  {hasRealData ? 'Live search activity' : 'Find jobs to see results here'}
-                </p>
+          {/* ─── Activity Drawer (matches Preview drawer design) ─── */}
+          {showActivityDrawer && (
+            <>
+            <div style={drawerStyles.backdrop} onClick={() => setShowActivityDrawer(false)} />
+            <div style={{ ...drawerStyles.drawer, width: 420 }}>
+              <div style={drawerStyles.header}>
+                <div style={drawerStyles.headerInfo}>
+                  <div style={drawerStyles.headerTitleRow}>
+                    <span style={drawerStyles.headerCompany}>Activity</span>
+                    {hasRealData && isLive && (
+                      <span style={{ fontSize: 11, fontWeight: 600, color: '#34d399', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#34d399', display: 'inline-block' }} />
+                        Realtime
+                      </span>
+                    )}
+                  </div>
+                  <span style={drawerStyles.headerRole}>Live search activity</span>
+                </div>
+                <button onClick={() => setShowActivityDrawer(false)} style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', padding: 4, display: 'flex' }}>
+                  <XCircle size={18} />
+                </button>
               </div>
+              <div style={{ flex: 1, overflowY: 'auto' as const, padding: 20 }}>
               {hasRealData && isLive && (
                 <span style={styles.liveIndicator}>
                   <span style={styles.liveIndicatorDot} />
                   Realtime
                 </span>
               )}
-            </div>
-
-            {hasRealData ? (
-              <div style={styles.timeline}>
-                {activities.map((item, i) => {
-                  const Icon = ACTION_ICON_MAP[item.action] || CheckCircle2
-                  const color = ACTION_COLOR_MAP[item.action] || '#60a5fa'
-                  const isError = item.action === 'failed'
-                  return (
-                    <div key={item.id} style={styles.timelineItem}>
-                      <div style={styles.timelineIconWrap}>
-                        <Icon size={14} color={color} />
-                        {i < activities.length - 1 && (
-                          <div style={styles.timelineLine} />
-                        )}
+              {hasRealData ? (
+                <div style={styles.timeline}>
+                  {activities.map((item, i) => {
+                    const Icon = ACTION_ICON_MAP[item.action] || CheckCircle2
+                    const color = ACTION_COLOR_MAP[item.action] || '#60a5fa'
+                    const isError = item.action === 'failed'
+                    return (
+                      <div key={item.id} style={styles.timelineItem}>
+                        <div style={styles.timelineIconWrap}>
+                          <Icon size={14} color={color} />
+                          {i < activities.length - 1 && <div style={styles.timelineLine} />}
+                        </div>
+                        <div style={styles.timelineContent}>
+                          <span style={styles.timelineTime}>
+                            <Clock size={10} color="var(--text-tertiary)" />
+                            {formatActivityTime(item.createdAt)}
+                          </span>
+                          <span style={{ ...styles.timelineText, color: isError ? '#f87171' : 'var(--text-primary)' }}>
+                            {formatActivityText(item)}
+                          </span>
+                        </div>
                       </div>
-                      <div style={styles.timelineContent}>
-                        <span style={styles.timelineTime}>
-                          <Clock size={10} color="var(--text-tertiary)" />
-                          {formatActivityTime(item.createdAt)}
-                        </span>
-                        <span
-                          style={{
-                            ...styles.timelineText,
-                            color: isError ? '#f87171' : 'var(--text-primary)',
-                          }}
-                        >
-                          {formatActivityText(item)}
-                        </span>
-                      </div>
-                    </div>
-                  )
-                })}
-                {activities.length === 0 && (
-                  <p style={styles.emptyTimelineText}>
-                    No activity yet for the current search.
-                  </p>
-                )}
-              </div>
-            ) : (
-              <div style={styles.timeline}>
-                <p style={styles.emptyTimelineText}>
-                  Find jobs to see results here
-                </p>
-              </div>
-            )}
-          </section>
-
-          {/* Run History */}
-          <section style={styles.section}>
-            <div style={styles.sectionHeader}>
-              <div>
-                <h2 style={styles.sectionTitle}>Run History</h2>
-                <p style={styles.sectionSubtitle}>Past bot pipeline runs</p>
-              </div>
-              <History size={16} color="var(--text-tertiary)" />
-            </div>
-
-            {historyLoading ? (
-              <div style={styles.historyLoading}>
-                <Loader2 size={16} color="var(--text-tertiary)" style={{ animation: 'spin 1s linear infinite' }} />
-                <span style={styles.historyLoadingText}>Loading history...</span>
-              </div>
-            ) : runHistory.length === 0 ? (
-              <p style={styles.emptyTimelineText}>No bot runs yet.</p>
-            ) : (
-              <div style={styles.historyTable}>
-                <div style={styles.historyHeaderRow}>
-                  <span style={{ ...styles.historyCell, flex: 2 }}>Date</span>
-                  <span style={{ ...styles.historyCell, flex: 1 }}>Status</span>
-                  <span style={{ ...styles.historyCell, flex: 1, textAlign: 'right' as const }}>Applied</span>
-                  <span style={{ ...styles.historyCell, flex: 1, textAlign: 'right' as const }}>Skipped</span>
-                  <span style={{ ...styles.historyCell, flex: 1, textAlign: 'right' as const }}>Failed</span>
-                  <span style={{ ...styles.historyCell, flex: 1, textAlign: 'right' as const }}>Duration</span>
+                    )
+                  })}
                 </div>
-                {runHistory.map((run) => (
-                  <div key={run.id} style={styles.historyRow}>
-                    <span style={{ ...styles.historyCellValue, flex: 2 }}>
-                      {formatRunDate(run.startedAt || run.completedAt)}
-                    </span>
-                    <span style={{ ...styles.historyCellValue, flex: 1 }}>
-                      <span
-                        style={{
-                          ...styles.historyStatusDot,
-                          background: RUN_STATUS_COLORS[run.status] || '#6b7280',
-                        }}
-                      />
-                      {run.status}
-                    </span>
-                    <span style={{ ...styles.historyCellValue, flex: 1, textAlign: 'right' as const, color: '#34d399' }}>
-                      {run.jobsApplied}
-                    </span>
-                    <span style={{ ...styles.historyCellValue, flex: 1, textAlign: 'right' as const, color: '#fbbf24' }}>
-                      {run.jobsSkipped}
-                    </span>
-                    <span style={{ ...styles.historyCellValue, flex: 1, textAlign: 'right' as const, color: '#f43f5e' }}>
-                      {run.jobsFailed}
-                    </span>
-                    <span style={{ ...styles.historyCellValue, flex: 1, textAlign: 'right' as const }}>
-                      {formatDuration(run.startedAt, run.completedAt)}
-                    </span>
-                  </div>
-                ))}
+              ) : (
+                <p style={styles.emptyTimelineText}>Find jobs to see activity here</p>
+              )}
               </div>
-            )}
-          </section>
+            </div>
+            </>
+          )}
+
+          {/* ─── Run History Drawer (matches Preview drawer design) ─── */}
+          {showRunHistory && (
+            <>
+            <div style={drawerStyles.backdrop} onClick={() => setShowRunHistory(false)} />
+            <div style={{ ...drawerStyles.drawer, width: 540 }}>
+              <div style={drawerStyles.header}>
+                <div style={drawerStyles.headerInfo}>
+                  <span style={drawerStyles.headerCompany}>Run History</span>
+                  <span style={drawerStyles.headerRole}>Past bot pipeline runs</span>
+                </div>
+                <button onClick={() => setShowRunHistory(false)} style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', padding: 4, display: 'flex' }}>
+                  <XCircle size={18} />
+                </button>
+              </div>
+              <div style={{ flex: 1, overflowY: 'auto' as const, padding: 20 }}>
+              {historyLoading ? (
+                <div style={styles.historyLoading}>
+                  <Loader2 size={16} color="var(--text-tertiary)" style={{ animation: 'spin 1s linear infinite' }} />
+                  <span style={styles.historyLoadingText}>Loading history...</span>
+                </div>
+              ) : runHistory.length === 0 ? (
+                <p style={styles.emptyTimelineText}>No bot runs yet.</p>
+              ) : (
+                <div style={styles.historyTable}>
+                  <div style={styles.historyHeaderRow}>
+                    <span style={{ ...styles.historyCell, flex: 2 }}>Date</span>
+                    <span style={{ ...styles.historyCell, flex: 1 }}>Status</span>
+                    <span style={{ ...styles.historyCell, flex: 1, textAlign: 'right' as const }}>Applied</span>
+                    <span style={{ ...styles.historyCell, flex: 1, textAlign: 'right' as const }}>Skipped</span>
+                    <span style={{ ...styles.historyCell, flex: 1, textAlign: 'right' as const }}>Failed</span>
+                    <span style={{ ...styles.historyCell, flex: 1, textAlign: 'right' as const }}>Duration</span>
+                  </div>
+                  {runHistory.map((run) => (
+                    <div key={run.id} style={styles.historyRow}>
+                      <span style={{ ...styles.historyCellValue, flex: 2 }}>{formatRunDate(run.startedAt || run.completedAt)}</span>
+                      <span style={{ ...styles.historyCellValue, flex: 1 }}>
+                        <span style={{ ...styles.historyStatusDot, background: RUN_STATUS_COLORS[run.status] || '#6b7280' }} />
+                        {run.status}
+                      </span>
+                      <span style={{ ...styles.historyCellValue, flex: 1, textAlign: 'right' as const, color: '#34d399' }}>{run.jobsApplied}</span>
+                      <span style={{ ...styles.historyCellValue, flex: 1, textAlign: 'right' as const, color: '#fbbf24' }}>{run.jobsSkipped}</span>
+                      <span style={{ ...styles.historyCellValue, flex: 1, textAlign: 'right' as const, color: '#f43f5e' }}>{run.jobsFailed}</span>
+                      <span style={{ ...styles.historyCellValue, flex: 1, textAlign: 'right' as const }}>{formatDuration(run.startedAt, run.completedAt)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              </div>
+            </div>
+            </>
+          )}
         </div>
       </div>
 
