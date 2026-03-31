@@ -54,7 +54,7 @@ export const applyJobTask = task({
     // Bright Data blocks ALL LinkedIn cookie injection (Storage + Network).
     // Strategy: use Bright Data for scouting (public LinkedIn job search
     // doesn't require auth). Use local Chromium + cookie for Easy Apply.
-    const SBR_AUTH = process.env.BRIGHTDATA_SBR_AUTH
+    const SBR_AUTH = (process.env.BRIGHTDATA_SBR_AUTH || '').trim() || undefined
     const browser = SBR_AUTH
       ? await chromium.connectOverCDP(`wss://${SBR_AUTH}@brd.superproxy.io:9222`)
       : await chromium.launch({ headless: true, args: ["--no-sandbox", "--disable-setuid-sandbox"] })

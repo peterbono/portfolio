@@ -378,7 +378,7 @@ export const qualifyJobsTask = task({
     // -----------------------------------------------------------------------
     // 1. Launch Bright Data browser (or local fallback)
     // -----------------------------------------------------------------------
-    const SBR_AUTH = process.env.BRIGHTDATA_SBR_AUTH
+    const SBR_AUTH = (process.env.BRIGHTDATA_SBR_AUTH || '').trim() || undefined
     const browser = SBR_AUTH
       ? await chromium.connectOverCDP(`wss://${SBR_AUTH}@brd.superproxy.io:9222`)
       : await chromium.launch({
