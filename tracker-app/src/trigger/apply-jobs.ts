@@ -334,40 +334,28 @@ export const applyJobsTask = task({
           )
         }
       } else {
-        // Use Bright Data Scraping Browser (CDP) for LinkedIn — residential proxy
-        // requires KYC and fails with ERR_TUNNEL_CONNECTION_FAILED without it.
-        // SBR handles proxy rotation internally + supports cookie injection via context.
-        const LINKEDIN_SBR = SBR_AUTH // Reuse same SBR auth as ATS
-        if (!LINKEDIN_SBR) {
-          console.warn('[apply-jobs] BRIGHTDATA_SBR_AUTH not set — LinkedIn will use local Chromium (datacenter IP, may be blocked)')
-        }
-
-        const linkedInBrowser = LINKEDIN_SBR
-          ? await chromium.connectOverCDP(`wss://${LINKEDIN_SBR}@brd.superproxy.io:9222`)
-          : await chromium.launch({
-              headless: true,
-              args: [
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-blink-features=AutomationControlled",
-              ],
-            })
+        // LinkedIn MUST use local Chromium — Bright Data SBR forbids injecting
+        // li_at/JSESSIONID cookies via CDP (Storage.setCookies blocked).
+        // Local Chromium allows unrestricted cookie injection for Easy Apply.
+        console.log('[apply-jobs] Launching local Chromium for LinkedIn Easy Apply (cookie injection requires local browser)')
+        const linkedInBrowser = await chromium.launch({
+          headless: true,
+          args: [
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-blink-features=AutomationControlled",
+          ],
+        })
 
         try {
-          // SBR via CDP doesn't support newContext() — use default context
-          // Cookie injection via addCookies() works on the default context
-          const linkedInContext = LINKEDIN_SBR
-            ? linkedInBrowser.contexts()[0] || await linkedInBrowser.newContext({
-                ignoreHTTPSErrors: true,
-              })
-            : await linkedInBrowser.newContext({
-                viewport: { width: 1280, height: 900 },
-                userAgent:
-                  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-                locale: "en-US",
-                timezoneId: "Asia/Bangkok",
-                ignoreHTTPSErrors: true,
-              })
+          const linkedInContext = await linkedInBrowser.newContext({
+            viewport: { width: 1280, height: 900 },
+            userAgent:
+              "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            locale: "en-US",
+            timezoneId: "Asia/Bangkok",
+            ignoreHTTPSErrors: true,
+          })
 
           // Inject LinkedIn cookies (li_at + JSESSIONID for CSRF)
           await linkedInContext.addCookies([
