@@ -53,7 +53,7 @@ const PRICE_ENV_VARS: PriceIdEntry[] = [
 function getPriceId(tier: PlanTier, interval: BillingInterval): string | null {
   const entry = PRICE_ENV_VARS.find(e => e.tier === tier && e.interval === interval)
   if (!entry) return null
-  return process.env[entry.envVar] || null
+  return (process.env[entry.envVar] || '').trim() || null
 }
 
 // ─── App URLs ──────────────────────────────────────────────────────────
