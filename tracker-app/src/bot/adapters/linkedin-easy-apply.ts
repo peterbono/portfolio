@@ -52,13 +52,23 @@ export const linkedInEasyApply: ATSAdapter = {
         .isVisible({ timeout: 5000 }).catch(() => false)
 
       if (!isLoggedIn) {
+        // Capture what the page looks like for debugging
+        const pageTitle = await page.title().catch(() => 'unknown')
+        const pageUrl = page.url()
+        let screenshotUrl: string | undefined
+        try {
+          const buf = await page.screenshot({ type: 'jpeg', quality: 40, fullPage: false })
+          screenshotUrl = `data:image/jpeg;base64,${buf.toString('base64')}`
+        } catch { /* ignore */ }
+        console.warn(`[linkedin-easy-apply] Not logged in — page title: "${pageTitle}", url: ${pageUrl}`)
         return {
           success: false,
           status: 'skipped',
           company,
           role,
           ats: 'LinkedIn Easy Apply',
-          reason: 'Not logged into LinkedIn — session cookies required',
+          reason: `Not logged into LinkedIn — page: "${pageTitle}" (${pageUrl})`,
+          screenshotUrl,
           duration: Date.now() - start,
         }
       }
