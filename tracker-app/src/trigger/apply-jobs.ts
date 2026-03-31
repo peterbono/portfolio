@@ -47,6 +47,40 @@ export interface ApplyJobsOutput {
 const MAX_APPLICATIONS_PER_RUN = 5
 const GAP_BETWEEN_APPLICATIONS_MS = 120_000 // 2 minutes
 
+// ─── Server-side notification helper ──────────────────────────────────
+// Calls the Vercel API endpoint using service role key auth (no user JWT needed).
+// Fire-and-forget safe: catches all errors and logs instead of throwing.
+async function sendServerNotification(
+  userId: string,
+  type: 'application_submitted' | 'bot_error',
+  data: Record<string, unknown>,
+): Promise<void> {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://tracker-app-lyart.vercel.app'
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!serviceRoleKey) {
+    console.warn('[apply-jobs] Cannot send notification: SUPABASE_SERVICE_ROLE_KEY not set')
+    return
+  }
+  try {
+    const res = await fetch(`${appUrl}/api/send-notification`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-service-role-key': serviceRoleKey,
+      },
+      body: JSON.stringify({ userId, type, data }),
+    })
+    const result = await res.json()
+    if (res.ok && result.sent) {
+      console.log(`[apply-jobs] Notification sent: ${type} (emailId: ${result.emailId})`)
+    } else {
+      console.warn(`[apply-jobs] Notification not sent: ${type}`, result.reason || result.error || res.status)
+    }
+  } catch (err) {
+    console.warn('[apply-jobs] Notification fetch failed:', err instanceof Error ? err.message : err)
+  }
+}
+
 export const applyJobsTask = task({
   id: "apply-jobs",
   maxDuration: 600, // 10 minutes — form filling is slow
@@ -499,6 +533,31 @@ export const applyJobsTask = task({
     console.log(
       `[apply-jobs] Done: ${applied} applied, ${skipped} skipped, ${failed} failed, ${needsManual} manual — ${(totalDuration / 1000).toFixed(1)}s`,
     )
+
+    // ─── Send notifications (fire-and-forget) ──────────────────────────
+    // Batch notification for successfully applied jobs
+    if (applied > 0) {
+      const appliedResults = results.filter(r => r.status === 'applied')
+      const firstApplied = appliedResults[0]
+      sendServerNotification(payload.userId, 'application_submitted', {
+        company: firstApplied?.company ?? 'Unknown',
+        role: firstApplied?.role ?? 'Unknown Role',
+        count: applied,
+      }).catch(() => {}) // swallow — already logged inside
+    }
+
+    // Notify on critical failure (all jobs failed or run-level error)
+    if (applied === 0 && failed > 0) {
+      const failReasons = results
+        .filter(r => r.status === 'failed')
+        .map(r => `${r.company}: ${r.reason}`)
+        .slice(0, 3)
+        .join('; ')
+      sendServerNotification(payload.userId, 'bot_error', {
+        errorMessage: `All ${failed} application(s) failed. ${failReasons}`,
+        runId: runId ?? `apply-jobs-${runStart}`,
+      }).catch(() => {}) // swallow — already logged inside
+    }
 
     return output
   },

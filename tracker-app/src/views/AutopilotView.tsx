@@ -56,7 +56,7 @@ import {
   getLearningStatus,
   type FeedbackSignal,
 } from '../lib/feedback-signals'
-import { notifyBotError } from '../lib/notifications'
+import { notifyBotError, notifyApplicationsSubmitted } from '../lib/notifications'
 
 /* ------------------------------------------------------------------ */
 /*  Mobile responsive CSS injection                                    */
@@ -4171,6 +4171,13 @@ export function AutopilotView() {
     if (polledRunStatus === 'COMPLETED') {
       if (appliedCount > 0) {
         console.log(`[AutopilotView] Apply complete: ${appliedCount} applied, ${failedCount} failed`)
+        // Fire-and-forget notification for successful applications
+        const firstApplied = results.find(r => r.status === 'applied')
+        notifyApplicationsSubmitted({
+          company: firstApplied?.company ?? 'Unknown',
+          role: firstApplied?.role ?? 'Unknown Role',
+          count: appliedCount,
+        })
       } else {
         setTriggerError(`Application returned: ${results.map(r => `${r.company}: ${r.status} — ${r.reason}`).join('; ') || 'No applications were submitted. Jobs may require manual application.'}`)
       }
