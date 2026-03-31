@@ -5,7 +5,10 @@ import { createClient } from '@supabase/supabase-js'
 // ─── Config (lazy — validated inside handler before use) ──────────────
 let _stripe: Stripe | null = null
 function getStripe(): Stripe {
-  if (!_stripe) _stripe = new Stripe(process.env.STRIPE_SECRET_KEY!)
+  if (!_stripe) {
+    const key = (process.env.STRIPE_SECRET_KEY || '').trim()
+    _stripe = new Stripe(key, { maxNetworkRetries: 4, timeout: 30_000 })
+  }
   return _stripe
 }
 

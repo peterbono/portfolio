@@ -5,7 +5,12 @@ import { createClient } from '@supabase/supabase-js'
 // ─── Config (lazy — validated inside handler before use) ──────────────
 let _stripe: Stripe | null = null
 function getStripe(): Stripe {
-  if (!_stripe) _stripe = new Stripe(process.env.STRIPE_SECRET_KEY!)
+  if (!_stripe) {
+    const key = (process.env.STRIPE_SECRET_KEY || '').trim()
+    if (!key) throw new Error('STRIPE_SECRET_KEY is empty after trim')
+    console.log(`[create-checkout] Initializing Stripe — key prefix: ${key.slice(0, 10)}..., length: ${key.length}`)
+    _stripe = new Stripe(key, { maxNetworkRetries: 4, timeout: 30_000 })
+  }
   return _stripe
 }
 
