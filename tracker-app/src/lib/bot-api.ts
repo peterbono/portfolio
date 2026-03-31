@@ -49,6 +49,20 @@ export interface TriggerBotResponse {
   runId: string
 }
 
+// Batch apply progress event detail
+export interface BatchApplyProgress {
+  current: number
+  total: number
+  job: ApprovedJobInput
+  result?: { success: boolean; status: string; reason?: string }
+  phase: 'starting' | 'applying' | 'completed' | 'batch_done'
+}
+
+/** Generate a unique request ID for matching extension results */
+function generateRequestId(): string {
+  return `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+}
+
 /**
  * Trigger a full bot run (scout -> qualify -> apply).
  * Sends search config + user profile inline so the worker doesn't need Supabase lookup.
@@ -199,6 +213,7 @@ function isExtensionInstalled(): boolean {
 /**
  * Apply a single LinkedIn job via the Chrome extension.
  * Returns a promise that resolves when the extension reports a result.
+ * Uses unique requestId for reliable result matching (no company name collisions).
  * Timeout after 3 minutes per job (Easy Apply forms can be multi-step).
  */
 function applyOneViaExtension(job: ApprovedJobInput): Promise<{
@@ -208,13 +223,15 @@ function applyOneViaExtension(job: ApprovedJobInput): Promise<{
   company: string
   role: string
 }> {
+  const requestId = generateRequestId()
+
   return new Promise((resolve) => {
     const timeout = setTimeout(() => {
       window.removeEventListener('message', handler)
       resolve({
         success: false,
-        status: 'failed',
-        reason: 'Extension apply timed out after 3 minutes',
+        status: 'timeout',
+        reason: `Extension apply timed out after 3 minutes (${requestId})`,
         company: job.company,
         role: job.role,
       })
@@ -223,8 +240,11 @@ function applyOneViaExtension(job: ApprovedJobInput): Promise<{
     function handler(event: MessageEvent) {
       if (event.source !== window) return
       if (event.data?.type !== 'JOBTRACKER_APPLY_RESULT') return
-      // Match by company (extension echoes it back)
-      if (event.data.company !== job.company) return
+
+      // Match by requestId (primary) or company name (fallback for older extension versions)
+      const matchesRequestId = event.data.requestId && event.data.requestId === requestId
+      const matchesCompany = event.data.company === job.company
+      if (!matchesRequestId && !matchesCompany) return
 
       clearTimeout(timeout)
       window.removeEventListener('message', handler)
@@ -242,6 +262,7 @@ function applyOneViaExtension(job: ApprovedJobInput): Promise<{
     // Send to extension via content script bridge
     window.postMessage({
       type: 'JOBTRACKER_APPLY_VIA_EXTENSION',
+      requestId,
       jobData: {
         url: job.url,
         company: job.company,
@@ -254,38 +275,109 @@ function applyOneViaExtension(job: ApprovedJobInput): Promise<{
 
 /**
  * Apply LinkedIn jobs sequentially via Chrome extension.
- * Fire-and-forget from the caller's perspective — results are dispatched
- * as custom events on window for the UI to consume.
+ * Dispatches progress events for UI consumption:
+ *   - 'jobtracker:extension-apply-progress' — per-job progress (current/total)
+ *   - 'jobtracker:extension-apply-result' — per-job result
+ *   - 'jobtracker:extension-batch-complete' — batch summary
+ *
+ * Includes inter-job delay (8s) to avoid LinkedIn rate limiting.
+ * Sequential is correct for LinkedIn — parallel sessions get flagged.
  */
-async function applyLinkedInJobsViaExtension(jobs: ApprovedJobInput[]): Promise<void> {
-  console.log(`[bot-api] Applying ${jobs.length} LinkedIn jobs via Chrome extension`)
+async function applyLinkedInJobsViaExtension(jobs: ApprovedJobInput[]): Promise<{
+  total: number
+  applied: number
+  failed: number
+  results: Array<{ company: string; role: string; status: string; reason?: string }>
+}> {
+  const total = jobs.length
+  let applied = 0
+  let failed = 0
+  const results: Array<{ company: string; role: string; status: string; reason?: string }> = []
 
-  for (const job of jobs) {
+  console.log(`[bot-api] Batch apply: ${total} LinkedIn jobs via Chrome extension`)
+
+  // Emit batch start
+  window.dispatchEvent(new CustomEvent<BatchApplyProgress>('jobtracker:extension-apply-progress', {
+    detail: { current: 0, total, job: jobs[0], phase: 'starting' },
+  }))
+
+  for (let i = 0; i < jobs.length; i++) {
+    const job = jobs[i]
+
+    // Emit progress: starting this job
+    window.dispatchEvent(new CustomEvent<BatchApplyProgress>('jobtracker:extension-apply-progress', {
+      detail: { current: i + 1, total, job, phase: 'applying' },
+    }))
+
     try {
-      console.log(`[bot-api] Extension applying: ${job.company} — ${job.role}`)
+      console.log(`[bot-api] [${i + 1}/${total}] Applying: ${job.company} — ${job.role}`)
       const result = await applyOneViaExtension(job)
-      console.log(`[bot-api] Extension result: ${result.status} — ${result.reason || 'OK'}`)
+      console.log(`[bot-api] [${i + 1}/${total}] Result: ${result.status} — ${result.reason || 'OK'}`)
 
-      // Dispatch result as custom event for UI consumption
+      if (result.success || result.status === 'applied') {
+        applied++
+      } else {
+        failed++
+      }
+
+      const resultEntry = {
+        company: job.company,
+        role: job.role,
+        status: result.status,
+        reason: result.reason,
+      }
+      results.push(resultEntry)
+
+      // Dispatch per-job result for UI
       window.dispatchEvent(new CustomEvent('jobtracker:extension-apply-result', {
         detail: { ...result, url: job.url },
       }))
+
+      // Emit progress: completed this job
+      window.dispatchEvent(new CustomEvent<BatchApplyProgress>('jobtracker:extension-apply-progress', {
+        detail: { current: i + 1, total, job, result, phase: 'completed' },
+      }))
     } catch (err) {
-      console.error(`[bot-api] Extension apply error for ${job.company}:`, err)
+      failed++
+      const reason = err instanceof Error ? err.message : String(err)
+      console.error(`[bot-api] [${i + 1}/${total}] Error for ${job.company}:`, err)
+
+      results.push({ company: job.company, role: job.role, status: 'error', reason })
+
       window.dispatchEvent(new CustomEvent('jobtracker:extension-apply-result', {
         detail: {
           success: false,
-          status: 'failed',
-          reason: err instanceof Error ? err.message : String(err),
+          status: 'error',
+          reason,
           company: job.company,
           role: job.role,
           url: job.url,
         },
       }))
     }
+
+    // Inter-job delay: 8s between applications to avoid LinkedIn rate limiting
+    // Skip delay after the last job
+    if (i < jobs.length - 1) {
+      console.log(`[bot-api] Waiting 8s before next job (rate limit protection)...`)
+      await new Promise(r => setTimeout(r, 8000))
+    }
   }
 
-  console.log(`[bot-api] Extension apply batch complete`)
+  const summary = { total, applied, failed, results }
+  console.log(`[bot-api] Batch complete: ${applied} applied, ${failed} failed out of ${total}`)
+
+  // Emit batch complete event with summary
+  window.dispatchEvent(new CustomEvent('jobtracker:extension-batch-complete', {
+    detail: summary,
+  }))
+
+  // Also emit final progress event
+  window.dispatchEvent(new CustomEvent<BatchApplyProgress>('jobtracker:extension-apply-progress', {
+    detail: { current: total, total, job: jobs[jobs.length - 1], phase: 'batch_done' },
+  }))
+
+  return summary
 }
 
 /**
@@ -312,18 +404,19 @@ export async function triggerApplyJobs(
   console.log(`[bot-api] Apply: ${linkedInJobs.length} LinkedIn, ${atsJobs.length} ATS, extension: ${extensionAvailable}`)
 
   // Route LinkedIn jobs to Chrome extension if available
+  // NOT fire-and-forget: we track the batch for reporting
+  let extensionBatchPromise: Promise<{ total: number; applied: number; failed: number }> | null = null
   if (linkedInJobs.length > 0 && extensionAvailable) {
-    // Fire-and-forget: extension applies in user's browser
-    // Results come back via 'jobtracker:extension-apply-result' events
-    applyLinkedInJobsViaExtension(linkedInJobs)
+    extensionBatchPromise = applyLinkedInJobsViaExtension(linkedInJobs)
   }
 
   // Determine what to send to Trigger.dev cloud
   const cloudJobs = extensionAvailable ? atsJobs : jobs
 
   if (cloudJobs.length === 0) {
-    // All jobs routed to extension — no cloud task needed
-    return { runId: `extension-${Date.now()}` }
+    // All jobs routed to extension — return runId, batch runs in background
+    // Caller can listen to 'jobtracker:extension-apply-progress' for updates
+    return { runId: `extension-batch-${Date.now()}` }
   }
 
   const userId = await getCurrentUserId()

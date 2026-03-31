@@ -264,15 +264,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     // ─── LinkedIn Easy Apply via Extension ───────────────────────────
     if (message.action === 'applyViaExtension') {
       const job = message.jobData
+      const requestId = message.requestId || null
       if (!job?.url) {
-        return { success: false, error: 'No job URL provided' }
+        return { success: false, error: 'No job URL provided', requestId }
       }
 
       // Normalize LinkedIn URL
       const url = job.url.replace(/https?:\/\/[a-z]{2}\.linkedin\.com/, 'https://www.linkedin.com')
 
+      console.log('[JobTracker] Apply request:', job.company, '| requestId:', requestId)
+
       // Store job data so the injected script can access it
-      await chrome.storage.local.set({ pendingApplyJob: { ...job, url } })
+      await chrome.storage.local.set({ pendingApplyJob: { ...job, url, requestId } })
 
       // ─── Snapshot existing tab IDs before opening anything ───
       // Used later to identify ATS tabs opened by external apply clicks
@@ -319,7 +322,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         try {
           tab = await chrome.tabs.create({ url, active: false })
         } catch (tabErr) {
-          return { success: false, status: 'error', error: 'Failed to open: ' + (winErr.message || tabErr.message) }
+          return { success: false, status: 'error', error: 'Failed to open: ' + (winErr.message || tabErr.message), requestId }
         }
       }
 
@@ -415,6 +418,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           company: job.company,
           role: job.role || '',
           url,
+          requestId,
         }
       }
 
@@ -512,7 +516,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           if (matchesJobId || matchesUrl || matchesLinkedinUrl || (isExternalResult && matchesCompany)) {
             const totalTime = ((Date.now() - tabCreatedAt) / 1000).toFixed(1)
             console.log('[JobTracker] [DIAG] Result matched at attempt', attempts, '(' + totalTime + 's total) — matched by:', matchesJobId ? 'jobId' : matchesUrl ? 'url' : matchesLinkedinUrl ? 'linkedinUrl' : 'company', '— status:', data.lastApplyResult.status)
-            const result = data.lastApplyResult
+            const result = { ...data.lastApplyResult, requestId }
             await chrome.storage.local.remove('lastApplyResult')
             await chrome.storage.local.remove('pendingExternalApply')
 
@@ -536,7 +540,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       await cleanupAtsTabs()
       await chrome.storage.local.remove('pendingExternalApply')
       await chrome.storage.local.remove('lastApplyResult')
-      return { success: false, status: 'timeout', error: 'Apply timed out after ' + timeoutElapsed + ' seconds' }
+      return { success: false, status: 'timeout', error: 'Apply timed out after ' + timeoutElapsed + ' seconds', requestId }
     }
 
     if (message.action === 'reloadExtension') {

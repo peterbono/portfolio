@@ -1,5 +1,5 @@
 /**
- * JobTracker LinkedIn Connect — Content Script v2.1.0
+ * JobTracker LinkedIn Connect — Content Script v2.2.0
  *
  * Injected into tracker-app-lyart.vercel.app and localhost dev servers.
  * Bridges communication between the web app and the extension's background
@@ -14,7 +14,7 @@ if (window._jobTrackerContentLoaded) {
 } else {
 window._jobTrackerContentLoaded = true
 
-console.log('[JobTracker Extension] Content script v2.1.0 loaded — apply handler active')
+console.log('[JobTracker Extension] Content script v2.2.0 loaded — batch apply with requestId')
 
 // ─── Listen for requests from the web app ───────────────────────────────────
 
@@ -69,9 +69,10 @@ window.addEventListener('message', (event) => {
   // Handle LinkedIn Easy Apply via extension
   if (event.data?.type === 'JOBTRACKER_APPLY_VIA_EXTENSION') {
     const jobData = event.data.jobData
-    console.log('[JobTracker Extension] Apply request received:', jobData?.company)
+    const requestId = event.data.requestId || null
+    console.log('[JobTracker Extension] Apply request received:', jobData?.company, '| requestId:', requestId)
 
-    chrome.runtime.sendMessage({ action: 'applyViaExtension', jobData }, (response) => {
+    chrome.runtime.sendMessage({ action: 'applyViaExtension', jobData, requestId }, (response) => {
       if (chrome.runtime.lastError) {
         window.postMessage({
           type: 'JOBTRACKER_APPLY_RESULT',
@@ -79,6 +80,7 @@ window.addEventListener('message', (event) => {
           status: 'failed',
           reason: chrome.runtime.lastError.message,
           company: jobData?.company,
+          requestId,
         }, '*')
         return
       }
@@ -87,6 +89,7 @@ window.addEventListener('message', (event) => {
         type: 'JOBTRACKER_APPLY_RESULT',
         ...response,
         company: jobData?.company,
+        requestId,
       }, '*')
     })
   }

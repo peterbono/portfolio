@@ -41,7 +41,7 @@ import { usePlan } from '../hooks/usePlan'
 import { useUI } from '../context/UIContext'
 import { useJobs } from '../context/JobsContext'
 import type { BotActivityItem, BotRunStatus } from '../hooks/useBotActivity'
-import { triggerBotRun, triggerApplyJobs } from '../lib/bot-api'
+import { triggerBotRun, triggerApplyJobs, type BatchApplyProgress } from '../lib/bot-api'
 import { supabase } from '../lib/supabase'
 import { useAuthWall } from '../hooks/useAuthWall'
 import { useSupabase } from '../context/SupabaseContext'
@@ -4209,6 +4209,72 @@ export function AutopilotView() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [polledRunStatus, applyRunId])
 
+  // ---- Handle Chrome extension apply results (per-job, real-time) ----
+  // Listens for jobtracker:extension-apply-result events dispatched by bot-api.ts
+  // when LinkedIn jobs are processed via the Chrome extension.
+  useEffect(() => {
+    function handleExtensionResult(event: Event) {
+      const detail = (event as CustomEvent).detail
+      if (!detail) return
+
+      const { company, role, status, url, success } = detail
+      console.log(`[AutopilotView] Extension result: ${company} — ${status}`)
+
+      // Update the matching item in the review queue
+      setReviewQueue(prev => prev.map(item => {
+        if (item.status !== 'submitting') return item
+
+        // Match by URL (primary) or company+role (fallback)
+        const urlMatch = url && item.jobUrl && (
+          url === item.jobUrl ||
+          url.split('?')[0] === item.jobUrl.split('?')[0]
+        )
+        const nameMatch = company?.toLowerCase().trim() === item.company.toLowerCase().trim() &&
+          role?.toLowerCase().trim() === item.role.toLowerCase().trim()
+
+        if (!urlMatch && !nameMatch) return item
+
+        if (status === 'applied' || status === 'applied_external' || status === 'confirmed' || success) {
+          return { ...item, status: 'submitted' as const, submittingStartedAt: undefined }
+        }
+        if (status === 'expired' || status === 'already_applied') {
+          return { ...item, status: 'expired' as const, submittingStartedAt: undefined }
+        }
+        if (status === 'needs_manual' || status === 'auth_wall') {
+          return { ...item, status: 'needs_manual' as const, submittingStartedAt: undefined }
+        }
+        return { ...item, status: 'failed' as const, submittingStartedAt: undefined }
+      }))
+    }
+
+    function handleBatchComplete(event: Event) {
+      const detail = (event as CustomEvent).detail
+      if (!detail) return
+
+      const { total, applied, failed } = detail
+      console.log(`[AutopilotView] Extension batch complete: ${applied}/${total} applied, ${failed} failed`)
+
+      if (applied > 0) {
+        notifyApplicationsSubmitted({
+          company: 'LinkedIn (Extension)',
+          role: `${applied} jobs`,
+          count: applied,
+        })
+      }
+      if (failed > 0 && applied === 0) {
+        setTriggerError(`Extension apply: ${failed}/${total} jobs failed. Check LinkedIn session.`)
+      }
+    }
+
+    window.addEventListener('jobtracker:extension-apply-result', handleExtensionResult)
+    window.addEventListener('jobtracker:extension-batch-complete', handleBatchComplete)
+
+    return () => {
+      window.removeEventListener('jobtracker:extension-apply-result', handleExtensionResult)
+      window.removeEventListener('jobtracker:extension-batch-complete', handleBatchComplete)
+    }
+  }, [])
+
   // ---- Timeout: auto-revert stuck "submitting" items after 10 minutes ----
   // Also catches legacy items with no submittingStartedAt (treated as immediately expired)
   useEffect(() => {
@@ -4445,9 +4511,9 @@ export function AutopilotView() {
       item.status === 'approved' ? { ...item, status: 'submitting' as const, submittingStartedAt: now } : item
     ))
 
-    // ─── ALL jobs go to Trigger.dev cloud ───
-    // LinkedIn Easy Apply: cloud Chromium + cookie injection + residential proxy
-    // ATS (Greenhouse/Lever/etc.): cloud Chromium + Bright Data Scraping Browser
+    // ─── Smart routing: LinkedIn → Chrome extension, ATS → Trigger.dev cloud ───
+    // LinkedIn Easy Apply: Chrome extension (user's browser, avoids cloud IP blocks)
+    // ATS (Greenhouse/Lever/etc.): Trigger.dev cloud + Bright Data Scraping Browser
     try {
       const jobsToApply = approved.map(item => ({
         url: (item.jobUrl || '').replace(/https?:\/\/[a-z]{2}\.linkedin\.com/, 'https://www.linkedin.com'),
