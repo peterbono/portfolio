@@ -8,6 +8,9 @@ export default defineConfig({
   logLevel: "log",
   // Tell Trigger.dev where to find task files
   dirs: ["src/trigger"],
+  // Default machine: 1 vCPU, 1 GB RAM (enough for SBR-based tasks)
+  // Individual tasks (apply-jobs) override to larger machines as needed
+  defaultMachine: "small-2x",
   // Allow 30-minute long browser automation runs
   maxDuration: 1800,
   retries: {

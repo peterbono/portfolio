@@ -83,6 +83,7 @@ async function sendServerNotification(
 
 export const applyJobsTask = task({
   id: "apply-jobs",
+  machine: "medium-1x", // 1 vCPU, 2 GB RAM — local Chromium for LinkedIn needs it
   maxDuration: 600, // 10 minutes — form filling is slow
   run: async (payload: {
     userId: string
@@ -156,7 +157,7 @@ export const applyJobsTask = task({
     // ---------- Launch browsers ----------
     // ATS jobs: use Bright Data Scraping Browser (or local fallback)
     // LinkedIn Easy Apply: always local Chromium + cookie injection
-    const SBR_AUTH = process.env.BRIGHTDATA_SBR_AUTH
+    const SBR_AUTH = (process.env.BRIGHTDATA_SBR_AUTH || '').trim() || undefined
 
     const results: ApplyJobResult[] = []
     let applied = 0
@@ -170,7 +171,15 @@ export const applyJobsTask = task({
         ? await chromium.connectOverCDP(`wss://${SBR_AUTH}@brd.superproxy.io:9222`)
         : await chromium.launch({
             headless: true,
-            args: ["--no-sandbox", "--disable-setuid-sandbox"],
+            args: [
+              "--no-sandbox",
+              "--disable-setuid-sandbox",
+              "--disable-dev-shm-usage",
+              "--disable-gpu",
+              "--single-process",
+              "--disable-extensions",
+              "--js-flags=--max-old-space-size=256",
+            ],
           })
 
       try {
@@ -334,30 +343,33 @@ export const applyJobsTask = task({
           )
         }
       } else {
-        // LinkedIn MUST use local Chromium — Bright Data SBR forbids injecting
-        // li_at/JSESSIONID cookies via CDP (Storage.setCookies blocked).
-        // Local Chromium allows unrestricted cookie injection for Easy Apply.
-        console.log('[apply-jobs] Launching local Chromium for LinkedIn Easy Apply (cookie injection requires local browser)')
+        // LinkedIn Easy Apply: local Chromium with cookie injection.
+        // Known limitation: SBR blocks cookie injection, residential proxy
+        // tunnel fails from Trigger.dev cloud. Direct connection works but
+        // LinkedIn may block cloud IPs. When auth fails → needs_manual.
+        console.log('[apply-jobs] Launching local Chromium for LinkedIn Easy Apply')
         const linkedInBrowser = await chromium.launch({
           headless: true,
           args: [
-            "--no-sandbox",
-            "--disable-setuid-sandbox",
+            "--no-sandbox", "--disable-setuid-sandbox",
             "--disable-blink-features=AutomationControlled",
+            "--disable-dev-shm-usage", "--disable-gpu", "--single-process",
+            "--disable-extensions", "--disable-background-networking",
+            "--disable-default-apps", "--disable-sync", "--no-first-run",
+            "--js-flags=--max-old-space-size=256",
           ],
         })
 
         try {
           const linkedInContext = await linkedInBrowser.newContext({
-            viewport: { width: 1280, height: 900 },
-            userAgent:
-              "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            viewport: { width: 1024, height: 768 },
+            userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
             locale: "en-US",
             timezoneId: "Asia/Bangkok",
             ignoreHTTPSErrors: true,
           })
 
-          // Inject LinkedIn cookies (li_at + JSESSIONID for CSRF)
+          // Inject LinkedIn cookies via context.addCookies (always local Chromium)
           await linkedInContext.addCookies([
             {
               name: "li_at",
@@ -378,9 +390,10 @@ export const applyJobsTask = task({
               sameSite: "None" as const,
             },
           ])
+          console.log('[apply-jobs] LinkedIn cookies injected via context.addCookies')
 
-          // Moderate mode: block images, fonts, media, trackers but KEEP CSS (Easy Apply forms need it)
-          await blockUnnecessaryResources(linkedInContext, 'moderate')
+          // Aggressive: block images, CSS, fonts, media — saves ~300MB RAM
+          await blockUnnecessaryResources(linkedInContext, 'aggressive')
 
           for (let i = 0; i < linkedInJobs.length; i++) {
             const job = linkedInJobs[i]

@@ -37,28 +37,56 @@ export const linkedInEasyApply: ATSAdapter = {
       try {
         await page.goto(normalizedUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 })
       } catch (navError) {
-        // Retry with original URL if normalized one fails
-        if (navError instanceof Error && navError.message.includes('ERR_TOO_MANY_REDIRECTS') && normalizedUrl !== jobUrl) {
-          console.warn('[linkedin-easy-apply] Redirect loop with normalized URL, trying original')
+        const msg = navError instanceof Error ? navError.message : String(navError)
+
+        // ERR_TOO_MANY_REDIRECTS = LinkedIn blocking cloud IP → needs_manual (don't retry)
+        if (msg.includes('ERR_TOO_MANY_REDIRECTS')) {
+          console.warn(`[linkedin-easy-apply] Cloud IP blocked by LinkedIn — marking needs_manual`)
+          return {
+            success: false,
+            status: 'needs_manual',
+            company,
+            role,
+            ats: 'LinkedIn Easy Apply',
+            reason: `LinkedIn blocks cloud IPs — apply manually at: ${jobUrl}`,
+            duration: Date.now() - start,
+          }
+        }
+
+        // Try original URL if normalized one fails for other reasons
+        if (normalizedUrl !== jobUrl) {
+          console.warn('[linkedin-easy-apply] Retrying with original URL')
           await page.goto(jobUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 })
         } else {
           throw navError
         }
       }
+
       await humanDelay(2000, 4000)
 
-      // Check if logged in — try multiple signals:
-      // 1. Nav element (classic LinkedIn)
-      // 2. Profile image in nav
-      // 3. Job page loaded with full content (title contains job + LinkedIn, not "Log In" or "Sign Up")
-      const navVisible = await page.locator('.global-nav__me, [data-control-name="identity_welcome_message"], .feed-identity-module, nav.global-nav, img.global-nav__me-photo').first()
+      // Check if logged in — STRICT validation.
+      // Guest pages have similar titles to logged-in pages, so title alone is NOT reliable.
+      // We need positive signals (logged-in-only elements) AND absence of guest signals.
+
+      // Positive signals: elements that ONLY appear when logged in
+      const navVisible = await page.locator('.global-nav__me, [data-control-name="identity_welcome_message"], .feed-identity-module, img.global-nav__me-photo').first()
         .isVisible({ timeout: 5000 }).catch(() => false)
-      const pageTitle = await page.title().catch(() => '')
-      const hasJobTitle = pageTitle.includes('LinkedIn') && !pageTitle.toLowerCase().includes('log in') && !pageTitle.toLowerCase().includes('sign up') && !pageTitle.toLowerCase().includes('join')
-      // If Easy Apply button is present, we're definitely logged in
+      // Easy Apply button ONLY appears for authenticated users
       const hasEasyApply = await page.locator('button.jobs-apply-button, button:has-text("Easy Apply")').first()
         .isVisible({ timeout: 3000 }).catch(() => false)
-      const isLoggedIn = navVisible || hasJobTitle || hasEasyApply
+
+      // Negative signals: elements that appear on guest/logged-out pages
+      const hasSignInButton = await page.locator('a:has-text("Sign in"), button:has-text("Sign in"), a[data-tracking-control-name="public_jobs_nav-header-signin"]').first()
+        .isVisible({ timeout: 2000 }).catch(() => false)
+      const hasJoinButton = await page.locator('a:has-text("Join now"), a:has-text("Join"), a[data-tracking-control-name="public_jobs_nav-header-join"]').first()
+        .isVisible({ timeout: 1000 }).catch(() => false)
+
+      // Must have at least one positive signal AND no guest signals
+      const hasPositiveSignal = navVisible || hasEasyApply
+      const hasGuestSignal = hasSignInButton || hasJoinButton
+      const isLoggedIn = hasPositiveSignal && !hasGuestSignal
+
+      console.log(`[linkedin-easy-apply] Auth check: nav=${navVisible}, easyApply=${hasEasyApply}, signIn=${hasSignInButton}, join=${hasJoinButton} → loggedIn=${isLoggedIn}`)
 
       if (!isLoggedIn) {
         // Capture what the page looks like for debugging
@@ -72,11 +100,11 @@ export const linkedInEasyApply: ATSAdapter = {
         console.warn(`[linkedin-easy-apply] Not logged in — page title: "${pageTitle}", url: ${pageUrl}`)
         return {
           success: false,
-          status: 'skipped',
+          status: 'needs_manual',
           company,
           role,
           ats: 'LinkedIn Easy Apply',
-          reason: `Not logged into LinkedIn — page: "${pageTitle}" (${pageUrl})`,
+          reason: `Not logged into LinkedIn (cloud IP blocked) — apply manually at: ${jobUrl}`,
           screenshotUrl,
           duration: Date.now() - start,
         }
