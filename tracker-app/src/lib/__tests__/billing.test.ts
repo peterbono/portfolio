@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   getPlanLimits,
   getPlanConfig,
@@ -6,8 +6,20 @@ import {
   getMinimumPlan,
   getRemainingQuota,
   PLAN_CONFIGS,
+  redirectToCheckout,
+  handleCheckoutSuccess,
 } from '../billing'
-import type { PlanTier } from '../billing'
+import type { PlanTier, BillingInterval } from '../billing'
+
+// ─── Global mock for supabase (used by redirectToCheckout via dynamic import) ─
+const mockGetSession = vi.fn()
+vi.mock('../supabase', () => ({
+  supabase: {
+    auth: {
+      getSession: (...args: unknown[]) => mockGetSession(...args),
+    },
+  },
+}))
 
 // ═══════════════════════════════════════════════════════════════════════
 //  getPlanLimits
@@ -327,5 +339,319 @@ describe('PLAN_CONFIGS', () => {
     for (const config of PLAN_CONFIGS) {
       expect(config.features.length).toBeGreaterThanOrEqual(5)
     }
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════
+//  PLAN_CONFIGS price validation
+// ═══════════════════════════════════════════════════════════════════════
+
+describe('PLAN_CONFIGS price validation', () => {
+  it('Starter weekly = $9, monthly = $29', () => {
+    const starter = PLAN_CONFIGS.find(c => c.tier === 'starter')!
+    expect(starter.priceWeekly).toBe(9)
+    expect(starter.priceMonthly).toBe(29)
+  })
+
+  it('Pro weekly = $15, monthly = $49', () => {
+    const pro = PLAN_CONFIGS.find(c => c.tier === 'pro')!
+    expect(pro.priceWeekly).toBe(15)
+    expect(pro.priceMonthly).toBe(49)
+  })
+
+  it('Boost weekly = $25, no monthly (weeklyOnly = true)', () => {
+    const boost = PLAN_CONFIGS.find(c => c.tier === 'boost')!
+    expect(boost.priceWeekly).toBe(25)
+    expect(boost.weeklyOnly).toBe(true)
+    // Boost has priceMonthly = 0 because it is weekly-only
+    expect(boost.priceMonthly).toBe(0)
+  })
+
+  it('Free has $0 for both intervals', () => {
+    const free = PLAN_CONFIGS.find(c => c.tier === 'free')!
+    expect(free.priceWeekly).toBe(0)
+    expect(free.priceMonthly).toBe(0)
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Plan feature limits
+// ═══════════════════════════════════════════════════════════════════════
+
+describe('Plan feature limits', () => {
+  it('Free: 0 applies, 0 cover letters', () => {
+    const limits = getPlanLimits('free')
+    expect(limits.botAppliesPerMonth).toBe(0)
+    expect(limits.coverLettersPerMonth).toBe(0)
+  })
+
+  it('Starter: 100 applies, 20 cover letters', () => {
+    const limits = getPlanLimits('starter')
+    expect(limits.botAppliesPerMonth).toBe(100)
+    expect(limits.coverLettersPerMonth).toBe(20)
+  })
+
+  it('Pro: Infinity applies, Infinity cover letters', () => {
+    const limits = getPlanLimits('pro')
+    expect(limits.botAppliesPerMonth).toBe(Infinity)
+    expect(limits.coverLettersPerMonth).toBe(Infinity)
+  })
+
+  it('Boost: Infinity applies, Infinity cover letters', () => {
+    const limits = getPlanLimits('boost')
+    expect(limits.botAppliesPerMonth).toBe(Infinity)
+    expect(limits.coverLettersPerMonth).toBe(Infinity)
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════
+//  redirectToCheckout
+// ═══════════════════════════════════════════════════════════════════════
+
+describe('redirectToCheckout', () => {
+  let originalFetch: typeof globalThis.fetch
+  let originalLocation: PropertyDescriptor | undefined
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch
+    originalLocation = Object.getOwnPropertyDescriptor(window, 'location')
+    mockGetSession.mockReset()
+
+    // Mock window.location.href as writable
+    Object.defineProperty(window, 'location', {
+      value: { href: 'http://localhost/', search: '', pathname: '/' },
+      writable: true,
+      configurable: true,
+    })
+  })
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+    if (originalLocation) {
+      Object.defineProperty(window, 'location', originalLocation)
+    }
+  })
+
+  it('returns early for free plan without calling fetch', async () => {
+    const fetchSpy = vi.fn()
+    globalThis.fetch = fetchSpy
+    await redirectToCheckout('free')
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('throws if not authenticated (no access token)', async () => {
+    mockGetSession.mockResolvedValue({ data: { session: null } })
+
+    await expect(redirectToCheckout('starter')).rejects.toThrow(
+      'You must be signed in to subscribe'
+    )
+  })
+
+  it('calls fetch with correct planTier and interval when authenticated', async () => {
+    mockGetSession.mockResolvedValue({
+      data: { session: { access_token: 'test-token-123' } },
+    })
+
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ sessionUrl: 'https://checkout.stripe.com/test' }),
+    })
+    globalThis.fetch = fetchSpy
+
+    await redirectToCheckout('starter', 'monthly')
+
+    expect(fetchSpy).toHaveBeenCalledWith('/api/create-checkout', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer test-token-123',
+      },
+      body: JSON.stringify({ planTier: 'starter', interval: 'monthly' }),
+    })
+  })
+
+  it('forces weekly interval for boost plan regardless of input', async () => {
+    mockGetSession.mockResolvedValue({
+      data: { session: { access_token: 'test-token-123' } },
+    })
+
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ sessionUrl: 'https://checkout.stripe.com/test' }),
+    })
+    globalThis.fetch = fetchSpy
+
+    await redirectToCheckout('boost', 'monthly')
+
+    const body = JSON.parse(fetchSpy.mock.calls[0][1].body)
+    expect(body.interval).toBe('weekly')
+  })
+
+  it('handles fetch error gracefully (non-ok response)', async () => {
+    mockGetSession.mockResolvedValue({
+      data: { session: { access_token: 'test-token-123' } },
+    })
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: () => Promise.resolve({ error: 'Server error' }),
+    })
+
+    await expect(redirectToCheckout('pro')).rejects.toThrow('Server error')
+  })
+
+  it('handles fetch error when response JSON fails to parse', async () => {
+    mockGetSession.mockResolvedValue({
+      data: { session: { access_token: 'test-token-123' } },
+    })
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 502,
+      json: () => Promise.reject(new Error('not json')),
+    })
+
+    await expect(redirectToCheckout('pro')).rejects.toThrow('Unknown error')
+  })
+
+  it('handles missing sessionUrl in response', async () => {
+    mockGetSession.mockResolvedValue({
+      data: { session: { access_token: 'test-token-123' } },
+    })
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ sessionUrl: null }),
+    })
+
+    await expect(redirectToCheckout('starter')).rejects.toThrow(
+      'No checkout URL returned from server'
+    )
+  })
+
+  it('redirects to sessionUrl on success', async () => {
+    mockGetSession.mockResolvedValue({
+      data: { session: { access_token: 'test-token-123' } },
+    })
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ sessionUrl: 'https://checkout.stripe.com/session_abc' }),
+    })
+
+    await redirectToCheckout('pro', 'weekly')
+
+    expect(window.location.href).toBe('https://checkout.stripe.com/session_abc')
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════
+//  handleCheckoutSuccess
+// ═══════════════════════════════════════════════════════════════════════
+
+describe('handleCheckoutSuccess', () => {
+  let originalLocation: PropertyDescriptor | undefined
+
+  beforeEach(() => {
+    originalLocation = Object.getOwnPropertyDescriptor(window, 'location')
+    localStorage.clear()
+  })
+
+  afterEach(() => {
+    if (originalLocation) {
+      Object.defineProperty(window, 'location', originalLocation)
+    }
+    localStorage.clear()
+  })
+
+  function setWindowLocation(url: string) {
+    const parsedUrl = new URL(url)
+    Object.defineProperty(window, 'location', {
+      value: {
+        href: url,
+        search: parsedUrl.search,
+        pathname: parsedUrl.pathname,
+        origin: parsedUrl.origin,
+      },
+      writable: true,
+      configurable: true,
+    })
+    // handleCheckoutSuccess uses window.location.search (for URLSearchParams)
+    // and window.location.href (for new URL()), plus window.history.replaceState
+    window.history.replaceState = vi.fn()
+  }
+
+  it('parses URL params correctly (checkout=success, plan=starter)', () => {
+    setWindowLocation('https://app.example.com/settings?checkout=success&plan=starter')
+    const result = handleCheckoutSuccess()
+    expect(result).not.toBeNull()
+    expect(result!.plan).toBe('starter')
+    expect(result!.sessionId).toBe('payment-link') // default when no session_id param
+  })
+
+  it('parses URL params with session_id', () => {
+    setWindowLocation('https://app.example.com/settings?checkout=success&plan=pro&session_id=cs_test_abc')
+    const result = handleCheckoutSuccess()
+    expect(result).not.toBeNull()
+    expect(result!.plan).toBe('pro')
+    expect(result!.sessionId).toBe('cs_test_abc')
+  })
+
+  it('updates localStorage with correct plan', () => {
+    setWindowLocation('https://app.example.com/settings?checkout=success&plan=starter')
+    handleCheckoutSuccess()
+    expect(localStorage.getItem('tracker_user_plan')).toBe('starter')
+  })
+
+  it('updates localStorage for boost plan', () => {
+    setWindowLocation('https://app.example.com/settings?checkout=success&plan=boost')
+    handleCheckoutSuccess()
+    expect(localStorage.getItem('tracker_user_plan')).toBe('boost')
+  })
+
+  it('cleans up URL params via history.replaceState', () => {
+    setWindowLocation('https://app.example.com/settings?checkout=success&plan=pro&session_id=cs_test')
+    handleCheckoutSuccess()
+    expect(window.history.replaceState).toHaveBeenCalled()
+  })
+
+  it('returns null when checkout param is missing', () => {
+    setWindowLocation('https://app.example.com/settings?plan=starter')
+    const result = handleCheckoutSuccess()
+    expect(result).toBeNull()
+    expect(localStorage.getItem('tracker_user_plan')).toBeNull()
+  })
+
+  it('returns null when checkout param is not "success"', () => {
+    setWindowLocation('https://app.example.com/settings?checkout=cancelled&plan=starter')
+    const result = handleCheckoutSuccess()
+    expect(result).toBeNull()
+  })
+
+  it('returns null when plan param is missing', () => {
+    setWindowLocation('https://app.example.com/settings?checkout=success')
+    const result = handleCheckoutSuccess()
+    expect(result).toBeNull()
+  })
+
+  it('returns null when plan is "free" (not a valid checkout plan)', () => {
+    setWindowLocation('https://app.example.com/settings?checkout=success&plan=free')
+    const result = handleCheckoutSuccess()
+    expect(result).toBeNull()
+  })
+
+  it('returns null when plan is an invalid value', () => {
+    setWindowLocation('https://app.example.com/settings?checkout=success&plan=enterprise')
+    const result = handleCheckoutSuccess()
+    expect(result).toBeNull()
+  })
+
+  it('does nothing to localStorage when checkout param is missing', () => {
+    localStorage.setItem('tracker_user_plan', 'free')
+    setWindowLocation('https://app.example.com/settings')
+    handleCheckoutSuccess()
+    // Should remain unchanged
+    expect(localStorage.getItem('tracker_user_plan')).toBe('free')
   })
 })
