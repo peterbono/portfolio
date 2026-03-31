@@ -47,9 +47,18 @@ export const linkedInEasyApply: ATSAdapter = {
       }
       await humanDelay(2000, 4000)
 
-      // Check if logged in
-      const isLoggedIn = await page.locator('.global-nav__me, [data-control-name="identity_welcome_message"]').first()
+      // Check if logged in — try multiple signals:
+      // 1. Nav element (classic LinkedIn)
+      // 2. Profile image in nav
+      // 3. Job page loaded with full content (title contains job + LinkedIn, not "Log In" or "Sign Up")
+      const navVisible = await page.locator('.global-nav__me, [data-control-name="identity_welcome_message"], .feed-identity-module, nav.global-nav, img.global-nav__me-photo').first()
         .isVisible({ timeout: 5000 }).catch(() => false)
+      const pageTitle = await page.title().catch(() => '')
+      const hasJobTitle = pageTitle.includes('LinkedIn') && !pageTitle.toLowerCase().includes('log in') && !pageTitle.toLowerCase().includes('sign up') && !pageTitle.toLowerCase().includes('join')
+      // If Easy Apply button is present, we're definitely logged in
+      const hasEasyApply = await page.locator('button.jobs-apply-button, button:has-text("Easy Apply")').first()
+        .isVisible({ timeout: 3000 }).catch(() => false)
+      const isLoggedIn = navVisible || hasJobTitle || hasEasyApply
 
       if (!isLoggedIn) {
         // Capture what the page looks like for debugging
