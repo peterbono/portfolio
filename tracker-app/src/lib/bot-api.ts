@@ -170,19 +170,141 @@ export interface ApprovedJobInput {
 }
 
 /**
+ * Check if the JobTracker Chrome extension is installed and available.
+ * The extension sets a flag on window when its content script loads.
+ */
+function isExtensionInstalled(): boolean {
+  return !!(window as any)._jobTrackerContentLoaded
+}
+
+/**
+ * Apply a single LinkedIn job via the Chrome extension.
+ * Returns a promise that resolves when the extension reports a result.
+ * Timeout after 3 minutes per job (Easy Apply forms can be multi-step).
+ */
+function applyOneViaExtension(job: ApprovedJobInput): Promise<{
+  success: boolean
+  status: string
+  reason?: string
+  company: string
+  role: string
+}> {
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      window.removeEventListener('message', handler)
+      resolve({
+        success: false,
+        status: 'failed',
+        reason: 'Extension apply timed out after 3 minutes',
+        company: job.company,
+        role: job.role,
+      })
+    }, 180_000)
+
+    function handler(event: MessageEvent) {
+      if (event.source !== window) return
+      if (event.data?.type !== 'JOBTRACKER_APPLY_RESULT') return
+      // Match by company (extension echoes it back)
+      if (event.data.company !== job.company) return
+
+      clearTimeout(timeout)
+      window.removeEventListener('message', handler)
+      resolve({
+        success: event.data.success || false,
+        status: event.data.status || (event.data.success ? 'applied' : 'failed'),
+        reason: event.data.reason,
+        company: job.company,
+        role: job.role,
+      })
+    }
+
+    window.addEventListener('message', handler)
+
+    // Send to extension via content script bridge
+    window.postMessage({
+      type: 'JOBTRACKER_APPLY_VIA_EXTENSION',
+      jobData: {
+        url: job.url,
+        company: job.company,
+        role: job.role,
+        coverLetterSnippet: job.coverLetterSnippet,
+      },
+    }, '*')
+  })
+}
+
+/**
+ * Apply LinkedIn jobs sequentially via Chrome extension.
+ * Fire-and-forget from the caller's perspective — results are dispatched
+ * as custom events on window for the UI to consume.
+ */
+async function applyLinkedInJobsViaExtension(jobs: ApprovedJobInput[]): Promise<void> {
+  console.log(`[bot-api] Applying ${jobs.length} LinkedIn jobs via Chrome extension`)
+
+  for (const job of jobs) {
+    try {
+      console.log(`[bot-api] Extension applying: ${job.company} — ${job.role}`)
+      const result = await applyOneViaExtension(job)
+      console.log(`[bot-api] Extension result: ${result.status} — ${result.reason || 'OK'}`)
+
+      // Dispatch result as custom event for UI consumption
+      window.dispatchEvent(new CustomEvent('jobtracker:extension-apply-result', {
+        detail: { ...result, url: job.url },
+      }))
+    } catch (err) {
+      console.error(`[bot-api] Extension apply error for ${job.company}:`, err)
+      window.dispatchEvent(new CustomEvent('jobtracker:extension-apply-result', {
+        detail: {
+          success: false,
+          status: 'failed',
+          reason: err instanceof Error ? err.message : String(err),
+          company: job.company,
+          role: job.role,
+          url: job.url,
+        },
+      }))
+    }
+  }
+
+  console.log(`[bot-api] Extension apply batch complete`)
+}
+
+/**
  * Trigger Phase 3 (Apply) as a standalone task.
  * Takes qualified/approved jobs and submits applications via ATS adapters.
  * Max 5 applications per run (daily cap). 2-minute gap between submissions.
- * Returns a runId that can be polled for results.
  *
- * For LinkedIn Easy Apply: requires a LinkedIn session cookie (li_at).
- * For ATS (Greenhouse/Lever/Generic): uses Bright Data Scraping Browser.
+ * LinkedIn Easy Apply jobs are routed to the Chrome extension (user's browser)
+ * when available. ATS jobs (Greenhouse/Lever/etc.) go to Trigger.dev cloud.
+ * If extension is not available, LinkedIn jobs go to cloud too (marked needs_manual).
  */
 export async function triggerApplyJobs(
   jobs: ApprovedJobInput[],
 ): Promise<TriggerBotResponse> {
   if (jobs.length === 0) {
     throw new Error('No approved jobs provided for application.')
+  }
+
+  // Split LinkedIn vs ATS jobs
+  const linkedInJobs = jobs.filter(j => /linkedin\.com\/jobs/i.test(j.url))
+  const atsJobs = jobs.filter(j => !/linkedin\.com\/jobs/i.test(j.url))
+  const extensionAvailable = isExtensionInstalled()
+
+  console.log(`[bot-api] Apply: ${linkedInJobs.length} LinkedIn, ${atsJobs.length} ATS, extension: ${extensionAvailable}`)
+
+  // Route LinkedIn jobs to Chrome extension if available
+  if (linkedInJobs.length > 0 && extensionAvailable) {
+    // Fire-and-forget: extension applies in user's browser
+    // Results come back via 'jobtracker:extension-apply-result' events
+    applyLinkedInJobsViaExtension(linkedInJobs)
+  }
+
+  // Determine what to send to Trigger.dev cloud
+  const cloudJobs = extensionAvailable ? atsJobs : jobs
+
+  if (cloudJobs.length === 0) {
+    // All jobs routed to extension — no cloud task needed
+    return { runId: `extension-${Date.now()}` }
   }
 
   const userId = await getCurrentUserId()
@@ -192,14 +314,13 @@ export async function triggerApplyJobs(
 
   const payload: Record<string, unknown> = {
     userId,
-    jobs,
+    jobs: cloudJobs,
     userProfile: userProfile || {},
-    // Include enriched profile data (from CV/portfolio analysis) if available
     enrichedProfile: enrichedProfile || undefined,
   }
 
-  // Include LinkedIn session cookie if available (needed for Easy Apply)
-  if (linkedInCookie) {
+  // Include LinkedIn cookie for any LinkedIn jobs going to cloud (fallback)
+  if (linkedInCookie && cloudJobs.some(j => /linkedin\.com\/jobs/i.test(j.url))) {
     payload.linkedInCookie = linkedInCookie
   }
 
