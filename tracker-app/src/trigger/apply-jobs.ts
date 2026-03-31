@@ -174,12 +174,18 @@ export const applyJobsTask = task({
           })
 
       try {
-        const atsContext = await atsBrowser.newContext({
-          viewport: { width: 1280, height: 900 },
-          userAgent:
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-          ignoreHTTPSErrors: true,
-        })
+        // SBR via CDP doesn't support newContext() — use default context
+        const atsContext = SBR_AUTH
+          ? atsBrowser.contexts()[0] || await atsBrowser.newContext({
+              viewport: { width: 1280, height: 900 },
+              ignoreHTTPSErrors: true,
+            })
+          : await atsBrowser.newContext({
+              viewport: { width: 1280, height: 900 },
+              userAgent:
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+              ignoreHTTPSErrors: true,
+            })
 
         // Moderate mode: block images, fonts, media, trackers but KEEP CSS (ATS forms need it)
         await blockUnnecessaryResources(atsContext, 'moderate')
@@ -348,16 +354,20 @@ export const applyJobsTask = task({
             })
 
         try {
-          // Create context with LinkedIn session cookie
-          // SBR via CDP supports addCookies() on the context
-          const linkedInContext = await linkedInBrowser.newContext({
-            viewport: { width: 1280, height: 900 },
-            userAgent:
-              "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            locale: "en-US",
-            timezoneId: "Asia/Bangkok",
-            ignoreHTTPSErrors: true,
-          })
+          // SBR via CDP doesn't support newContext() — use default context
+          // Cookie injection via addCookies() works on the default context
+          const linkedInContext = LINKEDIN_SBR
+            ? linkedInBrowser.contexts()[0] || await linkedInBrowser.newContext({
+                ignoreHTTPSErrors: true,
+              })
+            : await linkedInBrowser.newContext({
+                viewport: { width: 1280, height: 900 },
+                userAgent:
+                  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                locale: "en-US",
+                timezoneId: "Asia/Bangkok",
+                ignoreHTTPSErrors: true,
+              })
 
           // Inject LinkedIn cookies (li_at + JSESSIONID for CSRF)
           await linkedInContext.addCookies([
