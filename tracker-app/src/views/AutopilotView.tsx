@@ -2259,7 +2259,7 @@ function ApplicationPreviewDrawer({
         <div style={drawerStyles.footer}>
           <button style={drawerStyles.btnApproveSubmit} onClick={handleApprove}>
             <Check size={14} />
-            <span>Approve &amp; Submit</span>
+            <span>Approve</span>
           </button>
           <button
             style={drawerStyles.btnFooterSkip}
@@ -3745,6 +3745,10 @@ export function AutopilotView() {
   }, [])
   const [showActivityDrawer, setShowActivityDrawer] = useState(false)
   const [showRunHistory, setShowRunHistory] = useState(false)
+  // Track whether the active polled run is a search (find-jobs) or apply (apply-jobs)
+  // This prevents the find-jobs completion handler from firing on apply-jobs results and vice-versa,
+  // and allows the progress banner to show the correct status text.
+  const [activeRunType, setActiveRunType] = useState<'search' | 'apply' | null>(null)
   // Store the FULL raw output from Trigger.dev so both find-jobs and apply-jobs handlers can read their fields
   const [polledRunOutput, setPolledRunOutput] = useState<Record<string, unknown> | null>(null)
   // Live metadata from Trigger.dev (updated during execution, not just at completion)
@@ -3898,6 +3902,7 @@ export function AutopilotView() {
     setTriggerError(null)
     // Reset polling state
     setActiveRunId(null)
+    setActiveRunType('search')
     setRunStartTime(null)
     setPolledRunStatus(null)
     setPolledRunOutput(null)
@@ -4013,9 +4018,17 @@ export function AutopilotView() {
   }, [polledMetadata?.activities?.length])
 
   // ---- Convert discoveredJobs/qualifiedJobs into ReviewQueueItems when run completes ---
+  // IMPORTANT: Only process find-jobs output when the active run is a search, not an apply.
+  // Without this guard, apply-jobs completions would also trigger this effect (harmlessly exiting
+  // at the "no jobs found" check, but still causing unnecessary state reads and log noise).
   useEffect(() => {
-    console.log('[AutopilotView] discoveredJobs useEffect fired — polledRunStatus:', polledRunStatus)
+    console.log('[AutopilotView] discoveredJobs useEffect fired — polledRunStatus:', polledRunStatus, 'activeRunType:', activeRunType)
     if (polledRunStatus !== 'COMPLETED') return
+    // Skip this handler entirely for apply-jobs runs — their results are handled by the apply completion effect below
+    if (activeRunType === 'apply') {
+      console.log('[AutopilotView] Skipping discoveredJobs handler — this is an apply run, not a search run')
+      return
+    }
 
     // Extract find-jobs fields from raw output (supports both camelCase and snake_case)
     const rawQualified = (polledRunOutput?.qualifiedJobs ?? polledRunOutput?.qualified_jobs) as QualifiedJob[] | undefined
@@ -4105,7 +4118,7 @@ export function AutopilotView() {
       setReviewQueue(prev => [...newItems, ...prev])
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [polledRunStatus])
+  }, [polledRunStatus, activeRunType])
 
   // ---- Handle apply-jobs completion: update 'submitting' items to final status ----
   useEffect(() => {
@@ -4411,8 +4424,9 @@ export function AutopilotView() {
     setPreviewItemId(null)
   }, [emitFeedbackSignal])
 
+  const handleSubmitApprovedRef = useRef<() => void>(() => {})
   const handleSubmitApproved = useCallback(async () => {
-    if (!requireAuth('start_bot', () => {})) return
+    if (!requireAuth('start_bot', () => { handleSubmitApprovedRef.current() })) return
 
     const approved = reviewQueue.filter(i => i.status === 'approved')
     if (approved.length === 0) return
@@ -4420,8 +4434,10 @@ export function AutopilotView() {
     setIsTriggering(true)
 
     // Clear stale output from previous runs so apply completion handler reads fresh data
+    setActiveRunType('apply')
     setPolledRunOutput(null)
     setPolledRunStatus(null)
+    setPolledMetadata(null)
 
     // Mark all approved as submitting (with timestamp for timeout tracking)
     const now = Date.now()
@@ -4465,6 +4481,7 @@ export function AutopilotView() {
 
     setIsTriggering(false)
   }, [requireAuth, reviewQueue])
+  handleSubmitApprovedRef.current = handleSubmitApproved
 
   const handleEnableAutoSubmit = useCallback(() => {
     setAutoSubmitOn(true)
@@ -4839,13 +4856,14 @@ export function AutopilotView() {
           {isTriggering && (
             <span style={styles.triggeringBadge}>
               <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
-              Searching...
+              {activeRunType === 'apply' ? 'Submitting...' : 'Searching...'}
             </span>
           )}
           {(isBotActive || isRunPolling) && !isTriggering && (
             <button style={styles.btnStopBot} onClick={async () => {
               // Stop the bot: clear local state + update Supabase run to cancelled
               setActiveRunId(null)
+              setActiveRunType(null)
               setPolledRunStatus(null)
               setPolledRunOutput(null)
               setPolledMetadata(null)
@@ -5112,6 +5130,15 @@ export function AutopilotView() {
                 let progressPct: number
                 if (isComplete) progressPct = 100
                 else if (isFailed) progressPct = 0
+                else if (activeRunType === 'apply') {
+                  // Apply run: progress based on submitted/total items
+                  const totalApply = reviewQueue.filter(i => i.status === 'submitting' || i.status === 'submitted' || i.status === 'failed' || i.status === 'needs_manual').length
+                  const doneApply = reviewQueue.filter(i => i.status === 'submitted' || i.status === 'failed' || i.status === 'needs_manual').length
+                  if (metaPhase === 'done') progressPct = 100
+                  else if (metaProcessed > 0 && metaTotal > 0) progressPct = Math.round((metaProcessed / metaTotal) * 90) + 5
+                  else if (totalApply > 0) progressPct = Math.round((doneApply / totalApply) * 90) + 5
+                  else progressPct = 10
+                }
                 else if (metaPhase === 'done') progressPct = 100
                 else if (metaPhase === 'qualify') {
                   // Qualify is 33-90%, proportional to processed/total
@@ -5130,17 +5157,24 @@ export function AutopilotView() {
                 else progressPct = jf === 0 ? 5 : jf < 20 ? 33 : jf < 40 ? 66 : 90
 
                 // Status text — use metadata phase for more specific text
+                // Differentiate between search (find-jobs) and apply runs
+                const isApplyRun = activeRunType === 'apply'
                 const scoutStatusDetail = scoutSearchesTotal > 0 && metaProcessed > 0
                   ? ` (search ${metaProcessed}/${scoutSearchesTotal})`
                   : ''
-                const statusText = isFailed ? 'Search failed'
-                  : isComplete ? 'Search complete'
-                  : polledRunStatus === 'QUEUED' || polledRunStatus === 'REATTEMPTING' || isTriggering ? 'Starting search...'
-                  : metaPhase === 'qualify' ? `Qualifying jobs... (${metaProcessed}/${metaTotal})`
-                  : metaPhase === 'pre-filter' ? 'Pre-filtering candidates...'
-                  : metaPhase === 'scout' ? (jf === 0 ? `Scanning LinkedIn...${scoutStatusDetail}` : `Found ${jf} candidates, scanning more...${scoutStatusDetail}`)
-                  : jf === 0 ? 'Scanning LinkedIn...'
-                  : `Scanning... (${jf} found)`
+                const statusText = isApplyRun
+                  ? (isFailed ? 'Application failed'
+                    : isComplete ? 'Applications submitted'
+                    : polledRunStatus === 'QUEUED' || polledRunStatus === 'REATTEMPTING' || isTriggering ? 'Submitting applications...'
+                    : 'Submitting applications...')
+                  : (isFailed ? 'Search failed'
+                    : isComplete ? 'Search complete'
+                    : polledRunStatus === 'QUEUED' || polledRunStatus === 'REATTEMPTING' || isTriggering ? 'Starting search...'
+                    : metaPhase === 'qualify' ? `Qualifying jobs... (${metaProcessed}/${metaTotal})`
+                    : metaPhase === 'pre-filter' ? 'Pre-filtering candidates...'
+                    : metaPhase === 'scout' ? (jf === 0 ? `Scanning LinkedIn...${scoutStatusDetail}` : `Found ${jf} candidates, scanning more...${scoutStatusDetail}`)
+                    : jf === 0 ? 'Scanning LinkedIn...'
+                    : `Scanning... (${jf} found)`)
 
                 // Live subtitle: cycle through recent metadata activities for dynamic feel
                 const metaActivities = polledMetadata?.activities
@@ -5148,7 +5182,26 @@ export function AutopilotView() {
 
                 // Build subtitle by cycling through the last 3 activities
                 let subtitleText: string
-                if (metaActivities && metaActivities.length > 0) {
+                if (isApplyRun) {
+                  // Apply run: show apply-specific subtitle
+                  const submittingItems = reviewQueue.filter(i => i.status === 'submitting')
+                  const currentJob = polledMetadata?.currentJob
+                  if (currentJob) {
+                    subtitleText = `Applying to ${currentJob.company}...`
+                  } else if (metaActivities && metaActivities.length > 0) {
+                    const recentActivities = metaActivities.slice(0, 3).filter(a => a.reason)
+                    if (recentActivities.length > 0) {
+                      const idx = subtitleCycleIdx % recentActivities.length
+                      subtitleText = recentActivities[idx]?.reason ?? 'Submitting applications...'
+                    } else {
+                      subtitleText = metaActivities[0]?.reason ?? 'Submitting applications...'
+                    }
+                  } else if (submittingItems.length > 0) {
+                    subtitleText = `Submitting to ${submittingItems[0].company}...`
+                  } else {
+                    subtitleText = 'Submitting applications...'
+                  }
+                } else if (metaActivities && metaActivities.length > 0) {
                   const recentActivities = metaActivities.slice(0, 3).filter(a => a.reason)
                   if (recentActivities.length > 0) {
                     const idx = subtitleCycleIdx % recentActivities.length
@@ -5186,7 +5239,10 @@ export function AutopilotView() {
                       </div>
                       <span style={progressBannerStyles.liveCount}>
                         <Briefcase size={12} />
-                        {jf} job{jf !== 1 ? 's' : ''} found
+                        {isApplyRun
+                          ? `${reviewQueue.filter(i => i.status === 'submitting').length} application${reviewQueue.filter(i => i.status === 'submitting').length !== 1 ? 's' : ''} in progress`
+                          : `${jf} job${jf !== 1 ? 's' : ''} found`
+                        }
                       </span>
                     </div>
 
@@ -5245,15 +5301,26 @@ export function AutopilotView() {
                     {isComplete && (
                       <div style={progressBannerStyles.resultRow}>
                         <span style={progressBannerStyles.resultText}>
-                          Found {jf} match{jf !== 1 ? 'es' : ''}
-                          {((polledRunOutput?.jobsQualified as number | undefined) ?? currentRun?.jobsApplied) != null && (
-                            <> &middot; {(polledRunOutput?.jobsQualified as number | undefined) ?? currentRun?.jobsApplied} qualified</>
-                          )}
-                          {Array.isArray(polledRunOutput?.qualifiedJobs ?? polledRunOutput?.qualified_jobs) && ((polledRunOutput?.qualifiedJobs ?? polledRunOutput?.qualified_jobs) as unknown[]).length > 0 && (
-                            <> (scored by AI)</>
+                          {isApplyRun ? (
+                            <>
+                              {(polledRunOutput?.applied as number | undefined) ?? 0} submitted
+                              {((polledRunOutput?.failed as number | undefined) ?? 0) > 0 && (
+                                <> &middot; {polledRunOutput?.failed as number} failed</>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              Found {jf} match{jf !== 1 ? 'es' : ''}
+                              {((polledRunOutput?.jobsQualified as number | undefined) ?? currentRun?.jobsApplied) != null && (
+                                <> &middot; {(polledRunOutput?.jobsQualified as number | undefined) ?? currentRun?.jobsApplied} qualified</>
+                              )}
+                              {Array.isArray(polledRunOutput?.qualifiedJobs ?? polledRunOutput?.qualified_jobs) && ((polledRunOutput?.qualifiedJobs ?? polledRunOutput?.qualified_jobs) as unknown[]).length > 0 && (
+                                <> (scored by AI)</>
+                              )}
+                            </>
                           )}
                         </span>
-                        {reviewQueue.filter(i => i.status === 'pending').length > 0 && (
+                        {!isApplyRun && reviewQueue.filter(i => i.status === 'pending').length > 0 && (
                           <button
                             style={{
                               background: 'none',
@@ -5277,9 +5344,9 @@ export function AutopilotView() {
                     {isFailed && (
                       <div style={progressBannerStyles.resultRow}>
                         <span style={{ ...progressBannerStyles.resultText, color: '#f87171' }}>
-                          Something went wrong. Try again?
+                          {isApplyRun ? 'Application failed. Try again?' : 'Something went wrong. Try again?'}
                         </span>
-                        <button style={progressBannerStyles.retryBtn} onClick={handleStartBot}>
+                        <button style={progressBannerStyles.retryBtn} onClick={isApplyRun ? handleSubmitApproved : handleStartBot}>
                           Retry
                         </button>
                       </div>

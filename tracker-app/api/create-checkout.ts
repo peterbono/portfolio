@@ -9,9 +9,13 @@ function getStripe(): Stripe {
   return _stripe
 }
 
+function getSupabaseUrl(): string {
+  return process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ''
+}
+
 function getSupabase() {
   return createClient(
-    process.env.VITE_SUPABASE_URL!,
+    getSupabaseUrl(),
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   )
 }
@@ -68,58 +72,103 @@ async function getOrCreateStripeCustomer(
   userId: string,
   email: string,
 ): Promise<string> {
-  // Check if user already has a stripe_customer_id in profiles
+  // Step 1: Query Supabase profiles for existing stripe_customer_id
   const sb = getSupabase()
-  const { data: profile } = await sb
-    .from('profiles')
-    .select('stripe_customer_id, full_name')
-    .eq('id', userId)
-    .maybeSingle()
+  let profile: { stripe_customer_id: string | null; full_name: string | null } | null = null
 
+  try {
+    const { data, error } = await sb
+      .from('profiles')
+      .select('stripe_customer_id, full_name')
+      .eq('id', userId)
+      .maybeSingle()
+
+    if (error) {
+      console.error('[create-checkout] Step 1 FAILED — Supabase profiles query error:', error.message, error.code, error.details)
+      throw new Error(`Supabase profiles query failed: ${error.message}`)
+    }
+
+    profile = data
+    console.log('[create-checkout] Step 1 OK — profile found:', !!profile, 'stripe_customer_id:', profile?.stripe_customer_id || 'none')
+  } catch (err) {
+    if (err instanceof Error && err.message.startsWith('Supabase')) throw err
+    console.error('[create-checkout] Step 1 FAILED — unexpected error querying profiles:', err)
+    throw new Error(`Profiles query failed: ${err instanceof Error ? err.message : String(err)}`)
+  }
+
+  // Step 2: If profile has stripe_customer_id, verify it still exists in Stripe
   if (profile?.stripe_customer_id) {
-    // Verify the customer still exists in Stripe
     try {
       const existing = await getStripe().customers.retrieve(profile.stripe_customer_id)
-      if (!existing.deleted) return profile.stripe_customer_id
-    } catch {
-      // Customer was deleted or ID is invalid — create a new one
+      if (!existing.deleted) {
+        console.log('[create-checkout] Step 2 OK — existing Stripe customer verified:', profile.stripe_customer_id)
+        return profile.stripe_customer_id
+      }
+      console.log('[create-checkout] Step 2 — customer was deleted in Stripe, will create new one')
+    } catch (err) {
+      // Customer was deleted or ID is invalid — log and continue to create a new one
+      const msg = err instanceof Error ? err.message : String(err)
+      console.warn('[create-checkout] Step 2 — Stripe customer retrieve failed (will create new):', msg)
     }
   }
 
-  // Search Stripe for existing customer by email (avoid duplicates)
-  const existingCustomers = await getStripe().customers.list({ email, limit: 1 })
-  if (existingCustomers.data.length > 0) {
-    const customerId = existingCustomers.data[0].id
+  // Step 3: Search Stripe for existing customer by email (avoid duplicates)
+  try {
+    const existingCustomers = await getStripe().customers.list({ email, limit: 1 })
+    console.log('[create-checkout] Step 3 OK — Stripe customer search returned', existingCustomers.data.length, 'results')
 
-    // Backfill stripe_customer_id in profiles
-    await sb
+    if (existingCustomers.data.length > 0) {
+      const customerId = existingCustomers.data[0].id
+
+      // Backfill stripe_customer_id in profiles
+      const { error: updateErr } = await sb
+        .from('profiles')
+        .update({
+          stripe_customer_id: customerId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', userId)
+
+      if (updateErr) {
+        console.warn('[create-checkout] Step 3 — backfill update failed (non-fatal):', updateErr.message)
+      }
+
+      return customerId
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[create-checkout] Step 3 FAILED — Stripe customers.list error:', msg)
+    throw new Error(`Stripe customer search failed: ${msg}`)
+  }
+
+  // Step 4: Create a new Stripe customer
+  try {
+    const customer = await getStripe().customers.create({
+      email,
+      name: profile?.full_name || undefined,
+      metadata: { supabase_user_id: userId },
+    })
+    console.log('[create-checkout] Step 4 OK — Stripe customer created:', customer.id)
+
+    // Store stripe_customer_id in profiles
+    const { error: storeErr } = await sb
       .from('profiles')
       .update({
-        stripe_customer_id: customerId,
+        stripe_customer_id: customer.id,
         updated_at: new Date().toISOString(),
       })
       .eq('id', userId)
 
-    return customerId
+    if (storeErr) {
+      console.warn('[create-checkout] Step 4 — profile update failed (non-fatal):', storeErr.message)
+    }
+
+    return customer.id
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[create-checkout] Step 4 FAILED — Stripe customers.create error:', msg)
+    throw new Error(`Stripe customer creation failed: ${msg}`)
   }
-
-  // Create a new Stripe customer
-  const customer = await getStripe().customers.create({
-    email,
-    name: profile?.full_name || undefined,
-    metadata: { supabase_user_id: userId },
-  })
-
-  // Store stripe_customer_id in profiles
-  await sb
-    .from('profiles')
-    .update({
-      stripe_customer_id: customer.id,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', userId)
-
-  return customer.id
 }
 
 // ─── Main Handler ──────────────────────────────────────────────────────
@@ -142,9 +191,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     console.error('[create-checkout] STRIPE_SECRET_KEY not set')
     return res.status(500).json({ error: 'Server configuration error' })
   }
-  if (!process.env.VITE_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    console.error('[create-checkout] Supabase env vars not set')
-    return res.status(500).json({ error: 'Server configuration error' })
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
+  if (!supabaseUrl || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    console.error('[create-checkout] Supabase env vars not set — SUPABASE_URL:', !!process.env.SUPABASE_URL, 'VITE_SUPABASE_URL:', !!process.env.VITE_SUPABASE_URL, 'SERVICE_ROLE_KEY:', !!process.env.SUPABASE_SERVICE_ROLE_KEY)
+    return res.status(500).json({ error: 'Server configuration error: missing Supabase credentials' })
   }
 
   // ─── Authenticate user ──────────────────────────────────────────
@@ -180,8 +230,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     customerId = await getOrCreateStripeCustomer(auth.userId, auth.email)
   } catch (err) {
-    console.error('[create-checkout] Customer creation failed:', err)
-    return res.status(500).json({ error: 'Failed to create customer' })
+    const message = err instanceof Error ? err.message : 'Unknown error'
+    console.error('[create-checkout] Customer creation failed:', message, err)
+    return res.status(500).json({ error: `Failed to create customer: ${message}` })
   }
 
   // ─── Create Checkout Session ───────────────────────────────────
