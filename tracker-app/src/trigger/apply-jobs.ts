@@ -328,33 +328,28 @@ export const applyJobsTask = task({
           )
         }
       } else {
-        // Launch Chromium with Bright Data Residential Proxy for LinkedIn
-        // Residential proxy + local Chromium = cookie injection works + residential IP
-        const BD_RESIDENTIAL = process.env.BRIGHTDATA_RESIDENTIAL_AUTH
-        if (!BD_RESIDENTIAL) {
-          console.warn('[apply-jobs] BRIGHTDATA_RESIDENTIAL_AUTH not set — LinkedIn may fail from datacenter IP')
+        // Use Bright Data Scraping Browser (CDP) for LinkedIn — residential proxy
+        // requires KYC and fails with ERR_TUNNEL_CONNECTION_FAILED without it.
+        // SBR handles proxy rotation internally + supports cookie injection via context.
+        const LINKEDIN_SBR = SBR_AUTH // Reuse same SBR auth as ATS
+        if (!LINKEDIN_SBR) {
+          console.warn('[apply-jobs] BRIGHTDATA_SBR_AUTH not set — LinkedIn will use local Chromium (datacenter IP, may be blocked)')
         }
-        const linkedInBrowser = await chromium.launch({
-          headless: true,
-          args: [
-            "--no-sandbox",
-            "--disable-setuid-sandbox",
-            "--disable-blink-features=AutomationControlled",
-            "--ignore-certificate-errors",
-          ],
-          ...(BD_RESIDENTIAL
-            ? {
-                proxy: {
-                  server: "http://brd.superproxy.io:22225",
-                  username: BD_RESIDENTIAL.split(":")[0],
-                  password: BD_RESIDENTIAL.split(":")[1],
-                },
-              }
-            : {}),
-        })
+
+        const linkedInBrowser = LINKEDIN_SBR
+          ? await chromium.connectOverCDP(`wss://${LINKEDIN_SBR}@brd.superproxy.io:9222`)
+          : await chromium.launch({
+              headless: true,
+              args: [
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-blink-features=AutomationControlled",
+              ],
+            })
 
         try {
           // Create context with LinkedIn session cookie
+          // SBR via CDP supports addCookies() on the context
           const linkedInContext = await linkedInBrowser.newContext({
             viewport: { width: 1280, height: 900 },
             userAgent:
