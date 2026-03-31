@@ -6,6 +6,24 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[]
 
+/** JSONB shape stored in profiles.schedule_config */
+export interface ScheduleConfigJson {
+  enabled: boolean
+  frequency: string // "every_4h" | "every_8h" | "every_12h" | "twice_daily" | "once_daily"
+  lastRunAt: string | null
+  lastRunStatus: string | null // "triggered" | "error" | null
+  lastRunJobsFound: number | null
+}
+
+/** JSONB shape stored in profiles.notification_prefs */
+export interface NotificationPrefs {
+  applicationsSubmitted: boolean
+  rejectionsReceived: boolean
+  interviewsScheduled: boolean
+  weeklyDigest: boolean
+  botErrors: boolean
+}
+
 export interface Database {
   public: {
     Tables: {
@@ -18,6 +36,10 @@ export interface Database {
           timezone: string | null
           plan: string | null
           daily_apply_limit: number | null
+          stripe_customer_id: string | null
+          stripe_subscription_id: string | null
+          notification_prefs: NotificationPrefs | null
+          schedule_config: ScheduleConfigJson | null
           created_at: string
           updated_at: string
         }
@@ -29,6 +51,10 @@ export interface Database {
           timezone?: string | null
           plan?: string | null
           daily_apply_limit?: number | null
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          notification_prefs?: NotificationPrefs | null
+          schedule_config?: ScheduleConfigJson | null
           created_at?: string
           updated_at?: string
         }
@@ -40,6 +66,10 @@ export interface Database {
           timezone?: string | null
           plan?: string | null
           daily_apply_limit?: number | null
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          notification_prefs?: NotificationPrefs | null
+          schedule_config?: ScheduleConfigJson | null
           created_at?: string
           updated_at?: string
         }

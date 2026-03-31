@@ -56,6 +56,7 @@ import {
   getLearningStatus,
   type FeedbackSignal,
 } from '../lib/feedback-signals'
+import { notifyBotError } from '../lib/notifications'
 
 /* ------------------------------------------------------------------ */
 /*  Mobile responsive CSS injection                                    */
@@ -333,7 +334,8 @@ interface ReviewQueueItem {
   cvName: string
   coverLetterSnippet: string
   coverLetterVariant?: string
-  status: 'pending' | 'approved' | 'skipped' | 'submitting'
+  status: 'pending' | 'approved' | 'skipped' | 'submitting' | 'submitted' | 'failed' | 'expired' | 'needs_manual'
+  submittingStartedAt?: number
   editedCoverLetter?: string
   editedAnswers?: Record<string, string>
   jobUrl?: string
@@ -365,6 +367,7 @@ const AUTO_SUBMIT_LS_KEY = 'tracker_v2_auto_submit'
 const AUTO_SUBMIT_DISMISS_LS_KEY = 'tracker_v2_auto_submit_dismissed_at'
 const REVIEW_MODE_LS_KEY = 'tracker_v2_review_mode'
 const SKIPPED_JOBS_LS_KEY = 'tracker_v2_skipped_jobs'
+const APPLY_RUN_LS_KEY = 'tracker_v2_apply_run_id'
 
 function loadSkippedJobUrls(): Set<string> {
   try {
@@ -403,7 +406,17 @@ function saveReviewMode(mode: ReviewMode) {
 function loadReviewQueue(): ReviewQueueItem[] {
   try {
     const raw = localStorage.getItem(REVIEW_LS_KEY)
-    return raw ? JSON.parse(raw) : []
+    if (!raw) return []
+    const queue = JSON.parse(raw) as ReviewQueueItem[]
+    // Migration fix: items stuck on "submitting" from before the timeout fix
+    // (no submittingStartedAt field) are immediately reverted to "approved"
+    return queue.map(item => {
+      if (item.status === 'submitting' && !item.submittingStartedAt) {
+        console.log(`[loadReviewQueue] Migrating stale submitting item to approved: ${item.company} — ${item.role}`)
+        return { ...item, status: 'approved' as const }
+      }
+      return item
+    })
   } catch {
     return []
   }
@@ -1787,12 +1800,14 @@ function ApplicationReviewCard({
   onApprove,
   onSkip,
   onUndo,
+  onDismiss,
   onPreview,
 }: {
   item: ReviewQueueItem
   onApprove: (id: string) => void
   onSkip: (id: string) => void
   onUndo: (id: string) => void
+  onDismiss?: (id: string) => void
   onPreview?: (id: string) => void
 }) {
   const scoreColor =
@@ -1912,6 +1927,70 @@ function ApplicationReviewCard({
             <Loader2 size={12} color="#60a5fa" className="animate-spin" />
             <span style={{ color: '#60a5fa', fontSize: 12, fontWeight: 600 }}>Submitting...</span>
           </div>
+        </div>
+      )}
+      {item.status === 'submitted' && (
+        <div style={reviewStyles.cardActions}>
+          <div style={reviewStyles.statusLabel}>
+            <CheckCircle2 size={12} color="#22c55e" />
+            <span style={{ color: '#22c55e', fontSize: 12, fontWeight: 700 }}>✓ Submitted</span>
+          </div>
+          {onDismiss && (
+            <button
+              style={reviewStyles.btnUndo}
+              onClick={() => onDismiss(item.id)}
+              title="Dismiss — remove from queue"
+            >
+              Dismiss
+            </button>
+          )}
+        </div>
+      )}
+      {item.status === 'failed' && (
+        <div style={reviewStyles.cardActions}>
+          <div style={reviewStyles.statusLabel}>
+            <XCircle size={12} color="#ef4444" />
+            <span style={{ color: '#ef4444', fontSize: 12, fontWeight: 600 }}>Failed</span>
+          </div>
+          <button
+            style={reviewStyles.btnUndo}
+            onClick={() => onUndo(item.id)}
+            title="Retry — move back to approved"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+      {item.status === 'needs_manual' && (
+        <div style={reviewStyles.cardActions}>
+          <div style={reviewStyles.statusLabel}>
+            <AlertTriangle size={12} color="#f59e0b" />
+            <span style={{ color: '#f59e0b', fontSize: 12, fontWeight: 600 }}>Needs Manual</span>
+          </div>
+          <button
+            style={reviewStyles.btnUndo}
+            onClick={() => onUndo(item.id)}
+            title="Retry — move back to approved"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+      {item.status === 'expired' && (
+        <div style={reviewStyles.cardActions}>
+          <div style={reviewStyles.statusLabel}>
+            <XCircle size={12} color="#f59e0b" />
+            <span style={{ color: '#f59e0b', fontSize: 12, fontWeight: 600 }}>Expired</span>
+          </div>
+          {onDismiss && (
+            <button
+              style={reviewStyles.btnUndo}
+              onClick={() => onDismiss(item.id)}
+              title="Dismiss — remove from queue"
+            >
+              Dismiss
+            </button>
+          )}
         </div>
       )}
       {item.status === 'skipped' && (
@@ -2202,6 +2281,7 @@ function ReviewQueue({
   onApprove,
   onSkip,
   onUndo,
+  onDismiss,
   onApproveAll,
   onSkipAll,
   onSubmitApproved,
@@ -2214,6 +2294,7 @@ function ReviewQueue({
   onApprove: (id: string) => void
   onSkip: (id: string) => void
   onUndo: (id: string) => void
+  onDismiss?: (id: string) => void
   onApproveAll: () => void
   onSkipAll: () => void
   onSubmitApproved: () => void
@@ -2305,6 +2386,7 @@ function ReviewQueue({
               onApprove={onApprove}
               onUndo={onUndo}
               onSkip={onSkip}
+              onDismiss={onDismiss}
               onPreview={onPreview}
             />
           ))}
@@ -3612,6 +3694,9 @@ export function AutopilotView() {
   const [isTriggering, setIsTriggering] = useState(false)
   const [triggerError, setTriggerError] = useState<string | null>(null)
 
+  // Track run IDs we've already sent error notifications for (dedup within session)
+  const notifiedErrorRunIds = useRef(new Set<string>())
+
   // Run polling state (real-time progress tracking)
   // Persist activeRunId + startTime in localStorage so polling survives page refresh
   const [activeRunId, _setActiveRunId] = useState<string | null>(() => {
@@ -3643,10 +3728,25 @@ export function AutopilotView() {
     } catch { return null }
   })
   const [polledRunStatus, setPolledRunStatus] = useState<'QUEUED' | 'EXECUTING' | 'COMPLETED' | 'FAILED' | 'CRASHED' | 'REATTEMPTING' | null>(null)
-  const [applyRunId, setApplyRunId] = useState<string | null>(null) // Tracks apply-jobs runs (vs find-jobs runs)
+  const [applyRunId, _setApplyRunId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(APPLY_RUN_LS_KEY) ?? null
+    } catch { return null }
+  })
+  const setApplyRunId = useCallback((id: string | null) => {
+    _setApplyRunId(id)
+    try {
+      if (id) {
+        localStorage.setItem(APPLY_RUN_LS_KEY, id)
+      } else {
+        localStorage.removeItem(APPLY_RUN_LS_KEY)
+      }
+    } catch { /* ignore */ }
+  }, [])
   const [showActivityDrawer, setShowActivityDrawer] = useState(false)
   const [showRunHistory, setShowRunHistory] = useState(false)
-  const [polledRunOutput, setPolledRunOutput] = useState<{ jobsFound?: number; jobsQualified?: number; jobsPreFiltered?: number; discoveredJobs?: DiscoveredJob[]; qualifiedJobs?: QualifiedJob[] } | null>(null)
+  // Store the FULL raw output from Trigger.dev so both find-jobs and apply-jobs handlers can read their fields
+  const [polledRunOutput, setPolledRunOutput] = useState<Record<string, unknown> | null>(null)
   // Live metadata from Trigger.dev (updated during execution, not just at completion)
   const [polledMetadata, setPolledMetadata] = useState<{
     phase?: string
@@ -3802,6 +3902,17 @@ export function AutopilotView() {
     setPolledRunStatus(null)
     setPolledRunOutput(null)
     setPolledMetadata(null)
+    // Clean up stale review queue items from previous runs:
+    // - "submitting" items (stuck from a previous apply) → revert to "approved"
+    // - "submitted" items → remove from queue (already done)
+    setReviewQueue(prev => {
+      const hasStale = prev.some(i => i.status === 'submitting' || i.status === 'submitted')
+      if (!hasStale) return prev
+      console.log('[doStartBot] Cleaning stale submitting/submitted items from review queue')
+      return prev
+        .filter(i => i.status !== 'submitted') // Remove completed items
+        .map(i => i.status === 'submitting' ? { ...i, status: 'approved' as const, submittingStartedAt: undefined } : i) // Revert stuck items
+    })
     try {
       const result = await triggerBotRun('search_config')
       // Start polling
@@ -3809,7 +3920,10 @@ export function AutopilotView() {
       setRunStartTime(Date.now())
       setPolledRunStatus('QUEUED')
     } catch (err) {
-      setTriggerError((err as Error).message)
+      const errMsg = (err as Error).message
+      setTriggerError(errMsg)
+      // Fire-and-forget error notification
+      notifyBotError({ errorMessage: errMsg, runId: 'search-trigger-failed' })
     } finally {
       setIsTriggering(false)
     }
@@ -3862,18 +3976,11 @@ export function AutopilotView() {
           }
         }
 
-        // Try to extract output/stats from the run data (available on completion)
+        // Store the FULL raw output from Trigger.dev as-is.
+        // Both find-jobs and apply-jobs completion handlers read their specific fields from this.
         const output = data.output as Record<string, unknown> | undefined
         if (output) {
-          const discovered = (output.discoveredJobs ?? output.discovered_jobs) as DiscoveredJob[] | undefined
-          const qualified = (output.qualifiedJobs ?? output.qualified_jobs) as QualifiedJob[] | undefined
-          setPolledRunOutput({
-            jobsFound: (output.jobsFound ?? output.jobs_found) as number | undefined,
-            jobsQualified: (output.jobsQualified ?? output.jobs_qualified) as number | undefined,
-            jobsPreFiltered: (output.jobsPreFiltered ?? output.jobs_pre_filtered) as number | undefined,
-            discoveredJobs: Array.isArray(discovered) ? discovered : undefined,
-            qualifiedJobs: Array.isArray(qualified) ? qualified : undefined,
-          })
+          setPolledRunOutput(output)
         }
 
         if (TERMINAL.includes(status)) {
@@ -3910,9 +4017,11 @@ export function AutopilotView() {
     console.log('[AutopilotView] discoveredJobs useEffect fired — polledRunStatus:', polledRunStatus)
     if (polledRunStatus !== 'COMPLETED') return
 
-    // Prefer qualifiedJobs (have scores + reasons) over raw discoveredJobs
-    const qualifiedJobs = polledRunOutput?.qualifiedJobs
-    const discoveredJobs = polledRunOutput?.discoveredJobs
+    // Extract find-jobs fields from raw output (supports both camelCase and snake_case)
+    const rawQualified = (polledRunOutput?.qualifiedJobs ?? polledRunOutput?.qualified_jobs) as QualifiedJob[] | undefined
+    const rawDiscovered = (polledRunOutput?.discoveredJobs ?? polledRunOutput?.discovered_jobs) as DiscoveredJob[] | undefined
+    const qualifiedJobs = Array.isArray(rawQualified) ? rawQualified : undefined
+    const discoveredJobs = Array.isArray(rawDiscovered) ? rawDiscovered : undefined
 
     console.log('[AutopilotView] polledRunOutput:', JSON.stringify(polledRunOutput))
     console.log('[AutopilotView] qualifiedJobs:', qualifiedJobs?.length ?? 0, 'discoveredJobs:', discoveredJobs?.length ?? 0)
@@ -4005,27 +4114,57 @@ export function AutopilotView() {
 
     console.log('[AutopilotView] Apply run completed with status:', polledRunStatus)
 
-    // Parse apply results from polledRunOutput if available
-    const output = polledRunOutput as Record<string, unknown> | null
+    // Parse apply results from the raw polledRunOutput
+    const output = polledRunOutput
     const appliedCount = (output?.applied as number) ?? 0
     const failedCount = (output?.failed as number) ?? 0
-    const results = (output?.results as Array<{ company?: string; status?: string; reason?: string }>) ?? []
+    const results = (output?.results as Array<{ url?: string; company?: string; role?: string; status?: string; reason?: string }>) ?? []
 
-    // Update submitting items based on results
+    console.log('[AutopilotView] Apply results:', results.length, 'items. Applied:', appliedCount, 'Failed:', failedCount)
+
+    // Update submitting items based on results — match by URL first, fall back to company+role
     setReviewQueue(prev => prev.map(item => {
       if (item.status !== 'submitting') return item
 
-      // Try to match by company name
-      const matchingResult = results.find(r =>
-        r.company?.toLowerCase().trim() === item.company.toLowerCase().trim()
-      )
+      // Primary: match by URL (most reliable, handles same company with different roles)
+      let matchingResult = item.jobUrl
+        ? results.find(r => r.url && r.url === item.jobUrl)
+        : undefined
 
-      if (matchingResult?.status === 'applied') {
-        return { ...item, status: 'approved' as const } // Keep as approved — it was submitted
+      // Fallback: match by company + role (for results that don't include URL)
+      if (!matchingResult) {
+        matchingResult = results.find(r =>
+          r.company?.toLowerCase().trim() === item.company.toLowerCase().trim() &&
+          r.role?.toLowerCase().trim() === item.role.toLowerCase().trim()
+        )
       }
 
-      // For failed/needs_manual/skipped — revert to approved so user can retry or skip
-      return { ...item, status: 'approved' as const }
+      // Last resort: match by company name only (legacy results without URL/role)
+      if (!matchingResult) {
+        matchingResult = results.find(r =>
+          r.company?.toLowerCase().trim() === item.company.toLowerCase().trim()
+        )
+      }
+
+      if (matchingResult) {
+        const s = matchingResult.status
+        if (s === 'applied' || s === 'applied_external' || s === 'confirmed') {
+          return { ...item, status: 'submitted' as const, submittingStartedAt: undefined }
+        }
+        if (s === 'expired' || s === 'already_applied') {
+          return { ...item, status: 'expired' as const, submittingStartedAt: undefined }
+        }
+        // needs_manual → distinct status so user can distinguish from hard failures
+        if (s === 'needs_manual') {
+          return { ...item, status: 'needs_manual' as const, submittingStartedAt: undefined }
+        }
+        // error, timeout, failed, skipped → mark as failed
+        return { ...item, status: 'failed' as const, submittingStartedAt: undefined }
+      }
+
+      // No matching result found — if run COMPLETED, mark failed (job was lost/unprocessed)
+      // If run FAILED/CRASHED, also mark failed
+      return { ...item, status: 'failed' as const, submittingStartedAt: undefined }
     }))
 
     // Show feedback to user
@@ -4036,7 +4175,13 @@ export function AutopilotView() {
         setTriggerError(`Application returned: ${results.map(r => `${r.company}: ${r.status} — ${r.reason}`).join('; ') || 'No applications were submitted. Jobs may require manual application.'}`)
       }
     } else {
-      setTriggerError(`Application run ${polledRunStatus.toLowerCase()}. Please retry.`)
+      const failMsg = `Application run ${polledRunStatus.toLowerCase()}. Please retry.`
+      setTriggerError(failMsg)
+      // Fire-and-forget error notification (deduplicated by applyRunId)
+      if (applyRunId && !notifiedErrorRunIds.current.has(applyRunId)) {
+        notifiedErrorRunIds.current.add(applyRunId)
+        notifyBotError({ errorMessage: failMsg, runId: applyRunId })
+      }
     }
 
     // Clear apply run tracking
@@ -4044,9 +4189,59 @@ export function AutopilotView() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [polledRunStatus, applyRunId])
 
+  // ---- Timeout: auto-revert stuck "submitting" items after 10 minutes ----
+  // Also catches legacy items with no submittingStartedAt (treated as immediately expired)
+  useEffect(() => {
+    const SUBMIT_TIMEOUT_MS = 10 * 60 * 1000 // 10 minutes
+    const hasSubmitting = reviewQueue.some(i => i.status === 'submitting')
+    if (!hasSubmitting) return
+
+    const timer = setInterval(() => {
+      const now = Date.now()
+      setReviewQueue(prev => {
+        const anyTimedOut = prev.some(
+          i => i.status === 'submitting' && (!i.submittingStartedAt || (now - i.submittingStartedAt > SUBMIT_TIMEOUT_MS))
+        )
+        if (!anyTimedOut) return prev
+        console.log('[AutopilotView] Timing out stuck submitting items (missing timestamp or > 10 minutes)')
+        return prev.map(item => {
+          if (item.status === 'submitting' && (!item.submittingStartedAt || (now - item.submittingStartedAt > SUBMIT_TIMEOUT_MS))) {
+            return { ...item, status: 'approved' as const, submittingStartedAt: undefined }
+          }
+          return item
+        })
+      })
+    }, 30_000) // Check every 30 seconds
+
+    return () => clearInterval(timer)
+  }, [reviewQueue])
+
+  // ---- Auto-remove "submitted" items from review queue after 30 seconds ----
+  useEffect(() => {
+    const hasSubmitted = reviewQueue.some(i => i.status === 'submitted')
+    if (!hasSubmitted) return
+
+    const timer = setTimeout(() => {
+      setReviewQueue(prev => {
+        const submittedIds = prev.filter(i => i.status === 'submitted').map(i => i.id)
+        if (submittedIds.length === 0) return prev
+        console.log(`[AutopilotView] Auto-removing ${submittedIds.length} submitted items from review queue`)
+        return prev.filter(i => i.status !== 'submitted')
+      })
+    }, 30_000) // 30 seconds
+
+    return () => clearTimeout(timer)
+  }, [reviewQueue])
+
   // Derived: is a polled run actively in progress
   const isRunPolling = activeRunId !== null
   const isRunTerminal = polledRunStatus === 'COMPLETED' || polledRunStatus === 'FAILED' || polledRunStatus === 'CRASHED'
+
+  // Don't show stale terminal banners on initial load — only show if run is recent (< 5 min)
+  const isStaleTerminalRun = !isRunPolling && !isTriggering && !isBotActive && currentRun != null &&
+    (currentRun.status === 'completed' || currentRun.status === 'failed') &&
+    currentRun.completedAt != null &&
+    (Date.now() - new Date(currentRun.completedAt).getTime() > 5 * 60 * 1000)
 
   // Core bot action after auth + profile checks
   const executeBotAction = useCallback(() => {
@@ -4154,6 +4349,10 @@ export function AutopilotView() {
     })
   }, [emitFeedbackSignal])
 
+  const handleReviewDismiss = useCallback((id: string) => {
+    setReviewQueue(prev => prev.filter(item => item.id !== id))
+  }, [])
+
   const handleReviewApproveAll = useCallback(() => {
     setReviewQueue(prev => {
       const updated = prev.map(item => item.status === 'pending' ? { ...item, status: 'approved' as const } : item)
@@ -4211,126 +4410,51 @@ export function AutopilotView() {
     const approved = reviewQueue.filter(i => i.status === 'approved')
     if (approved.length === 0) return
 
-    // Split into 2 channels:
-    // 1. ALL LinkedIn jobs → extension (linkedin-apply.js detects Easy Apply on-page)
-    // 2. ATS jobs (non-LinkedIn) → Trigger.dev cloud apply
-    // Extension handles both Easy Apply (auto-fill+submit) and external apply (redirect to ATS)
-    const linkedInJobs = approved.filter(i =>
-      i.jobUrl && /linkedin\.com\/jobs/i.test(i.jobUrl)
-    )
-    const atsJobs = approved.filter(i => i.jobUrl && !/linkedin\.com\/jobs/i.test(i.jobUrl))
-
     setIsTriggering(true)
 
-    // Mark all approved as submitting
+    // Clear stale output from previous runs so apply completion handler reads fresh data
+    setPolledRunOutput(null)
+    setPolledRunStatus(null)
+
+    // Mark all approved as submitting (with timestamp for timeout tracking)
+    const now = Date.now()
     setReviewQueue(prev => prev.map(item =>
-      item.status === 'approved' ? { ...item, status: 'submitting' as const } : item
+      item.status === 'approved' ? { ...item, status: 'submitting' as const, submittingStartedAt: now } : item
     ))
 
-    const results: Array<{ company: string; status: string; reason: string }> = []
+    // ─── ALL jobs go to Trigger.dev cloud ───
+    // LinkedIn Easy Apply: cloud Chromium + cookie injection + residential proxy
+    // ATS (Greenhouse/Lever/etc.): cloud Chromium + Bright Data Scraping Browser
+    try {
+      const jobsToApply = approved.map(item => ({
+        url: (item.jobUrl || '').replace(/https?:\/\/[a-z]{2}\.linkedin\.com/, 'https://www.linkedin.com'),
+        company: item.company,
+        role: item.role,
+        coverLetterSnippet: item.editedCoverLetter || item.coverLetterSnippet,
+        matchScore: item.matchScore,
+      }))
 
-    // ─── LinkedIn jobs: fully automated via extension (content.js relay → background.js → linkedin-apply.js) ───
-    for (const item of linkedInJobs) {
-      try {
-        const url = (item.jobUrl || '').replace(/https?:\/\/[a-z]{2}\.linkedin\.com/, 'https://www.linkedin.com')
-        console.log(`[Submit] LinkedIn auto-apply via extension: ${item.company}`)
+      const linkedInCount = jobsToApply.filter(j => /linkedin\.com\/jobs/i.test(j.url)).length
+      const atsCount = jobsToApply.length - linkedInCount
+      console.log(`[Submit] Sending ${jobsToApply.length} jobs to Trigger.dev cloud (${linkedInCount} LinkedIn + ${atsCount} ATS)...`)
 
-        // Send to extension via content.js relay → background.js opens tab + injects linkedin-apply.js
-        const extensionResult = await new Promise<{ success: boolean; status: string; reason: string }>((resolve) => {
-          const timeout = setTimeout(() => {
-            window.removeEventListener('message', handler)
-            console.log(`[Submit] Extension timeout for ${item.company} — opening manually`)
-            window.open(url, '_blank')
-            const cl = item.editedCoverLetter || item.coverLetterSnippet
-            if (cl) navigator.clipboard.writeText(cl).catch(() => {})
-            resolve({ success: true, status: 'opened', reason: 'Extension timeout — opened manually' })
-          }, 120000) // 2 min timeout (apply takes time)
+      const cloudResult = await triggerApplyJobs(jobsToApply)
+      setActiveRunId(cloudResult.runId)
+      setApplyRunId(cloudResult.runId)
+      setRunStartTime(Date.now())
+      setPolledRunStatus('QUEUED')
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : 'Cloud apply failed'
+      console.error(`[Submit] Failed to trigger cloud apply: ${errMsg}`)
+      setTriggerError(errMsg)
+      // Fire-and-forget error notification
+      notifyBotError({ errorMessage: errMsg, runId: 'apply-trigger-failed' })
 
-          const handler = (event: MessageEvent) => {
-            if (event.data?.type !== 'JOBTRACKER_APPLY_RESULT') return
-            if (event.data?.company !== item.company) return
-            clearTimeout(timeout)
-            window.removeEventListener('message', handler)
-            console.log(`[Submit] Extension result for ${item.company}:`, event.data)
-            resolve({
-              success: event.data.success || false,
-              status: event.data.status || 'unknown',
-              reason: event.data.reason || event.data.error || '',
-            })
-          }
-          window.addEventListener('message', handler)
-
-          window.postMessage({
-            type: 'JOBTRACKER_APPLY_VIA_EXTENSION',
-            jobData: { url, company: item.company, role: item.role, coverLetterSnippet: item.editedCoverLetter || item.coverLetterSnippet, matchScore: item.matchScore },
-          }, '*')
-        })
-
-        // If no Easy Apply, fall back to manual (open in browser + copy cover letter)
-        if (extensionResult.status === 'no_easy_apply') {
-          console.log(`[Submit] ${item.company}: no Easy Apply — falling back to manual`)
-          window.open(url, '_blank')
-          const cl = item.editedCoverLetter || item.coverLetterSnippet
-          if (cl) navigator.clipboard.writeText(cl).catch(() => {})
-          results.push({ company: item.company, status: 'opened', reason: 'No Easy Apply — opened in browser, cover letter copied' })
-        } else {
-          results.push({ company: item.company, status: extensionResult.status, reason: extensionResult.reason || '' })
-        }
-
-        // Update queue item based on result
-        setReviewQueue(prev => prev.map(q =>
-          q.id === item.id
-            ? { ...q, status: extensionResult.success ? 'approved' as const : 'approved' as const }
-            : q
-        ))
-
-        // Small delay between jobs (human-like pacing)
-        await new Promise(r => setTimeout(r, 3000))
-      } catch (err) {
-        results.push({ company: item.company, status: 'failed', reason: err instanceof Error ? err.message : 'Unknown error' })
-      }
+      // Revert all submitting items back to approved
+      setReviewQueue(prev => prev.map(item =>
+        item.status === 'submitting' ? { ...item, status: 'approved' as const } : item
+      ))
     }
-
-    // ─── ATS jobs: apply via cloud (Trigger.dev) ───
-    if (atsJobs.length > 0) {
-      try {
-        const jobsToApply = atsJobs.map(item => ({
-          url: item.jobUrl || '',
-          company: item.company,
-          role: item.role,
-          coverLetterSnippet: item.editedCoverLetter || item.coverLetterSnippet,
-          matchScore: item.matchScore,
-        }))
-
-        const cloudResult = await triggerApplyJobs(jobsToApply)
-        setActiveRunId(cloudResult.runId)
-        setApplyRunId(cloudResult.runId)
-        setRunStartTime(Date.now())
-        setPolledRunStatus('QUEUED')
-      } catch (err) {
-        for (const item of atsJobs) {
-          results.push({ company: item.company, status: 'failed', reason: err instanceof Error ? err.message : 'Cloud apply failed' })
-        }
-      }
-    }
-
-    // Show results for LinkedIn jobs (ATS results come via polling)
-    const linkedInResults = results.filter(r => linkedInJobs.some(j => j.company === r.company))
-    if (linkedInResults.length > 0) {
-      const applied = linkedInResults.filter(r => r.status === 'applied').length
-      const failed = linkedInResults.filter(r => r.status !== 'applied').length
-      if (applied > 0) {
-        setTriggerError(null) // Clear any previous error
-        console.log(`[Submit] LinkedIn: ${applied} applied, ${failed} failed`)
-      } else if (failed > 0) {
-        setTriggerError(`LinkedIn: ${linkedInResults.map(r => `${r.company}: ${r.reason}`).join('; ')}`)
-      }
-    }
-
-    // Revert remaining submitting items back to approved
-    setReviewQueue(prev => prev.map(item =>
-      item.status === 'submitting' ? { ...item, status: 'approved' as const } : item
-    ))
 
     setIsTriggering(false)
   }, [requireAuth, reviewQueue])
@@ -4449,6 +4573,7 @@ export function AutopilotView() {
           onApprove={handleReviewApprove}
           onUndo={handleReviewUndo}
           onSkip={handleReviewSkip}
+          onDismiss={handleReviewDismiss}
           onApproveAll={handleReviewApproveAll}
           onSkipAll={handleReviewSkipAll}
           onSubmitApproved={handleSubmitApproved}
@@ -4717,6 +4842,11 @@ export function AutopilotView() {
               setPolledRunStatus(null)
               setPolledRunOutput(null)
               setPolledMetadata(null)
+              setApplyRunId(null)
+              // Revert any "submitting" items back to "approved" so user can retry
+              setReviewQueue(prev => prev.map(item =>
+                item.status === 'submitting' ? { ...item, status: 'approved' as const, submittingStartedAt: undefined } : item
+              ))
               if (currentRun?.id) {
                 try {
                   await (supabase as any).from('bot_runs').update({
@@ -4955,14 +5085,14 @@ export function AutopilotView() {
           </div>
 
           {/* Progress Banner — shows during and after bot runs */}
-          {(isRunPolling || isRunTerminal || isTriggering || isBotActive || currentRun?.status === 'completed' || currentRun?.status === 'failed') && (
+          {!isStaleTerminalRun && (isRunPolling || isRunTerminal || isTriggering || isBotActive || currentRun?.status === 'completed' || currentRun?.status === 'failed') && (
             <section style={progressBannerStyles.container}>
               {/* Top row: status + live job count */}
               {(() => {
                 // Prefer live metadata (available during execution) over output (only at end)
                 const metaJf = polledMetadata?.jobsFound
-                const jf = metaJf ?? polledRunOutput?.jobsFound ?? currentRun?.jobsFound ?? 0
-                const discovered = polledRunOutput?.discoveredJobs ?? []
+                const jf = metaJf ?? (polledRunOutput?.jobsFound as number | undefined) ?? currentRun?.jobsFound ?? 0
+                const discovered = (polledRunOutput?.discoveredJobs ?? polledRunOutput?.discovered_jobs ?? []) as DiscoveredJob[]
                 const isRunning = (isTriggering || isRunPolling || isBotActive) && !(polledRunStatus === 'COMPLETED' || polledRunStatus === 'FAILED' || polledRunStatus === 'CRASHED')
                 const isComplete = polledRunStatus === 'COMPLETED' || (!isRunPolling && !isTriggering && currentRun?.status === 'completed')
                 const isFailed = polledRunStatus === 'FAILED' || polledRunStatus === 'CRASHED' || (!isRunPolling && !isTriggering && currentRun?.status === 'failed')
@@ -5109,10 +5239,10 @@ export function AutopilotView() {
                       <div style={progressBannerStyles.resultRow}>
                         <span style={progressBannerStyles.resultText}>
                           Found {jf} match{jf !== 1 ? 'es' : ''}
-                          {(polledRunOutput?.jobsQualified ?? currentRun?.jobsApplied) != null && (
-                            <> &middot; {polledRunOutput?.jobsQualified ?? currentRun?.jobsApplied} qualified</>
+                          {((polledRunOutput?.jobsQualified as number | undefined) ?? currentRun?.jobsApplied) != null && (
+                            <> &middot; {(polledRunOutput?.jobsQualified as number | undefined) ?? currentRun?.jobsApplied} qualified</>
                           )}
-                          {polledRunOutput?.qualifiedJobs && polledRunOutput.qualifiedJobs.length > 0 && (
+                          {Array.isArray(polledRunOutput?.qualifiedJobs ?? polledRunOutput?.qualified_jobs) && ((polledRunOutput?.qualifiedJobs ?? polledRunOutput?.qualified_jobs) as unknown[]).length > 0 && (
                             <> (scored by AI)</>
                           )}
                         </span>
@@ -5220,6 +5350,7 @@ export function AutopilotView() {
                 onApprove={handleReviewApprove}
                 onUndo={handleReviewUndo}
                 onSkip={handleReviewSkip}
+                onDismiss={handleReviewDismiss}
                 onApproveAll={handleReviewApproveAll}
                 onSkipAll={handleReviewSkipAll}
                 onSubmitApproved={handleSubmitApproved}

@@ -1,5 +1,5 @@
 import { useMemo, useState, useRef, useEffect } from 'react'
-import { Search, X, Plus } from 'lucide-react'
+import { Search, X, Plus, ChevronDown } from 'lucide-react'
 import { useJobs } from '../context/JobsContext'
 import { useUI } from '../context/UIContext'
 import { StatusBadge } from '../components/StatusBadge'
@@ -204,6 +204,14 @@ export function PipelineView() {
   const [draggedJobId, setDraggedJobId] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<JobStatus | null>(null)
 
+  // Mobile detection
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768)
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
   const filtered = useMemo(() => {
     if (!search.trim()) return jobs
     const q = search.toLowerCase().trim()
@@ -242,6 +250,7 @@ export function PipelineView() {
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
       <div
+        data-pipeline-header
         style={{
           padding: '20px 24px 12px',
           borderBottom: '1px solid var(--border)',
@@ -279,15 +288,19 @@ export function PipelineView() {
           overflow: 'auto',
           overflowX: 'auto',
           WebkitOverflowScrolling: 'touch',
-          padding: 16,
+          padding: isMobile ? 8 : 16,
         }}
       >
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: `repeat(${PIPELINE_COLUMNS.length}, minmax(220px, 1fr))`,
-            gap: 12,
-            minWidth: PIPELINE_COLUMNS.length * 232,
+            gridTemplateColumns: isMobile
+              ? `repeat(${PIPELINE_COLUMNS.length}, 260px)`
+              : `repeat(${PIPELINE_COLUMNS.length}, minmax(220px, 1fr))`,
+            gap: isMobile ? 8 : 12,
+            minWidth: isMobile
+              ? PIPELINE_COLUMNS.length * 268
+              : PIPELINE_COLUMNS.length * 232,
           }}
         >
           {PIPELINE_COLUMNS.map((status) => (
@@ -328,6 +341,8 @@ export function PipelineView() {
               onCardDragStart={(jobId) => setDraggedJobId(jobId)}
               onCardDragEnd={() => { setDraggedJobId(null); setDropTarget(null) }}
               draggedJobId={draggedJobId}
+              isMobile={isMobile}
+              onStatusChange={updateJobStatus}
             />
           ))}
         </div>
@@ -473,6 +488,8 @@ function PipelineColumn({
   onCardDragStart,
   onCardDragEnd,
   draggedJobId,
+  isMobile,
+  onStatusChange,
 }: {
   status: JobStatus
   jobs: Job[]
@@ -486,6 +503,8 @@ function PipelineColumn({
   onCardDragStart: (jobId: string) => void
   onCardDragEnd: () => void
   draggedJobId: string | null
+  isMobile: boolean
+  onStatusChange: (jobId: string, status: JobStatus) => void
 }) {
   const config = STATUS_CONFIG[status]
   const [showAdd, setShowAdd] = useState(false)
@@ -660,6 +679,8 @@ function PipelineColumn({
               isDragging={draggedJobId === job.id}
               onDragStart={() => onCardDragStart(job.id)}
               onDragEnd={onCardDragEnd}
+              isMobile={isMobile}
+              onStatusChange={onStatusChange}
             />
           ))
         )}
@@ -697,108 +718,213 @@ const PROGRESS_ICONS: Record<StageProgress['state'], string> = {
   'awaiting-response': '◷',
 }
 
+/** Touch-friendly status dropdown for mobile kanban cards */
+function TouchStatusDropdown({ job, onStatusChange, onClose }: {
+  job: Job
+  onStatusChange: (jobId: string, status: JobStatus) => void
+  onClose: () => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  const statuses: JobStatus[] = [
+    'manual', 'submitted', 'screening', 'interviewing', 'challenge',
+    'offer', 'negotiation', 'rejected', 'withdrawn',
+  ]
+
+  useEffect(() => {
+    const handler = (e: MouseEvent | TouchEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', handler)
+    document.addEventListener('touchstart', handler)
+    return () => {
+      document.removeEventListener('mousedown', handler)
+      document.removeEventListener('touchstart', handler)
+    }
+  }, [onClose])
+
+  return (
+    <div
+      ref={ref}
+      onClick={(e) => e.stopPropagation()}
+      onTouchEnd={(e) => e.stopPropagation()}
+      style={{
+        position: 'absolute', bottom: '100%', left: 0, right: 0,
+        marginBottom: 4, zIndex: 50,
+        background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+        borderRadius: 8, padding: '4px 0',
+        boxShadow: '0 -8px 24px rgba(0,0,0,0.5)',
+        maxHeight: 240, overflowY: 'auto',
+      }}
+    >
+      <div style={{ padding: '4px 10px 6px', fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+        Move to...
+      </div>
+      {statuses.map(s => {
+        const cfg = STATUS_CONFIG[s]
+        const isActive = job.status === s
+        return (
+          <button
+            key={s}
+            onClick={(e) => {
+              e.stopPropagation()
+              if (!isActive) onStatusChange(job.id, s)
+              onClose()
+            }}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              width: '100%', padding: '8px 12px',
+              background: isActive ? 'rgba(255,255,255,0.05)' : 'transparent',
+              border: 'none', cursor: 'pointer', fontSize: 12, color: cfg.color,
+              textAlign: 'left', minHeight: 36,
+            }}
+          >
+            <span style={{ width: 16, textAlign: 'center' }}>{cfg.icon}</span>
+            {cfg.label}
+            {isActive && <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--text-tertiary)' }}>current</span>}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 function PipelineCard({
-  job, onClick, searchQuery, isDragging, onDragStart, onDragEnd,
+  job, onClick, searchQuery, isDragging, onDragStart, onDragEnd, isMobile, onStatusChange,
 }: {
   job: Job; onClick: () => void; searchQuery: string
   isDragging: boolean; onDragStart: () => void; onDragEnd: () => void
+  isMobile: boolean; onStatusChange: (jobId: string, status: JobStatus) => void
 }) {
   const lastEvent = job.events?.[job.events.length - 1]
   const progress = getStageProgress(job)
+  const [showStatusMenu, setShowStatusMenu] = useState(false)
 
   return (
-    <button
-      draggable
-      onDragStart={(e) => {
-        e.dataTransfer.effectAllowed = 'move'
-        e.dataTransfer.setData('text/plain', job.id)
-        onDragStart()
-      }}
-      onDragEnd={onDragEnd}
-      onClick={onClick}
-      style={{
-        textAlign: 'left',
-        width: '100%',
-        padding: '10px 12px',
-        background: isDragging ? 'var(--bg-surface)' : 'var(--bg-elevated)',
-        borderTop: '1px solid var(--border)',
-        borderRight: '1px solid var(--border)',
-        borderBottom: '1px solid var(--border)',
-        borderLeft: progress ? `3px solid ${progress.color}` : '1px solid var(--border)',
-        borderRadius: 'var(--radius-md)',
-        cursor: isDragging ? 'grabbing' : 'grab',
-        transition: 'all var(--transition-fast)',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 6,
-        opacity: isDragging ? 0.4 : 1,
-      }}
-      onMouseEnter={(e) => {
-        if (!isDragging) {
-          e.currentTarget.style.borderColor = 'var(--border-hover)'
-          e.currentTarget.style.background = '#1f1f26'
-        }
-      }}
-      onMouseLeave={(e) => {
-        if (!isDragging) {
-          e.currentTarget.style.borderColor = 'var(--border)'
-          e.currentTarget.style.background = 'var(--bg-elevated)'
-        }
-      }}
-    >
-      {/* Company */}
-      <span
+    <div style={{ position: 'relative' }}>
+      <button
+        data-pipeline-card
+        draggable={!isMobile}
+        onDragStart={isMobile ? undefined : (e) => {
+          e.dataTransfer.effectAllowed = 'move'
+          e.dataTransfer.setData('text/plain', job.id)
+          onDragStart()
+        }}
+        onDragEnd={isMobile ? undefined : onDragEnd}
+        onClick={onClick}
         style={{
-          fontSize: 13,
-          fontWeight: 600,
-          color: 'var(--text-primary)',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
+          textAlign: 'left',
           width: '100%',
+          padding: isMobile ? '8px 10px' : '10px 12px',
+          background: isDragging ? 'var(--bg-surface)' : 'var(--bg-elevated)',
+          borderTop: '1px solid var(--border)',
+          borderRight: '1px solid var(--border)',
+          borderBottom: '1px solid var(--border)',
+          borderLeft: progress ? `3px solid ${progress.color}` : '1px solid var(--border)',
+          borderRadius: 'var(--radius-md)',
+          cursor: isDragging ? 'grabbing' : isMobile ? 'pointer' : 'grab',
+          transition: 'all var(--transition-fast)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: isMobile ? 4 : 6,
+          opacity: isDragging ? 0.4 : 1,
+        }}
+        onMouseEnter={(e) => {
+          if (!isDragging) {
+            e.currentTarget.style.borderColor = 'var(--border-hover)'
+            e.currentTarget.style.background = '#1f1f26'
+          }
+        }}
+        onMouseLeave={(e) => {
+          if (!isDragging) {
+            e.currentTarget.style.borderColor = 'var(--border)'
+            e.currentTarget.style.background = 'var(--bg-elevated)'
+          }
         }}
       >
-        {searchQuery ? highlightMatch(job.company, searchQuery) : job.company}
-      </span>
-
-      {/* Role */}
-      <span
-        style={{
-          fontSize: 12,
-          color: 'var(--text-secondary)',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-          width: '100%',
-        }}
-      >
-        {searchQuery ? highlightMatch(job.role, searchQuery) : job.role}
-      </span>
-
-      {/* Stage progress badge */}
-      {progress && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 5,
-          padding: '3px 8px', borderRadius: 6,
-          background: progress.bg,
-          width: 'fit-content',
-        }}>
-          <span style={{ fontSize: 11, color: progress.color, fontWeight: 600 }}>
-            {PROGRESS_ICONS[progress.state]}
-          </span>
-          <span style={{ fontSize: 10, color: progress.color, fontWeight: 500 }}>
-            {progress.state === 'scheduled' ? `Scheduled ${progress.label}` : progress.label}
-          </span>
-        </div>
-      )}
-
-      {/* Bottom row: date */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
-        <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
-          {lastEvent ? formatShortDate(lastEvent.date) : formatShortDate(job.date)}
+        {/* Company */}
+        <span
+          data-card-company
+          style={{
+            fontSize: isMobile ? 12 : 13,
+            fontWeight: 600,
+            color: 'var(--text-primary)',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            width: '100%',
+          }}
+        >
+          {searchQuery ? highlightMatch(job.company, searchQuery) : job.company}
         </span>
-      </div>
-    </button>
+
+        {/* Role */}
+        <span
+          data-card-role
+          style={{
+            fontSize: isMobile ? 11 : 12,
+            color: 'var(--text-secondary)',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            width: '100%',
+          }}
+        >
+          {searchQuery ? highlightMatch(job.role, searchQuery) : job.role}
+        </span>
+
+        {/* Stage progress badge */}
+        {progress && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 5,
+            padding: '3px 8px', borderRadius: 6,
+            background: progress.bg,
+            width: 'fit-content',
+          }}>
+            <span style={{ fontSize: 11, color: progress.color, fontWeight: 600 }}>
+              {PROGRESS_ICONS[progress.state]}
+            </span>
+            <span style={{ fontSize: 10, color: progress.color, fontWeight: 500 }}>
+              {progress.state === 'scheduled' ? `Scheduled ${progress.label}` : progress.label}
+            </span>
+          </div>
+        )}
+
+        {/* Bottom row: date + mobile status change button */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+          <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
+            {lastEvent ? formatShortDate(lastEvent.date) : formatShortDate(job.date)}
+          </span>
+          {isMobile && (
+            <button
+              data-touch-status
+              onClick={(e) => {
+                e.stopPropagation()
+                setShowStatusMenu(v => !v)
+              }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 2,
+                padding: '2px 6px', borderRadius: 4,
+                background: 'rgba(255,255,255,0.06)',
+                border: '1px solid var(--border)',
+                color: 'var(--text-tertiary)', fontSize: 10,
+                cursor: 'pointer', minHeight: 24,
+              }}
+            >
+              Move <ChevronDown size={10} />
+            </button>
+          )}
+        </div>
+      </button>
+
+      {/* Touch status dropdown (mobile only) */}
+      {showStatusMenu && isMobile && (
+        <TouchStatusDropdown
+          job={job}
+          onStatusChange={onStatusChange}
+          onClose={() => setShowStatusMenu(false)}
+        />
+      )}
+    </div>
   )
 }
 

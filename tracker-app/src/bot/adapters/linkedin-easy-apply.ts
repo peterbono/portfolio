@@ -32,8 +32,19 @@ export const linkedInEasyApply: ATSAdapter = {
     let role = 'Unknown'
 
     try {
-      // Step 1: Navigate to job posting
-      await page.goto(jobUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 })
+      // Step 1: Navigate to job posting (normalize regional domains first)
+      const normalizedUrl = jobUrl.replace(/https?:\/\/[a-z]{2}\.linkedin\.com/, 'https://www.linkedin.com')
+      try {
+        await page.goto(normalizedUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 })
+      } catch (navError) {
+        // Retry with original URL if normalized one fails
+        if (navError instanceof Error && navError.message.includes('ERR_TOO_MANY_REDIRECTS') && normalizedUrl !== jobUrl) {
+          console.warn('[linkedin-easy-apply] Redirect loop with normalized URL, trying original')
+          await page.goto(jobUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 })
+        } else {
+          throw navError
+        }
+      }
       await humanDelay(2000, 4000)
 
       // Check if logged in

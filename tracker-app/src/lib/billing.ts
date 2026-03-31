@@ -42,8 +42,26 @@ export function getPlatformLimits(plan: PlanTier, isTrialActive: boolean): Platf
 export const TRIAL_STORAGE_KEY = 'tracker_v2_trial_start'
 export const TRIAL_DURATION_DAYS = 14
 
-/** Initialize trial if not already set. Call on first auth / signup. */
-export function initTrial(): string {
+/**
+ * Initialize trial start date.
+ *
+ * Priority order (tamper-proof):
+ * 1. `userCreatedAt` from Supabase `session.user.created_at` (immutable, server-side)
+ * 2. Existing localStorage value (offline fallback / cache)
+ * 3. Current timestamp (anonymous / no session)
+ *
+ * localStorage is always synced as a cache for offline mode.
+ */
+export function initTrial(userCreatedAt?: string | null): string {
+  // Server-side source of truth: user.created_at
+  if (userCreatedAt) {
+    try {
+      localStorage.setItem(TRIAL_STORAGE_KEY, userCreatedAt)
+    } catch { /* offline or storage full */ }
+    return userCreatedAt
+  }
+
+  // Fallback: existing localStorage (offline mode)
   try {
     const existing = localStorage.getItem(TRIAL_STORAGE_KEY)
     if (existing) return existing
@@ -55,8 +73,23 @@ export function initTrial(): string {
   }
 }
 
-/** Read stored trial start date */
-export function getTrialStartDate(): string | null {
+/**
+ * Get the trial start date.
+ *
+ * Uses Supabase `user.created_at` as source of truth when available.
+ * Falls back to localStorage for offline mode.
+ */
+export function getTrialStartDate(userCreatedAt?: string | null): string | null {
+  // Server-side source of truth
+  if (userCreatedAt) {
+    // Sync to localStorage as cache
+    try {
+      localStorage.setItem(TRIAL_STORAGE_KEY, userCreatedAt)
+    } catch { /* ignore */ }
+    return userCreatedAt
+  }
+
+  // Offline fallback
   try {
     return localStorage.getItem(TRIAL_STORAGE_KEY)
   } catch {
@@ -340,66 +373,56 @@ export function getRemainingQuota(plan: PlanTier, used: number, feature: QuotaFe
 
 // ─── Stripe Integration ─────────────────────────────────────────────
 //
-// Architecture: Client-only via Stripe Payment Links.
+// Architecture: Server-side Stripe Checkout Sessions via Vercel API route.
 //
-// Stripe.js v8 removed client-side `redirectToCheckout`.
-// For an SPA without a backend, the simplest approach is Payment Links:
-// - Create Payment Links in Stripe Dashboard (one per plan/interval)
-// - Paste the URLs below
-// - On click, redirect to the Payment Link
-// - Stripe handles checkout, then redirects back to our success URL
-//
-// When you add a backend (Vercel API routes / Supabase Edge Functions),
-// upgrade to server-side Checkout Sessions for more control.
-
-/**
- * Stripe Payment Link lookup table.
- *
- * Create Payment Links in Stripe Dashboard:
- *   Products → create product → create price → Payment Links → + New
- *
- * For each link, configure "After payment" to redirect to your success URL.
- * Payment Link URLs (buy.stripe.com/...) are public checkout URLs, not secrets.
- */
-export const STRIPE_PAYMENT_LINKS: Record<string, { weekly?: string; monthly?: string }> = {
-  starter: {
-    weekly:  'https://buy.stripe.com/fZufZhdLX8oFgRvat53VC01',
-    monthly: 'https://buy.stripe.com/7sY14n4bn48p0Sx6cP3VC02',
-  },
-  pro: {
-    weekly:  'https://buy.stripe.com/aFa3cvgY96gx30F9p13VC03',
-    monthly: 'https://buy.stripe.com/4gMfZh9vHeN36cR58L3VC04',
-  },
-  boost: {
-    weekly:  'https://buy.stripe.com/dRmbJ1eQ120h6cR8kX3VC00',
-  },
-}
-
-/** Returns true if at least one plan has payment links configured */
-export function isStripeConfigured(): boolean {
-  return Object.values(STRIPE_PAYMENT_LINKS).some(
-    links => !!(links.weekly || links.monthly)
-  )
-}
-
-/** Returns true if a specific plan has at least one payment link */
-export function hasPriceIds(plan: PlanTier): boolean {
-  const links = STRIPE_PAYMENT_LINKS[plan]
-  if (!links) return false
-  return !!(links.weekly || links.monthly)
-}
+// Flow:
+// 1. User clicks "Subscribe" on PricingView
+// 2. Client calls POST /api/create-checkout with { planTier, interval }
+// 3. API route verifies auth, creates/retrieves Stripe Customer, creates Checkout Session
+// 4. Client redirects to session.url (Stripe hosted checkout)
+// 5. On success, Stripe redirects to /settings?checkout=success&plan=X
+// 6. Webhook confirms the subscription and updates Supabase profiles
 
 export type BillingInterval = 'weekly' | 'monthly'
 
+/** Returns true if Stripe is configured (publishable key is set) */
+export function isStripeConfigured(): boolean {
+  return !!import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY
+}
+
+/** Returns true if a plan can be purchased (always true for paid plans when Stripe is configured) */
+export function hasPriceIds(plan: PlanTier): boolean {
+  if (plan === 'free') return false
+  // Price IDs are resolved server-side from env vars.
+  // We assume Stripe is configured if the publishable key exists.
+  return isStripeConfigured()
+}
+
 /**
- * Redirects the user to Stripe Checkout via a Payment Link.
+ * Get the Supabase access token for the current session.
+ * Returns null if not authenticated.
+ */
+async function getAccessToken(): Promise<string | null> {
+  try {
+    // Dynamic import to avoid circular deps with supabase.ts
+    const { supabase } = await import('./supabase')
+    const { data: { session } } = await supabase.auth.getSession()
+    return session?.access_token ?? null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Creates a Stripe Checkout Session via the API route and redirects to it.
  *
  * Flow:
  * 1. User clicks "Subscribe" on PricingView
- * 2. This function navigates to the Stripe Payment Link
- * 3. Stripe handles the entire checkout (hosted page)
- * 4. On success, Stripe redirects to /settings?checkout=success&plan=X
- * 5. handleCheckoutSuccess() picks up the plan from URL params
+ * 2. This function POSTs to /api/create-checkout
+ * 3. API route creates a Checkout Session with Stripe
+ * 4. This function redirects to the Stripe Checkout URL
+ * 5. On success, Stripe redirects to /settings?checkout=success&plan=X
+ * 6. handleCheckoutSuccess() picks up the plan from URL params
  */
 export async function redirectToCheckout(
   plan: PlanTier,
@@ -410,38 +433,77 @@ export async function redirectToCheckout(
     return
   }
 
-  const links = STRIPE_PAYMENT_LINKS[plan]
-  if (!links) {
-    throw new Error(`[billing] No Payment Links configured for plan: ${plan}`)
+  const token = await getAccessToken()
+  if (!token) {
+    throw new Error('You must be signed in to subscribe. Please log in first.')
   }
 
-  const effectiveInterval = plan === 'boost' ? 'weekly' : interval
-  const paymentLink = effectiveInterval === 'weekly' ? links.weekly : links.monthly
+  const effectiveInterval: BillingInterval = plan === 'boost' ? 'weekly' : interval
 
-  if (!paymentLink) {
-    throw new Error(
-      `[billing] No ${effectiveInterval} Payment Link for plan: ${plan}. ` +
-      `Create one in Stripe Dashboard and paste it in STRIPE_PAYMENT_LINKS.`
-    )
+  const response = await fetch('/api/create-checkout', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      planTier: plan,
+      interval: effectiveInterval,
+    }),
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+    throw new Error(errorData.error || `Checkout failed (${response.status})`)
   }
 
-  // Redirect to Stripe Payment Link
-  window.location.href = paymentLink
+  const { sessionUrl } = await response.json()
+  if (!sessionUrl) {
+    throw new Error('No checkout URL returned from server')
+  }
+
+  // Redirect to Stripe Checkout
+  window.location.href = sessionUrl
 }
 
 /**
- * Legacy alias — kept for backward compatibility.
+ * Creates a Stripe Checkout Session and returns the URL.
+ * Convenience wrapper around redirectToCheckout for programmatic use.
  */
 export async function createCheckoutSession(
   plan: PlanTier,
   interval: BillingInterval = 'weekly',
 ): Promise<string> {
-  if (!hasPriceIds(plan)) {
-    console.warn(`[billing] Stripe not configured for ${plan} — returning stub URL`)
-    return `/pricing?checkout=pending&plan=${plan}`
+  if (plan === 'free') {
+    return '/pricing'
   }
-  await redirectToCheckout(plan, interval)
-  return ''
+
+  const token = await getAccessToken()
+  if (!token) {
+    throw new Error('You must be signed in to subscribe. Please log in first.')
+  }
+
+  const effectiveInterval: BillingInterval = plan === 'boost' ? 'weekly' : interval
+
+  const response = await fetch('/api/create-checkout', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      planTier: plan,
+      interval: effectiveInterval,
+    }),
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+    throw new Error(errorData.error || `Checkout failed (${response.status})`)
+  }
+
+  const { sessionUrl } = await response.json()
+  return sessionUrl || '/pricing?checkout=error'
 }
 
 /**

@@ -13,7 +13,8 @@ export interface DiscoveredJob {
   isEasyApply: boolean
   postedDate: string
   matchScore?: number
-  source?: 'linkedin' | 'indeed' | 'remoteok' | 'wellfound'
+  source?: 'linkedin' | 'indeed' | 'remoteok' | 'wellfound' | 'himalayas'
+  description?: string // Pre-fetched JD (e.g. RemoteOK API provides full description)
 }
 
 export interface ScoutResult {
@@ -49,14 +50,30 @@ const COMPATIBLE_TZ_KEYWORDS = [
   'india', 'bangalore', 'bengaluru', 'mumbai', 'hyderabad', 'pune', 'delhi',
   'chennai', 'dubai', 'abu dhabi', 'uae', 'qatar', 'doha', 'saudi',
   'riyadh', 'bahrain', 'oman', 'muscat', 'kuwait',
-  // Acceptable remote keywords
-  'remote', 'apac', 'asia', 'asia-pacific', 'anywhere',
+  // South/Southeast Asia (UTC+5 to UTC+7)
+  'sri lanka', 'colombo', 'myanmar', 'yangon', 'cambodia', 'phnom penh',
+  'laos', 'vientiane', 'bangladesh', 'dhaka', 'nepal', 'kathmandu',
+  'pakistan', 'karachi', 'lahore', 'islamabad',
+  // Remote APAC patterns
+  'apac', 'asia', 'asia-pacific', 'asia pacific', 'southeast asia', 'sea region',
 ]
 
-/** Keywords that signal an incompatible US/EU timezone requirement */
+/** Keywords that signal an incompatible timezone requirement */
 const INCOMPATIBLE_TZ_KEYWORDS = [
+  // US timezones
   'est', 'cst', 'pst', 'mst', 'eastern', 'pacific', 'central time',
+  // EU timezones
   'cet', 'gmt+0', 'gmt+1', 'gmt+2', 'utc+0', 'utc+1', 'utc+2',
+  // LATAM / Americas (country + city names)
+  'latam', 'latin america', 'south america', 'americas', 'north america',
+  'buenos aires', 'sao paulo', 'são paulo', 'mexico city', 'bogota', 'bogotá',
+  'santiago', 'lima', 'medellin', 'medellín', 'montevideo',
+  'brazil', 'brasil', 'argentina', 'colombia', 'chile', 'peru', 'mexico',
+  'costa rica', 'panama', 'caribbean', 'canada', 'toronto', 'vancouver', 'montreal',
+  // EU countries / cities
+  'europe', 'emea', 'united kingdom', 'london', 'berlin', 'paris', 'amsterdam',
+  // Africa (too far)
+  'lagos', 'nairobi', 'cape town', 'johannesburg', 'accra', 'cairo',
 ]
 
 // ---------------------------------------------------------------------------
@@ -161,9 +178,10 @@ export function isTimezoneCompatible(location: string): boolean {
     return true
   }
 
-  // "Remote" with no TZ qualifier — cautious accept
-  if (lower.includes('remote') && !lower.includes('us') && !lower.includes('europe')) {
-    return true
+  // "Remote" alone without APAC signal — REJECT (too many false positives from LATAM/US)
+  // Only accept if combined with APAC-compatible location (e.g. "Remote - Thailand")
+  if (lower === 'remote' || lower === 'worldwide' || lower === 'anywhere') {
+    return false
   }
 
   // Unknown location — skip to be safe
@@ -615,8 +633,11 @@ export async function scoutJobs(
 
     totalFound++
 
-    // Build full URL
+    // Build full URL — normalize regional LinkedIn domains (ph.linkedin.com → www.linkedin.com)
     let url = card.url
+    if (url && url.includes('linkedin.com/')) {
+      url = url.replace(/https?:\/\/[a-z]{2}\.linkedin\.com/, 'https://www.linkedin.com')
+    }
     if (url && !url.startsWith('http')) {
       url = `https://www.linkedin.com${url}`
     }

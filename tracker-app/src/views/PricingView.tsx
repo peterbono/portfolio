@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Check, X, Zap, Flame, Shield, Clock, AlertCircle } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Check, X, Zap, Flame, Shield, Clock, AlertCircle, CheckCircle2, XCircle } from 'lucide-react'
 import {
   PLAN_CONFIGS,
   type PlanConfig,
@@ -31,14 +31,87 @@ if (typeof document !== 'undefined') {
   }
 }
 
+// ─── Checkout Toast ─────────────────────────────────────────────────
+
+type ToastType = 'success' | 'cancelled' | null
+
+function CheckoutToast({ type, onDismiss }: { type: ToastType; onDismiss: () => void }) {
+  useEffect(() => {
+    if (!type) return
+    const timer = setTimeout(onDismiss, 6000)
+    return () => clearTimeout(timer)
+  }, [type, onDismiss])
+
+  if (!type) return null
+
+  const isSuccess = type === 'success'
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        top: 20,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        zIndex: 9999,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '12px 20px',
+        borderRadius: 12,
+        background: isSuccess ? 'rgba(52, 211, 153, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+        border: `1px solid ${isSuccess ? 'rgba(52, 211, 153, 0.4)' : 'rgba(239, 68, 68, 0.4)'}`,
+        backdropFilter: 'blur(12px)',
+        boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+        cursor: 'pointer',
+        animation: 'fadeInDown 0.3s ease',
+      }}
+      onClick={onDismiss}
+    >
+      {isSuccess ? (
+        <CheckCircle2 size={18} color="#34d399" />
+      ) : (
+        <XCircle size={18} color="#ef4444" />
+      )}
+      <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>
+        {isSuccess
+          ? 'Subscription activated! Welcome aboard.'
+          : 'Checkout cancelled. No charges were made.'}
+      </span>
+    </div>
+  )
+}
+
 // ─── Main Component ──────────────────────────────────────────────────
 
 export function PricingViewWithResponsive() {
   const [weekly, setWeekly] = useState(true)
   const { plan: currentPlan } = usePlan()
+  const [toast, setToast] = useState<ToastType>(null)
+
+  // Handle checkout success/cancel URL params
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const checkoutStatus = params.get('checkout')
+
+    if (checkoutStatus === 'success') {
+      setToast('success')
+    } else if (checkoutStatus === 'cancelled') {
+      setToast('cancelled')
+    }
+
+    // Clean up URL params
+    if (checkoutStatus) {
+      const url = new URL(window.location.href)
+      url.searchParams.delete('checkout')
+      url.searchParams.delete('plan')
+      url.searchParams.delete('session_id')
+      window.history.replaceState({}, '', url.toString())
+    }
+  }, [])
 
   return (
     <div className="pricing-container" style={styles.container}>
+      <CheckoutToast type={toast} onDismiss={() => setToast(null)} />
       <div style={styles.inner}>
         {/* Header */}
         <div style={styles.header}>
@@ -219,9 +292,11 @@ function PricingCard({
       ? 'Redirecting...'
       : config.tier === 'free'
         ? 'Start 14-Day Trial'
-        : isBoost
-          ? 'Start your sprint'
-          : 'Start this week'
+        : !stripeReady
+          ? 'Coming soon'
+          : isBoost
+            ? 'Start your sprint'
+            : 'Start this week'
 
   const isDisabled = isCurrentPlan || loading || (config.tier !== 'free' && !stripeReady)
 

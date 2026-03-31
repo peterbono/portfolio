@@ -1,10 +1,20 @@
 /**
- * JobTracker LinkedIn Connect — Content Script
+ * JobTracker LinkedIn Connect — Content Script v2.1.0
  *
  * Injected into tracker-app-lyart.vercel.app and localhost dev servers.
  * Bridges communication between the web app and the extension's background
  * service worker via window.postMessage + chrome.runtime.sendMessage.
+ *
+ * v2.1.0: Guard against double-injection after extension reload re-injection.
  */
+
+// Guard: if already loaded in this page context, skip
+if (window._jobTrackerContentLoaded) {
+  console.log('[JobTracker Extension] Content script already loaded — skipping duplicate')
+} else {
+window._jobTrackerContentLoaded = true
+
+console.log('[JobTracker Extension] Content script v2.1.0 loaded — apply handler active')
 
 // ─── Listen for requests from the web app ───────────────────────────────────
 
@@ -56,6 +66,31 @@ window.addEventListener('message', (event) => {
     })
   }
 
+  // Handle LinkedIn Easy Apply via extension
+  if (event.data?.type === 'JOBTRACKER_APPLY_VIA_EXTENSION') {
+    const jobData = event.data.jobData
+    console.log('[JobTracker Extension] Apply request received:', jobData?.company)
+
+    chrome.runtime.sendMessage({ action: 'applyViaExtension', jobData }, (response) => {
+      if (chrome.runtime.lastError) {
+        window.postMessage({
+          type: 'JOBTRACKER_APPLY_RESULT',
+          success: false,
+          status: 'failed',
+          reason: chrome.runtime.lastError.message,
+          company: jobData?.company,
+        }, '*')
+        return
+      }
+
+      window.postMessage({
+        type: 'JOBTRACKER_APPLY_RESULT',
+        ...response,
+        company: jobData?.company,
+      }, '*')
+    })
+  }
+
   // Handle disconnect request
   if (event.data?.type === 'JOBTRACKER_REQUEST_DISCONNECT') {
     chrome.runtime.sendMessage({ action: 'disconnect' }, (response) => {
@@ -64,6 +99,27 @@ window.addEventListener('message', (event) => {
         success: true,
         connected: false,
       }, '*')
+    })
+  }
+
+  // Handle diagnostics read request
+  if (event.data?.type === 'JOBTRACKER_READ_DIAGNOSTICS') {
+    chrome.runtime.sendMessage({ action: 'getDiagnostics' }, (response) => {
+      if (chrome.runtime.lastError) {
+        window.postMessage({ type: 'JOBTRACKER_DIAGNOSTICS_RESPONSE', error: chrome.runtime.lastError.message }, '*')
+        return
+      }
+      window.postMessage({ type: 'JOBTRACKER_DIAGNOSTICS_RESPONSE', ...response }, '*')
+    })
+  }
+
+  // Handle extension reload request (so Claude can reload without chrome://extensions)
+  if (event.data?.type === 'JOBTRACKER_REQUEST_RELOAD') {
+    console.log('[JobTracker Extension] Reload requested via postMessage')
+    chrome.runtime.sendMessage({ action: 'reloadExtension' }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.warn('[JobTracker Extension] Reload failed:', chrome.runtime.lastError.message)
+      }
     })
   }
 })
@@ -114,3 +170,5 @@ window.postMessage({
   type: 'JOBTRACKER_EXTENSION_INSTALLED',
   version: chrome.runtime.getManifest().version,
 }, '*')
+
+} // end of double-injection guard

@@ -19,6 +19,7 @@ import {
   getPlatformLimits,
   TRIAL_STORAGE_KEY,
 } from '../lib/billing'
+import { useSupabase } from '../context/SupabaseContext'
 
 const PLAN_STORAGE_KEY = 'tracker_user_plan'
 const DAILY_USAGE_KEY = 'tracker_v2_daily_usage'
@@ -118,6 +119,11 @@ interface UsePlanReturn {
  * Initializes trial on first auth if not already set.
  */
 export function usePlan(): UsePlanReturn {
+  const { user } = useSupabase()
+
+  // Server-side trial start: user.created_at is immutable (can't be reset by clearing localStorage)
+  const userCreatedAt = user?.created_at ?? null
+
   const [plan, setPlan] = useState<PlanTier>(() => {
     try {
       const stored = localStorage.getItem(PLAN_STORAGE_KEY)
@@ -133,7 +139,9 @@ export function usePlan(): UsePlanReturn {
   const [dailyUsage, setDailyUsage] = useState<DailyUsage>(getDailyUsage)
 
   // ─── Trial state ────────────────────────────────────────
-  const [trialStartDate, setTrialStartDate] = useState<string | null>(() => getTrialStartDate())
+  // Source of truth: user.created_at (server-side, tamper-proof)
+  // Fallback: localStorage (offline mode only)
+  const [trialStartDate, setTrialStartDate] = useState<string | null>(() => getTrialStartDate(userCreatedAt))
 
   const trialDaysLeft = useMemo(() => getTrialDaysLeft(trialStartDate), [trialStartDate])
   const trialActive = useMemo(() => checkTrialActive(trialStartDate), [trialStartDate])
@@ -141,11 +149,17 @@ export function usePlan(): UsePlanReturn {
   const effectivePlan = useMemo(() => getEffectivePlan(plan, trialStartDate), [plan, trialStartDate])
   const canUseBot = useMemo(() => canUseBotCheck(plan, trialStartDate), [plan, trialStartDate])
 
-  // Initialize trial on mount if user has an auth token but no trial start
+  // Sync trial start date from server-side user.created_at when session loads
   useEffect(() => {
+    if (userCreatedAt) {
+      // Server-side source of truth — always overwrite localStorage cache
+      const start = initTrial(userCreatedAt)
+      setTrialStartDate(start)
+      return
+    }
+
+    // Offline fallback: initialize trial if user has auth tokens but no session yet
     if (!trialStartDate) {
-      // Check if there's any sign of an authenticated user
-      // Supabase v2 stores with pattern sb-<ref>-auth-token
       let hasAuth = false
       try {
         for (let i = 0; i < localStorage.length; i++) {
@@ -159,7 +173,6 @@ export function usePlan(): UsePlanReturn {
           hasAuth = !!localStorage.getItem('supabase.auth.token')
         }
       } catch { /* ignore */ }
-      // Also init trial if plan was ever set (returning user)
       if (!hasAuth) {
         hasAuth = !!localStorage.getItem(PLAN_STORAGE_KEY)
       }
@@ -168,7 +181,7 @@ export function usePlan(): UsePlanReturn {
         setTrialStartDate(start)
       }
     }
-  }, [trialStartDate])
+  }, [userCreatedAt, trialStartDate])
 
   // Check for Stripe checkout success on mount
   useEffect(() => {
@@ -256,10 +269,10 @@ export function usePlan(): UsePlanReturn {
   const setPlanOverrideWithTrial = useCallback((newPlan: PlanTier) => {
     setPlanOverride(newPlan)
     if (!trialStartDate) {
-      const start = initTrial()
+      const start = initTrial(userCreatedAt)
       setTrialStartDate(start)
     }
-  }, [setPlanOverride, trialStartDate])
+  }, [setPlanOverride, trialStartDate, userCreatedAt])
 
   return {
     plan,

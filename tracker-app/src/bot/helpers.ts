@@ -368,13 +368,17 @@ export async function answerScreeningQuestion(
   else if (q.includes('how did you') || q.includes('hear about') || q.includes('referr') || q.includes('source')) {
     answer = 'LinkedIn'
   }
-  // Cover letter / additional info — include portfolio
-  else if (q.includes('cover letter') || q.includes('additional') || q.includes('anything else') || q.includes('lettre')) {
-    answer = [
-      `Senior Product Designer with ${profile.yearsExperience}+ years of experience specializing in Design Systems, Design Ops, and complex product architecture.`,
-      `Portfolio: ${profile.portfolio}`,
-      `Available in ${profile.noticePeriod}. ${profile.workAuth}. Based in ${profile.location} (${profile.timezone}).`,
-    ].join('\n')
+  // Cover letter / why interested / additional info — prefer AI-generated snippet
+  else if (q.includes('cover letter') || q.includes('why interested') || q.includes('why are you interested') || q.includes('why do you want') || q.includes('additional') || q.includes('anything else') || q.includes('lettre') || q.includes('motivation')) {
+    if (profile.coverLetterSnippet) {
+      answer = `${profile.coverLetterSnippet}\n\nPortfolio: ${profile.portfolio}`
+    } else {
+      answer = [
+        `Senior Product Designer with ${profile.yearsExperience}+ years of experience specializing in Design Systems, Design Ops, and complex product architecture.`,
+        `Portfolio: ${profile.portfolio}`,
+        `Available in ${profile.noticePeriod}. ${profile.workAuth}. Based in ${profile.location} (${profile.timezone}).`,
+      ].join('\n')
+    }
   }
   // Boolean yes/no questions — default to "Yes" for positive framing
   else if (q.includes('do you') || q.includes('are you') || q.includes('have you') || q.includes('can you')) {

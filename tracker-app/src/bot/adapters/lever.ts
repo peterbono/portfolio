@@ -81,7 +81,7 @@ export const lever: ATSAdapter = {
       await fillPhone(page, profile)
 
       // Step 6: Fill current company (if field exists)
-      await fillCurrentCompany(page)
+      await fillCurrentCompany(page, profile)
 
       // Step 7: Upload CV/Resume
       await uploadCV(page, profile)
@@ -286,7 +286,7 @@ async function fillPhone(page: Page, profile: ApplicantProfile): Promise<void> {
   }
 }
 
-async function fillCurrentCompany(page: Page): Promise<void> {
+async function fillCurrentCompany(page: Page, profile: ApplicantProfile): Promise<void> {
   const selectors = [
     'input[name*="company" i]',
     'input[name="org"]',
@@ -295,11 +295,13 @@ async function fillCurrentCompany(page: Page): Promise<void> {
     'input[aria-label*="Current company" i]',
   ]
 
+  const companyName = profile.currentCompany || 'ClickOut Media'
+
   for (const sel of selectors) {
     try {
       const visible = await page.locator(sel).first().isVisible({ timeout: 2000 })
       if (visible) {
-        await fillInput(page, sel, 'ClickOut Media')
+        await fillInput(page, sel, companyName)
         await humanDelay(400, 800)
         return
       }
@@ -452,11 +454,14 @@ async function fillAdditionalInfo(page: Page, profile: ApplicantProfile): Promis
     '.additional-info textarea',
   ]
 
-  const additionalText = [
-    `Senior Product Designer with ${profile.yearsExperience}+ years specializing in Design Systems, Design Ops, and complex product architecture.`,
-    `Portfolio: ${profile.portfolio}`,
-    `Available in ${profile.noticePeriod}. ${profile.workAuth}. Based in ${profile.location} (${profile.timezone}).`,
-  ].join('\n')
+  // Use AI-generated cover letter snippet if available, otherwise fall back to generic template
+  const additionalText = profile.coverLetterSnippet
+    ? `${profile.coverLetterSnippet}\n\nPortfolio: ${profile.portfolio}`
+    : [
+        `Senior Product Designer with ${profile.yearsExperience}+ years specializing in Design Systems, Design Ops, and complex product architecture.`,
+        `Portfolio: ${profile.portfolio}`,
+        `Available in ${profile.noticePeriod}. ${profile.workAuth}. Based in ${profile.location} (${profile.timezone}).`,
+      ].join('\n')
 
   for (const sel of selectors) {
     try {

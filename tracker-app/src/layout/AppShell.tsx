@@ -1,24 +1,21 @@
 import React, { Suspense } from 'react'
 import { Sidebar } from './Sidebar'
-import { DetailDrawer } from './DetailDrawer'
+const LazyDetailDrawer = React.lazy(() => import('./DetailDrawer').then(m => ({ default: m.DetailDrawer })))
 import { useUI, type TimeRange, type AreaFilter, type WorkMode } from '../context/UIContext'
 import { useJobs } from '../context/JobsContext'
 import { useSupabase } from '../context/SupabaseContext'
-import { AutopilotView } from '../views/AutopilotView'
-
-const LazyTableView = React.lazy(() => import('../views/TableView').then(m => ({ default: m.TableView })))
-const LazyPipelineView = React.lazy(() => import('../views/PipelineView').then(m => ({ default: m.PipelineView })))
+const LazyApplicationsView = React.lazy(() => import('../views/ApplicationsView').then(m => ({ default: m.ApplicationsView })))
 const LazySettingsView = React.lazy(() => import('../views/SettingsView').then(m => ({ default: m.SettingsView })))
-const LazyAnalyticsView = React.lazy(() => import('../views/AnalyticsView').then(m => ({ default: m.AnalyticsView })))
-const LazyCoachView = React.lazy(() => import('../views/CoachView').then(m => ({ default: m.CoachView })))
+// AnalyticsView merged into InsightsView (Intelligence page)
 const LazyInsightsView = React.lazy(() => import('../views/InsightsView').then(m => ({ default: m.InsightsView })))
 const LazyPricingView = React.lazy(() => import('../views/PricingView').then(m => ({ default: m.PricingViewWithResponsive })))
+const LazyAutopilotView = React.lazy(() => import('../views/AutopilotView').then(m => ({ default: m.AutopilotView })))
 import { TrustIndicator } from '../components/TrustIndicator'
 import { DemoBanner } from '../components/DemoBanner'
 import { SunkCostNudge } from '../components/SunkCostNudge'
 import { EmptyState } from '../components/EmptyState'
 import { SkeletonForView } from '../components/SkeletonView'
-import { LayoutList, Kanban, BarChart3, Flame, Brain, Bot } from 'lucide-react'
+import { LayoutList, FolderKanban, Brain, Bot } from 'lucide-react'
 
 // Mobile responsive CSS
 const appShellResponsiveCSS = `
@@ -110,7 +107,7 @@ function GlobalFilters() {
   )
 }
 
-const VIEWS_WITH_FILTERS = new Set(['table', 'pipeline', 'analytics'])
+const VIEWS_WITH_FILTERS = new Set(['applications'])
 
 export function AppShell({ onBackToLanding }: { onBackToLanding?: () => void }) {
   const { activeView, drawerOpen, selectedJobId } = useUI()
@@ -131,7 +128,7 @@ export function AppShell({ onBackToLanding }: { onBackToLanding?: () => void }) 
         {VIEWS_WITH_FILTERS.has(activeView) && !(isAnonymous && isGatedView) && <GlobalFilters />}
         <ActiveViewContent view={activeView} />
       </main>
-      {drawerOpen && selectedJobId && <DetailDrawer />}
+      {drawerOpen && selectedJobId && <Suspense fallback={null}><LazyDetailDrawer /></Suspense>}
       <TrustIndicator />
       <SunkCostNudge />
     </div>
@@ -140,10 +137,7 @@ export function AppShell({ onBackToLanding }: { onBackToLanding?: () => void }) 
 
 const EMPTY_STATES: Record<string, { icon: typeof LayoutList; title: string; description: string; ctaLabel: string }> = {
   autopilot: { icon: Bot, title: 'Auto-apply on autopilot', description: 'Sign up to configure search profiles and let the bot apply to jobs while you sleep.', ctaLabel: 'Sign up to get started' },
-  table: { icon: LayoutList, title: 'No applications yet', description: 'Start the auto-apply bot or add jobs manually to begin tracking your job search.', ctaLabel: 'Set up Autopilot' },
-  pipeline: { icon: Kanban, title: 'Your pipeline is empty', description: 'Applications will flow through stages as you apply and hear back from companies.', ctaLabel: 'Configure Autopilot' },
-  analytics: { icon: BarChart3, title: 'No data to analyze yet', description: 'Analytics charts will populate as your application history grows. Start applying to unlock insights.', ctaLabel: 'Launch Autopilot' },
-  coach: { icon: Flame, title: 'Your coach needs data', description: 'Apply to a few jobs and your AI coach will start giving personalized advice and daily goals.', ctaLabel: 'Set up Autopilot' },
+  applications: { icon: FolderKanban, title: 'No applications yet', description: 'Start the auto-apply bot or add jobs manually to begin tracking your job search.', ctaLabel: 'Set up Autopilot' },
   insights: { icon: Brain, title: 'The AI brain is waiting', description: 'The feedback engine learns from your applications — response rates, best ATS platforms, ghost detection.', ctaLabel: 'Configure Autopilot' },
 }
 
@@ -174,12 +168,9 @@ function ActiveViewContent({ view }: { view: string }) {
   )
 
   switch (view) {
-    case 'table': return <Suspense fallback={fallback}><LazyTableView /></Suspense>
-    case 'pipeline': return <Suspense fallback={fallback}><LazyPipelineView /></Suspense>
-    case 'analytics': return <Suspense fallback={fallback}><LazyAnalyticsView /></Suspense>
-    case 'coach': return <Suspense fallback={fallback}><LazyCoachView /></Suspense>
+    case 'applications': return <Suspense fallback={fallback}><LazyApplicationsView /></Suspense>
     case 'insights': return <Suspense fallback={fallback}><LazyInsightsView /></Suspense>
-    case 'autopilot': return <AutopilotView />
+    case 'autopilot': return <Suspense fallback={fallback}><LazyAutopilotView /></Suspense>
     case 'settings': return <Suspense fallback={fallback}><LazySettingsView /></Suspense>
     case 'pricing': return <Suspense fallback={fallback}><LazyPricingView /></Suspense>
     default: return null

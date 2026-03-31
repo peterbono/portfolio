@@ -14,15 +14,19 @@ const HQ_MAP: Record<string, string> = companyHQ as Record<string, string>
 import seedData from '../data/jobs.json'
 import knownRejections from '../data/known-rejections.json'
 import { DEMO_JOBS } from '../data/demo-jobs'
+import {
+  mergeJobs,
+  toLocalDateStr,
+  getTimeThreshold,
+  computeMarkSubmitted,
+  computeMarkRejected,
+  type Overrides,
+} from './jobs-logic'
 
 const seedJobs: Job[] = seedData as Job[]
 
 const STORAGE_KEY = 'tracker_v2_overrides'
 const DEMO_CLEARED_KEY = 'tracker_v2_demo_cleared'
-
-interface Overrides {
-  [jobId: string]: Partial<Job>
-}
 
 function loadOverrides(): Overrides {
   try {
@@ -39,57 +43,6 @@ function saveOverrides(overrides: Overrides) {
 
 const rejectedSet = new Set((knownRejections as string[]).map(c => c.toLowerCase()))
 
-function mergeJobs(seed: Job[], overrides: Overrides): Job[] {
-  const deletedIds = new Set<string>()
-  for (const [id, ov] of Object.entries(overrides)) {
-    if ((ov as Record<string, unknown>)._deleted) deletedIds.add(id)
-  }
-
-  const merged = seed
-    .filter(job => !deletedIds.has(job.id))
-    .map((job) => {
-      const override = overrides[job.id]
-      let result = override ? { ...job, ...override } : { ...job }
-      // Apply known rejections ONLY if user hasn't manually set a different status
-      const userSetStatus = override?.status
-      if (!userSetStatus && rejectedSet.has(result.company.toLowerCase()) && (result.status === 'submitted' || result.status === 'manual')) {
-        result = { ...result, status: 'rejected' as JobStatus }
-      }
-      return result
-    })
-
-  // Include any jobs that exist only in overrides (manually added, not deleted)
-  const seedIds = new Set(seed.map((j) => j.id))
-  for (const [id, override] of Object.entries(overrides)) {
-    if (!seedIds.has(id) && !deletedIds.has(id) && override.company && override.role) {
-      merged.push({ ...override, id } as Job)
-    }
-  }
-
-  return merged
-}
-
-function toLocalDateStr(d: Date): string {
-  const yyyy = d.getFullYear()
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  return `${yyyy}-${mm}-${dd}`
-}
-
-function getTimeThreshold(range: TimeRange): string | null {
-  if (range === 'all') return null
-  const now = new Date()
-  let d: Date
-  switch (range) {
-    case 'today': d = new Date(now); d.setHours(0,0,0,0); break
-    case 'week': d = new Date(now); d.setDate(d.getDate() - d.getDay()); d.setHours(0,0,0,0); break
-    case 'month': d = new Date(now.getFullYear(), now.getMonth(), 1); break
-    case '3months': d = new Date(now.getFullYear(), now.getMonth() - 3, 1); break
-    default: return null
-  }
-  return toLocalDateStr(d)
-}
-
 interface JobsContextValue {
   jobs: Job[]
   allJobs: Job[]
@@ -100,6 +53,7 @@ interface JobsContextValue {
   deleteJob: (id: string) => void
   addJob: (job: Job) => void
   markRejected: (rejections: { company: string; date?: string; role?: string }[]) => void
+  markSubmitted: (applications: { company: string; role?: string; date?: string }[]) => void
   counts: Record<JobStatus, number>
   /** True when showing demo data (no user data, not authenticated) */
   isDemo: boolean
@@ -130,7 +84,7 @@ export function JobsProvider({ children }: { children: ReactNode }) {
   const isDemo = !hasUserData && !demoCleared
 
   const allJobs = useMemo(() => {
-    const baseJobs = mergeJobs(seedJobs, overrides)
+    const baseJobs = mergeJobs(seedJobs, overrides, rejectedSet)
     if (isDemo) {
       // Prepend demo jobs (they won't collide with seed IDs)
       return [...DEMO_JOBS, ...baseJobs]
@@ -257,105 +211,12 @@ export function JobsProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const markRejected = useCallback((rejections: { company: string; date?: string; role?: string }[]) => {
-    const rejList = rejections.map(r => ({
-      company: r.company,
-      role: r.role || '',
-      date: r.date ? r.date.split('T')[0] : undefined,
-    }))
-    const rejMap = new Map<string, { date?: string; role: string }>()
-    for (const r of rejList) rejMap.set(r.company.toLowerCase(), { date: r.date, role: r.role })
+    setOverrides((prev) => computeMarkRejected(prev, seedJobs, rejections))
+  }, [])
 
-    function addRejectionEvent(existing: Partial<Job>, rejDate: string): Partial<Job> {
-      const events = existing.events ?? []
-      // Don't add duplicate rejection events
-      if (events.some(e => e.type === 'rejection' as unknown)) return existing
-      const rejEvent: JobEvent = {
-        id: `rej-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        date: rejDate,
-        type: 'rejection' as EventType,
-        person: '',
-        notes: 'Application rejected',
-        outcome: 'misaligned',
-        createdAt: new Date().toISOString(),
-      }
-      return { ...existing, events: [...events, rejEvent], lastContactDate: rejDate }
-    }
-
-    setOverrides((prev) => {
-      const next = { ...prev }
-      const matchedCompanies = new Set<string>()
-
-      for (const job of seedJobs) {
-        const companyLower = job.company.toLowerCase()
-        if (!rejMap.has(companyLower)) continue
-        matchedCompanies.add(companyLower)
-        const { date: rejDate } = rejMap.get(companyLower)!
-        if (job.status === 'submitted' || job.status === 'manual') {
-          next[job.id] = {
-            ...next[job.id],
-            status: 'rejected' as JobStatus,
-            ...(rejDate ? addRejectionEvent(next[job.id] ?? {}, rejDate) : {}),
-          }
-        } else if (job.status === 'rejected' && rejDate) {
-          next[job.id] = {
-            ...next[job.id],
-            ...addRejectionEvent(next[job.id] ?? {}, rejDate),
-          }
-        }
-      }
-      // Also check overridden jobs
-      for (const [id, override] of Object.entries(prev)) {
-        const job = seedJobs.find(j => j.id === id)
-        const company = override.company || job?.company || ''
-        const status = override.status || job?.status
-        const companyLower = company.toLowerCase()
-        if (!rejMap.has(companyLower)) continue
-        matchedCompanies.add(companyLower)
-        const { date: rejDate } = rejMap.get(companyLower)!
-        if (status === 'submitted' || status === 'manual') {
-          next[id] = {
-            ...next[id],
-            status: 'rejected' as JobStatus,
-            ...(rejDate ? addRejectionEvent(next[id] ?? {}, rejDate) : {}),
-          }
-        } else if (status === 'rejected' && rejDate) {
-          next[id] = {
-            ...next[id],
-            ...addRejectionEvent(next[id] ?? {}, rejDate),
-          }
-        }
-      }
-
-      // Auto-create jobs for rejections with no matching job
-      for (const [companyLower, { date: rejDate, role }] of rejMap.entries()) {
-        if (matchedCompanies.has(companyLower)) continue
-        // Check if already created in a previous sync
-        const alreadyExists = Object.values(next).some(ov =>
-          ov.company && ov.company.toLowerCase() === companyLower && ov.status === 'rejected'
-        )
-        if (alreadyExists) continue
-        const id = `auto-rej-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-        const company = rejList.find(r => r.company.toLowerCase() === companyLower)?.company || companyLower
-        const newJob: Partial<Job> = {
-          company,
-          role: role || 'Unknown Role',
-          status: 'rejected' as JobStatus,
-          date: rejDate || toLocalDateStr(new Date()),
-          location: '',
-          salary: '',
-          ats: 'LinkedIn',
-          cv: '',
-          portfolio: '',
-          link: '',
-          notes: 'Auto-created from Gmail rejection (no prior application tracked)',
-          source: 'auto' as const,
-          ...(rejDate ? addRejectionEvent({}, rejDate) : {}),
-        }
-        next[id] = newJob
-      }
-
-      return next
-    })
+  // ─── Mark applications as submitted (from Gmail confirmation emails) ───
+  const markSubmitted = useCallback((applications: { company: string; role?: string; date?: string }[]) => {
+    setOverrides((prev) => computeMarkSubmitted(prev, seedJobs, applications))
   }, [])
 
   const counts = useMemo(() => {
@@ -373,7 +234,7 @@ export function JobsProvider({ children }: { children: ReactNode }) {
   }, [jobs])
 
   return (
-    <JobsContext.Provider value={{ jobs, allJobs, updateJobStatus, updateJobField, addJobEvent, removeJobEvent, deleteJob, addJob, markRejected, counts, isDemo, clearDemoData, manualJobCount }}>
+    <JobsContext.Provider value={{ jobs, allJobs, updateJobStatus, updateJobField, addJobEvent, removeJobEvent, deleteJob, addJob, markRejected, markSubmitted, counts, isDemo, clearDemoData, manualJobCount }}>
       {children}
     </JobsContext.Provider>
   )

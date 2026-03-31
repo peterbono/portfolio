@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import {
   LayoutList,
   Kanban,
@@ -14,6 +14,7 @@ import {
   CreditCard,
   Lock,
   ArrowLeft,
+  FolderKanban,
 } from 'lucide-react'
 import { useUI, type ActiveView } from '../context/UIContext'
 import { useJobs } from '../context/JobsContext'
@@ -35,13 +36,9 @@ type NavEntry =
 const NAV_ITEMS: NavEntry[] = [
   // --- PRIMARY (Core Loop) ---
   { kind: 'item', view: 'autopilot', label: 'Autopilot', icon: Bot },
-  { kind: 'item', view: 'pipeline', label: 'Pipeline', icon: Kanban },
-  { kind: 'item', view: 'table', label: 'Table', icon: LayoutList },
-  { kind: 'separator', label: 'Intelligence' },
-  // --- INTELLIGENCE ---
-  { kind: 'item', view: 'analytics', label: 'Analytics', icon: BarChart3 },
-  { kind: 'item', view: 'insights', label: 'Insights', icon: Brain },
-  { kind: 'item', view: 'coach', label: 'Coach', icon: Flame },
+  { kind: 'item', view: 'applications', label: 'Applications', icon: FolderKanban },
+  // --- INTELLIGENCE (merged) ---
+  { kind: 'item', view: 'insights', label: 'Intelligence', icon: Brain },
   { kind: 'separator' },
   // --- SYSTEM ---
   { kind: 'item', view: 'settings', label: 'Settings', icon: Settings },
@@ -49,7 +46,7 @@ const NAV_ITEMS: NavEntry[] = [
 ]
 
 /** Views that require auth — show lock icon for anonymous users */
-const LOCKED_VIEWS = new Set<ActiveView>(['autopilot', 'table', 'pipeline', 'analytics', 'coach', 'insights'])
+const LOCKED_VIEWS = new Set<ActiveView>(['autopilot', 'applications', 'insights'])
 
 export function Sidebar({ onBackToLanding }: { onBackToLanding?: () => void }) {
   const { activeView, setActiveView, sidebarCollapsed, toggleSidebar } = useUI()
@@ -60,6 +57,23 @@ export function Sidebar({ onBackToLanding }: { onBackToLanding?: () => void }) {
   const userEmail = user?.email ?? ''
   const userName = user?.user_metadata?.full_name ?? userEmail
   const userInitial = (userName || '?')[0].toUpperCase()
+
+  // Mobile detection
+  const [isMobile, setIsMobile] = useState(false)
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
+
+  // On mobile, when user navigates, collapse sidebar automatically
+  const handleNavClick = (view: typeof activeView) => {
+    setActiveView(view)
+    if (isMobile && !sidebarCollapsed) {
+      toggleSidebar()
+    }
+  }
 
   // Cmd+B keyboard shortcut
   useEffect(() => {
@@ -75,20 +89,47 @@ export function Sidebar({ onBackToLanding }: { onBackToLanding?: () => void }) {
 
   const width = sidebarCollapsed ? 64 : 240
 
+  // On mobile with sidebar expanded, render as overlay
+  const isMobileExpanded = isMobile && !sidebarCollapsed
+
   return (
-    <aside
-      style={{
-        width,
-        minWidth: width,
-        height: '100vh',
-        background: 'var(--sidebar-bg)',
-        borderRight: '1px solid var(--border)',
-        display: 'flex',
-        flexDirection: 'column',
-        transition: 'width var(--transition-normal), min-width var(--transition-normal)',
-        overflow: 'hidden',
-      }}
-    >
+    <>
+      {/* Mobile overlay backdrop */}
+      {isMobileExpanded && (
+        <div
+          data-sidebar-overlay
+          onClick={toggleSidebar}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 100,
+            background: 'rgba(0, 0, 0, 0.5)',
+            backdropFilter: 'blur(4px)',
+          }}
+        />
+      )}
+      <aside
+        data-sidebar-mobile={isMobileExpanded ? '' : undefined}
+        style={{
+          width: isMobileExpanded ? 240 : width,
+          minWidth: isMobileExpanded ? 240 : width,
+          height: '100vh',
+          background: 'var(--sidebar-bg)',
+          borderRight: '1px solid var(--border)',
+          display: 'flex',
+          flexDirection: 'column',
+          transition: 'width var(--transition-normal), min-width var(--transition-normal)',
+          overflow: 'hidden',
+          ...(isMobileExpanded ? {
+            position: 'fixed',
+            left: 0,
+            top: 0,
+            bottom: 0,
+            zIndex: 101,
+            boxShadow: '8px 0 24px rgba(0, 0, 0, 0.6)',
+          } : {}),
+        }}
+      >
       {/* Header */}
       <div
         style={{
@@ -167,7 +208,7 @@ export function Sidebar({ onBackToLanding }: { onBackToLanding?: () => void }) {
           return (
             <button
               key={view}
-              onClick={() => setActiveView(view)}
+              onClick={() => handleNavClick(view)}
               title={sidebarCollapsed ? (isLocked ? `${label} (Sign up to unlock)` : label) : undefined}
               aria-label={isLocked ? `${label} (Sign up to unlock)` : label}
               aria-current={isActive ? 'page' : undefined}
@@ -363,7 +404,7 @@ export function Sidebar({ onBackToLanding }: { onBackToLanding?: () => void }) {
               )}
               {isTrialExpired && plan === 'free' && (
                 <button
-                  onClick={() => setActiveView('pricing')}
+                  onClick={() => handleNavClick('pricing')}
                   style={{
                     display: 'block',
                     marginTop: 3,
@@ -437,5 +478,6 @@ export function Sidebar({ onBackToLanding }: { onBackToLanding?: () => void }) {
         {!sidebarCollapsed && <span>Collapse</span>}
       </button>
     </aside>
+    </>
   )
 }

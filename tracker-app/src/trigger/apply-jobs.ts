@@ -55,6 +55,12 @@ export const applyJobsTask = task({
     jobs: ApplyJobPayload[]
     userProfile: Record<string, unknown>
     linkedInCookie?: string
+    enrichedProfile?: {
+      totalYearsExperience?: number
+      skills?: Array<{ name: string; level: number; levelLabel: string; yearsUsed: number }>
+      professionalSummary?: string
+      previousRoles?: string[]
+    }
   }): Promise<ApplyJobsOutput> => {
     const runStart = Date.now()
 
@@ -81,6 +87,15 @@ export const applyJobsTask = task({
       ...(payload.userProfile.linkedin && { linkedin: String(payload.userProfile.linkedin) }),
       ...(payload.userProfile.portfolio && { portfolio: String(payload.userProfile.portfolio) }),
       ...(payload.userProfile.cvUrl && { cvUrl: String(payload.userProfile.cvUrl) }),
+      ...(payload.userProfile.currentCompany && { currentCompany: String(payload.userProfile.currentCompany) }),
+    }
+
+    // ---------- Merge enrichedProfile data if available ----------
+    if (payload.enrichedProfile) {
+      if (payload.enrichedProfile.totalYearsExperience) {
+        profile.yearsExperience = payload.enrichedProfile.totalYearsExperience
+      }
+      console.log(`[apply-jobs] Enriched profile loaded: ${payload.enrichedProfile.skills?.length ?? 0} skills, ${payload.enrichedProfile.totalYearsExperience ?? '?'} years experience`)
     }
 
     // ---------- Cap at MAX_APPLICATIONS_PER_RUN ----------
@@ -147,6 +162,9 @@ export const applyJobsTask = task({
           try {
             const adapter = detectAdapter(job.url)
             console.log(`[apply-jobs]   Adapter: ${adapter.name}`)
+
+            // Thread the per-job cover letter snippet into the profile
+            profile.coverLetterSnippet = job.coverLetterSnippet || undefined
 
             const applyResult = await adapter.apply(page, job.url, profile)
 
@@ -237,7 +255,7 @@ export const applyJobsTask = task({
 
             console.error(`[apply-jobs]   Error: ${result.reason}`)
           } finally {
-            await page.close().catch(() => {})
+            await page.close().catch((err) => console.warn('[apply-jobs] Cleanup failed:', err))
           }
 
           // Rate limiting: 2-minute gap between applications (skip for last job)
@@ -247,9 +265,9 @@ export const applyJobsTask = task({
           }
         }
 
-        await atsContext.close().catch(() => {})
+        await atsContext.close().catch((err) => console.warn('[apply-jobs] Cleanup failed:', err))
       } finally {
-        await atsBrowser.close().catch(() => {})
+        await atsBrowser.close().catch((err) => console.warn('[apply-jobs] Cleanup failed:', err))
       }
     }
 
@@ -275,10 +293,28 @@ export const applyJobsTask = task({
           )
         }
       } else {
-        // Launch local Chromium for LinkedIn (Bright Data blocks cookie injection)
+        // Launch Chromium with Bright Data Residential Proxy for LinkedIn
+        // Residential proxy + local Chromium = cookie injection works + residential IP
+        const BD_RESIDENTIAL = process.env.BRIGHTDATA_RESIDENTIAL_AUTH
+        if (!BD_RESIDENTIAL) {
+          console.warn('[apply-jobs] BRIGHTDATA_RESIDENTIAL_AUTH not set — LinkedIn may fail from datacenter IP')
+        }
         const linkedInBrowser = await chromium.launch({
           headless: true,
-          args: ["--no-sandbox", "--disable-setuid-sandbox"],
+          args: [
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-blink-features=AutomationControlled",
+          ],
+          ...(BD_RESIDENTIAL
+            ? {
+                proxy: {
+                  server: "http://brd.superproxy.io:22225",
+                  username: BD_RESIDENTIAL.split(":")[0],
+                  password: BD_RESIDENTIAL.split(":")[1],
+                },
+              }
+            : {}),
         })
 
         try {
@@ -287,9 +323,11 @@ export const applyJobsTask = task({
             viewport: { width: 1280, height: 900 },
             userAgent:
               "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            locale: "en-US",
+            timezoneId: "Asia/Bangkok",
           })
 
-          // Inject LinkedIn li_at cookie
+          // Inject LinkedIn cookies (li_at + JSESSIONID for CSRF)
           await linkedInContext.addCookies([
             {
               name: "li_at",
@@ -298,7 +336,16 @@ export const applyJobsTask = task({
               path: "/",
               httpOnly: true,
               secure: true,
-              sameSite: "None",
+              sameSite: "None" as const,
+            },
+            {
+              name: "JSESSIONID",
+              value: `"ajax:${Date.now()}"`,
+              domain: ".linkedin.com",
+              path: "/",
+              httpOnly: false,
+              secure: true,
+              sameSite: "None" as const,
             },
           ])
 
@@ -318,6 +365,9 @@ export const applyJobsTask = task({
             try {
               const adapter = detectAdapter(job.url) // will match linkedInEasyApply
               console.log(`[apply-jobs]   Adapter: ${adapter.name}`)
+
+              // Thread the per-job cover letter snippet into the profile
+              profile.coverLetterSnippet = job.coverLetterSnippet || undefined
 
               const applyResult = await adapter.apply(page, job.url, profile)
 
@@ -406,7 +456,7 @@ export const applyJobsTask = task({
 
               console.error(`[apply-jobs]   Error: ${result.reason}`)
             } finally {
-              await page.close().catch(() => {})
+              await page.close().catch((err) => console.warn('[apply-jobs] Cleanup failed:', err))
             }
 
             // Rate limiting between LinkedIn applications (skip for last)
@@ -416,9 +466,9 @@ export const applyJobsTask = task({
             }
           }
 
-          await linkedInContext.close().catch(() => {})
+          await linkedInContext.close().catch((err) => console.warn('[apply-jobs] Cleanup failed:', err))
         } finally {
-          await linkedInBrowser.close().catch(() => {})
+          await linkedInBrowser.close().catch((err) => console.warn('[apply-jobs] Cleanup failed:', err))
         }
       }
     }

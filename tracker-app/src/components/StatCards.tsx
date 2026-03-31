@@ -59,7 +59,7 @@ export function StatCards({ counts, totalJobs, activeFilter, onFilterChange }: S
   })
 
   return (
-    <div style={styles.grid}>
+    <div data-stat-cards style={styles.grid}>
       {cards.map((card) => {
         const isActive = activeFilter === card.key
         return (

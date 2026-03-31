@@ -421,7 +421,7 @@ export function OnboardingWizard({ onComplete, defaultEmail, defaultName }: Onbo
         const names: string[] = embedded.map((c: { matching_full_name: string }) => c.matching_full_name).filter(Boolean)
         setCitySuggestions(prev => [...new Set([...prev, ...names])].slice(0, 6))
       })
-      .catch(() => {})
+      .catch((err) => console.warn('[OnboardingWizard] Operation failed:', err))
       .finally(() => { if (!cancelled) setCityLoading(false) })
     return () => { cancelled = true }
   }, [debouncedLocationQuery, localCityMatches.length])

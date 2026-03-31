@@ -525,13 +525,10 @@ const intelStyles: Record<string, React.CSSProperties> = {
 import { ManualVsBotFunnel, TimeToResponse, PipelineHealth, VelocityVsQuality } from './AnalyticsCharts'
 import { WeeklyCadenceHeatmap, RoleCategoryPerformance, GeographicPerformance } from './AnalyticsCharts2'
 
-export function AnalyticsView() {
+/** Inner analytics content — used by InsightsView for the Deep Dive section */
+export function AnalyticsContent() {
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <h1 style={styles.title}>Analytics</h1>
-        <p style={styles.subtitle}>Visual breakdown of your job search progress</p>
-      </div>
+    <>
       <IntelligenceCards />
       <div style={styles.grid}>
         <ResponseRate />
@@ -547,8 +544,19 @@ export function AnalyticsView() {
         <div style={{ gridColumn: '1 / -1' }}>
           <GeographicPerformance />
         </div>
-        {/* Work Mode Distribution moved to global filters */}
       </div>
+    </>
+  )
+}
+
+export function AnalyticsView() {
+  return (
+    <div style={styles.container}>
+      <div style={styles.header}>
+        <h1 style={styles.title}>Analytics</h1>
+        <p style={styles.subtitle}>Visual breakdown of your job search progress</p>
+      </div>
+      <AnalyticsContent />
     </div>
   )
 }

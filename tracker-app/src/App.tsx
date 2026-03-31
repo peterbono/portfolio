@@ -2,13 +2,14 @@ import React, { useState, useCallback, Suspense, Component, type ReactNode } fro
 import { SupabaseProvider, useSupabase } from './context/SupabaseContext'
 import { JobsProvider } from './context/JobsContext'
 import { UIProvider } from './context/UIContext'
-import { CoachProvider } from './context/CoachContext'
+// CoachProvider removed — Coach section deleted from dashboard
 import { AuthWallProvider } from './context/AuthWallContext'
 import { AppShell } from './layout/AppShell'
 import { GmailSyncBridge } from './components/GmailSyncBridge'
-import { AuthWall } from './components/AuthWall'
-import { AuthView } from './views/AuthView'
-import { OnboardingWizard } from './components/OnboardingWizard'
+import { BotRealtimeBridge } from './components/BotRealtimeBridge'
+const AuthWall = React.lazy(() => import('./components/AuthWall').then(m => ({ default: m.AuthWall })))
+const AuthView = React.lazy(() => import('./views/AuthView').then(m => ({ default: m.AuthView })))
+const OnboardingWizard = React.lazy(() => import('./components/OnboardingWizard').then(m => ({ default: m.OnboardingWizard })))
 
 /* ── App-level error boundary (EDGE-03) ── */
 interface ErrorBoundaryState {
@@ -177,7 +178,7 @@ function AppContent() {
   // First visit and not authenticated: show landing or auth
   if (!hasVisited && !session) {
     if (showAuthModal) {
-      return <AuthView onBack={() => setShowAuthModal(false)} />
+      return <Suspense fallback={<div style={{ width: '100vw', height: '100vh', background: '#09090b' }} />}><AuthView onBack={() => setShowAuthModal(false)} /></Suspense>
     }
     return <Suspense fallback={<div style={{ width: '100vw', height: '100vh', background: '#09090b' }} />}><LandingView onGetStarted={handleGetStarted} onSignIn={handleSignIn} /></Suspense>
   }
@@ -188,21 +189,21 @@ function AppContent() {
   return (
     <UIProvider>
       <JobsProvider>
-        <CoachProvider>
-          <AuthWallProvider>
-            <GmailSyncBridge />
-            {showOnboarding && (
+        <AuthWallProvider>
+          <GmailSyncBridge />
+          <BotRealtimeBridge />
+          {showOnboarding && (
+            <Suspense fallback={null}>
               <OnboardingWizard
                 onComplete={handleOnboardingComplete}
                 defaultEmail={user?.email ?? undefined}
                 defaultName={user?.user_metadata?.full_name ?? undefined}
               />
-            )}
-            <AppShell onBackToLanding={!session ? handleBackToLanding : undefined} />
-            {/* Global auth wall modal (rendered when triggered) */}
-            <AuthWall />
-          </AuthWallProvider>
-        </CoachProvider>
+            </Suspense>
+          )}
+          <AppShell onBackToLanding={!session ? handleBackToLanding : undefined} />
+          <Suspense fallback={null}><AuthWall /></Suspense>
+        </AuthWallProvider>
       </JobsProvider>
     </UIProvider>
   )

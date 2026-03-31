@@ -8,7 +8,7 @@ import {
 } from '@tanstack/react-table'
 
 const PAGE_SIZE = 50
-import { ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, MoreHorizontal, Plus, Trash2, Download, X, CheckSquare, Square, Check } from 'lucide-react'
+import { ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, MoreHorizontal, Plus, Trash2, Download, X, CheckSquare, Square, Check, ChevronDown, FileSpreadsheet } from 'lucide-react'
 import { format, parseISO, isValid } from 'date-fns'
 
 import { useJobs } from '../context/JobsContext'
@@ -17,10 +17,14 @@ import { useFilters } from '../hooks/useFilters'
 import type { Job, JobStatus } from '../types/job'
 import { STATUS_CONFIG } from '../types/job'
 
+import { exportAsCSV, exportAsJSON } from '../utils/export'
 import { ProgressRing } from '../components/ProgressRing'
 import { StatCards } from '../components/StatCards'
 import { SearchBar } from '../components/SearchBar'
 import { StatusBadge } from '../components/StatusBadge'
+
+/** Columns to hide on mobile (< 768px) */
+const MOBILE_HIDDEN_COLS = new Set(['salary', 'notes'])
 
 // ─── Column definitions ─────────────────────────────────────────────
 function formatDate(dateStr: string): string {
@@ -561,6 +565,111 @@ function AddJobModal({ onClose }: { onClose: () => void }) {
   )
 }
 
+// ─── Export Dropdown ────────────────────────────────────────────────
+function ExportDropdown({ allJobs, selectedJobs, hasSelection, onClose }: {
+  allJobs: Job[]
+  selectedJobs: Job[]
+  hasSelection: boolean
+  onClose: () => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [onClose])
+
+  const menuItemStyle: React.CSSProperties = {
+    display: 'flex', alignItems: 'center', gap: 8,
+    width: '100%', padding: '7px 14px',
+    background: 'transparent', border: 'none', cursor: 'pointer',
+    fontSize: 12, color: 'var(--text-secondary)', textAlign: 'left',
+    whiteSpace: 'nowrap',
+  }
+
+  const disabledStyle: React.CSSProperties = {
+    ...menuItemStyle,
+    opacity: 0.35,
+    cursor: 'default',
+  }
+
+  const dividerStyle: React.CSSProperties = {
+    height: 1, background: 'var(--border)', margin: '4px 0',
+  }
+
+  return (
+    <div ref={ref} style={{
+      position: 'absolute', top: '100%', right: 0, marginTop: 4, zIndex: 60,
+      background: '#1a1a2e', border: '1px solid #2a2a3e',
+      borderRadius: 10, padding: '4px 0', minWidth: 210,
+      boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+    }}>
+      {/* All items */}
+      <button
+        onClick={() => { exportAsCSV(allJobs); onClose() }}
+        style={menuItemStyle}
+        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)' }}
+        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+      >
+        <FileSpreadsheet size={13} color="#34d399" />
+        Export All as CSV
+        <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--text-tertiary)' }}>
+          {allJobs.length}
+        </span>
+      </button>
+      <button
+        onClick={() => { exportAsJSON(allJobs); onClose() }}
+        style={menuItemStyle}
+        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)' }}
+        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+      >
+        <Download size={13} color="#60a5fa" />
+        Export All as JSON
+        <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--text-tertiary)' }}>
+          {allJobs.length}
+        </span>
+      </button>
+
+      <div style={dividerStyle} />
+
+      {/* Selected items */}
+      <button
+        onClick={() => { if (hasSelection) { exportAsCSV(selectedJobs, `jobs-selected-${selectedJobs.length}.csv`); onClose() } }}
+        style={hasSelection ? menuItemStyle : disabledStyle}
+        disabled={!hasSelection}
+        onMouseEnter={(e) => { if (hasSelection) e.currentTarget.style.background = 'rgba(255,255,255,0.08)' }}
+        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+      >
+        <FileSpreadsheet size={13} color={hasSelection ? '#34d399' : 'var(--text-tertiary)'} />
+        Export Selected as CSV
+        {hasSelection && (
+          <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--text-tertiary)' }}>
+            {selectedJobs.length}
+          </span>
+        )}
+      </button>
+      <button
+        onClick={() => { if (hasSelection) { exportAsJSON(selectedJobs, `jobs-selected-${selectedJobs.length}.json`); onClose() } }}
+        style={hasSelection ? menuItemStyle : disabledStyle}
+        disabled={!hasSelection}
+        onMouseEnter={(e) => { if (hasSelection) e.currentTarget.style.background = 'rgba(255,255,255,0.08)' }}
+        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+      >
+        <Download size={13} color={hasSelection ? '#60a5fa' : 'var(--text-tertiary)'} />
+        Export Selected as JSON
+        {hasSelection && (
+          <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--text-tertiary)' }}>
+            {selectedJobs.length}
+          </span>
+        )}
+      </button>
+    </div>
+  )
+}
+
 // ─── Bulk Status Dropdown ────────────────────────────────────────────
 function BulkStatusDropdown({ onSelect, onClose }: { onSelect: (status: JobStatus) => void; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -609,15 +718,27 @@ function BulkStatusDropdown({ onSelect, onClose }: { onSelect: (status: JobStatu
 }
 
 // ─── Bulk Action Bar ────────────────────────────────────────────────
-function BulkActionBar({ selectedCount, onChangeStatus, onDelete, onExport, onDeselectAll }: {
+function BulkActionBar({ selectedCount, onChangeStatus, onDelete, onExportJSON, onExportCSV, onDeselectAll }: {
   selectedCount: number
   onChangeStatus: (status: JobStatus) => void
   onDelete: () => void
-  onExport: () => void
+  onExportJSON: () => void
+  onExportCSV: () => void
   onDeselectAll: () => void
 }) {
   const [showStatusDropdown, setShowStatusDropdown] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [showExportMenu, setShowExportMenu] = useState(false)
+  const exportMenuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!showExportMenu) return
+    function handleClickOutside(e: MouseEvent) {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) setShowExportMenu(false)
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showExportMenu])
 
   const btnStyle: React.CSSProperties = {
     display: 'flex', alignItems: 'center', gap: 5,
@@ -628,7 +749,7 @@ function BulkActionBar({ selectedCount, onChangeStatus, onDelete, onExport, onDe
   }
 
   return (
-    <div style={{
+    <div data-bulk-bar style={{
       position: 'sticky', top: 0, zIndex: 10,
       display: 'flex', alignItems: 'center', gap: 10,
       padding: '8px 14px', marginTop: 4,
@@ -710,14 +831,53 @@ function BulkActionBar({ selectedCount, onChangeStatus, onDelete, onExport, onDe
       </div>
 
       {/* Export */}
-      <button
-        onClick={onExport}
-        style={btnStyle}
-        onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-elevated)' }}
-        onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--bg-surface)' }}
-      >
-        <Download size={13} /> Export
-      </button>
+      <div ref={exportMenuRef} style={{ position: 'relative' }}>
+        <button
+          onClick={() => setShowExportMenu(v => !v)}
+          style={btnStyle}
+          onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-elevated)' }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--bg-surface)' }}
+        >
+          <Download size={13} /> Export <ChevronDown size={11} style={{ opacity: 0.5 }} />
+        </button>
+        {showExportMenu && (
+          <div style={{
+            position: 'absolute', top: '100%', left: 0, marginTop: 4, zIndex: 60,
+            background: '#1a1a2e', border: '1px solid #2a2a3e',
+            borderRadius: 10, padding: '4px 0', minWidth: 180,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+          }}>
+            <button
+              onClick={() => { onExportCSV(); setShowExportMenu(false) }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                width: '100%', padding: '7px 14px',
+                background: 'transparent', border: 'none', cursor: 'pointer',
+                fontSize: 12, color: 'var(--text-secondary)', textAlign: 'left',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+            >
+              <FileSpreadsheet size={13} color="#34d399" />
+              Export as CSV
+            </button>
+            <button
+              onClick={() => { onExportJSON(); setShowExportMenu(false) }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                width: '100%', padding: '7px 14px',
+                background: 'transparent', border: 'none', cursor: 'pointer',
+                fontSize: 12, color: 'var(--text-secondary)', textAlign: 'left',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+            >
+              <Download size={13} color="#60a5fa" />
+              Export as JSON
+            </button>
+          </div>
+        )}
+      </div>
 
       <div style={{ flex: 1 }} />
 
@@ -741,7 +901,17 @@ export function TableView() {
   const filters = useFilters()
   const [showAddModal, setShowAddModal] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [showHeaderExport, setShowHeaderExport] = useState(false)
+  const headerExportRef = useRef<HTMLDivElement>(null)
   const tableWrapperRef = useRef<HTMLDivElement>(null)
+
+  // Mobile detection for responsive behavior
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768)
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   const { statusFilter, searchQuery, companyFilter, sortColumn, sortDirection } = filters
   const allFiltered = useMemo(
@@ -827,18 +997,14 @@ export function TableView() {
     setSelectedIds(new Set())
   }, [selectedIds, deleteJob])
 
-  const handleBulkExport = useCallback(() => {
+  const handleBulkExportJSON = useCallback(() => {
     const selectedJobs = filteredData.filter(j => selectedIds.has(j.id))
-    const json = JSON.stringify(selectedJobs, null, 2)
-    const blob = new Blob([json], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `jobs-export-${selectedIds.size}.json`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
+    exportAsJSON(selectedJobs, `jobs-selected-${selectedIds.size}.json`)
+  }, [selectedIds, filteredData])
+
+  const handleBulkExportCSV = useCallback(() => {
+    const selectedJobs = filteredData.filter(j => selectedIds.has(j.id))
+    exportAsCSV(selectedJobs, `jobs-selected-${selectedIds.size}.csv`)
   }, [selectedIds, filteredData])
 
   // ─── Keyboard shortcuts ────────────────────────────────────────────
@@ -878,11 +1044,51 @@ export function TableView() {
   return (
     <div style={styles.container}>
       {/* Header */}
-      <div style={styles.header}>
+      <div data-table-header style={styles.header}>
         <div style={styles.headerLeft}>
           <h1 style={styles.title}>Applications</h1>
         </div>
-        <ProgressRing percentage={submittedPct} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {/* Export dropdown */}
+          <div ref={headerExportRef} style={{ position: 'relative' }}>
+            <button
+              onClick={() => setShowHeaderExport(v => !v)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '6px 12px', borderRadius: 8,
+                background: 'var(--bg-surface)', border: '1px solid var(--border)',
+                fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)',
+                cursor: 'pointer', whiteSpace: 'nowrap',
+                transition: 'background 0.15s, border-color 0.15s',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'var(--bg-elevated)'
+                e.currentTarget.style.borderColor = 'var(--text-tertiary)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'var(--bg-surface)'
+                e.currentTarget.style.borderColor = 'var(--border)'
+              }}
+            >
+              <Download size={13} />
+              Export
+              <ChevronDown size={11} style={{
+                opacity: 0.5,
+                transform: showHeaderExport ? 'rotate(180deg)' : 'rotate(0deg)',
+                transition: 'transform 0.15s',
+              }} />
+            </button>
+            {showHeaderExport && (
+              <ExportDropdown
+                allJobs={allFiltered}
+                selectedJobs={filteredData.filter(j => selectedIds.has(j.id))}
+                hasSelection={selectedIds.size > 0}
+                onClose={() => setShowHeaderExport(false)}
+              />
+            )}
+          </div>
+          <ProgressRing percentage={submittedPct} />
+        </div>
       </div>
       {showAddModal && <AddJobModal onClose={() => setShowAddModal(false)} />}
 
@@ -925,13 +1131,14 @@ export function TableView() {
           selectedCount={selectedIds.size}
           onChangeStatus={handleBulkChangeStatus}
           onDelete={handleBulkDelete}
-          onExport={handleBulkExport}
+          onExportJSON={handleBulkExportJSON}
+          onExportCSV={handleBulkExportCSV}
           onDeselectAll={deselectAll}
         />
       )}
 
       {/* Table */}
-      <div ref={tableWrapperRef} style={styles.tableWrapper} tabIndex={-1}>
+      <div ref={tableWrapperRef} data-table-wrapper style={styles.tableWrapper} tabIndex={-1}>
         <table style={styles.table}>
           <thead>
             {table.getHeaderGroups().map((headerGroup) => (
@@ -963,6 +1170,7 @@ export function TableView() {
                   return (
                     <th
                       key={header.id}
+                      data-col={colId}
                       style={{
                         ...styles.th,
                         width: header.getSize(),
@@ -1028,6 +1236,7 @@ export function TableView() {
                   {row.getVisibleCells().map((cell) => (
                     <td
                       key={cell.id}
+                      data-col={cell.column.id}
                       style={{
                         ...styles.td,
                         width: cell.column.getSize(),

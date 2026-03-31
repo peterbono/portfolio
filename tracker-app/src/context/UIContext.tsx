@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from 'react'
 
-export type ActiveView = 'table' | 'pipeline' | 'analytics' | 'coach' | 'insights' | 'autopilot' | 'settings' | 'pricing'
+export type ActiveView = 'applications' | 'insights' | 'autopilot' | 'settings' | 'pricing'
 export type TimeRange = 'all' | 'today' | 'week' | 'month' | '3months'
 export type AreaFilter = 'all' | 'apac' | 'emea' | 'americas'
 export type WorkMode = 'all' | 'remote' | 'onsite' | 'hybrid'
@@ -36,8 +36,11 @@ export function UIProvider({ children }: { children: ReactNode }) {
   const [activeView, setActiveView] = useState<ActiveView>(() => {
     try {
       const saved = sessionStorage.getItem('tracker_v2_last_view')
-      if (saved && ['table', 'pipeline', 'analytics', 'coach', 'insights', 'autopilot', 'settings', 'pricing'].includes(saved)) {
-        return saved as ActiveView
+      // Migrate legacy view names
+      let migrated = (saved === 'table' || saved === 'pipeline') ? 'applications' : saved
+      if (migrated === 'analytics') migrated = 'insights' // analytics merged into Intelligence page
+      if (migrated && ['applications', 'insights', 'autopilot', 'settings', 'pricing'].includes(migrated)) {
+        return migrated as ActiveView
       }
     } catch { /* ignore */ }
     return 'autopilot'

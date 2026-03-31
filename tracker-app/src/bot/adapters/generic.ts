@@ -452,14 +452,22 @@ async function fillTextareas(page: Page, profile: ApplicantProfile): Promise<voi
       // Determine what kind of text this textarea expects
       let content = ''
 
-      if (allText.includes('cover') || allText.includes('letter') || allText.includes('lettre') || allText.includes('motivation')) {
-        content = [
-          `Senior Product Designer with ${profile.yearsExperience}+ years of experience specializing in Design Systems, Design Ops, and complex product architecture.`,
-          `Portfolio: ${profile.portfolio}`,
-          `Available in ${profile.noticePeriod}. ${profile.workAuth}. Based in ${profile.location} (${profile.timezone}).`,
-        ].join('\n\n')
+      if (allText.includes('cover') || allText.includes('letter') || allText.includes('lettre') || allText.includes('motivation') || allText.includes('why interested') || allText.includes('why are you')) {
+        if (profile.coverLetterSnippet) {
+          content = `${profile.coverLetterSnippet}\n\nPortfolio: ${profile.portfolio}`
+        } else {
+          content = [
+            `Senior Product Designer with ${profile.yearsExperience}+ years of experience specializing in Design Systems, Design Ops, and complex product architecture.`,
+            `Portfolio: ${profile.portfolio}`,
+            `Available in ${profile.noticePeriod}. ${profile.workAuth}. Based in ${profile.location} (${profile.timezone}).`,
+          ].join('\n\n')
+        }
       } else if (allText.includes('additional') || allText.includes('comment') || allText.includes('note') || allText.includes('message')) {
-        content = `Portfolio: ${profile.portfolio}\nAvailable in ${profile.noticePeriod}. ${profile.workAuth}.`
+        if (profile.coverLetterSnippet) {
+          content = `${profile.coverLetterSnippet}\n\nPortfolio: ${profile.portfolio}`
+        } else {
+          content = `Portfolio: ${profile.portfolio}\nAvailable in ${profile.noticePeriod}. ${profile.workAuth}.`
+        }
       } else {
         // Unknown textarea — add portfolio link as fallback
         content = `Portfolio: ${profile.portfolio}`

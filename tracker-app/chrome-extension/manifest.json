@@ -1,18 +1,36 @@
 {
   "manifest_version": 3,
   "name": "JobTracker - LinkedIn Connect",
-  "version": "2.5.0",
+  "version": "3.1.0",
   "description": "Connect your LinkedIn account to JobTracker \u2014 auto-discover and apply to jobs (Easy Apply + External ATS)",
   "permissions": [
     "cookies",
     "storage",
     "tabs",
-    "scripting"
+    "scripting",
+    "debugger"
   ],
   "host_permissions": [
     "https://*.linkedin.com/*",
     "https://tracker-app-lyart.vercel.app/*",
-    "http://localhost:5173/*"
+    "http://localhost:5173/*",
+    "https://*.greenhouse.io/*",
+    "https://boards.greenhouse.io/*",
+    "https://*.lever.co/*",
+    "https://*.workable.com/*",
+    "https://*.ashbyhq.com/*",
+    "https://*.careers-page.com/*",
+    "https://*.breezy.hr/*",
+    "https://*.recruitee.com/*",
+    "https://*.teamtailor.com/*",
+    "https://*.smartrecruiters.com/*",
+    "https://*.bamboohr.com/*",
+    "https://*.applytojob.com/*",
+    "https://*.jobvite.com/*",
+    "https://*.icims.com/*",
+    "https://*.myworkdayjobs.com/*",
+    "https://*.workday.com/*",
+    "https://mail.google.com/*"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -44,9 +62,7 @@
         "http://localhost:5173/*",
         "http://localhost:4173/*"
       ],
-      "js": [
-        "content.js"
-      ],
+      "js": ["content.js"],
       "run_at": "document_idle"
     },
     {
@@ -54,9 +70,29 @@
         "https://www.linkedin.com/jobs/view/*",
         "https://*.linkedin.com/jobs/view/*"
       ],
-      "js": [
-        "linkedin-apply.js"
+      "js": ["linkedin-apply.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://*.greenhouse.io/*",
+        "https://boards.greenhouse.io/*",
+        "https://*.lever.co/*",
+        "https://*.workable.com/*",
+        "https://*.ashbyhq.com/*",
+        "https://*.careers-page.com/*",
+        "https://*.breezy.hr/*",
+        "https://*.recruitee.com/*",
+        "https://*.teamtailor.com/*",
+        "https://*.smartrecruiters.com/*",
+        "https://*.bamboohr.com/*",
+        "https://*.applytojob.com/*",
+        "https://*.jobvite.com/*",
+        "https://*.icims.com/*",
+        "https://*.myworkdayjobs.com/*",
+        "https://*.workday.com/*"
       ],
+      "js": ["ats-apply.js"],
       "run_at": "document_idle"
     }
   ]

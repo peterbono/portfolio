@@ -1,25 +1,36 @@
-import Anthropic from '@anthropic-ai/sdk'
+/**
+ * qualifier.ts — Orchestrator-specific qualifier wrapper
+ *
+ * This module wraps the shared qualifier-core with orchestrator-specific features:
+ *   - Thompson Sampling for cover letter variant A/B testing
+ *   - In-memory qualification cache (avoids re-scoring the same JD)
+ *   - Batch processing with concurrency control
+ *   - Rules-based pre-qualifier (Pass 1)
+ *
+ * The shared logic (prompt, API call, parsing) lives in qualifier-core.ts.
+ */
+
 import type { SearchProfile } from '../types/database'
 import type { ApplicantProfile } from './types'
 import type { ArmStats, CoverLetterVariant } from '../types/intelligence'
-import { COVER_LETTER_VARIANTS, VARIANT_PROMPTS } from '../types/intelligence'
+import { COVER_LETTER_VARIANTS } from '../types/intelligence'
 import { thompsonSample, initializeArms } from '../utils/thompson-sampling'
+import {
+  buildSystemPrompt,
+  buildUserMessage,
+  callHaikuQualifier,
+  buildErrorFallback,
+  type QualificationResult,
+  type QualifierConfig,
+} from './qualifier-core'
+
+// Re-export shared types so existing imports from './qualifier' still work
+export type { QualificationResult, QualifierConfig } from './qualifier-core'
+export { buildSystemPrompt, buildUserMessage, callHaikuQualifier, buildErrorFallback } from './qualifier-core'
 
 // ---------------------------------------------------------------------------
-// Types
+// Types — orchestrator-specific
 // ---------------------------------------------------------------------------
-
-export interface QualificationResult {
-  score: number // 0-100
-  isDesignRole: boolean
-  seniorityMatch: boolean
-  locationCompatible: boolean
-  salaryInRange: boolean
-  skillsMatch: boolean
-  reasoning: string
-  coverLetterSnippet: string
-  coverLetterVariant?: CoverLetterVariant
-}
 
 /** Input shape for pre-qualification — matches scout DiscoveredJob */
 export interface PreQualifyInput {
@@ -72,13 +83,6 @@ const BLACKLISTED_INDUSTRY_KEYWORDS = [
  * Title-based blacklist patterns — eliminates obviously irrelevant roles
  * BEFORE sending to Haiku. Each entry is matched case-insensitively against
  * the job title. Easy to extend: just add a new string to the array.
- *
- * Why these patterns:
- * - "graphic designer" / "web designer" / "visual merchandis" — different discipline from Product/UX/UI
- * - "shopify" / "wordpress" — e-commerce template roles, not product design
- * - "part-time" — user targets full-time (unless search keywords include it)
- * - "intern " / "internship" — already in JUNIOR_KEYWORDS but duplicated here for clarity
- * - "junior" — user is Senior level (7+ years)
  */
 const TITLE_BLACKLIST_PATTERNS = [
   'graphic designer',
@@ -88,6 +92,29 @@ const TITLE_BLACKLIST_PATTERNS = [
   'web designer',
   'part-time',
   'part time',
+  // Non-product design disciplines — hard reject before Haiku
+  'generative ai',
+  'ai designer',
+  'ai artist',
+  'motion designer',
+  'motion graphic',
+  'animation',
+  'animator',
+  'video designer',
+  'video editor',
+  'brand designer',
+  'creative director',
+  'art director',
+  'illustrat', // catches illustrator, illustration
+  'concept artist',
+  '3d designer',
+  '3d artist',
+  'game designer',
+  'fashion designer',
+  'interior designer',
+  'content creator',
+  'social media designer',
+  'email designer',
 ]
 
 /**
@@ -158,8 +185,6 @@ export function preQualify(
 
 /**
  * Run preQualify on a batch of jobs and return survivors + stats.
- * Useful for logging a summary like:
- * "Pre-filtered: 45 removed (30 not design, 10 too junior, 5 excluded)"
  */
 export function preQualifyBatch(
   jobs: PreQualifyInput[],
@@ -196,7 +221,6 @@ export function preQualifyBatch(
 
 /**
  * Format preQualify stats into a human-readable log line.
- * Example: "Pre-filtered: 45 removed (30 not design, 10 too junior, 5 excluded)"
  */
 export function formatPreQualifyStats(stats: PreQualifyStats): string {
   if (stats.filtered === 0) {
@@ -220,23 +244,14 @@ export function formatPreQualifyStats(stats: PreQualifyStats): string {
 }
 
 // ---------------------------------------------------------------------------
-// Client
-// ---------------------------------------------------------------------------
-
-let _client: Anthropic | null = null
-
-function getClient(): Anthropic {
-  if (!_client) {
-    _client = new Anthropic() // reads ANTHROPIC_API_KEY from env
-  }
-  return _client
-}
-
-// ---------------------------------------------------------------------------
 // Cover Letter Variant Selection (Thompson Sampling)
 // ---------------------------------------------------------------------------
 
-/** In-memory variant arms — re-initialized from localStorage stats each session */
+/**
+ * In-memory variant arms — re-initialized from stored stats each session.
+ * Resets per run in worker environments, which is acceptable since Thompson
+ * Sampling converges over multiple runs anyway.
+ */
 let variantArms: ArmStats[] | null = null
 
 const VARIANT_STATS_KEY = 'tracker_v2_cl_variant_stats'
@@ -247,22 +262,55 @@ interface VariantStats {
   gotResponse: number
 }
 
-function loadVariantStats(): VariantStats[] {
+// ---------------------------------------------------------------------------
+// Variant stats storage — environment-aware (browser vs worker)
+// ---------------------------------------------------------------------------
+
+/**
+ * In-memory fallback store for environments where localStorage is unavailable
+ * (Trigger.dev workers, Node.js scripts). Resets each process, which is fine
+ * because Thompson Sampling is designed to work with sparse data and will
+ * explore uniformly when there's no history.
+ */
+const _inMemoryVariantStore = new Map<string, string>()
+
+/**
+ * Load variant stats from the best available storage.
+ * Priority: localStorage (browser) > in-memory Map (worker/Node).
+ *
+ * The optional userId parameter is reserved for future Supabase persistence
+ * where stats would be stored per-user in the database.
+ */
+export function loadVariantStats(_userId?: string): VariantStats[] {
   try {
-    const raw = typeof localStorage !== 'undefined'
-      ? localStorage.getItem(VARIANT_STATS_KEY)
-      : null
-    if (raw) return JSON.parse(raw)
-  } catch { /* ignore */ }
+    // Browser environment — use localStorage
+    if (typeof localStorage !== 'undefined') {
+      const raw = localStorage.getItem(VARIANT_STATS_KEY)
+      if (raw) return JSON.parse(raw)
+    } else {
+      // Worker environment — use in-memory fallback
+      const raw = _inMemoryVariantStore.get(VARIANT_STATS_KEY)
+      if (raw) return JSON.parse(raw)
+    }
+  } catch { /* ignore parse errors */ }
+
+  // No stored data — return fresh stats for all variants
   return COVER_LETTER_VARIANTS.map(v => ({ variant: v, sent: 0, gotResponse: 0 }))
 }
 
-function saveVariantStats(stats: VariantStats[]): void {
+/**
+ * Save variant stats to the best available storage.
+ * Priority: localStorage (browser) > in-memory Map (worker/Node).
+ */
+export function saveVariantStats(stats: VariantStats[], _userId?: string): void {
   try {
+    const serialized = JSON.stringify(stats)
     if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(VARIANT_STATS_KEY, JSON.stringify(stats))
+      localStorage.setItem(VARIANT_STATS_KEY, serialized)
+    } else {
+      _inMemoryVariantStore.set(VARIANT_STATS_KEY, serialized)
     }
-  } catch { /* ignore */ }
+  } catch { /* ignore write errors */ }
 }
 
 /** Record that a variant was sent. Call after application submission. */
@@ -317,143 +365,6 @@ function cacheKey(jobDescription: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// System prompt builder — injects user profile data for accurate scoring
-// ---------------------------------------------------------------------------
-
-/**
- * Build the Haiku system prompt with the actual user profile injected.
- * Includes detailed achievements, project examples, and industry wins
- * so the cover letter snippet can reference SPECIFIC experience.
- */
-function buildSystemPrompt(applicantProfile: ApplicantProfile, variant?: CoverLetterVariant): string {
-  const variantStyle = variant ? VARIANT_PROMPTS[variant] : 'Write naturally — professional but warm tone.'
-
-  // Format achievements as numbered list for easy LLM reference — include company for anti-hallucination
-  const achievementsList = (applicantProfile.achievements ?? [])
-    .map((a, i) => `  ${i + 1}. [${(a as { company?: string }).company ?? 'Unknown'}] ${a.metric}\n     Context: ${a.context}\n     Best for JDs mentioning: ${a.relevantWhen.join(', ')}`)
-    .join('\n')
-
-  // Format key projects
-  const projectsList = (applicantProfile.keyProjects ?? [])
-    .map(p => `  - ${p.name} (${p.role}): ${p.outcome}\n    Skills used: ${p.skills.join(', ')}`)
-    .join('\n')
-
-  // Format industry wins as matchable entries
-  const industryWinsList = Object.entries(applicantProfile.industryWins ?? {})
-    .map(([industry, win]) => `  - ${industry}: ${win}`)
-    .join('\n')
-
-  // Format tool mastery
-  const toolsList = (applicantProfile.toolMastery ?? [])
-    .map(t => `  - ${t.name} [${t.proficiency}]: ${t.context}`)
-    .join('\n')
-
-  return `You are a job qualification engine for an automated job search tool.
-Your TWO jobs: (1) score the job fit accurately, (2) write a cover letter snippet that sounds like a real human who READ this specific JD and knows their own resume deeply.
-
-═══════════════════════════════════════════════
-CANDIDATE PROFILE — ${applicantProfile.firstName} ${applicantProfile.lastName}
-═══════════════════════════════════════════════
-
-BASICS:
-- Current role: Senior Product Designer (${applicantProfile.yearsExperience}+ years)
-- Specialization: Design Systems, Design Ops, Complex Product Architecture
-- Location: ${applicantProfile.location} (${applicantProfile.timezone})
-- Acceptable TZ: UTC+3 to UTC+11 (4h max difference from Bangkok)
-- Work mode: P1 Remote APAC, P2 On-site Philippines/Thailand, P3 Remote within TZ range
-- Min compensation: 70k EUR/yr (on-site) or 80k EUR/yr (remote freelance)
-- Languages: French (native), English (bilingual)
-- Education: ${applicantProfile.education ?? 'Master UX Design'}
-- Portfolio: ${applicantProfile.portfolio}
-
-KEY ACHIEVEMENTS (use these in cover letter — pick the most relevant to the JD):
-${achievementsList || '  (no detailed achievements available)'}
-
-KEY PROJECTS (reference by name when relevant):
-${projectsList || '  (no detailed projects available)'}
-
-INDUSTRY-SPECIFIC WINS (match to the JD's industry):
-${industryWinsList || '  (no industry wins available)'}
-
-TOOL MASTERY (match to JD's required tools):
-${toolsList || '  (no tool details available)'}
-
-BLACKLISTED:
-- Companies: BetRivers, Rush Street Interactive, ClickOut Media
-- Industries: poker, unregulated gambling
-- Seniority: intern, junior, associate (too junior for ${applicantProfile.yearsExperience}+ years)
-
-═══════════════════════════════════════════════
-SCORING (0-100) — BE GENEROUS
-═══════════════════════════════════════════════
-
-HARD DISQUALIFIERS (score 0 ONLY if one of these is TRUE):
-- Company is BetRivers, Rush Street Interactive, or ClickOut Media
-- Industry is poker or unregulated gambling
-- Title is clearly intern/junior/associate level
-- Title has ZERO design relevance (e.g. "Sales Manager", "Backend Engineer")
-
-If none of the above, score on 0-100 starting from base 40:
-
-- Role fit (0-25): Title + JD alignment with "Senior Product Designer" / design systems / design ops / complex product architecture. Exact "Product Designer"=22, "UX/UI Designer"=20, "Design Lead/Staff/Principal"=23, adjacent design role=15, weak=8.
-- Industry match (0-15): B2B SaaS=15, regulated industries=14, iGaming=15, consumer app=10, crypto/unregulated gambling=0. Unknown=8.
-- Skill overlap (0-20): How many key skills appear in JD? 5+=20, 3-4=15, 1-2=10, none mentioned=8. BONUS: if JD mentions "design systems" or "B2B SaaS" or "iGaming" → add +5 on top.
-- Remote/location fit (0-15): Remote APAC=15, remote global async=12, hybrid SEA=10, on-site SEA=8, remote EU=5 (soft filter, not hard block), US TZ only=2 (some are flexible), unknown=10.
-- Compensation signal (0-10): In range (>=70k EUR)=10, no info=6, low signal=2.
-- Growth opportunity (0-15): Design system work=15, leadership=14, complex products=13, regulated=13. Generic=7, unknown=8.
-
-CRITICAL SCORING RULES:
-- Missing info = partial points (benefit of the doubt), NEVER 0.
-- "Product Designer" with no red flags = 55+ MINIMUM.
-- "Senior Product Designer" with no red flags = 65+ MINIMUM.
-- "Design Lead" / "Staff Designer" / "Principal Designer" = 60+ MINIMUM.
-- "UX/UI Designer" in APAC = 50+ MINIMUM.
-- No salary listed = 6/10 (assume decent).
-- "Remote" without TZ info = 10/15 (assume flexible).
-- Timezone is a SOFT filter — some remote APAC roles have flexible hours. Only score 0 for location if the JD explicitly says "must be US-based" or similar hard requirement.
-- BONUS +15 total cap: if JD mentions "design systems" (+5), "B2B SaaS" (+5), or "iGaming" (+5).
-
-═══════════════════════════════════════════════
-COVER LETTER SNIPPET — THIS IS CRITICAL
-═══════════════════════════════════════════════
-
-CRITICAL ANTI-HALLUCINATION RULE:
-When citing the applicant's achievements, you MUST use the EXACT company name listed in the [brackets] with each achievement above. NEVER attribute an achievement to a different company. NEVER invent product names (e.g. do NOT say "PokerStars" — the product is "BetRivers Poker" at Rush Street Interactive). The 143 templates across 7 B2B SaaS products was at PERNOD RICARD, NOT ClickOut Media. The 90% dev feedback improvement was at RUSH STREET INTERACTIVE, NOT ClickOut Media. If unsure which achievement fits a JD, use a generic statement instead of risking a wrong company attribution.
-
-Write 2-3 sentences that pass the "would a human write this?" test. Rules:
-
-1. REFERENCE A SPECIFIC DETAIL FROM THE JD: name the company, mention their product/tech/team/mission, quote something they said. NOT "your team" or "this role" — use the ACTUAL company name and what they do.
-
-2. CONNECT TO A SPECIFIC ACHIEVEMENT: don't say "7+ years of experience" or "design systems expertise." Instead, pick the MOST RELEVANT achievement from the list above and cite it concretely — ALWAYS using the correct company name from the achievement. Examples:
-   - BAD: "I have extensive experience with design systems"
-   - GOOD: "At Pernod Ricard, I governed 143 component templates across 7 B2B SaaS products — the kind of multi-product consistency challenge [Company] faces with [their specific product]"
-   - BAD: "I bring strong product design skills"
-   - GOOD: "Building BetRivers Poker at Rush Street Interactive from 0-to-1 taught me how to ship complex products under compliance constraints, which directly applies to [Company]'s [specific challenge from JD]"
-
-3. ADD A "WHY THIS COMPANY" ANGLE: show you understand what makes them different. Reference their industry, product, mission, or growth stage. If the JD mentions specific projects, teams, or technologies — name them.
-
-4. NEVER use these generic phrases: "passionate about", "I believe", "excited to bring", "align with my experience", "I am confident", "I look forward to". Write like a peer, not a cover letter bot.
-
-5. NEVER invent or substitute product/company names. Use ONLY: "BetRivers Poker" (NOT PokerStars), "Rush Street Interactive" (NOT BetRivers alone for company), "Pernod Ricard" (for 143 templates/7 SaaS products), "ClickOut Media" (for 0-to-1 design system, Maze studies), "IDEMIA" (for biometric/airport).
-
-STYLE DIRECTIVE: ${variantStyle}
-
-═══════════════════════════════════════════════
-
-Respond ONLY with valid JSON:
-{
-  "score": number,
-  "isDesignRole": boolean,
-  "seniorityMatch": boolean,
-  "locationCompatible": boolean,
-  "salaryInRange": boolean,
-  "skillsMatch": boolean,
-  "reasoning": "1-2 sentence explanation",
-  "coverLetterSnippet": "2-3 sentences following the rules above"
-}`
-}
-
-// ---------------------------------------------------------------------------
 // Main qualification function
 // ---------------------------------------------------------------------------
 
@@ -462,6 +373,11 @@ Respond ONLY with valid JSON:
  * Cost: ~$0.003 per qualification.
  * Timeout: 10 seconds.
  * Results are cached by JD content.
+ *
+ * This is the orchestrator-specific wrapper that adds:
+ *   - Thompson Sampling variant selection
+ *   - JD-based caching
+ *   - Error fallback handling
  */
 export async function qualifyJob(
   jobDescription: string,
@@ -476,105 +392,43 @@ export async function qualifyJob(
     return cached
   }
 
-  const client = getClient()
-
   // Select cover letter variant via Thompson Sampling
   const variant = selectCoverLetterVariant()
   console.log(`[qualifier] Selected cover letter variant: ${variant}`)
 
-  // Build dynamic system prompt with user profile injected
+  // Build prompts using shared core functions
   const systemPrompt = buildSystemPrompt(applicantProfile, variant)
-
-  // Build user message with context
-  const userMessage = `Evaluate this job posting for the applicant described in the system prompt.
-
-SEARCH PROFILE CONTEXT:
-- Keywords: ${searchProfile.keywords?.join(', ') ?? 'Product Designer'}
-- Location preference: ${searchProfile.location ?? 'Remote APAC'}
-- Min salary: ${searchProfile.min_salary ?? 80000} EUR/year
-- Remote only: ${searchProfile.remote_only ?? true}
-
-JOB DESCRIPTION:
----
-${jobDescription.slice(0, 4000)}
----
-
-Return ONLY the JSON object, no markdown fences.`
-
-  const callHaiku = () => Promise.race([
-    client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 800,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userMessage }],
-    }),
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('Qualification timeout (10s)')), 10_000),
-    ),
-  ])
+  const userMessage = buildUserMessage(jobDescription, {
+    keywords: searchProfile.keywords ?? undefined,
+    location: searchProfile.location ?? undefined,
+    minSalary: searchProfile.min_salary ?? undefined,
+    remoteOnly: searchProfile.remote_only ?? undefined,
+  })
 
   try {
-    let response: Anthropic.Message
-    try {
-      response = await callHaiku() as Anthropic.Message
-    } catch (firstErr: unknown) {
-      const msg = firstErr instanceof Error ? firstErr.message : String(firstErr)
-      if (msg.includes('500') || msg.includes('Internal server') || msg.includes('overloaded')) {
-        console.warn(`[qualifier] Haiku 500, retrying in 2s...`)
-        await new Promise(r => setTimeout(r, 2000))
-        response = await callHaiku() as Anthropic.Message
-      } else {
-        throw firstErr
-      }
+    // Call Haiku using the shared core function
+    const result = await callHaikuQualifier(systemPrompt, userMessage)
+
+    // Tag with selected variant (orchestrator-specific)
+    const fullResult: QualificationResult = {
+      ...result,
+      coverLetterVariant: variant,
     }
-
-    // Extract text content
-    const textBlock = response.content.find(
-      (b): b is Anthropic.TextBlock => b.type === 'text',
-    )
-
-    if (!textBlock) {
-      throw new Error('No text block in response')
-    }
-
-    // Parse JSON — strip any markdown fences if present
-    let jsonStr = textBlock.text.trim()
-    if (jsonStr.startsWith('```')) {
-      jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
-    }
-
-    const result: QualificationResult = JSON.parse(jsonStr)
-
-    // Clamp score to 0-100
-    result.score = Math.max(0, Math.min(100, result.score))
-
-    // Tag with selected variant
-    result.coverLetterVariant = variant
 
     // Cache it
-    qualificationCache.set(key, result)
+    qualificationCache.set(key, fullResult)
 
     console.log(
-      `[qualifier] Score: ${result.score} — ${result.reasoning.slice(0, 80)}...`,
+      `[qualifier] Score: ${fullResult.score} — ${fullResult.reasoning.slice(0, 80)}...`,
     )
 
-    return result
+    return fullResult
   } catch (err) {
     const message = (err as Error).message
     console.error('[qualifier] Failed:', message)
 
-    // Return a "benefit of the doubt" result — don't auto-kill jobs on errors
-    // The user can review and decide. Score 35 keeps it in the "maybe" zone.
-    return {
-      score: 35,
-      isDesignRole: true,
-      seniorityMatch: false,
-      locationCompatible: false,
-      salaryInRange: true,
-      skillsMatch: false,
-      reasoning: `Qualification incomplete (${message}) — scored conservatively for manual review`,
-      coverLetterSnippet: '',
-    }
+    // Return a "benefit of the doubt" result using shared fallback
+    return buildErrorFallback(message)
   }
 }
 
@@ -582,12 +436,12 @@ Return ONLY the JSON object, no markdown fences.`
 // Batch qualifier — processes multiple JDs with concurrency control
 // ---------------------------------------------------------------------------
 
+const MAX_QUALIFY_PER_RUN = 50 // Cap to control Haiku API costs (~$0.003/job, ~$0.15/run max)
+
 /**
  * Qualify multiple job descriptions in parallel with a concurrency limit.
  * Default concurrency: 5 (to respect Anthropic rate limits).
  */
-const MAX_QUALIFY_PER_RUN = 15 // Cap to control Haiku API costs (~$0.003/job, ~$0.045/run)
-
 export async function qualifyJobsBatch(
   jobs: Array<{ jobDescription: string; url: string }>,
   searchProfile: SearchProfile,

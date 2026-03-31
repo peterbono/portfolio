@@ -24,6 +24,10 @@ export interface ApplicantProfile {
   toolMastery: ApplicantTool[]
   /** Education details */
   education: string
+  /** Per-job AI-generated cover letter snippet (set dynamically before each application) */
+  coverLetterSnippet?: string
+  /** Current company name (for "current employer" fields) */
+  currentCompany?: string
 }
 
 export interface ApplicantAchievement {

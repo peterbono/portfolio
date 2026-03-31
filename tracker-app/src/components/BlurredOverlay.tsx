@@ -19,9 +19,13 @@ const FEATURE_CONTENT: Record<
     title: 'Application Pipeline',
     valueProp: 'Visualize your application pipeline',
   },
+  applications: {
+    title: 'Applications',
+    valueProp: 'Track and visualize your application pipeline',
+  },
   analytics: {
-    title: 'Analytics',
-    valueProp: 'See what\u2019s working with data-driven insights',
+    title: 'Intelligence',
+    valueProp: 'See what\u2019s working with data-driven insights and analytics',
   },
   coach: {
     title: 'Career Coach',
@@ -39,7 +43,7 @@ const FEATURE_CONTENT: Record<
 
 interface BlurredOverlayProps {
   children: ReactNode
-  feature: string // "analytics" | "insights" | "coach" | "table" | "pipeline"
+  feature: string // "applications" | "insights" | "coach" | "table" | "pipeline"
   previewRows?: number // How many rows/items to show before blur (default: 3)
 }
 
@@ -87,7 +91,7 @@ export function BlurredOverlay({
 
   // Calculate the preview height based on previewRows
   // Each "row" is roughly 52px for tables, 120px for cards
-  const rowHeight = feature === 'pipeline' ? 140 : feature === 'analytics' ? 180 : 52
+  const rowHeight = feature === 'pipeline' ? 140 : feature === 'analytics' ? 180 : feature === 'applications' ? 52 : 52
   const previewHeight = previewRows * rowHeight
 
   return (

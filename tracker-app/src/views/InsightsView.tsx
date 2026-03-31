@@ -1,4 +1,4 @@
-import { useMemo, lazy, Suspense } from 'react'
+import { useMemo, useState, useCallback, useRef, lazy, Suspense } from 'react'
 import {
   Brain,
   Ghost,
@@ -6,8 +6,60 @@ import {
   Clock,
   FileCheck,
   Calendar,
+  ChevronDown,
+  ChevronRight,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  Activity,
+  BarChart3,
+  Target,
+  Layers,
+  GitBranch,
+  Map,
+  Users,
+  Timer,
+  ArrowRight,
 } from 'lucide-react'
 import { useFeedbackLoop } from '../hooks/useFeedbackLoop'
+import { useJobs } from '../context/JobsContext'
+import {
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  Cell,
+  CartesianGrid,
+} from 'recharts'
+
+// Lazy-load chart containers
+const RechartsBarChart = lazy(() =>
+  import('recharts').then((m) => ({ default: m.BarChart })),
+)
+
+// Lazy-load individual Deep Dive chart components
+const LazyManualVsBotFunnel = lazy(() =>
+  import('./AnalyticsCharts').then((m) => ({ default: m.ManualVsBotFunnel })),
+)
+const LazyTimeToResponse = lazy(() =>
+  import('./AnalyticsCharts').then((m) => ({ default: m.TimeToResponse })),
+)
+const LazyPipelineHealth = lazy(() =>
+  import('./AnalyticsCharts').then((m) => ({ default: m.PipelineHealth })),
+)
+const LazyVelocityVsQuality = lazy(() =>
+  import('./AnalyticsCharts').then((m) => ({ default: m.VelocityVsQuality })),
+)
+const LazyWeeklyCadenceHeatmap = lazy(() =>
+  import('./AnalyticsCharts2').then((m) => ({ default: m.WeeklyCadenceHeatmap })),
+)
+const LazyRoleCategoryPerformance = lazy(() =>
+  import('./AnalyticsCharts2').then((m) => ({ default: m.RoleCategoryPerformance })),
+)
+const LazyGeographicPerformance = lazy(() =>
+  import('./AnalyticsCharts2').then((m) => ({ default: m.GeographicPerformance })),
+)
 
 // Mobile responsive CSS
 const insightsResponsiveCSS = `
@@ -17,6 +69,17 @@ const insightsResponsiveCSS = `
   }
   .insights-card {
     padding: 14px !important;
+  }
+  .signal-cards-grid {
+    grid-template-columns: 1fr 1fr !important;
+  }
+  .insights-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+@media (max-width: 479px) {
+  .signal-cards-grid {
+    grid-template-columns: 1fr !important;
   }
 }
 `
@@ -29,20 +92,25 @@ if (typeof document !== 'undefined') {
     document.head.appendChild(style)
   }
 }
-import { useJobs } from '../context/JobsContext'
-import {
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  Cell,
-  CartesianGrid,
-} from 'recharts'
 
-const RechartsBarChart = lazy(() =>
-  import('recharts').then((m) => ({ default: m.BarChart })),
-)
+// ---------------------------------------------------------------------------
+//  localStorage helpers for section expansion state
+// ---------------------------------------------------------------------------
+const STORAGE_KEY = 'insights-expanded-sections'
+
+function loadExpandedSections(): Set<string> {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (raw) return new Set(JSON.parse(raw))
+  } catch { /* ignore */ }
+  return new Set<string>()
+}
+
+function saveExpandedSections(sections: Set<string>) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([...sections]))
+  } catch { /* ignore */ }
+}
 
 // ---------------------------------------------------------------------------
 //  Shared styles
@@ -152,7 +220,7 @@ function ATSPlaybookCard() {
 }
 
 // ---------------------------------------------------------------------------
-//  Card 3: Ghost Radar
+//  Card: Ghost Radar
 // ---------------------------------------------------------------------------
 
 function GhostRadarCard() {
@@ -232,7 +300,7 @@ function GhostRadarCard() {
 }
 
 // ---------------------------------------------------------------------------
-//  Card 4: Quality Impact
+//  Card: Quality Impact
 // ---------------------------------------------------------------------------
 
 function QualityImpactCard() {
@@ -249,7 +317,6 @@ function QualityImpactCard() {
     [qualityImpact],
   )
 
-  // Find best factor for the actionable tip
   const bestFactor = qualityImpact.length > 0 ? qualityImpact[0] : null
 
   return (
@@ -311,7 +378,7 @@ function QualityImpactCard() {
 }
 
 // ---------------------------------------------------------------------------
-//  Card 5: Timing Analysis
+//  Card: Timing Analysis
 // ---------------------------------------------------------------------------
 
 function TimingAnalysisCard() {
@@ -530,25 +597,537 @@ function InsightsBanner() {
 }
 
 // ---------------------------------------------------------------------------
+//  Key Signal Cards (Layer 2.5 — between insights grid and Deep Dive)
+// ---------------------------------------------------------------------------
+
+interface SignalCardData {
+  id: string
+  label: string
+  value: string
+  subtext: string
+  color: string
+  trend: 'up' | 'down' | 'flat'
+  trendLabel: string
+  icon: React.ReactNode
+  targetSection: string // links to a Deep Dive section ID
+  sparklineData: number[]
+}
+
+function MiniSparkline({ data, color, width = 60, height = 24 }: { data: number[]; color: string; width?: number; height?: number }) {
+  if (data.length < 2) return null
+  const max = Math.max(...data, 1)
+  const min = Math.min(...data, 0)
+  const range = max - min || 1
+  const points = data.map((v, i) => {
+    const x = (i / (data.length - 1)) * width
+    const y = height - ((v - min) / range) * height
+    return `${x},${y}`
+  }).join(' ')
+
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{ display: 'block' }}>
+      <polyline
+        points={points}
+        fill="none"
+        stroke={color}
+        strokeWidth={1.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function TrendArrow({ trend, color }: { trend: 'up' | 'down' | 'flat'; color: string }) {
+  if (trend === 'up') return <TrendingUp size={14} color={color} />
+  if (trend === 'down') return <TrendingDown size={14} color={color} />
+  return <Minus size={14} color={color} />
+}
+
+function useSignalCardData(): SignalCardData[] {
+  const { jobs, allJobs } = useJobs()
+  const { ghostCompanies } = useFeedbackLoop()
+
+  return useMemo(() => {
+    const applied = ['submitted', 'screening', 'interviewing', 'challenge', 'offer', 'negotiation', 'rejected', 'withdrawn', 'ghosted']
+    const responseStatuses = ['screening', 'interviewing', 'challenge', 'offer', 'negotiation', 'rejected', 'withdrawn']
+    const activeStatuses = ['screening', 'interviewing', 'challenge', 'offer', 'negotiation']
+
+    const submittedJobs = allJobs.filter(j => applied.includes(j.status))
+    const totalApplied = submittedJobs.length
+    const gotResponse = allJobs.filter(j => responseStatuses.includes(j.status)).length
+    const responseRate = totalApplied > 0 ? Math.round((gotResponse / totalApplied) * 100) : 0
+
+    // Ghost rate
+    const ghostCount = ghostCompanies.length
+    const ghostRate = totalApplied > 0 ? Math.round((ghostCount / totalApplied) * 100) : 0
+
+    // Active pipeline
+    const activeCount = allJobs.filter(j => activeStatuses.includes(j.status)).length
+
+    // Weekly velocity (apps per week over last 4 weeks)
+    const now = new Date()
+    const fourWeeksAgo = new Date(now.getTime() - 28 * 86400000)
+    const recentJobs = submittedJobs.filter(j => j.date && new Date(j.date) >= fourWeeksAgo)
+    const weeklyAvg = recentJobs.length > 0 ? Math.round(recentJobs.length / 4) : 0
+
+    // Sparkline data: weekly counts over last 8 weeks
+    const weeklySparkline: number[] = []
+    for (let w = 7; w >= 0; w--) {
+      const weekStart = new Date(now.getTime() - (w + 1) * 7 * 86400000)
+      const weekEnd = new Date(now.getTime() - w * 7 * 86400000)
+      const count = submittedJobs.filter(j => {
+        if (!j.date) return false
+        const d = new Date(j.date)
+        return d >= weekStart && d < weekEnd
+      }).length
+      weeklySparkline.push(count)
+    }
+
+    // Response rate sparkline (last 8 weeks)
+    const responseSparkline: number[] = []
+    for (let w = 7; w >= 0; w--) {
+      const weekStart = new Date(now.getTime() - (w + 1) * 7 * 86400000)
+      const weekEnd = new Date(now.getTime() - w * 7 * 86400000)
+      const weekJobs = submittedJobs.filter(j => {
+        if (!j.date) return false
+        const d = new Date(j.date)
+        return d >= weekStart && d < weekEnd
+      })
+      const weekResponses = weekJobs.filter(j => responseStatuses.includes(j.status)).length
+      responseSparkline.push(weekJobs.length > 0 ? Math.round((weekResponses / weekJobs.length) * 100) : 0)
+    }
+
+    // Ghost sparkline (cumulative ghosted count by week)
+    const ghostSparkline: number[] = []
+    for (let w = 7; w >= 0; w--) {
+      const weekEnd = new Date(now.getTime() - w * 7 * 86400000)
+      const count = ghostCompanies.filter(g => {
+        const applyDate = new Date(now.getTime() - g.daysSinceApply * 86400000)
+        return applyDate <= weekEnd
+      }).length
+      ghostSparkline.push(count)
+    }
+
+    // Pipeline sparkline (just repeat activeCount as a flat line with slight variation from data)
+    const pipelineSparkline = weeklySparkline.map((_, i) => {
+      // Approximate: active count doesn't have historical data, so show velocity as proxy
+      return Math.max(0, weeklySparkline[i])
+    })
+
+    // Trend calculation helpers
+    const calcTrend = (data: number[]): 'up' | 'down' | 'flat' => {
+      if (data.length < 2) return 'flat'
+      const recent = data.slice(-3).reduce((a, b) => a + b, 0)
+      const older = data.slice(-6, -3).reduce((a, b) => a + b, 0)
+      if (recent > older * 1.1) return 'up'
+      if (recent < older * 0.9) return 'down'
+      return 'flat'
+    }
+
+    const responseTrend = calcTrend(responseSparkline)
+    const velocityTrend = calcTrend(weeklySparkline)
+    const ghostTrend = calcTrend(ghostSparkline)
+
+    const responseColor = responseRate > 20 ? '#34d399' : responseRate >= 10 ? '#fbbf24' : '#f43f5e'
+    const ghostColor = ghostRate > 30 ? '#f43f5e' : ghostRate < 15 ? '#34d399' : '#fb923c'
+
+    return [
+      {
+        id: 'response-rate',
+        label: 'Response Rate',
+        value: `${responseRate}%`,
+        subtext: `${gotResponse} of ${totalApplied} replied`,
+        color: responseColor,
+        trend: responseTrend,
+        trendLabel: responseTrend === 'up' ? 'Improving' : responseTrend === 'down' ? 'Declining' : 'Stable',
+        icon: <Target size={16} color={responseColor} />,
+        targetSection: 'deep-dive-response-speed',
+        sparklineData: responseSparkline,
+      },
+      {
+        id: 'ghost-rate',
+        label: 'Ghost Rate',
+        value: `${ghostRate}%`,
+        subtext: `${ghostCount} unanswered`,
+        color: ghostColor,
+        trend: ghostTrend,
+        trendLabel: ghostTrend === 'up' ? 'Rising' : ghostTrend === 'down' ? 'Improving' : 'Stable',
+        icon: <Ghost size={16} color={ghostColor} />,
+        targetSection: 'deep-dive-pipeline-health',
+        sparklineData: ghostSparkline,
+      },
+      {
+        id: 'active-pipeline',
+        label: 'Active Pipeline',
+        value: `${activeCount}`,
+        subtext: activeCount === 1 ? '1 active process' : `${activeCount} active processes`,
+        color: '#a78bfa',
+        trend: 'flat',
+        trendLabel: activeCount > 0 ? 'In progress' : 'Empty',
+        icon: <Activity size={16} color="#a78bfa" />,
+        targetSection: 'deep-dive-pipeline-health',
+        sparklineData: pipelineSparkline,
+      },
+      {
+        id: 'weekly-velocity',
+        label: 'Weekly Velocity',
+        value: `${weeklyAvg}`,
+        subtext: 'apps/week (4w avg)',
+        color: '#60a5fa',
+        trend: velocityTrend,
+        trendLabel: velocityTrend === 'up' ? 'Accelerating' : velocityTrend === 'down' ? 'Slowing' : 'Steady',
+        icon: <TrendingUp size={16} color="#60a5fa" />,
+        targetSection: 'deep-dive-velocity-quality',
+        sparklineData: weeklySparkline,
+      },
+    ]
+  }, [allJobs, ghostCompanies])
+}
+
+function KeySignalCards({ onNavigateToSection }: { onNavigateToSection: (sectionId: string) => void }) {
+  const signals = useSignalCardData()
+
+  return (
+    <div style={{ marginTop: 24, marginBottom: 28 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+        <BarChart3 size={16} color="#60a5fa" />
+        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Key Signals</span>
+      </div>
+      <div
+        className="signal-cards-grid"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(4, 1fr)',
+          gap: 12,
+        }}
+      >
+        {signals.map((signal) => (
+          <div
+            key={signal.id}
+            style={{
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-lg)',
+              padding: '16px 16px 12px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8,
+              transition: 'border-color 150ms',
+              cursor: 'pointer',
+            }}
+            onClick={() => onNavigateToSection(signal.targetSection)}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = signal.color + '55'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = 'var(--border)'
+            }}
+          >
+            {/* Top row: icon + label */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                {signal.icon}
+                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  {signal.label}
+                </span>
+              </div>
+              <MiniSparkline data={signal.sparklineData} color={signal.color} />
+            </div>
+
+            {/* Value */}
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+              <span style={{ fontSize: 28, fontWeight: 700, color: signal.color, lineHeight: 1 }}>
+                {signal.value}
+              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                <TrendArrow trend={signal.trend} color={signal.trend === 'up' ? '#34d399' : signal.trend === 'down' ? '#f43f5e' : '#71717a'} />
+                <span style={{ fontSize: 10, color: signal.trend === 'up' ? '#34d399' : signal.trend === 'down' ? '#f43f5e' : '#71717a' }}>
+                  {signal.trendLabel}
+                </span>
+              </div>
+            </div>
+
+            {/* Subtext + detail link */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{signal.subtext}</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 2, fontSize: 10, color: '#60a5fa', fontWeight: 500 }}>
+                Detail <ArrowRight size={10} />
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+//  Individual Collapsible Deep Dive Section
+// ---------------------------------------------------------------------------
+
+interface DeepDiveSectionConfig {
+  id: string
+  title: string
+  description: string
+  icon: React.ReactNode
+  fullWidth?: boolean
+  component: React.ReactNode
+}
+
+function CollapsibleSection({
+  config,
+  isExpanded,
+  onToggle,
+}: {
+  config: DeepDiveSectionConfig
+  isExpanded: boolean
+  onToggle: () => void
+}) {
+  const sectionRef = useRef<HTMLDivElement>(null)
+
+  return (
+    <div
+      ref={sectionRef}
+      id={config.id}
+      style={{
+        ...(config.fullWidth ? { gridColumn: '1 / -1' } : {}),
+      }}
+    >
+      <button
+        onClick={onToggle}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          width: '100%',
+          padding: '12px 14px',
+          background: isExpanded ? 'var(--bg-surface)' : 'transparent',
+          border: '1px solid var(--border)',
+          borderRadius: isExpanded ? 'var(--radius-lg) var(--radius-lg) 0 0' : 'var(--radius-lg)',
+          cursor: 'pointer',
+          color: 'var(--text-primary)',
+          transition: 'all 150ms',
+          fontFamily: 'inherit',
+        }}
+        aria-expanded={isExpanded}
+        onMouseEnter={(e) => {
+          if (!isExpanded) e.currentTarget.style.background = 'var(--bg-surface)'
+        }}
+        onMouseLeave={(e) => {
+          if (!isExpanded) e.currentTarget.style.background = 'transparent'
+        }}
+      >
+        <div style={{ flexShrink: 0, marginTop: 1 }}>{config.icon}</div>
+        <div style={{ flex: 1, textAlign: 'left' }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>{config.title}</div>
+          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 1 }}>
+            {config.description}
+          </div>
+        </div>
+        {isExpanded
+          ? <ChevronDown size={16} color="var(--text-tertiary)" />
+          : <ChevronRight size={16} color="var(--text-tertiary)" />}
+      </button>
+
+      {isExpanded && (
+        <div
+          style={{
+            border: '1px solid var(--border)',
+            borderTop: 'none',
+            borderRadius: '0 0 var(--radius-lg) var(--radius-lg)',
+            padding: 16,
+            background: 'var(--bg-surface)',
+          }}
+        >
+          <Suspense
+            fallback={
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 200, color: '#71717a' }}>
+                Loading...
+              </div>
+            }
+          >
+            {config.component}
+          </Suspense>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+//  Deep Dive Sections Container
+// ---------------------------------------------------------------------------
+
+function DeepDiveSections({ expandedSections, onToggleSection }: {
+  expandedSections: Set<string>
+  onToggleSection: (id: string) => void
+}) {
+  const sections: DeepDiveSectionConfig[] = useMemo(() => [
+    {
+      id: 'deep-dive-velocity-quality',
+      title: 'Velocity vs Quality',
+      description: 'Weekly application volume plotted against response rate to find the sweet spot',
+      icon: <TrendingUp size={16} color="#fbbf24" />,
+      component: <LazyVelocityVsQuality />,
+    },
+    {
+      id: 'deep-dive-response-speed',
+      title: 'Response Speed',
+      description: 'How fast companies respond after your application, broken down by time brackets',
+      icon: <Timer size={16} color="#60a5fa" />,
+      component: <LazyTimeToResponse />,
+    },
+    {
+      id: 'deep-dive-manual-vs-bot',
+      title: 'Manual vs Bot Funnel',
+      description: 'Compare conversion rates between manual applications and automated submissions',
+      icon: <GitBranch size={16} color="#34d399" />,
+      component: <LazyManualVsBotFunnel />,
+    },
+    {
+      id: 'deep-dive-pipeline-health',
+      title: 'Pipeline Health',
+      description: 'Active pipeline items and their staleness — identify processes that need follow-up',
+      icon: <Activity size={16} color="#a78bfa" />,
+      component: <LazyPipelineHealth />,
+    },
+    {
+      id: 'deep-dive-weekly-cadence',
+      title: 'Weekly Cadence Heatmap',
+      description: 'Application distribution by day of week and hour — find your most productive windows',
+      icon: <Layers size={16} color="#fb923c" />,
+      component: <LazyWeeklyCadenceHeatmap />,
+    },
+    {
+      id: 'deep-dive-role-performance',
+      title: 'Role Category Performance',
+      description: 'Response rates broken down by role seniority and type — where do you convert best',
+      icon: <Users size={16} color="#34d399" />,
+      component: <LazyRoleCategoryPerformance />,
+    },
+    {
+      id: 'deep-dive-geographic',
+      title: 'Geographic Performance',
+      description: 'Response rates by region and country — map your best markets',
+      icon: <Map size={16} color="#60a5fa" />,
+      fullWidth: true,
+      component: <LazyGeographicPerformance />,
+    },
+  ], [])
+
+  return (
+    <div style={{ marginTop: 32 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+        <BarChart3 size={16} color="#60a5fa" />
+        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>Deep Dive Analytics</span>
+        <span
+          style={{
+            fontSize: 10,
+            color: 'var(--text-tertiary)',
+            marginLeft: 4,
+          }}
+        >
+          {sections.length} sections
+        </span>
+      </div>
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(min(420px, 100%), 1fr))',
+          gap: 12,
+        }}
+      >
+        {sections.map((section) => (
+          <CollapsibleSection
+            key={section.id}
+            config={section}
+            isExpanded={expandedSections.has(section.id)}
+            onToggle={() => onToggleSection(section.id)}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 //  Main InsightsView
 // ---------------------------------------------------------------------------
 
 export function InsightsView() {
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(() => loadExpandedSections())
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  const toggleSection = useCallback((id: string) => {
+    setExpandedSections((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      saveExpandedSections(next)
+      return next
+    })
+  }, [])
+
+  const navigateToSection = useCallback((sectionId: string) => {
+    // First, ensure the section is expanded
+    setExpandedSections((prev) => {
+      if (prev.has(sectionId)) return prev
+      const next = new Set(prev)
+      next.add(sectionId)
+      saveExpandedSections(next)
+      return next
+    })
+
+    // Then scroll to it after a brief delay to let the DOM update
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        const el = document.getElementById(sectionId)
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          // Add a brief highlight effect
+          el.style.outline = '2px solid rgba(96, 165, 250, 0.4)'
+          el.style.outlineOffset = '4px'
+          el.style.borderRadius = '12px'
+          setTimeout(() => {
+            el.style.outline = 'none'
+            el.style.outlineOffset = '0'
+          }, 1500)
+        }
+      }, 100)
+    })
+  }, [])
+
   return (
-    <div className="insights-container" style={styles.container}>
+    <div ref={containerRef} className="insights-container" style={styles.container}>
       <div style={styles.header}>
-        <h1 style={styles.title}>Insights</h1>
-        <p style={styles.subtitle}>Personalized recommendations based on your results</p>
+        <h1 style={styles.title}>Intelligence</h1>
+        <p style={styles.subtitle}>Personalized recommendations and analytics based on your results</p>
       </div>
 
+      {/* Layer 1: Active Insights */}
       <InsightsBanner />
 
-      <div style={styles.grid}>
+      {/* Layer 2: Insight Cards (What's Working, Ghost Radar, Quality, Timing) */}
+      <div className="insights-grid" style={styles.grid}>
         <ATSPlaybookCard />
         <GhostRadarCard />
         <QualityImpactCard />
         <TimingAnalysisCard />
       </div>
+
+      {/* Layer 2.5: Key Signal Cards */}
+      <KeySignalCards onNavigateToSection={navigateToSection} />
+
+      {/* Layer 3: Individual Deep Dive Sections */}
+      <DeepDiveSections
+        expandedSections={expandedSections}
+        onToggleSection={toggleSection}
+      />
     </div>
   )
 }

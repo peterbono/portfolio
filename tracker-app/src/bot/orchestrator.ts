@@ -1,9 +1,8 @@
 import type { Page, Browser, BrowserContext } from 'playwright'
 import type { SearchProfile } from '../types/database'
-import type { ApplicantProfile, ATSAdapter, ApplyResult } from './types'
 import { APPLICANT } from './types'
-import { scoutJobs, scoutJobsMultiPass, normalizeForDedup, type DiscoveredJob, type MultiPassConfig, type ScoutProgressUpdate } from './scout'
-import { scoutIndeedMultiPass } from './scout-indeed'
+import { scoutJobsMultiPass, normalizeForDedup, type DiscoveredJob, type MultiPassConfig, type ScoutProgressUpdate } from './scout'
+import { scoutRemoteOK, scoutWellfound, scoutHimalayas } from './scout-boards'
 import {
   qualifyJob,
   clearQualificationCache,
@@ -17,7 +16,6 @@ import {
   updateBotRun,
   logBotActivity,
   getExistingApplications,
-  createApplicationFromBot,
   getActiveSearchProfile,
   type ActivityLogEntry,
 } from './supabase-server'
@@ -94,6 +92,13 @@ export interface QualifiedJobOutput {
   coverLetterSnippet: string
 }
 
+/** Cost estimate breakdown for a pipeline run */
+export interface RunCostEstimate {
+  scout: number   // Bright Data proxy costs (LinkedIn, Wellfound)
+  qualify: number  // Haiku API costs
+  total: number    // scout + qualify
+}
+
 export interface PipelineResult {
   runId: string
   jobsFound: number
@@ -103,6 +108,7 @@ export interface PipelineResult {
   jobsSkipped: number
   jobsFailed: number
   duration: number // ms
+  costEstimate?: RunCostEstimate
   activities: ActivityLogEntry[]
   discoveredJobs?: Array<{
     title: string
@@ -115,22 +121,43 @@ export interface PipelineResult {
 }
 
 // ---------------------------------------------------------------------------
-// ATS adapter registry
+// Cost tracking constants (per-unit estimates)
 // ---------------------------------------------------------------------------
 
-const adapters: ATSAdapter[] = []
+/** Haiku API cost per qualification call (~$0.003 per job) */
+const COST_HAIKU_PER_CALL = 0.003
 
-/** Register an ATS adapter so the orchestrator can use it */
-export function registerAdapter(adapter: ATSAdapter): void {
-  adapters.push(adapter)
-}
+/** Bright Data proxy cost per LinkedIn page (~$0.01/page) */
+const COST_LINKEDIN_PER_PAGE = 0.01
 
-/** Detect which adapter matches a URL, or null */
-function detectAdapter(url: string): ATSAdapter | null {
-  for (const adapter of adapters) {
-    if (adapter.detect(url)) return adapter
+/** Bright Data proxy cost per Wellfound page (~$0.005/page) */
+const COST_WELLFOUND_PER_PAGE = 0.005
+
+/** RemoteOK is a free JSON API — no proxy needed */
+const COST_REMOTEOK_PER_PAGE = 0
+
+/** Himalayas is a free JSON API — no proxy needed */
+const COST_HIMALAYAS_PER_PAGE = 0
+
+/** Simple in-memory cost accumulator for a single pipeline run */
+function createCostTracker() {
+  let scoutCost = 0
+  let qualifyCost = 0
+
+  return {
+    addScoutCost(amount: number) { scoutCost += amount },
+    addQualifyCost(amount: number) { qualifyCost += amount },
+    get scout() { return scoutCost },
+    get qualify() { return qualifyCost },
+    get total() { return scoutCost + qualifyCost },
+    toEstimate(): RunCostEstimate {
+      return {
+        scout: Math.round(scoutCost * 1000) / 1000,
+        qualify: Math.round(qualifyCost * 1000) / 1000,
+        total: Math.round((scoutCost + qualifyCost) * 1000) / 1000,
+      }
+    },
   }
-  return null
 }
 
 // ---------------------------------------------------------------------------
@@ -142,10 +169,6 @@ function humanDelay(baseMs: number, jitterMs: number = 500): Promise<void> {
   const ms = baseMs + Math.floor(Math.random() * jitterMs * 2) - jitterMs
   return new Promise(r => setTimeout(r, Math.max(100, ms)))
 }
-
-/** 2-minute gap between applications (with ±15s jitter) */
-const APPLY_GAP_MS = 120_000
-const APPLY_GAP_JITTER_MS = 15_000
 
 /** Extract the full job description text from a job page (with retry) */
 async function extractJobDescription(page: Page, url: string): Promise<string> {
@@ -273,10 +296,15 @@ const DEFAULT_SCOUT_KEYWORDS = [
   'UX Designer',
   'UX UI Designer',
   'UI Designer',
+  'Senior Designer',
+  'Design Lead',
+  'Staff Designer',
+  'Visual Designer',
+  'Design System',
 ]
 
 /** Number of LinkedIn pages to scrape per keyword×location combo (25 results/page) */
-const PAGES_PER_SEARCH = 2
+const PAGES_PER_SEARCH = 3
 
 async function phaseScout(
   page: Page,
@@ -284,6 +312,7 @@ async function phaseScout(
   runId: string,
   activities: ActivityLogEntry[],
   onScoutProgress?: (update: ScoutProgressUpdate) => void,
+  costTracker?: ReturnType<typeof createCostTracker>,
 ): Promise<DiscoveredJob[]> {
   console.log('[pipeline] Phase 1: SCOUT (multi-pass)')
 
@@ -328,6 +357,11 @@ async function phaseScout(
   // --- LinkedIn multi-pass ---
   const linkedinResult = await scoutJobsMultiPass(page, config.searchProfile, existing, multiPassConfig)
 
+  // Track LinkedIn scout cost: keywords × locations × pages per search
+  const linkedinSearches = uniqueKeywords.length * uniqueLocations.length
+  const linkedinPages = linkedinSearches * PAGES_PER_SEARCH
+  costTracker?.addScoutCost(linkedinPages * COST_LINKEDIN_PER_PAGE)
+
   const linkedinDone: ActivityLogEntry = {
     user_id: config.userId,
     run_id: runId,
@@ -337,46 +371,143 @@ async function phaseScout(
   await logBotActivity(linkedinDone)
   activities.push(linkedinDone)
 
-  // --- Indeed multi-pass ---
-  console.log('[pipeline] Phase 1b: SCOUT Indeed (multi-pass)')
-  const indeedLogEntry: ActivityLogEntry = {
+  // Build dedup set for cross-source filtering
+  const existingSet = new Set(existing)
+
+  // --- RemoteOK (JSON API — fast, no Playwright needed) ---
+  console.log('[pipeline] Phase 1b: SCOUT RemoteOK (JSON API)')
+  const remoteokLogEntry: ActivityLogEntry = {
     user_id: config.userId,
     run_id: runId,
-    action: 'scout_indeed_start',
-    reason: `Indeed: ${uniqueKeywords.length} keywords × ${uniqueLocations.length} locations × ${PAGES_PER_SEARCH} pages`,
+    action: 'scout_remoteok_start',
+    reason: `RemoteOK: ${uniqueKeywords.length} tags`,
   }
-  await logBotActivity(indeedLogEntry)
-  activities.push(indeedLogEntry)
+  await logBotActivity(remoteokLogEntry)
+  activities.push(remoteokLogEntry)
 
-  let indeedJobs: DiscoveredJob[] = []
+  let remoteokJobs: DiscoveredJob[] = []
   try {
-    const indeedResult = await scoutIndeedMultiPass(
-      page,
-      config.searchProfile,
-      existing,
-      multiPassConfig,
+    // Map keywords to RemoteOK-friendly tags
+    const remoteokTags = [
+      'design', 'ux', 'ui', 'product-designer', 'ux-designer',
+      'ui-designer', 'visual-designer', 'design-system',
+    ]
+    remoteokJobs = await scoutRemoteOK(
+      remoteokTags,
+      config.searchProfile.excluded_companies ?? [],
     )
 
-    const indeedDone: ActivityLogEntry = {
-      user_id: config.userId,
-      run_id: runId,
-      action: 'scout_indeed_complete',
-      reason: `Indeed: found ${indeedResult.totalFound}, filtered ${indeedResult.filteredOut}, unique: ${indeedResult.jobs.length}`,
-    }
-    await logBotActivity(indeedDone)
-    activities.push(indeedDone)
+    // Filter out already-applied jobs
+    remoteokJobs = remoteokJobs.filter(j => {
+      const dedupKey = `${normalizeForDedup(j.company)}|${normalizeForDedup(j.title)}`
+      return !existingSet.has(dedupKey)
+    })
 
-    indeedJobs = indeedResult.jobs
-  } catch (err) {
-    const indeedErr: ActivityLogEntry = {
+    // RemoteOK is free (JSON API, no proxy)
+    costTracker?.addScoutCost(remoteokTags.length * COST_REMOTEOK_PER_PAGE)
+
+    const remoteokDone: ActivityLogEntry = {
       user_id: config.userId,
       run_id: runId,
-      action: 'scout_indeed_error',
-      reason: `Indeed scraping failed: ${(err as Error).message}`,
+      action: 'scout_remoteok_complete',
+      reason: `RemoteOK: found ${remoteokJobs.length} unique design jobs`,
     }
-    await logBotActivity(indeedErr)
-    activities.push(indeedErr)
-    console.warn('[pipeline] Indeed scout failed, continuing with LinkedIn results only:', (err as Error).message)
+    await logBotActivity(remoteokDone)
+    activities.push(remoteokDone)
+  } catch (err) {
+    const remoteokErr: ActivityLogEntry = {
+      user_id: config.userId,
+      run_id: runId,
+      action: 'scout_remoteok_error',
+      reason: `RemoteOK scraping failed: ${(err as Error).message}`,
+    }
+    await logBotActivity(remoteokErr)
+    activities.push(remoteokErr)
+    console.warn('[pipeline] RemoteOK scout failed, continuing with LinkedIn results only:', (err as Error).message)
+  }
+
+  // --- Wellfound (Playwright — parallel-safe with new page) ---
+  console.log('[pipeline] Phase 1c: SCOUT Wellfound')
+  let wellfoundJobs: DiscoveredJob[] = []
+  try {
+    const wellfoundPage = await page.context().newPage()
+    const wellfoundKeywords = uniqueKeywords.slice(0, 4) // Top 4 keywords
+    wellfoundJobs = await scoutWellfound(
+      wellfoundPage,
+      wellfoundKeywords,
+      config.searchProfile.excluded_companies ?? [],
+    )
+    await wellfoundPage.close().catch(() => {})
+
+    // Filter already-applied
+    wellfoundJobs = wellfoundJobs.filter(j => {
+      const dedupKey = `${normalizeForDedup(j.company)}|${normalizeForDedup(j.title)}`
+      return !existingSet.has(dedupKey)
+    })
+
+    // Wellfound uses Bright Data proxy (~$0.005/page, one page per keyword)
+    costTracker?.addScoutCost(wellfoundKeywords.length * COST_WELLFOUND_PER_PAGE)
+
+    const wellfoundDone: ActivityLogEntry = {
+      user_id: config.userId,
+      run_id: runId,
+      action: 'scout_wellfound_complete',
+      reason: `Wellfound: found ${wellfoundJobs.length} unique design jobs`,
+    }
+    await logBotActivity(wellfoundDone)
+    activities.push(wellfoundDone)
+  } catch (err) {
+    console.warn('[pipeline] Wellfound scout failed:', (err as Error).message)
+    const wellfoundErr: ActivityLogEntry = {
+      user_id: config.userId,
+      run_id: runId,
+      action: 'scout_wellfound_error',
+      reason: `Wellfound failed: ${(err as Error).message}`,
+    }
+    await logBotActivity(wellfoundErr)
+    activities.push(wellfoundErr)
+  }
+
+  // --- Himalayas.app (JSON API — fast, timezone=7 native filter) ---
+  console.log('[pipeline] Phase 1d: SCOUT Himalayas (JSON API)')
+  let himalayasJobs: DiscoveredJob[] = []
+  try {
+    const himalayasTerms = [
+      'product designer', 'ux designer', 'ui designer',
+      'design lead', 'design system',
+    ]
+    himalayasJobs = await scoutHimalayas(
+      himalayasTerms,
+      config.searchProfile.excluded_companies ?? [],
+    )
+
+    // Filter out already-applied jobs
+    himalayasJobs = himalayasJobs.filter(j => {
+      const dedupKey = `${normalizeForDedup(j.company)}|${normalizeForDedup(j.title)}`
+      return !existingSet.has(dedupKey)
+    })
+
+    // Himalayas is free (JSON API, no proxy)
+    costTracker?.addScoutCost(himalayasTerms.length * COST_HIMALAYAS_PER_PAGE)
+
+    const himalayasDone: ActivityLogEntry = {
+      user_id: config.userId,
+      run_id: runId,
+      action: 'scout_himalayas_complete',
+      reason: `Himalayas: found ${himalayasJobs.length} unique design jobs`,
+    }
+    await logBotActivity(himalayasDone)
+    activities.push(himalayasDone)
+  } catch (err) {
+    const himalayasErr: ActivityLogEntry = {
+      user_id: config.userId,
+      run_id: runId,
+      action: 'scout_himalayas_error',
+      reason: `Himalayas scraping failed: ${(err as Error).message}`,
+    }
+    await logBotActivity(himalayasErr)
+    activities.push(himalayasErr)
+    console.warn('[pipeline] Himalayas scout failed, continuing with other sources:', (err as Error).message)
   }
 
   // --- Merge & cross-source dedup ---
@@ -389,31 +520,47 @@ async function phaseScout(
     seenCompanyTitle.add(key)
   }
 
-  // Add Indeed jobs that aren't duplicates of LinkedIn results
-  let indeedDedupCount = 0
-  for (const job of indeedJobs) {
+  // Add RemoteOK jobs (dedup)
+  let remoteokDedupCount = 0
+  for (const job of remoteokJobs) {
     const key = `${normalizeForDedup(job.company)}|${normalizeForDedup(job.title)}`
-    if (seenCompanyTitle.has(key)) {
-      indeedDedupCount++
-      continue
-    }
+    if (seenCompanyTitle.has(key)) { remoteokDedupCount++; continue }
     seenCompanyTitle.add(key)
     mergedJobs.push(job)
   }
 
-  if (indeedDedupCount > 0) {
-    console.log(`[pipeline] Cross-source dedup: removed ${indeedDedupCount} Indeed duplicates already found on LinkedIn`)
+  // Add Wellfound jobs (dedup)
+  let wellfoundDedupCount = 0
+  for (const job of wellfoundJobs) {
+    const key = `${normalizeForDedup(job.company)}|${normalizeForDedup(job.title)}`
+    if (seenCompanyTitle.has(key)) { wellfoundDedupCount++; continue }
+    seenCompanyTitle.add(key)
+    mergedJobs.push(job)
+  }
+
+  // Add Himalayas jobs (dedup)
+  let himalayasDedupCount = 0
+  for (const job of himalayasJobs) {
+    const key = `${normalizeForDedup(job.company)}|${normalizeForDedup(job.title)}`
+    if (seenCompanyTitle.has(key)) { himalayasDedupCount++; continue }
+    seenCompanyTitle.add(key)
+    mergedJobs.push(job)
+  }
+
+  const totalDedup = remoteokDedupCount + wellfoundDedupCount + himalayasDedupCount
+  if (totalDedup > 0) {
+    console.log(`[pipeline] Cross-source dedup: removed ${totalDedup} duplicates (RemoteOK: ${remoteokDedupCount}, Wellfound: ${wellfoundDedupCount}, Himalayas: ${himalayasDedupCount})`)
   }
 
   console.log(
-    `[pipeline] Scout complete: LinkedIn ${linkedinResult.jobs.length} + Indeed ${indeedJobs.length} - ${indeedDedupCount} dupes = ${mergedJobs.length} unique candidates`,
+    `[pipeline] Scout complete: LinkedIn ${linkedinResult.jobs.length} + RemoteOK ${remoteokJobs.length} + Wellfound ${wellfoundJobs.length} + Himalayas ${himalayasJobs.length} - ${totalDedup} dupes = ${mergedJobs.length} unique candidates`,
   )
 
   const scoutDone: ActivityLogEntry = {
     user_id: config.userId,
     run_id: runId,
     action: 'scout_complete',
-    reason: `LinkedIn: ${linkedinResult.jobs.length}, Indeed: ${indeedJobs.length}, cross-dedup: -${indeedDedupCount}, total unique: ${mergedJobs.length}`,
+    reason: `LinkedIn: ${linkedinResult.jobs.length}, RemoteOK: ${remoteokJobs.length}, Wellfound: ${wellfoundJobs.length}, Himalayas: ${himalayasJobs.length}, dedup: -${totalDedup}, total: ${mergedJobs.length}`,
   }
   await logBotActivity(scoutDone)
   activities.push(scoutDone)
@@ -441,6 +588,7 @@ async function phaseQualify(
   runId: string,
   activities: ActivityLogEntry[],
   onQualifyProgress?: (update: { action: string; company?: string; role?: string; reason?: string; processed?: number; qualified?: number; preFiltered?: number }) => void,
+  costTracker?: ReturnType<typeof createCostTracker>,
 ): Promise<QualifiedJob[]> {
   console.log(`[pipeline] Phase 2: QUALIFY (${jobs.length} candidates)`)
 
@@ -497,53 +645,94 @@ async function phaseQualify(
   }
 
   // -------------------------------------------------------------------------
-  // Step 2a: Extract JDs sequentially (shares single browser page)
+  // Step 2a: Extract JDs in PARALLEL (multiple browser pages for speed)
   // -------------------------------------------------------------------------
   const jobsWithJD: Array<{ job: DiscoveredJob; jd: string }> = []
   let extractedCount = 0
 
-  for (const job of dedupedSurvivors) {
-    onQualifyProgress?.({
-      action: 'found',
-      company: job.company,
-      role: job.title,
-      reason: `Extracting JD [${extractedCount + 1}/${dedupedSurvivors.length}]: "${job.title}" at ${job.company}...`,
-      processed: extractedCount,
-      qualified: qualified.length,
-      preFiltered: stats.filtered,
-    })
+  // Split jobs: pre-fetched (no browser needed) vs need extraction
+  const preFetchedJobs = dedupedSurvivors.filter(j => j.description && j.description.length > 100)
+  const needExtractionJobs = dedupedSurvivors.filter(j => !j.description || j.description.length <= 100)
 
-    let jobDescription = ''
-    try {
-      jobDescription = await extractJobDescription(page, job.url)
-    } catch (extractErr) {
-      console.warn(`[pipeline] JD extraction error for ${job.company}: ${(extractErr as Error).message}`)
-    }
-
-    // Fallback: build synthetic JD from scout metadata instead of skipping
-    if (jobDescription.length < 50) {
-      console.log(`[pipeline] JD too short for ${job.company} — using fallback metadata`)
-      jobDescription = [
-        `Job Title: ${job.title}`,
-        `Company: ${job.company}`,
-        `Location: ${job.location || 'Not specified'}`,
-        ``,
-        `NOTE: Full job description could not be extracted.`,
-        `Score based on title, company, and location. Give benefit of the doubt.`,
-      ].join('\n')
-    }
-
-    jobsWithJD.push({ job, jd: jobDescription })
+  // Process pre-fetched JDs immediately (no browser cost)
+  for (const job of preFetchedJobs) {
+    jobsWithJD.push({ job, jd: job.description! })
     extractedCount++
-
-    // Small delay between JD fetches for human-like behavior
-    await humanDelay(1500, 800)
+    console.log(`[pipeline] Using pre-fetched JD for ${job.company} (${job.description!.length} chars)`)
   }
+
+  // Extract remaining JDs in parallel using worker pages
+  if (needExtractionJobs.length > 0) {
+    const JD_CONCURRENCY = 4
+    const jdQueue = [...needExtractionJobs]
+
+    async function jdWorker(workerPage: Page) {
+      while (jdQueue.length > 0) {
+        const job = jdQueue.shift()
+        if (!job) break
+
+        extractedCount++
+        onQualifyProgress?.({
+          action: 'found',
+          company: job.company,
+          role: job.title,
+          reason: `Extracting JD [${extractedCount}/${dedupedSurvivors.length}]: "${job.title}" at ${job.company}...`,
+          processed: extractedCount,
+          qualified: qualified.length,
+          preFiltered: stats.filtered,
+        })
+
+        let jobDescription = ''
+        try {
+          jobDescription = await extractJobDescription(workerPage, job.url)
+        } catch (extractErr) {
+          console.warn(`[pipeline] JD extraction error for ${job.company}: ${(extractErr as Error).message}`)
+        }
+
+        // Fallback: build synthetic JD from scout metadata
+        if (jobDescription.length < 50) {
+          console.log(`[pipeline] JD too short for ${job.company} — using fallback metadata`)
+          jobDescription = [
+            `Job Title: ${job.title}`,
+            `Company: ${job.company}`,
+            `Location: ${job.location || 'Not specified'}`,
+            ``,
+            `NOTE: Full job description could not be extracted.`,
+            `Score based on title, company, and location. Give benefit of the doubt.`,
+          ].join('\n')
+        }
+
+        jobsWithJD.push({ job, jd: jobDescription })
+        await humanDelay(800, 400)
+      }
+    }
+
+    // Create worker pages from existing browser context
+    const workerCount = Math.min(JD_CONCURRENCY, needExtractionJobs.length)
+    const workerPages: Page[] = []
+    console.log(`[pipeline] Launching ${workerCount} parallel JD extraction workers for ${needExtractionJobs.length} jobs`)
+
+    try {
+      const ctx = page.context()
+      for (let i = 0; i < workerCount; i++) {
+        const wp = await ctx.newPage()
+        workerPages.push(wp)
+      }
+      await Promise.all(workerPages.map(wp => jdWorker(wp)))
+    } finally {
+      // Cleanup worker pages
+      for (const wp of workerPages) {
+        await wp.close().catch(() => {})
+      }
+    }
+  }
+
+  console.log(`[pipeline] JD extraction complete: ${jobsWithJD.length} jobs (${preFetchedJobs.length} pre-fetched, ${needExtractionJobs.length} extracted)`)
 
   // -------------------------------------------------------------------------
   // Step 2b: Qualify via Haiku in parallel batches of QUALIFY_BATCH_SIZE
   // -------------------------------------------------------------------------
-  const QUALIFY_BATCH_SIZE = 5
+  const QUALIFY_BATCH_SIZE = 10
   let processedCount = 0
 
   console.log(`[pipeline] Qualifying ${jobsWithJD.length} jobs in parallel batches of ${QUALIFY_BATCH_SIZE}`)
@@ -564,6 +753,9 @@ async function phaseQualify(
         }
       }),
     )
+
+    // Track Haiku cost for this batch (each call costs ~$0.003)
+    costTracker?.addQualifyCost(batch.length * COST_HAIKU_PER_CALL)
 
     // Process batch results sequentially (for logging and progress updates)
     for (const { job, result, error } of batchResults) {
@@ -620,179 +812,16 @@ async function phaseQualify(
 }
 
 // ---------------------------------------------------------------------------
-// Phase 3: Apply
+// Phase 3: Apply — handled by separate apply-jobs.ts trigger task
 // ---------------------------------------------------------------------------
-
-async function phaseApply(
-  page: Page,
-  qualifiedJobs: QualifiedJob[],
-  config: PipelineConfig,
-  runId: string,
-  activities: ActivityLogEntry[],
-): Promise<{ applied: number; skipped: number; failed: number }> {
-  console.log(`[pipeline] Phase 3: APPLY (${qualifiedJobs.length} qualified, max ${config.maxApplications})`)
-
-  let applied = 0
-  let skipped = 0
-  let failed = 0
-
-  // Cap at maxApplications
-  const toApply = qualifiedJobs.slice(0, config.maxApplications)
-
-  for (const { job, qualification } of toApply) {
-    const adapter = detectAdapter(job.url)
-
-    if (!adapter) {
-      // No adapter — mark as needs_manual
-      const noAdapterEntry: ActivityLogEntry = {
-        user_id: config.userId,
-        run_id: runId,
-        action: 'apply_no_adapter',
-        company: job.company,
-        role: job.title,
-        reason: 'No ATS adapter matched this URL',
-      }
-      await logBotActivity(noAdapterEntry)
-      activities.push(noAdapterEntry)
-
-      // Still create the application record as needs_manual
-      if (!config.dryRun) {
-        await createApplicationFromBot(config.userId, job, {
-          success: false,
-          status: 'needs_manual',
-          company: job.company,
-          role: job.title,
-          ats: 'unknown',
-          reason: 'No ATS adapter available',
-          duration: 0,
-        })
-      }
-
-      skipped++
-      continue
-    }
-
-    // Dry run — log but don't actually apply
-    if (config.dryRun) {
-      const dryEntry: ActivityLogEntry = {
-        user_id: config.userId,
-        run_id: runId,
-        action: 'apply_dry_run',
-        company: job.company,
-        role: job.title,
-        ats: adapter.name,
-        reason: `Score ${qualification.score} — would apply via ${adapter.name}`,
-      }
-      await logBotActivity(dryEntry)
-      activities.push(dryEntry)
-      applied++
-      continue
-    }
-
-    // Real application — up to 2 retries
-    let result: ApplyResult | null = null
-    let attempts = 0
-    const MAX_RETRIES = 2
-
-    while (attempts < MAX_RETRIES) {
-      attempts++
-      try {
-        console.log(
-          `[pipeline] Applying to ${job.company} — ${job.title} (attempt ${attempts}, ATS: ${adapter.name})`,
-        )
-
-        result = await adapter.apply(page, job.url, APPLICANT)
-
-        if (result.success || result.status === 'applied') {
-          break // Success — no need to retry
-        }
-
-        if (result.status === 'needs_manual') {
-          break // Won't succeed with retry
-        }
-
-        // Failed — retry after a short delay
-        console.warn(
-          `[pipeline] Attempt ${attempts} failed for ${job.company}: ${result.reason}`,
-        )
-        await humanDelay(5000, 2000)
-      } catch (err) {
-        console.error(
-          `[pipeline] Apply exception for ${job.company} (attempt ${attempts}):`,
-          (err as Error).message,
-        )
-        result = {
-          success: false,
-          status: 'failed',
-          company: job.company,
-          role: job.title,
-          ats: adapter.name,
-          reason: (err as Error).message,
-          duration: 0,
-        }
-      }
-    }
-
-    if (!result) {
-      result = {
-        success: false,
-        status: 'failed',
-        company: job.company,
-        role: job.title,
-        ats: adapter.name,
-        reason: 'All retries exhausted',
-        duration: 0,
-      }
-    }
-
-    // After max retries, downgrade to needs_manual
-    if (result.status === 'failed' && attempts >= MAX_RETRIES) {
-      result.status = 'needs_manual'
-      result.reason = `Failed after ${MAX_RETRIES} attempts: ${result.reason}`
-    }
-
-    // Log the apply result
-    const applyEntry: ActivityLogEntry = {
-      user_id: config.userId,
-      run_id: runId,
-      action: `apply_${result.status}`,
-      company: job.company,
-      role: job.title,
-      ats: adapter.name,
-      reason: result.reason,
-      screenshot_url: result.screenshotUrl,
-    }
-    await logBotActivity(applyEntry)
-    activities.push(applyEntry)
-
-    // Save to DB
-    await createApplicationFromBot(config.userId, job, result)
-
-    // Update counters
-    if (result.status === 'applied') {
-      applied++
-    } else if (result.status === 'skipped' || result.status === 'needs_manual') {
-      skipped++
-    } else {
-      failed++
-    }
-
-    // Rate limit: 2-minute gap between applications
-    if (toApply.indexOf({ job, qualification }) < toApply.length - 1) {
-      console.log('[pipeline] Waiting 2 minutes before next application...')
-      await humanDelay(APPLY_GAP_MS, APPLY_GAP_JITTER_MS)
-    }
-  }
-
-  return { applied, skipped, failed }
-}
 
 // ---------------------------------------------------------------------------
 // Main pipeline orchestrator
 // ---------------------------------------------------------------------------
 
 /**
- * Run the full Scout → Qualify → Apply pipeline.
+ * Run the Scout → Qualify pipeline.
+ * Apply is handled separately by the apply-jobs.ts trigger task.
  *
  * @param config - Pipeline configuration including user, search profile, and limits
  * @returns Summary of the pipeline run
@@ -801,9 +830,10 @@ export async function runPipeline(config: PipelineConfig & { onProgress?: (p: Pi
   const startTime = Date.now()
   const activities: ActivityLogEntry[] = []
   const progressActivities: PipelineProgress['activities'] = []
+  const costTracker = createCostTracker()
 
   // Default values
-  const minScore = config.minScore ?? 60
+  const minScore = config.minScore ?? 45
   const maxApplications = config.maxApplications ?? 20
   const effectiveConfig = { ...config, minScore, maxApplications }
 
@@ -895,6 +925,7 @@ export async function runPipeline(config: PipelineConfig & { onProgress?: (p: Pi
           scoutSearchesTotal: update.totalSearches,
         })
       },
+      costTracker,
     )
     jobsFound = discoveredJobs.length
     addProgressActivity({ action: 'found', reason: `Found ${jobsFound} candidates from LinkedIn` })
@@ -919,6 +950,7 @@ export async function runPipeline(config: PipelineConfig & { onProgress?: (p: Pi
         jobsSkipped: 0,
         jobsFailed: 0,
         duration: Date.now() - startTime,
+        costEstimate: costTracker.toEstimate(),
         activities,
       }
     }
@@ -942,6 +974,7 @@ export async function runPipeline(config: PipelineConfig & { onProgress?: (p: Pi
           currentJob: update.company && update.role ? { company: update.company, role: update.role } : null,
         })
       },
+      costTracker,
     )
     jobsQualified = qualifiedJobs.length
     jobsSkipped += discoveredJobs.length - qualifiedJobs.length
@@ -1017,6 +1050,9 @@ export async function runPipeline(config: PipelineConfig & { onProgress?: (p: Pi
     jobs_failed: jobsFailed,
   })
 
+  // Cost estimate
+  const costEstimate = costTracker.toEstimate()
+
   const doneEntry: ActivityLogEntry = {
     user_id: config.userId,
     run_id: runId,
@@ -1031,6 +1067,10 @@ export async function runPipeline(config: PipelineConfig & { onProgress?: (p: Pi
     `found=${jobsFound} qualified=${jobsQualified} applied=${jobsApplied} ` +
     `skipped=${jobsSkipped} failed=${jobsFailed}`,
   )
+  console.log(
+    `[pipeline] Run cost estimate: $${costEstimate.total.toFixed(2)} ` +
+    `(scout: $${costEstimate.scout.toFixed(2)}, qualify: $${costEstimate.qualify.toFixed(2)})`,
+  )
 
   return {
     runId,
@@ -1040,6 +1080,7 @@ export async function runPipeline(config: PipelineConfig & { onProgress?: (p: Pi
     jobsSkipped,
     jobsFailed,
     duration,
+    costEstimate,
     activities,
     discoveredJobs: discoveredJobsOutput,
     qualifiedJobs: qualifiedJobsOutput,
@@ -1074,7 +1115,7 @@ export async function runPipelineForUser(
     browser,
     maxApplications: options?.maxApplications ?? 20,
     dryRun: options?.dryRun ?? false,
-    minScore: options?.minScore ?? 60,
+    minScore: options?.minScore ?? 50,
   })
 }
 
@@ -1112,7 +1153,7 @@ export async function runPipelineFromInline(cfg: InlinePipelineConfig): Promise<
     browserContext: cfg.browserContext, // pass pre-authenticated context
     maxApplications: cfg.maxApplications ?? 20,
     dryRun: cfg.dryRun ?? false,
-    minScore: 60,
+    minScore: 50,
     // Pass ALL locations and keywords for multi-pass scout
     allLocations,
     allKeywords: cfg.searchConfig.keywords,

@@ -26,7 +26,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (v3Res.ok) {
       const run = await v3Res.json()
-      return res.status(200).json(run)
+      // Ensure response always includes the run ID for client verification
+      return res.status(200).json({ ...run, id: run.id ?? runId })
     }
 
     // Fallback: v1 list endpoint (older run IDs or handle mismatch)
@@ -41,20 +42,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const runs = (data?.data || []) as Record<string, unknown>[]
 
-    // Try exact match
+    // Try exact match — only return data for the requested run ID
     const exact = runs.find((r) => r.id === runId)
-    if (exact) return res.status(200).json(exact)
+    if (exact) return res.status(200).json({ ...exact, id: exact.id })
 
-    // Find most recent active run
-    const active = runs.find((r) =>
-      ['QUEUED', 'EXECUTING', 'REATTEMPTING', 'WAITING_FOR_DEPLOY'].includes(r.status as string)
-    )
-    if (active) return res.status(200).json(active)
-
-    // Fallback: most recent run
-    if (runs.length > 0) return res.status(200).json(runs[0])
-
-    return res.status(404).json({ error: 'No runs found' })
+    // Run not found in v1 either — return 404, never return a different run's data
+    return res.status(404).json({ error: 'Run not found', runId })
   } catch {
     return res.status(502).json({ error: 'Failed to reach Trigger.dev' })
   }

@@ -282,8 +282,139 @@ textarea:focus {
   [data-pipeline-scroll] {
     scroll-snap-type: x mandatory;
     -webkit-overflow-scrolling: touch;
+    padding: 8px !important;
+  }
+  [data-pipeline-scroll] > div {
+    gap: 8px !important;
   }
   [data-pipeline-scroll] > div > div {
     scroll-snap-align: start;
+    min-width: 260px !important;
+  }
+
+  /* MOBILE-04: Table horizontal scroll indicator */
+  [data-table-wrapper] {
+    -webkit-overflow-scrolling: touch;
+    position: relative;
+  }
+  [data-table-wrapper]::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 24px;
+    background: linear-gradient(to right, transparent, rgba(9, 9, 11, 0.8));
+    pointer-events: none;
+    z-index: 3;
+  }
+
+  /* MOBILE-05: Hide less important table columns on mobile */
+  [data-table-wrapper] table th[data-col="salary"],
+  [data-table-wrapper] table td[data-col="salary"],
+  [data-table-wrapper] table th[data-col="notes"],
+  [data-table-wrapper] table td[data-col="notes"] {
+    display: none !important;
+  }
+
+  /* MOBILE-06: Table min-width reduced on mobile */
+  [data-table-wrapper] table {
+    min-width: 680px !important;
+  }
+
+  /* MOBILE-07: SearchBar stacks vertically on mobile */
+  [data-search-bar] {
+    flex-direction: column !important;
+    gap: 6px !important;
+  }
+  [data-search-bar] > div {
+    flex: 1 1 100% !important;
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+
+  /* MOBILE-08: Stat cards horizontal scroll on mobile */
+  [data-stat-cards] {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap !important;
+    scrollbar-width: none;
+  }
+  [data-stat-cards]::-webkit-scrollbar {
+    display: none;
+  }
+  [data-stat-cards] > button {
+    flex-shrink: 0 !important;
+    min-width: 100px !important;
+  }
+
+  /* MOBILE-09: Pipeline card compact on mobile */
+  [data-pipeline-card] {
+    padding: 8px 10px !important;
+  }
+  [data-pipeline-card] [data-card-company] {
+    font-size: 12px !important;
+  }
+  [data-pipeline-card] [data-card-role] {
+    font-size: 11px !important;
+  }
+
+  /* MOBILE-10: Pipeline header compact on mobile */
+  [data-pipeline-header] {
+    padding: 20px 12px 8px !important;
+  }
+  [data-pipeline-header] h1 {
+    font-size: 18px !important;
+  }
+
+  /* MOBILE-11: Table view header compact */
+  [data-table-header] {
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+  }
+  [data-table-header] h1 {
+    font-size: 18px !important;
+  }
+
+  /* MOBILE-12: Sidebar mobile overlay */
+  [data-sidebar-overlay] {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 100 !important;
+    background: rgba(0, 0, 0, 0.5) !important;
+    backdrop-filter: blur(4px) !important;
+  }
+  [data-sidebar-mobile] {
+    position: fixed !important;
+    left: 0 !important;
+    top: 0 !important;
+    bottom: 0 !important;
+    z-index: 101 !important;
+    width: 240px !important;
+    min-width: 240px !important;
+    box-shadow: 8px 0 24px rgba(0, 0, 0, 0.6) !important;
+  }
+
+  /* MOBILE-13: Applications toggle bar compact on mobile */
+  [data-applications-toggle] {
+    padding: 6px 12px 0 !important;
+  }
+
+  /* MOBILE-14: Bulk action bar scroll on mobile */
+  [data-bulk-bar] {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  [data-bulk-bar]::-webkit-scrollbar {
+    display: none;
+  }
+  [data-bulk-bar] > * {
+    flex-shrink: 0 !important;
+  }
+
+  /* MOBILE-15: Pipeline status change dropdown for touch */
+  [data-pipeline-card] [data-touch-status] {
+    display: flex !important;
   }
 }

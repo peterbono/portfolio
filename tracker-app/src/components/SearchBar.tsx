@@ -61,7 +61,7 @@ export function SearchBar({
   }
 
   return (
-    <div style={styles.row}>
+    <div data-search-bar style={styles.row}>
       {/* Search input */}
       <div style={styles.searchWrapper}>
         <Search size={14} color="var(--text-tertiary)" style={styles.searchIcon} />

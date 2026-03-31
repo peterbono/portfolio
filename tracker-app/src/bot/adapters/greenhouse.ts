@@ -448,16 +448,40 @@ async function handleScreeningQuestions(page: Page, profile: ApplicantProfile): 
         const labelText = await label.textContent({ timeout: 1000 }).catch(() => '')
         if (!labelText || labelText.trim().length < 3) continue
 
-        // Skip if it's one of the basic fields we already filled
+        // Skip if it's one of the basic fields we already filled (but NOT cover letter — we want to fill that)
         const lowerLabel = labelText.toLowerCase()
         if (
           lowerLabel.includes('first name') ||
           lowerLabel.includes('last name') ||
           lowerLabel.includes('email') ||
           lowerLabel.includes('phone') ||
-          lowerLabel.includes('resume') ||
-          lowerLabel.includes('cover letter')
+          lowerLabel.includes('resume')
         ) continue
+
+        // Handle cover letter fields explicitly
+        if (lowerLabel.includes('cover letter')) {
+          const textarea = container.locator('textarea').first()
+          const textareaExists = await textarea.count()
+          if (textareaExists > 0) {
+            const currentVal = await textarea.evaluate((el) => (el as HTMLTextAreaElement).value).catch(() => '')
+            if (!currentVal || currentVal.trim().length === 0) {
+              const textareaId = await textarea.evaluate((el) => el.id).catch(() => '')
+              const textareaSel = textareaId ? `#${textareaId}` : `${containerSel}:nth-child(${i + 1}) textarea`
+              const coverText = profile.coverLetterSnippet
+                ? `${profile.coverLetterSnippet}\n\nPortfolio: ${profile.portfolio}`
+                : [
+                    `Senior Product Designer with ${profile.yearsExperience}+ years of experience specializing in Design Systems, Design Ops, and complex product architecture.`,
+                    `Portfolio: ${profile.portfolio}`,
+                    `Available in ${profile.noticePeriod}. ${profile.workAuth}. Based in ${profile.location} (${profile.timezone}).`,
+                  ].join('\n')
+              await scrollToElement(page, textareaSel)
+              await fillInput(page, textareaSel, coverText)
+              await humanDelay(600, 1200)
+            }
+          }
+          // Also check for file upload cover letter input — skip those
+          continue
+        }
 
         // Find the input within this container
         const input = container.locator('input:not([type="hidden"]):not([type="file"]), textarea, select').first()

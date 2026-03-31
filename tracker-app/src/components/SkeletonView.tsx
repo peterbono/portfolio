@@ -341,11 +341,12 @@ export function InsightsSkeleton() {
 
 export function SkeletonForView({ view }: { view: string }) {
   switch (view) {
-    case 'table': return <TableSkeleton />
+    case 'table':
+    case 'applications': return <TableSkeleton />
     case 'pipeline': return <PipelineSkeleton />
-    case 'analytics': return <AnalyticsSkeleton />
     case 'coach': return <CoachSkeleton />
-    case 'insights': return <InsightsSkeleton />
+    case 'insights':
+    case 'analytics': return <InsightsSkeleton />
     default: return <TableSkeleton />
   }
 }

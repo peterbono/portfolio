@@ -27,14 +27,28 @@ const COMPATIBLE_TZ_KEYWORDS = [
   'india', 'bangalore', 'bengaluru', 'mumbai', 'hyderabad', 'pune', 'delhi',
   'chennai', 'dubai', 'abu dhabi', 'uae', 'qatar', 'doha', 'saudi',
   'riyadh', 'bahrain', 'oman', 'muscat', 'kuwait',
-  // Acceptable remote keywords
-  'remote', 'apac', 'asia', 'asia-pacific', 'anywhere', 'worldwide',
+  // South/Southeast Asia (UTC+5 to UTC+7)
+  'sri lanka', 'colombo', 'myanmar', 'yangon', 'cambodia', 'phnom penh',
+  'laos', 'vientiane', 'bangladesh', 'dhaka', 'nepal', 'kathmandu',
+  'pakistan', 'karachi', 'lahore', 'islamabad',
+  // Remote APAC patterns
+  'apac', 'asia', 'asia-pacific', 'asia pacific', 'southeast asia', 'sea region',
 ]
 
-/** Keywords that signal an incompatible US/EU timezone requirement */
+/** Keywords that signal an incompatible timezone requirement */
 const INCOMPATIBLE_TZ_KEYWORDS = [
   'est', 'cst', 'pst', 'mst', 'eastern', 'pacific', 'central time',
   'cet', 'gmt+0', 'gmt+1', 'gmt+2', 'utc+0', 'utc+1', 'utc+2',
+  // LATAM / Americas (country + city names)
+  'latam', 'latin america', 'south america', 'americas', 'north america',
+  'buenos aires', 'sao paulo', 'são paulo', 'mexico city', 'bogota', 'bogotá',
+  'santiago', 'lima', 'medellin', 'medellín', 'montevideo',
+  'brazil', 'brasil', 'argentina', 'colombia', 'chile', 'peru', 'mexico',
+  'costa rica', 'panama', 'caribbean', 'canada', 'toronto', 'vancouver', 'montreal',
+  // EU countries / cities
+  'europe', 'emea', 'united kingdom', 'london', 'berlin', 'paris', 'amsterdam',
+  // Africa
+  'lagos', 'nairobi', 'cape town', 'johannesburg', 'accra', 'cairo',
 ]
 
 // ---------------------------------------------------------------------------
@@ -52,9 +66,9 @@ function isTimezoneCompatible(location: string): boolean {
     return true
   }
 
-  // "Remote" with no TZ qualifier — cautious accept
-  if (lower.includes('remote') && !lower.includes('us') && !lower.includes('europe')) {
-    return true
+  // "Remote" alone without APAC signal — REJECT
+  if (lower === 'remote' || lower === 'worldwide' || lower === 'anywhere') {
+    return false
   }
 
   // Unknown location — skip to be safe
@@ -77,8 +91,23 @@ const DESIGN_KEYWORDS = [
   'design system', 'creative', 'brand', 'graphic',
 ]
 
+/** Non-product design disciplines — reject before Haiku */
+const NON_PRODUCT_DESIGN_BLOCKLIST = [
+  'graphic designer', 'generative ai', 'ai designer', 'ai artist',
+  'motion designer', 'motion graphic', 'animation', 'animator',
+  'video designer', 'video editor', 'brand designer',
+  'creative director', 'art director', 'illustrat',
+  'concept artist', '3d designer', '3d artist', 'game designer',
+  'fashion designer', 'interior designer', 'content creator',
+  'social media designer', 'email designer',
+]
+
 function isDesignRole(title: string): boolean {
   const lower = title.toLowerCase()
+  // Reject non-product design disciplines first
+  if (NON_PRODUCT_DESIGN_BLOCKLIST.some(kw => lower.includes(kw))) {
+    return false
+  }
   return DESIGN_KEYWORDS.some(kw => lower.includes(kw))
 }
 
@@ -175,21 +204,26 @@ export async function scoutRemoteOK(
         // Filter: excluded companies
         if (isExcludedCompany(company, excluded)) continue
 
-        // Filter: timezone compatibility
-        if (!isTimezoneCompatible(location)) continue
+        // Filter: timezone — RemoteOK is remote-first, accept bare "Remote".
+        // Only reject if explicit incompatible TZ signal (US/EU/LATAM).
+        const locationLower = location.toLowerCase()
+        const hasIncompatibleSignal = INCOMPATIBLE_TZ_KEYWORDS.some(kw => locationLower.includes(kw))
+        if (hasIncompatibleSignal) continue
 
         // Filter: poker / gambling
         const titleLower = title.toLowerCase()
         if (titleLower.includes('poker') || titleLower.includes('gambling')) continue
 
-        // Build URL
-        const jobUrl = job.url
-          ? job.url
-          : job.slug
-            ? `https://remoteok.com/remote-jobs/${job.slug}`
-            : job.id
-              ? `https://remoteok.com/remote-jobs/${job.id}`
-              : ''
+        // Build URL — prefer apply_url (direct ATS link) over listing page
+        const jobUrl = job.apply_url
+          ? job.apply_url
+          : job.url
+            ? job.url
+            : job.slug
+              ? `https://remoteok.com/remote-jobs/${job.slug}`
+              : job.id
+                ? `https://remoteok.com/remote-jobs/${job.id}`
+                : ''
 
         if (!jobUrl) continue
 
@@ -202,6 +236,13 @@ export async function scoutRemoteOK(
         if (seenCompanyTitle.has(companyTitleKey)) continue
         seenCompanyTitle.add(companyTitleKey)
 
+        // Strip HTML from RemoteOK description for direct use in qualifier
+        const plainDesc = (job.description ?? '')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, 6000)
+
         allJobs.push({
           title,
           company,
@@ -210,6 +251,7 @@ export async function scoutRemoteOK(
           isEasyApply: false,
           postedDate: job.date ?? new Date().toISOString(),
           source: 'remoteok',
+          description: plainDesc || undefined,
         })
       }
 
@@ -246,8 +288,202 @@ const WELLFOUND_ROLE_SLUGS: Record<string, string[]> = {
 }
 
 /**
- * Scout jobs from Wellfound (ex-AngelList Talent) by scraping their React SPA.
+ * Shape of a Wellfound job extracted from the Apollo cache in __NEXT_DATA__.
+ */
+interface WellfoundApolloJob {
+  title?: string
+  slug?: string
+  description?: string
+  jobType?: string
+  remote?: boolean
+  liveStartAt?: number | string
+  primaryRoleTitle?: string
+  compensation?: string
+  locationNames?: string | { type?: string; json?: string[] }
+  // Reference to the parent startup node
+  startup?: { id?: string; type?: string } | string
+}
+
+/**
+ * Shape of a Wellfound startup/company from the Apollo cache.
+ */
+interface WellfoundApolloStartup {
+  name?: string
+  slug?: string
+  companyUrl?: string
+  companySize?: string
+  highConcept?: string
+  logoUrl?: string
+  highlightedJobListings?: Array<{ id?: string; type?: string }>
+}
+
+/**
+ * Extract jobs from Wellfound's __NEXT_DATA__ Apollo cache embedded in the page.
+ * This is the reliable extraction method since Wellfound is a Next.js/Apollo SPA
+ * and CSS selectors change frequently.
+ */
+function extractJobsFromApolloCache(nextDataJson: string): Array<{
+  title: string
+  company: string
+  location: string
+  url: string
+  postedDate: string
+  description?: string
+}> {
+  const results: Array<{
+    title: string
+    company: string
+    location: string
+    url: string
+    postedDate: string
+    description?: string
+  }> = []
+
+  try {
+    const data = JSON.parse(nextDataJson)
+
+    // Navigate to the Apollo state graph
+    // Try multiple known paths (Wellfound has changed this over time)
+    const apolloData: Record<string, any> =
+      data?.props?.pageProps?.apolloState?.data ??
+      data?.props?.pageProps?.apolloState ??
+      data?.props?.pageProps?.__apollo_state__ ??
+      data?.props?.pageProps?.urqlState ??
+      {}
+
+    if (Object.keys(apolloData).length === 0) {
+      console.warn('[scout:wellfound] Apollo state empty or not found in __NEXT_DATA__')
+      // Try to find jobs in alternative page props structures
+      const pageProps = data?.props?.pageProps ?? {}
+      if (pageProps.jobs || pageProps.jobListings || pageProps.seoLandingPage) {
+        console.log('[scout:wellfound] Found alternative pageProps structure')
+      }
+      return results
+    }
+
+    // Index all startup/company nodes for quick lookup
+    const startupMap = new Map<string, WellfoundApolloStartup>()
+    for (const [key, value] of Object.entries(apolloData)) {
+      if (
+        key.startsWith('StartupResult:') ||
+        key.startsWith('Startup:') ||
+        (typeof value === 'object' && value !== null && (value as any).__typename === 'Startup')
+      ) {
+        startupMap.set(key, value as WellfoundApolloStartup)
+      }
+    }
+
+    // Extract all job listing nodes
+    for (const [key, value] of Object.entries(apolloData)) {
+      if (
+        !key.startsWith('JobListingSearchResult:') &&
+        !key.startsWith('JobListing:') &&
+        !(typeof value === 'object' && value !== null &&
+          ((value as any).__typename === 'JobListingSearchResult' ||
+           (value as any).__typename === 'JobListing'))
+      ) {
+        continue
+      }
+
+      const job = value as WellfoundApolloJob
+
+      const title = job.title?.trim() ?? ''
+      if (!title) continue
+
+      const slug = job.slug ?? ''
+
+      // --- Location ---
+      let location = 'Remote'
+      if (job.locationNames) {
+        if (typeof job.locationNames === 'string') {
+          // Could be a JSON string
+          try {
+            const parsed = JSON.parse(job.locationNames)
+            if (Array.isArray(parsed)) {
+              location = parsed.join(', ')
+            } else if (parsed?.json && Array.isArray(parsed.json)) {
+              location = parsed.json.join(', ')
+            }
+          } catch {
+            location = job.locationNames
+          }
+        } else if (typeof job.locationNames === 'object') {
+          // Typed object: { type: "json", json: ["City"] }
+          if (Array.isArray(job.locationNames.json)) {
+            location = job.locationNames.json.join(', ')
+          }
+        }
+      }
+      if (job.remote) {
+        location = location === 'Remote' ? 'Remote' : `${location} (Remote)`
+      }
+
+      // --- Company ---
+      let company = ''
+      if (job.startup) {
+        const startupRef = typeof job.startup === 'string'
+          ? job.startup
+          : job.startup?.id ?? ''
+        if (startupRef && startupMap.has(startupRef)) {
+          company = startupMap.get(startupRef)!.name?.trim() ?? ''
+        }
+      }
+      // If company not found via direct ref, try to find startup that lists this job
+      if (!company) {
+        const jobKey = key
+        for (const [, startup] of startupMap) {
+          const highlighted = startup.highlightedJobListings ?? []
+          for (const ref of highlighted) {
+            const refId = typeof ref === 'string' ? ref : ref?.id
+            if (refId === jobKey) {
+              company = startup.name?.trim() ?? ''
+              break
+            }
+          }
+          if (company) break
+        }
+      }
+
+      // --- URL ---
+      const url = slug
+        ? `https://wellfound.com/jobs/${slug}`
+        : ''
+      if (!url) continue
+
+      // --- Posted date ---
+      let postedDate = new Date().toISOString()
+      if (job.liveStartAt) {
+        if (typeof job.liveStartAt === 'number') {
+          // Could be seconds or milliseconds
+          const ts = job.liveStartAt > 1e12 ? job.liveStartAt : job.liveStartAt * 1000
+          postedDate = new Date(ts).toISOString()
+        } else if (typeof job.liveStartAt === 'string') {
+          postedDate = new Date(job.liveStartAt).toISOString()
+        }
+      }
+
+      // --- Description snippet ---
+      const description = (job.description ?? '')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 6000) || undefined
+
+      results.push({ title, company, location, url, postedDate, description })
+    }
+  } catch (err) {
+    console.warn(`[scout:wellfound] Failed to parse __NEXT_DATA__: ${(err as Error).message}`)
+  }
+
+  return results
+}
+
+/**
+ * Scout jobs from Wellfound (ex-AngelList Talent) by extracting data from
+ * the Next.js __NEXT_DATA__ Apollo cache embedded in each page.
  * Requires a Playwright Page (ideally via Bright Data browser for anti-bot).
+ *
+ * Falls back to DOM scraping if __NEXT_DATA__ is unavailable.
  *
  * @param page - Playwright Page instance (Bright Data or local browser)
  * @param keywords - Search keywords, e.g. ['product designer', 'ux designer']
@@ -278,131 +514,164 @@ export async function scoutWellfound(
   }
 
   for (const slug of slugsToVisit) {
-    // Wellfound role pages with remote filter
-    const searchUrl = `https://wellfound.com/role/r/${slug}/remote`
+    // Wellfound URL patterns:
+    //   /role/{slug}           — role-only listing
+    //   /role/l/{slug}/remote  — role + remote location filter
+    // The old /role/r/ pattern is invalid and returns 404.
+    const searchUrl = `https://wellfound.com/role/l/${slug}/remote`
     console.log(`[scout:wellfound] Navigating to: ${searchUrl}`)
 
     try {
       await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 })
       await randomDelay(2000, 4000)
 
-      // Wait for job cards to render (React SPA)
-      await page.waitForSelector(
-        '[class*="styles_jobCard"], [class*="JobCard"], [data-test="job-card"], .job-list-item, [class*="StartupResult"], [class*="styles_result"]',
-        { timeout: 10_000 },
-      ).catch(() => {
-        console.warn(`[scout:wellfound] No job cards selector found for slug="${slug}"`)
+      // --- Primary method: extract from __NEXT_DATA__ Apollo cache ---
+      let cards = await page.evaluate(() => {
+        const scriptEl = document.querySelector('script#__NEXT_DATA__')
+        if (!scriptEl?.textContent) return null
+        return scriptEl.textContent
       })
 
-      // Scroll down to load more results (lazy-loaded React list)
-      for (let i = 0; i < 5; i++) {
-        await page.evaluate(
-          (scrollY) => window.scrollBy(0, scrollY),
-          600 + Math.floor(Math.random() * 300),
-        )
-        await randomDelay(800, 1500)
+      let extractedCards: Array<{
+        title: string
+        company: string
+        location: string
+        url: string
+        postedDate: string
+        description?: string
+      }> = []
+
+      if (cards) {
+        console.log(`[scout:wellfound] Found __NEXT_DATA__ for slug="${slug}", parsing Apollo cache...`)
+        extractedCards = extractJobsFromApolloCache(cards)
+        console.log(`[scout:wellfound] Apollo cache: extracted ${extractedCards.length} jobs for slug="${slug}"`)
       }
 
-      // Extract job cards from the React-rendered DOM
-      const cards = await page.evaluate(() => {
-        const results: Array<{
-          title: string
-          company: string
-          location: string
-          url: string
-        }> = []
+      // --- Fallback: scroll & scrape DOM if Apollo cache yielded nothing ---
+      if (extractedCards.length === 0) {
+        console.log(`[scout:wellfound] Apollo cache empty, falling back to DOM scraping for slug="${slug}"`)
 
-        // Wellfound renders job cards in various structures; try multiple selectors
-        const cardSelectors = [
-          // Modern Wellfound layout (2024+)
-          '[class*="styles_jobCard"]',
-          '[class*="JobCard"]',
-          '[data-test="job-card"]',
-          '.job-list-item',
-          // Startup result cards
-          '[class*="StartupResult"]',
-          '[class*="styles_result"]',
-          // Fallback: any job listing link structure
-          'a[href*="/jobs/"]',
-        ]
+        // Wait for any content to render
+        await page.waitForSelector(
+          'main, [id="__next"], [data-testid], [role="list"], [role="listitem"]',
+          { timeout: 8_000 },
+        ).catch(() => {})
 
-        let cardElements: Element[] = []
-        for (const selector of cardSelectors) {
-          const found = document.querySelectorAll(selector)
-          if (found.length > 0) {
-            cardElements = Array.from(found)
-            break
-          }
+        // Scroll to trigger lazy loading
+        for (let i = 0; i < 5; i++) {
+          await page.evaluate(
+            (scrollY) => window.scrollBy(0, scrollY),
+            600 + Math.floor(Math.random() * 300),
+          )
+          await randomDelay(800, 1500)
         }
 
-        // If no structured cards found, try to extract from links
-        if (cardElements.length === 0) {
-          const jobLinks = document.querySelectorAll('a[href*="/jobs/"], a[href*="/role/"]')
-          cardElements = Array.from(jobLinks)
-        }
+        // Extract from DOM using broad, resilient selectors
+        const domCards = await page.evaluate(() => {
+          const results: Array<{
+            title: string
+            company: string
+            location: string
+            url: string
+          }> = []
 
-        for (const card of cardElements) {
-          // --- Title ---
-          const titleEl =
-            card.querySelector('h2, h3, h4') ??
-            card.querySelector('[class*="title"], [class*="Title"]') ??
-            card.querySelector('[class*="jobTitle"], [class*="role"]')
-          let title = titleEl?.textContent?.trim() ?? ''
+          // Strategy 1: Find all job-related links and extract surrounding context
+          const jobLinks = document.querySelectorAll(
+            'a[href*="/jobs/"], a[href*="/company/"], a[href*="/role/"]'
+          )
 
-          // If the card is an <a> tag itself, title might be in text
-          if (!title && card.tagName === 'A') {
-            title = card.textContent?.trim()?.substring(0, 80) ?? ''
-          }
+          // Strategy 2: Find list items or card-like containers
+          const listItems = document.querySelectorAll(
+            '[role="listitem"], [data-testid*="job"], [data-testid*="listing"], ' +
+            'article, [class*="card"], [class*="Card"], [class*="listing"], [class*="Listing"], ' +
+            '[class*="result"], [class*="Result"]'
+          )
 
-          // --- Company ---
-          const companyEl =
-            card.querySelector('[class*="company"], [class*="Company"]') ??
-            card.querySelector('[class*="startup"], [class*="Startup"]') ??
-            card.querySelector('h3, h4') // often second heading is company
-          let company = companyEl?.textContent?.trim() ?? ''
+          // Merge both sets of candidate elements
+          const candidates = new Set<Element>([...Array.from(listItems)])
 
-          // Avoid using title text as company
-          if (company === title) {
-            const allHeadings = card.querySelectorAll('h2, h3, h4, span[class*="name"]')
-            for (const h of allHeadings) {
-              const text = h.textContent?.trim() ?? ''
-              if (text && text !== title) {
-                company = text
-                break
-              }
+          // For job links, add their closest container
+          for (const link of jobLinks) {
+            const container =
+              link.closest('article') ??
+              link.closest('[role="listitem"]') ??
+              link.closest('li') ??
+              link.closest('div[class*="card"]') ??
+              link.closest('div[class*="Card"]') ??
+              link.closest('div[class*="result"]') ??
+              link.closest('div[class*="Result"]') ??
+              link.parentElement?.parentElement // go up 2 levels from the <a>
+            if (container) {
+              candidates.add(container)
             }
           }
 
-          // --- Location ---
-          const locationEl =
-            card.querySelector('[class*="location"], [class*="Location"]') ??
-            card.querySelector('[class*="meta"], [class*="info"]') ??
-            card.querySelector('span[class*="tag"]')
-          const location = locationEl?.textContent?.trim() ?? 'Remote'
+          for (const card of candidates) {
+            // --- Title: first heading or prominent text ---
+            const titleEl =
+              card.querySelector('h1, h2, h3, h4') ??
+              card.querySelector('[class*="title" i], [class*="role" i]') ??
+              card.querySelector('a[href*="/jobs/"]')
+            let title = titleEl?.textContent?.trim() ?? ''
+            if (!title) continue
+            if (title.length > 120) title = title.substring(0, 120)
 
-          // --- URL ---
-          let url = ''
-          const linkEl =
-            (card.querySelector('a[href*="/jobs/"]') as HTMLAnchorElement) ??
-            (card.querySelector('a[href*="/role/"]') as HTMLAnchorElement) ??
-            (card.closest('a') as HTMLAnchorElement) ??
-            (card.tagName === 'A' ? card as HTMLAnchorElement : null)
-          if (linkEl?.href) {
-            url = linkEl.href
+            // --- Company ---
+            let company = ''
+            // Look for a second heading or name-like element
+            const headings = card.querySelectorAll('h1, h2, h3, h4, h5, h6')
+            if (headings.length > 1) {
+              company = headings[1].textContent?.trim() ?? ''
+              if (company === title && headings.length > 2) {
+                company = headings[2].textContent?.trim() ?? ''
+              }
+            }
+            if (!company) {
+              const companyEl =
+                card.querySelector('[class*="company" i], [class*="startup" i], [class*="org" i]') ??
+                card.querySelector('a[href*="/company/"]')
+              company = companyEl?.textContent?.trim() ?? ''
+            }
+            if (company === title) company = ''
+
+            // --- Location ---
+            const locationEl =
+              card.querySelector('[class*="location" i]') ??
+              card.querySelector('[class*="meta" i], [class*="info" i]')
+            const location = locationEl?.textContent?.trim() ?? 'Remote'
+
+            // --- URL ---
+            let url = ''
+            const linkEl =
+              (card.querySelector('a[href*="/jobs/"]') as HTMLAnchorElement) ??
+              (card.querySelector('a[href*="/company/"]') as HTMLAnchorElement) ??
+              (card.closest('a') as HTMLAnchorElement) ??
+              (card.tagName === 'A' ? card as HTMLAnchorElement : null)
+            if (linkEl?.href) {
+              url = linkEl.href
+            }
+
+            if (title && url) {
+              results.push({ title, company, location, url })
+            }
           }
 
-          if (title && url) {
-            results.push({ title, company, location, url })
-          }
+          return results
+        })
+
+        for (const card of domCards) {
+          extractedCards.push({
+            ...card,
+            postedDate: new Date().toISOString(),
+          })
         }
 
-        return results
-      })
+        console.log(`[scout:wellfound] DOM fallback: extracted ${domCards.length} cards for slug="${slug}"`)
+      }
 
-      console.log(`[scout:wellfound] Slug "${slug}": extracted ${cards.length} cards`)
-
-      for (const card of cards) {
-        const { title, company, location } = card
+      // --- Process extracted cards through filters ---
+      for (const card of extractedCards) {
+        const { title, company, location, description } = card
         let { url } = card
 
         // Ensure absolute URL
@@ -448,8 +717,9 @@ export async function scoutWellfound(
           location,
           url,
           isEasyApply: false,
-          postedDate: new Date().toISOString(),
+          postedDate: card.postedDate ?? new Date().toISOString(),
           source: 'wellfound',
+          description,
         })
       }
 
@@ -460,5 +730,184 @@ export async function scoutWellfound(
   }
 
   console.log(`[scout:wellfound] Total unique design jobs: ${allJobs.length}`)
+  return allJobs
+}
+
+// ---------------------------------------------------------------------------
+// Himalayas.app scraper (JSON API — no Playwright needed)
+// ---------------------------------------------------------------------------
+
+/**
+ * Raw shape returned by the Himalayas /jobs/api endpoint.
+ */
+interface HimalayasJob {
+  title?: string
+  excerpt?: string
+  companyName?: string
+  companySlug?: string
+  companyLogo?: string
+  employmentType?: string
+  minSalary?: number | null
+  maxSalary?: number | null
+  seniority?: string[]
+  currency?: string
+  locationRestrictions?: string[]
+  timezoneRestrictions?: number[]
+  categories?: string[]
+  parentCategories?: string[]
+  description?: string
+  pubDate?: number
+  expiryDate?: number
+  applicationLink?: string
+  guid?: string
+}
+
+interface HimalayasApiResponse {
+  comments?: string
+  updatedAt?: number
+  offset: number
+  limit: number
+  totalCount: number
+  jobs: HimalayasJob[]
+}
+
+/**
+ * Scout jobs from Himalayas.app using their public JSON API.
+ * No Playwright page needed — uses plain fetch().
+ *
+ * The API supports timezone filtering natively (timezone=7 for GMT+7),
+ * so we get pre-filtered results for Bangkok timezone compatibility.
+ *
+ * @param keywords - Search terms, e.g. ['product designer', 'ux designer']
+ * @param excludedCompanies - Additional company names to exclude
+ * @returns DiscoveredJob[] with source = 'himalayas'
+ */
+export async function scoutHimalayas(
+  keywords: string[],
+  excludedCompanies: string[] = [],
+): Promise<DiscoveredJob[]> {
+  const allJobs: DiscoveredJob[] = []
+  const seenUrls = new Set<string>()
+  const seenCompanyTitle = new Set<string>()
+
+  const excluded = [...DEFAULT_EXCLUDED, ...excludedCompanies.map(c => c.toLowerCase())]
+
+  const searchTerms = keywords.length > 0
+    ? keywords
+    : ['product designer', 'ux designer', 'ui designer', 'design lead', 'design system']
+
+  for (const term of searchTerms) {
+    let offset = 0
+    const limit = 20
+    let hasMore = true
+
+    while (hasMore) {
+      const apiUrl = `https://himalayas.app/jobs/api?q=${encodeURIComponent(term)}&timezone=7&sort=recent&limit=${limit}&offset=${offset}`
+      console.log(`[scout:himalayas] Fetching: ${apiUrl}`)
+
+      try {
+        const response = await fetch(apiUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (compatible; JobScout/1.0)',
+            'Accept': 'application/json',
+          },
+        })
+
+        if (!response.ok) {
+          console.warn(`[scout:himalayas] HTTP ${response.status} for term="${term}" offset=${offset}`)
+          break
+        }
+
+        const data: HimalayasApiResponse = await response.json()
+        const jobs = data.jobs ?? []
+        console.log(`[scout:himalayas] Term "${term}" offset=${offset}: ${jobs.length} raw jobs (total: ${data.totalCount})`)
+
+        if (jobs.length === 0) {
+          hasMore = false
+          break
+        }
+
+        for (const job of jobs) {
+          const title = job.title?.trim() ?? ''
+          const company = job.companyName?.trim() ?? ''
+
+          // Skip if missing critical fields
+          if (!title || !company) continue
+
+          // Filter: design roles only
+          if (!isDesignRole(title)) continue
+
+          // Filter: excluded companies
+          if (isExcludedCompany(company, excluded)) continue
+
+          // Filter: poker / gambling
+          const titleLower = title.toLowerCase()
+          const companyLower = company.toLowerCase()
+          if (
+            titleLower.includes('poker') || titleLower.includes('gambling') ||
+            companyLower.includes('poker') || companyLower.includes('gambling')
+          ) continue
+
+          // Build URL — prefer applicationLink, fallback to guid
+          const jobUrl = job.applicationLink || job.guid || ''
+          if (!jobUrl) continue
+
+          // Dedup by URL
+          if (seenUrls.has(jobUrl)) continue
+          seenUrls.add(jobUrl)
+
+          // Dedup by company+title
+          const companyTitleKey = `${normalizeForDedup(company)}|${normalizeForDedup(title)}`
+          if (seenCompanyTitle.has(companyTitleKey)) continue
+          seenCompanyTitle.add(companyTitleKey)
+
+          // Build location string from locationRestrictions
+          const location = (job.locationRestrictions && job.locationRestrictions.length > 0)
+            ? job.locationRestrictions.join(', ')
+            : 'Remote'
+
+          // Strip HTML from description for direct use in qualifier
+          const plainDesc = (job.description ?? '')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 6000)
+
+          // Convert Unix epoch (seconds) to ISO date string
+          const postedDate = job.pubDate
+            ? new Date(job.pubDate * 1000).toISOString()
+            : new Date().toISOString()
+
+          allJobs.push({
+            title,
+            company,
+            location,
+            url: jobUrl,
+            isEasyApply: false,
+            postedDate,
+            source: 'himalayas',
+            description: plainDesc || undefined,
+          })
+        }
+
+        // Paginate: stop after 3 pages per term (60 results) to avoid excessive API calls
+        offset += limit
+        if (offset >= 60 || jobs.length < limit) {
+          hasMore = false
+        }
+
+        // Small delay between paginated requests to be polite
+        await randomDelay(500, 1500)
+      } catch (err) {
+        console.warn(`[scout:himalayas] Error for term="${term}" offset=${offset}: ${(err as Error).message}`)
+        hasMore = false
+      }
+    }
+
+    // Small delay between search term queries
+    await randomDelay(500, 1500)
+  }
+
+  console.log(`[scout:himalayas] Total unique design jobs: ${allJobs.length}`)
   return allJobs
 }

@@ -1,7 +1,6 @@
 import { useState, useCallback, useRef, useEffect, type CSSProperties, type ReactNode } from 'react'
 import {
   User,
-  Search,
   Bell,
   CreditCard,
   Shield,
@@ -13,10 +12,7 @@ import {
   MapPin,
   Briefcase,
   Clock,
-  DollarSign,
-  Building2,
   Zap,
-  AlertTriangle,
   Trash2,
   Download,
   Upload,
@@ -29,6 +25,7 @@ import {
   Sparkles,
   CheckCircle,
   Loader2,
+  FileSpreadsheet,
 } from 'lucide-react'
 import { useJobs } from '../context/JobsContext'
 import { useGmailAPI } from '../hooks/useGmailAPI'
@@ -42,6 +39,8 @@ import { triggerEnrichProfile } from '../lib/bot-api'
 import { LS_ENRICHED_PROFILE } from '../types/enriched-profile'
 import type { EnrichedProfile } from '../types/enriched-profile'
 import type { Job } from '../types/job'
+import { exportAsCSV, exportAsJSON } from '../utils/export'
+import { ScheduleConfig as ScheduleConfigComponent } from '../components/ScheduleConfig'
 
 /* ------------------------------------------------------------------ */
 /*  Mobile responsive CSS injection                                     */
@@ -73,7 +72,6 @@ if (typeof document !== 'undefined') {
 /*  localStorage keys                                                   */
 /* ------------------------------------------------------------------ */
 const LS_PROFILE = 'tracker_v2_user_profile'
-const LS_SEARCH_PREFS = 'tracker_v2_search_prefs'
 const LS_NOTIFICATIONS = 'tracker_v2_notification_prefs'
 const LS_BOT_PREFS = 'tracker_v2_bot_prefs'
 
@@ -88,14 +86,6 @@ interface UserProfile {
   currentRole: string
   seniority: string
   yearsExperience: number
-}
-
-interface SearchPrefs {
-  preferredRoles: string[]
-  salaryMin: number
-  salaryCurrency: string
-  workMode: 'any' | 'remote' | 'hybrid' | 'onsite'
-  excludedCompanies: string[]
 }
 
 interface NotificationPrefs {
@@ -142,14 +132,6 @@ const DEFAULT_PROFILE: UserProfile = {
   yearsExperience: 3,
 }
 
-const DEFAULT_SEARCH_PREFS: SearchPrefs = {
-  preferredRoles: [],
-  salaryMin: 0,
-  salaryCurrency: 'USD',
-  workMode: 'any',
-  excludedCompanies: [],
-}
-
 const DEFAULT_NOTIFICATIONS: NotificationPrefs = {
   applicationsSubmitted: true,
   rejectionsReceived: true,
@@ -180,8 +162,6 @@ const SENIORITY_OPTIONS = [
   { value: 'staff', label: 'Staff / Lead (8-12 yrs)' },
   { value: 'principal', label: 'Principal / Director (12+ yrs)' },
 ]
-
-const CURRENCY_OPTIONS = ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'SGD', 'THB', 'JPY', 'INR', 'AED']
 
 /* ------------------------------------------------------------------ */
 /*  Accordion Section Component                                         */
@@ -289,24 +269,6 @@ export function SettingsView() {
     setTimeout(() => setProfileSaved(false), 2000)
   }, [])
 
-  // ---------- Search Preferences state ----------
-  const [searchPrefs, setSearchPrefs] = useState<SearchPrefs>(() =>
-    loadJSON(LS_SEARCH_PREFS, DEFAULT_SEARCH_PREFS)
-  )
-  const [roleInput, setRoleInput] = useState('')
-  const [excludeInput, setExcludeInput] = useState('')
-  const [searchSaved, setSearchSaved] = useState(false)
-
-  const saveSearchPrefs = useCallback((patch: Partial<SearchPrefs>) => {
-    setSearchPrefs(prev => {
-      const next = { ...prev, ...patch }
-      saveJSON(LS_SEARCH_PREFS, next)
-      return next
-    })
-    setSearchSaved(true)
-    setTimeout(() => setSearchSaved(false), 2000)
-  }, [])
-
   // ---------- Notification Preferences state ----------
   const [notifPrefs, setNotifPrefs] = useState<NotificationPrefs>(() =>
     loadJSON(LS_NOTIFICATIONS, DEFAULT_NOTIFICATIONS)
@@ -353,15 +315,11 @@ export function SettingsView() {
   const [importStatus, setImportStatus] = useState<string | null>(null)
 
   const handleExport = useCallback(() => {
-    const blob = new Blob([JSON.stringify(jobs, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `job-tracker-export-${new Date().toISOString().slice(0, 10)}.json`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
+    exportAsJSON(jobs)
+  }, [jobs])
+
+  const handleExportCSV = useCallback(() => {
+    exportAsCSV(jobs)
   }, [jobs])
 
   const handleImport = useCallback(
@@ -738,152 +696,7 @@ export function SettingsView() {
         </div>
       </AccordionSection>
 
-      {/* ─────────────── 2. Search Preferences ─────────────── */}
-      <AccordionSection
-        id="search"
-        icon={<Search size={18} color="#60a5fa" />}
-        title="Search Preferences"
-        description="Define what roles and companies the bot targets"
-        openSections={openSections}
-        toggle={toggleSection}
-      >
-        {/* Preferred Roles */}
-        <div style={s.fieldGroup}>
-          <label style={s.label}>Preferred Roles</label>
-          <p style={s.hint}>The bot will prioritize these job titles when searching</p>
-          <div style={s.chipContainer}>
-            {searchPrefs.preferredRoles.map((role, i) => (
-              <span key={i} style={s.chip}>
-                {role}
-                <button
-                  style={s.chipRemove}
-                  onClick={() => saveSearchPrefs({
-                    preferredRoles: searchPrefs.preferredRoles.filter((_, j) => j !== i),
-                  })}
-                  aria-label={`Remove ${role}`}
-                >&times;</button>
-              </span>
-            ))}
-          </div>
-          <div style={s.inputRow}>
-            <input
-              style={s.input}
-              value={roleInput}
-              onChange={e => setRoleInput(e.target.value)}
-              placeholder="e.g. Product Designer"
-              onKeyDown={e => {
-                if (e.key === 'Enter' && roleInput.trim()) {
-                  saveSearchPrefs({
-                    preferredRoles: [...searchPrefs.preferredRoles, roleInput.trim()],
-                  })
-                  setRoleInput('')
-                }
-              }}
-            />
-            <button
-              style={s.btnSecondary}
-              onClick={() => {
-                if (roleInput.trim()) {
-                  saveSearchPrefs({
-                    preferredRoles: [...searchPrefs.preferredRoles, roleInput.trim()],
-                  })
-                  setRoleInput('')
-                }
-              }}
-            >Add</button>
-          </div>
-        </div>
-
-        {/* Salary Minimum */}
-        <div className="settings-field-grid" style={s.fieldGrid}>
-          <div style={s.fieldGroup}>
-            <label style={s.label}><DollarSign size={12} style={{ marginRight: 4 }} />Minimum Salary (annual)</label>
-            <div style={s.inputRow}>
-              <select
-                style={{ ...s.select, maxWidth: 90 }}
-                value={searchPrefs.salaryCurrency}
-                onChange={e => saveSearchPrefs({ salaryCurrency: e.target.value })}
-              >
-                {CURRENCY_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-              <input
-                style={s.input}
-                type="number"
-                min={0}
-                step={5000}
-                value={searchPrefs.salaryMin || ''}
-                onChange={e => saveSearchPrefs({ salaryMin: parseInt(e.target.value) || 0 })}
-                placeholder="80000"
-              />
-            </div>
-          </div>
-
-          {/* Work Mode */}
-          <div style={s.fieldGroup}>
-            <label style={s.label}><Building2 size={12} style={{ marginRight: 4 }} />Work Arrangement</label>
-            <select
-              style={s.select}
-              value={searchPrefs.workMode}
-              onChange={e => saveSearchPrefs({ workMode: e.target.value as SearchPrefs['workMode'] })}
-            >
-              <option value="any">Any (Remote, Hybrid, Onsite)</option>
-              <option value="remote">Remote Only</option>
-              <option value="hybrid">Hybrid</option>
-              <option value="onsite">On-site</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Excluded Companies */}
-        <div style={s.fieldGroup}>
-          <label style={s.label}><AlertTriangle size={12} style={{ marginRight: 4 }} />Excluded Companies</label>
-          <p style={s.hint}>The bot will never apply to these companies</p>
-          <div style={s.chipContainer}>
-            {searchPrefs.excludedCompanies.map((co, i) => (
-              <span key={i} style={{ ...s.chip, background: 'rgba(244, 63, 94, 0.1)', borderColor: 'rgba(244, 63, 94, 0.2)' }}>
-                {co}
-                <button
-                  style={{ ...s.chipRemove, color: '#f43f5e' }}
-                  onClick={() => saveSearchPrefs({
-                    excludedCompanies: searchPrefs.excludedCompanies.filter((_, j) => j !== i),
-                  })}
-                  aria-label={`Remove ${co}`}
-                >&times;</button>
-              </span>
-            ))}
-          </div>
-          <div style={s.inputRow}>
-            <input
-              style={s.input}
-              value={excludeInput}
-              onChange={e => setExcludeInput(e.target.value)}
-              placeholder="e.g. Acme Corp"
-              onKeyDown={e => {
-                if (e.key === 'Enter' && excludeInput.trim()) {
-                  saveSearchPrefs({
-                    excludedCompanies: [...searchPrefs.excludedCompanies, excludeInput.trim()],
-                  })
-                  setExcludeInput('')
-                }
-              }}
-            />
-            <button
-              style={s.btnSecondary}
-              onClick={() => {
-                if (excludeInput.trim()) {
-                  saveSearchPrefs({
-                    excludedCompanies: [...searchPrefs.excludedCompanies, excludeInput.trim()],
-                  })
-                  setExcludeInput('')
-                }
-              }}
-            >Add</button>
-          </div>
-        </div>
-        {searchSaved && <span style={s.successText}>Search preferences saved</span>}
-      </AccordionSection>
-
-      {/* ─────────────── 3. Bot Preferences ─────────────── */}
+      {/* ─────────────── 2. Bot Preferences ─────────────── */}
       <AccordionSection
         id="bot"
         icon={<Bot size={18} color="#a855f7" />}
@@ -1234,6 +1047,18 @@ export function SettingsView() {
         </div>
       </AccordionSection>
 
+      {/* ─────────────── 6b. Scheduled Scans ─────────────── */}
+      <AccordionSection
+        id="schedule"
+        icon={<Clock size={18} color="#34d399" />}
+        title="Scheduled Scans"
+        description="Automatically scan for new jobs on a schedule"
+        openSections={openSections}
+        toggle={toggleSection}
+      >
+        <ScheduleConfigComponent />
+      </AccordionSection>
+
       {/* ─────────────── 7. Data Management ─────────────── */}
       <AccordionSection
         id="data"
@@ -1245,14 +1070,23 @@ export function SettingsView() {
       >
         <div style={s.fieldGroup}>
           <label style={s.label}><Download size={12} style={{ marginRight: 4 }} />Export</label>
-          <p style={s.hint}>Download all {jobs.length} jobs as a JSON file</p>
-          <button style={s.btnSecondary} onClick={() => {
-            if (!requireAuth('export_data', () => handleExport())) return
-            handleExport()
-          }}>
-            <Download size={14} style={{ marginRight: 6 }} />
-            Download JSON
-          </button>
+          <p style={s.hint}>Download all {jobs.length} jobs as CSV or JSON</p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button style={s.btnSecondary} onClick={() => {
+              if (!requireAuth('export_data', () => handleExportCSV())) return
+              handleExportCSV()
+            }}>
+              <FileSpreadsheet size={14} style={{ marginRight: 6 }} />
+              Download CSV
+            </button>
+            <button style={s.btnSecondary} onClick={() => {
+              if (!requireAuth('export_data', () => handleExport())) return
+              handleExport()
+            }}>
+              <Download size={14} style={{ marginRight: 6 }} />
+              Download JSON
+            </button>
+          </div>
         </div>
 
         <div style={s.fieldGroup}>
@@ -1388,7 +1222,11 @@ export function SettingsView() {
       {showProfileEditModal && (
         <ProfileSetupModal
           editMode
-          onComplete={() => setShowProfileEditModal(false)}
+          onComplete={() => {
+            setShowProfileEditModal(false)
+            // Auto-trigger AI profile analysis when bot profile is saved/updated
+            handleEnrichProfile()
+          }}
           onDismiss={() => setShowProfileEditModal(false)}
         />
       )}
