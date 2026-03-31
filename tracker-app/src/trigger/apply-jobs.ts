@@ -178,6 +178,7 @@ export const applyJobsTask = task({
           viewport: { width: 1280, height: 900 },
           userAgent:
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+          ignoreHTTPSErrors: true,
         })
 
         // Moderate mode: block images, fonts, media, trackers but KEEP CSS (ATS forms need it)
@@ -339,6 +340,7 @@ export const applyJobsTask = task({
             "--no-sandbox",
             "--disable-setuid-sandbox",
             "--disable-blink-features=AutomationControlled",
+            "--ignore-certificate-errors",
           ],
           ...(BD_RESIDENTIAL
             ? {
@@ -359,6 +361,7 @@ export const applyJobsTask = task({
               "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
             locale: "en-US",
             timezoneId: "Asia/Bangkok",
+            ignoreHTTPSErrors: true,
           })
 
           // Inject LinkedIn cookies (li_at + JSESSIONID for CSRF)

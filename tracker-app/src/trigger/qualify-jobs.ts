@@ -417,6 +417,7 @@ export const qualifyJobsTask = task({
       const context = await browser.newContext({
         userAgent:
           "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        ignoreHTTPSErrors: true,
       })
 
       // Block images, CSS, fonts, media, and trackers — qualify only needs text (~70% bandwidth savings)
