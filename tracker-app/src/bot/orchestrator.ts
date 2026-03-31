@@ -887,6 +887,7 @@ export async function runPipeline(config: PipelineConfig & { onProgress?: (p: Pi
   // Use pre-authenticated context if provided (LinkedIn cookie), else create new
   let context: BrowserContext | null = null
   let page: Page | null = null
+  let reconnectedContext: BrowserContext | null = null // For SBR reconnection in qualify phase
   const ownsContext = !config.browserContext // only close context if we created it
 
   try {
@@ -956,9 +957,58 @@ export async function runPipeline(config: PipelineConfig & { onProgress?: (p: Pi
     }
 
     // --- Phase 2: Qualify (inline — rules pre-filter + Haiku scoring) ---
+    // SBR sessions can die mid-scout (long-running CDP connections drop).
+    // Test if the browser context is still alive; if not, reconnect.
+    let qualifyPage = page!
+    try {
+      // Probe: if this throws, the context is dead
+      await page!.context().newPage().then(p => p.close())
+    } catch {
+      console.warn('[pipeline] Browser context died during scout — reconnecting for qualify phase')
+      const logEntry: ActivityLogEntry = {
+        user_id: config.userId,
+        run_id: runId,
+        action: 'pipeline_reconnect',
+        reason: 'SBR session died, reconnecting browser for JD extraction',
+      }
+      await logBotActivity(logEntry)
+      activities.push(logEntry)
+
+      try {
+        // Try SBR reconnect first
+        const sbrAuth = (process.env.BRIGHTDATA_SBR_AUTH || '').trim() || undefined
+        if (sbrAuth) {
+          const { chromium } = await import('playwright')
+          const newBrowser = await chromium.connectOverCDP(`wss://${sbrAuth}@brd.superproxy.io:9222`)
+          reconnectedContext = newBrowser.contexts()[0] || await newBrowser.newContext({
+            viewport: { width: 1280, height: 900 },
+            ignoreHTTPSErrors: true,
+          })
+        } else {
+          // Local Chromium fallback
+          const { chromium } = await import('playwright')
+          const newBrowser = await chromium.launch({
+            headless: true,
+            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage',
+                   '--disable-gpu', '--single-process', '--js-flags=--max-old-space-size=256'],
+          })
+          reconnectedContext = await newBrowser.newContext({
+            viewport: { width: 1280, height: 900 },
+            ignoreHTTPSErrors: true,
+          })
+        }
+        await blockUnnecessaryResources(reconnectedContext, 'aggressive')
+        qualifyPage = await reconnectedContext.newPage()
+        console.log('[pipeline] Browser reconnected successfully for qualify phase')
+      } catch (reconnErr) {
+        console.error('[pipeline] Browser reconnect failed:', (reconnErr as Error).message)
+        // Continue anyway — JD extraction will fail but Haiku can still score on metadata
+      }
+    }
+
     emitProgress('qualify', { jobsFound })
     const qualifiedJobs = await phaseQualify(
-      page!,
+      qualifyPage,
       discoveredJobs,
       effectiveConfig,
       runId,
@@ -1036,6 +1086,14 @@ export async function runPipeline(config: PipelineConfig & { onProgress?: (p: Pi
     // Clean up browser resources
     if (page) await page.close().catch(() => {})
     if (context && ownsContext) await context.close().catch(() => {})
+    // Clean up reconnected context (from SBR reconnection in qualify phase)
+    if (reconnectedContext) {
+      try {
+        const reconnectedBrowser = reconnectedContext.browser()
+        await reconnectedContext.close().catch(() => {})
+        if (reconnectedBrowser) await reconnectedBrowser.close().catch(() => {})
+      } catch { /* already closed */ }
+    }
   }
 
   const duration = Date.now() - startTime
