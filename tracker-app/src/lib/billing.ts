@@ -535,10 +535,62 @@ export async function createPortalSession(): Promise<string> {
   return '/settings?portal=unavailable'
 }
 
-/** Gets current month usage from backend */
-export async function getCurrentUsage(): Promise<{ applies: number; coverLetters: number }> {
-  // TODO: Fetch from Supabase or /api/usage when usage tracking is implemented
-  return { applies: 0, coverLetters: 0 }
+/** Usage response from /api/usage */
+export interface UsageResponse {
+  applies: number
+  coverLetters: number
+  periodStart?: string
+  periodEnd?: string
+}
+
+// ─── Usage cache (5-minute TTL) ─────────────────────────────────────────
+const USAGE_CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
+let _usageCache: UsageResponse | null = null
+let _usageCacheTimestamp = 0
+
+/** Invalidate the usage cache (e.g. after a bot run completes) */
+export function invalidateUsageCache(): void {
+  _usageCache = null
+  _usageCacheTimestamp = 0
+}
+
+/** Gets current month usage from backend, cached for 5 minutes */
+export async function getCurrentUsage(): Promise<UsageResponse> {
+  const now = Date.now()
+
+  // Return cached value if still fresh
+  if (_usageCache && (now - _usageCacheTimestamp) < USAGE_CACHE_TTL_MS) {
+    return _usageCache
+  }
+
+  try {
+    const token = await getAccessToken()
+    if (!token) {
+      // Not authenticated — return zeros without caching
+      return { applies: 0, coverLetters: 0 }
+    }
+
+    const response = await fetch('/api/usage', {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    })
+
+    if (!response.ok) {
+      console.warn(`[billing] Usage API returned ${response.status}`)
+      return _usageCache ?? { applies: 0, coverLetters: 0 }
+    }
+
+    const data: UsageResponse = await response.json()
+    _usageCache = data
+    _usageCacheTimestamp = Date.now()
+    return data
+  } catch (err) {
+    console.warn('[billing] Failed to fetch usage:', err)
+    // Return stale cache if available, otherwise zeros
+    return _usageCache ?? { applies: 0, coverLetters: 0 }
+  }
 }
 
 /**
