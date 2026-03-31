@@ -169,12 +169,31 @@ export interface ApprovedJobInput {
   matchScore: number
 }
 
+// ─── Extension detection ────────────────────────────────────────────────────
+// The Chrome extension content script runs in an isolated world — its window
+// vars are invisible to page JS. Detection uses the JOBTRACKER_EXTENSION_INSTALLED
+// postMessage the content script sends on load, plus localStorage cookie sync.
+let _extensionDetected = false
+
+if (typeof window !== 'undefined') {
+  // Listen for extension install announcement (content script sends this on load)
+  window.addEventListener('message', (event) => {
+    if (event.source === window && event.data?.type === 'JOBTRACKER_EXTENSION_INSTALLED') {
+      _extensionDetected = true
+      console.log(`[bot-api] Chrome extension detected (v${event.data.version})`)
+    }
+  })
+  // Also check if extension has synced a cookie recently (fallback detection)
+  if (localStorage.getItem('tracker_v2_linkedin_cookie')) {
+    _extensionDetected = true
+  }
+}
+
 /**
  * Check if the JobTracker Chrome extension is installed and available.
- * The extension sets a flag on window when its content script loads.
  */
 function isExtensionInstalled(): boolean {
-  return !!(window as any)._jobTrackerContentLoaded
+  return _extensionDetected
 }
 
 /**
