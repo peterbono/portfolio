@@ -8,8 +8,10 @@ import { task } from "@trigger.dev/sdk/v3"
  * Easy Apply, or Generic fallback).
  *
  * Key constraints:
- * - Max 5 applications per run (daily cap enforcement)
- * - 2-minute gap between applications (rate limiting / bot detection)
+ * - Max 20 applications per run (handles dashboard batches of 16+)
+ * - ATS jobs (Greenhouse/Lever/Generic): 15s gap (no bot detection)
+ * - LinkedIn Easy Apply: 60s gap (anti-detection needed)
+ * - maxDuration: 1800s (30 min) — enough for 20 jobs with mixed gaps
  * - Screenshot on failure for debugging
  * - LinkedIn Easy Apply: local Chromium + cookie (Bright Data blocks cookies)
  * - ATS (Greenhouse/Lever/Generic): Bright Data Scraping Browser works fine
@@ -44,8 +46,9 @@ export interface ApplyJobsOutput {
   durationMs: number
 }
 
-const MAX_APPLICATIONS_PER_RUN = 5
-const GAP_BETWEEN_APPLICATIONS_MS = 120_000 // 2 minutes
+const MAX_APPLICATIONS_PER_RUN = 20
+const ATS_GAP_MS = 15_000 // 15s — Greenhouse/Lever/Generic have no bot detection
+const LINKEDIN_GAP_MS = 60_000 // 60s — LinkedIn needs anti-detection delay
 
 // ─── Server-side notification helper ──────────────────────────────────
 // Calls the Vercel API endpoint using service role key auth (no user JWT needed).
@@ -84,7 +87,7 @@ async function sendServerNotification(
 export const applyJobsTask = task({
   id: "apply-jobs",
   machine: "medium-1x", // 1 vCPU, 2 GB RAM — local Chromium for LinkedIn needs it
-  maxDuration: 600, // 10 minutes — form filling is slow
+  maxDuration: 1800, // 30 minutes — 20 jobs with variable gaps
   run: async (payload: {
     userId: string
     jobs: ApplyJobPayload[]
@@ -308,10 +311,10 @@ export const applyJobsTask = task({
             await page.close().catch((err) => console.warn('[apply-jobs] Cleanup failed:', err))
           }
 
-          // Rate limiting: 2-minute gap between applications (skip for last job)
+          // Rate limiting: 15s gap for ATS jobs (no bot detection) — skip for last if no LinkedIn follows
           if (i < atsJobs.length - 1 || linkedInJobs.length > 0) {
-            console.log(`[apply-jobs]   Waiting ${GAP_BETWEEN_APPLICATIONS_MS / 1000}s before next application...`)
-            await humanDelay(GAP_BETWEEN_APPLICATIONS_MS, GAP_BETWEEN_APPLICATIONS_MS + 5000)
+            console.log(`[apply-jobs]   Waiting ${ATS_GAP_MS / 1000}s before next application...`)
+            await humanDelay(ATS_GAP_MS, ATS_GAP_MS + 5000)
           }
         }
 
@@ -502,10 +505,10 @@ export const applyJobsTask = task({
               await page.close().catch((err) => console.warn('[apply-jobs] Cleanup failed:', err))
             }
 
-            // Rate limiting between LinkedIn applications (skip for last)
+            // Rate limiting between LinkedIn applications: 60s anti-detection delay (skip for last)
             if (i < linkedInJobs.length - 1) {
-              console.log(`[apply-jobs]   Waiting ${GAP_BETWEEN_APPLICATIONS_MS / 1000}s before next application...`)
-              await humanDelay(GAP_BETWEEN_APPLICATIONS_MS, GAP_BETWEEN_APPLICATIONS_MS + 5000)
+              console.log(`[apply-jobs]   Waiting ${LINKEDIN_GAP_MS / 1000}s before next application...`)
+              await humanDelay(LINKEDIN_GAP_MS, LINKEDIN_GAP_MS + 5000)
             }
           }
 

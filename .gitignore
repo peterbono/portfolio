@@ -5,3 +5,4 @@ node_modules/
 .trigger/
 supabase/.temp/
 *.tsbuildinfo
+.vercel
