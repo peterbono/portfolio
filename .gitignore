@@ -1,3 +1,7 @@
 tracker-app/node_modules/
+tracker-app/dist/
 node_modules/
-.vercel
+.vercel/
+.trigger/
+supabase/.temp/
+*.tsbuildinfo
