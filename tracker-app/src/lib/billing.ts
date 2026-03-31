@@ -387,7 +387,7 @@ export type BillingInterval = 'weekly' | 'monthly'
 
 /** Returns true if Stripe is configured (publishable key is set) */
 export function isStripeConfigured(): boolean {
-  return !!import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY
+  return !!(import.meta.env.VITE_STRIPE_PUBLIC_KEY || import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY)
 }
 
 /** Returns true if a plan can be purchased (always true for paid plans when Stripe is configured) */
