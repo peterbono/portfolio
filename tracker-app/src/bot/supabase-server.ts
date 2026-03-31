@@ -49,6 +49,38 @@ export interface BotRunInsert {
   started_at: string
 }
 
+/**
+ * Cleanup zombie bot_runs: any "running" rows for this user older than 30 min
+ * are force-failed. This catches cases where the Trigger.dev task process was
+ * killed (OOM, timeout) and the finally block never executed.
+ */
+export async function cleanupZombieRuns(userId: string): Promise<number> {
+  const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString()
+
+  const { data, error } = await (db as any)
+    .from('bot_runs')
+    .update({
+      status: 'failed',
+      completed_at: new Date().toISOString(),
+      error_message: 'Zombie run: process killed (OOM/timeout) without finalization',
+    })
+    .eq('user_id', userId)
+    .eq('status', 'running')
+    .lt('created_at', thirtyMinAgo)
+    .select('id')
+
+  if (error) {
+    console.error('[supabase] Failed to cleanup zombie runs:', error.message)
+    return 0
+  }
+
+  const count = data?.length ?? 0
+  if (count > 0) {
+    console.log(`[supabase] Cleaned up ${count} zombie bot_run(s) for user ${userId}`)
+  }
+  return count
+}
+
 /** Create a new bot_run row and return its id */
 export async function createBotRun(
   userId: string,

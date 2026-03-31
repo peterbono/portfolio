@@ -1,5 +1,6 @@
-import type { Page } from 'playwright'
+import type { Page, BrowserContext } from 'playwright'
 import type { SearchProfile } from '../types/database'
+import { blockUnnecessaryResources } from './helpers'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -60,8 +61,21 @@ const COMPATIBLE_TZ_KEYWORDS = [
 
 /** Keywords that signal an incompatible timezone requirement */
 const INCOMPATIBLE_TZ_KEYWORDS = [
+  // US country-level
+  'united states', 'united states of america',
   // US timezones
-  'est', 'cst', 'pst', 'mst', 'eastern', 'pacific', 'central time',
+  'est', 'cst', 'pst', 'mst', 'eastern time', 'pacific time', 'central time', 'mountain time',
+  // Major US cities — top tech hubs and metros
+  'new york', 'san francisco', 'los angeles', 'chicago', 'seattle',
+  'austin', 'denver', 'boston', 'atlanta', 'miami', 'dallas',
+  'houston', 'portland', 'san diego', 'san jose', 'palo alto',
+  'menlo park', 'mountain view', 'cupertino', 'sunnyvale', 'redwood city',
+  'santa clara', 'irvine', 'scottsdale', 'salt lake city', 'raleigh',
+  'durham', 'charlotte', 'nashville', 'phoenix', 'pittsburgh',
+  'philadelphia', 'washington dc', 'minneapolis', 'columbus',
+  'indianapolis', 'detroit', 'milwaukee', 'kansas city', 'st louis',
+  'tampa', 'orlando', 'sacramento', 'las vegas', 'baltimore',
+  'richmond', 'oakland', 'boulder', 'provo', 'lehi',
   // EU timezones
   'cet', 'gmt+0', 'gmt+1', 'gmt+2', 'utc+0', 'utc+1', 'utc+2',
   // LATAM / Americas (country + city names)
@@ -70,11 +84,92 @@ const INCOMPATIBLE_TZ_KEYWORDS = [
   'santiago', 'lima', 'medellin', 'medellín', 'montevideo',
   'brazil', 'brasil', 'argentina', 'colombia', 'chile', 'peru', 'mexico',
   'costa rica', 'panama', 'caribbean', 'canada', 'toronto', 'vancouver', 'montreal',
+  'ottawa', 'calgary', 'edmonton', 'winnipeg', 'quebec', 'québec', 'ontario', 'british columbia',
   // EU countries / cities
   'europe', 'emea', 'united kingdom', 'london', 'berlin', 'paris', 'amsterdam',
+  'dublin', 'madrid', 'barcelona', 'lisbon', 'munich', 'hamburg', 'vienna',
+  'zurich', 'zürich', 'geneva', 'stockholm', 'copenhagen', 'oslo', 'helsinki',
+  'warsaw', 'prague', 'bucharest', 'brussels', 'milan', 'rome',
   // Africa (too far)
-  'lagos', 'nairobi', 'cape town', 'johannesburg', 'accra', 'cairo',
+  'lagos', 'nairobi', 'cape town', 'johannesburg', 'accra', 'cairo', 'africa',
 ]
+
+// ---------------------------------------------------------------------------
+// SBR Resilience Helpers
+// ---------------------------------------------------------------------------
+
+/** Error messages that indicate the CDP/WebSocket connection is dead */
+const DEAD_CONNECTION_PATTERNS = [
+  'Target closed',
+  'Session closed',
+  'Connection closed',
+  'WebSocket is not open',
+  'Protocol error',
+  'Target page, context or browser has been closed',
+  'Browser has been closed',
+  'page.goto: Target closed',
+  'page.goto: Browser closed',
+  'Execution context was destroyed',
+  'frame was detached',
+  'ERR_TUNNEL_CONNECTION_FAILED',
+  'ERR_CONNECTION_RESET',
+  'ERR_CONNECTION_REFUSED',
+  'net::ERR_',
+  'NS_ERROR_NET',
+  'ECONNRESET',
+  'EPIPE',
+  'socket hang up',
+]
+
+/** Check if an error indicates the browser/CDP connection is dead (not just a page load failure) */
+export function isDeadConnectionError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err)
+  return DEAD_CONNECTION_PATTERNS.some(pattern => msg.includes(pattern))
+}
+
+/** Probe whether a page's browser context is still alive */
+export async function isBrowserAlive(page: Page): Promise<boolean> {
+  try {
+    // Quick probe: evaluate a trivial expression
+    await page.evaluate(() => 1)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Reconnect to Bright Data SBR and return a fresh { page, context }.
+ * Returns null if reconnection fails (caller should skip browser-based sources).
+ */
+export async function reconnectSBR(): Promise<{ page: Page; context: BrowserContext } | null> {
+  const sbrAuth = (process.env.BRIGHTDATA_SBR_AUTH || '').trim() || undefined
+  if (!sbrAuth) {
+    console.warn('[scout:reconnect] No BRIGHTDATA_SBR_AUTH env var — cannot reconnect')
+    return null
+  }
+
+  try {
+    const { chromium } = await import('playwright')
+    console.log('[scout:reconnect] Connecting to SBR...')
+    const newBrowser = await chromium.connectOverCDP(`wss://${sbrAuth}@brd.superproxy.io:9222`)
+    const context = newBrowser.contexts()[0] || await newBrowser.newContext({
+      viewport: { width: 1280, height: 900 },
+      userAgent:
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      locale: 'en-US',
+      timezoneId: 'Asia/Bangkok',
+      ignoreHTTPSErrors: true,
+    })
+    await blockUnnecessaryResources(context, 'aggressive')
+    const page = await context.newPage()
+    console.log('[scout:reconnect] SBR reconnected successfully')
+    return { page, context }
+  } catch (reconnErr) {
+    console.error('[scout:reconnect] SBR reconnect failed:', (reconnErr as Error).message)
+    return null
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -164,12 +259,53 @@ function buildGuestApiUrl(
   return `${base}?${params.toString()}`
 }
 
+/**
+ * US state abbreviations for detecting "City, XX" patterns in locations.
+ * Checked separately because 2-letter codes are too short for substring matching.
+ */
+const US_STATE_ABBREVS = [
+  'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA',
+  'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD',
+  'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ',
+  'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC',
+  'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY',
+  'DC',
+]
+
+/**
+ * Check if a location contains a US state abbreviation pattern like "City, CA".
+ * Uses comma+space+2-letter-code pattern to avoid false positives.
+ */
+function hasUSStateAbbrev(location: string): boolean {
+  for (const state of US_STATE_ABBREVS) {
+    const pattern = new RegExp(`,\\s*${state}(?:\\s*$|\\s*,|\\s+|\\))`)
+    if (pattern.test(location)) {
+      // Guard against false positives: if location also contains APAC keywords, skip
+      const lower = location.toLowerCase()
+      const apacSafe = COMPATIBLE_TZ_KEYWORDS.some(kw => lower.includes(kw))
+      if (!apacSafe) return true
+    }
+  }
+  return false
+}
+
 /** Check if a location string is timezone-compatible with GMT+7 */
 export function isTimezoneCompatible(location: string): boolean {
   const lower = location.toLowerCase()
 
-  // Reject if explicitly mentions incompatible timezone
+  // Reject if explicitly mentions incompatible timezone keyword
   if (INCOMPATIBLE_TZ_KEYWORDS.some(kw => lower.includes(kw))) {
+    return false
+  }
+
+  // Reject if contains US state abbreviation pattern (e.g. "Palo Alto, CA")
+  if (hasUSStateAbbrev(location)) {
+    return false
+  }
+
+  // Reject short "US" patterns — "Remote, US", "US", "Remote (US)"
+  // Use word-boundary regex to avoid matching "campus", "focus", etc.
+  if (/\bUS\b/.test(location) || /\bU\.S\.?\b/i.test(location)) {
     return false
   }
 
@@ -314,6 +450,11 @@ async function scrapeViaGuestApi(
         `[scout:guest-api] Failed on page ${pageNum + 1}:`,
         (err as Error).message,
       )
+      // If the browser/CDP connection is dead, re-throw so caller can reconnect
+      if (isDeadConnectionError(err)) {
+        console.error('[scout:guest-api] Dead connection detected — re-throwing for reconnect')
+        throw err
+      }
       break
     }
   }
@@ -340,7 +481,17 @@ async function scrapeViaFullPage(
 
   const searchUrl = buildLinkedInSearchUrl(searchProfile, keywordOverride, locationOverride)
   console.log(`[scout:full-page] Navigating to: ${searchUrl}`)
-  await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 })
+  try {
+    await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 })
+  } catch (err) {
+    if (isDeadConnectionError(err)) {
+      console.error('[scout:full-page] Dead connection on initial goto — re-throwing for reconnect')
+      throw err
+    }
+    // Non-fatal navigation error (timeout, etc.) — return empty
+    console.warn('[scout:full-page] Navigation failed:', (err as Error).message)
+    return allCards
+  }
   await randomDelay(2000, 4000)
 
   for (let pageNum = 0; pageNum < maxPages; pageNum++) {
@@ -737,6 +888,11 @@ export interface MultiPassConfig {
  * For N keywords and M locations, runs N×M searches (each fetching `pagesPerSearch`
  * pages of 25 results). Deduplicates globally by URL and company+title.
  *
+ * **SBR Resilience**: If the Bright Data SBR CDP session dies mid-scout, the function
+ * detects the dead connection and attempts to reconnect. If reconnection fails,
+ * it aborts remaining LinkedIn searches (but the caller can still proceed with
+ * non-browser sources like RemoteOK and Himalayas).
+ *
  * Example: 3 keywords × 3 locations × 3 pages = 27 API calls → up to 675 raw cards
  * After filtering & dedup, expect 40-80 unique candidates.
  */
@@ -769,15 +925,44 @@ export async function scoutJobsMultiPass(
   const seenUrls = new Set<string>()
   const seenCompanyTitle = new Set<string>()
 
+  // Mutable page reference — may be replaced if SBR reconnects
+  let currentPage = page
+  let reconnectAttempts = 0
+  const MAX_RECONNECT_ATTEMPTS = 2
+  // Track whether browser is confirmed dead (skip remaining LinkedIn searches)
+  let browserDead = false
+
   for (let i = 0; i < combos.length; i++) {
     const { keyword, location } = combos[i]
+
+    // If browser is confirmed dead and we exhausted reconnect attempts, skip remaining
+    if (browserDead) {
+      console.warn(
+        `[scout:multi-pass] Skipping search ${i + 1}/${combos.length} ("${keyword}" × "${location}") — browser dead, no more reconnect attempts`,
+      )
+      // Still report progress so UI doesn't freeze
+      try {
+        onSearchProgress?.({
+          searchIndex: i,
+          totalSearches: combos.length,
+          keyword,
+          location,
+          newJobsThisSearch: 0,
+          totalUniqueJobs: allJobs.length,
+        })
+      } catch {
+        // Don't let callback errors crash the scout
+      }
+      continue
+    }
+
     console.log(
       `[scout:multi-pass] Search ${i + 1}/${combos.length}: "${keyword}" in "${location}"`,
     )
 
     try {
       const result = await scoutJobs(
-        page,
+        currentPage,
         searchProfile,
         existingApplications,
         pagesPerSearch,
@@ -828,11 +1013,102 @@ export async function scoutJobsMultiPass(
         await randomDelay(2000, 4000)
       }
     } catch (err) {
+      const errMsg = (err as Error).message
       console.warn(
-        `[scout:multi-pass] Search "${keyword}" × "${location}" failed: ${(err as Error).message}`,
+        `[scout:multi-pass] Search "${keyword}" × "${location}" failed: ${errMsg}`,
       )
 
-      // Still report progress even on failure so UI doesn't freeze
+      // --- Dead connection detection & SBR reconnect ---
+      if (isDeadConnectionError(err)) {
+        console.error(
+          `[scout:multi-pass] Dead SBR connection detected at search ${i + 1}/${combos.length} ` +
+          `(reconnect attempt ${reconnectAttempts + 1}/${MAX_RECONNECT_ATTEMPTS})`,
+        )
+
+        if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+          reconnectAttempts++
+          const reconnected = await reconnectSBR()
+
+          if (reconnected) {
+            currentPage = reconnected.page
+            console.log(
+              `[scout:multi-pass] SBR reconnected (attempt ${reconnectAttempts}). ` +
+              `Retrying search "${keyword}" × "${location}"...`,
+            )
+
+            // Retry the same search with the fresh page
+            try {
+              const retryResult = await scoutJobs(
+                currentPage,
+                searchProfile,
+                existingApplications,
+                pagesPerSearch,
+                keyword,
+                location,
+              )
+
+              globalTotalFound += retryResult.totalFound
+              globalFilteredOut += retryResult.filteredOut
+
+              let newInRetry = 0
+              for (const job of retryResult.jobs) {
+                if (job.url && seenUrls.has(job.url)) continue
+                const companyTitleKey = `${job.company.toLowerCase().trim()}|${job.title.toLowerCase().trim()}`
+                if (seenCompanyTitle.has(companyTitleKey)) continue
+                if (job.url) seenUrls.add(job.url)
+                seenCompanyTitle.add(companyTitleKey)
+                allJobs.push(job)
+                newInRetry++
+              }
+
+              console.log(
+                `[scout:multi-pass] Retry "${keyword}" × "${location}": ${retryResult.jobs.length} candidates, ${newInRetry} new unique`,
+              )
+
+              try {
+                onSearchProgress?.({
+                  searchIndex: i,
+                  totalSearches: combos.length,
+                  keyword,
+                  location,
+                  newJobsThisSearch: newInRetry,
+                  totalUniqueJobs: allJobs.length,
+                })
+              } catch {
+                // Don't let callback errors crash the scout
+              }
+
+              // Success — continue with remaining searches
+              if (i < combos.length - 1) {
+                await randomDelay(2000, 4000)
+              }
+              continue
+            } catch (retryErr) {
+              console.warn(
+                `[scout:multi-pass] Retry also failed: ${(retryErr as Error).message}`,
+              )
+              // If retry also failed with dead connection, mark as dead
+              if (isDeadConnectionError(retryErr)) {
+                browserDead = true
+              }
+            }
+          } else {
+            // reconnectSBR returned null — give up on browser
+            browserDead = true
+            console.error(
+              `[scout:multi-pass] SBR reconnect failed. Abandoning remaining ${combos.length - i - 1} LinkedIn searches.`,
+            )
+          }
+        } else {
+          browserDead = true
+          console.error(
+            `[scout:multi-pass] Max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) exhausted. ` +
+            `Abandoning remaining ${combos.length - i - 1} LinkedIn searches.`,
+          )
+        }
+      }
+
+      // Report progress even on failure so UI doesn't freeze
       try {
         onSearchProgress?.({
           searchIndex: i,
@@ -845,13 +1121,15 @@ export async function scoutJobsMultiPass(
       } catch {
         // Don't let callback errors crash the scout
       }
-      // Continue with next combo instead of aborting
+      // Continue with next combo instead of aborting (unless browserDead skips them)
     }
   }
 
   console.log(
     `[scout:multi-pass] Complete: ${combos.length} searches, ${globalTotalFound} total found, ` +
-    `${globalFilteredOut} filtered, ${allJobs.length} unique candidates`,
+    `${globalFilteredOut} filtered, ${allJobs.length} unique candidates` +
+    (reconnectAttempts > 0 ? `, ${reconnectAttempts} SBR reconnect(s)` : '') +
+    (browserDead ? ' [browser died — some searches skipped]' : ''),
   )
 
   return {

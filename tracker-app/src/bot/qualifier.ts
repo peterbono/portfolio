@@ -79,13 +79,160 @@ const BLACKLISTED_INDUSTRY_KEYWORDS = [
   'poker', 'gambling', 'casino', 'betting', 'adult', 'tobacco',
 ]
 
+// ---------------------------------------------------------------------------
+// Location / Timezone rejection patterns for preQualify (Pass 1)
+// ---------------------------------------------------------------------------
+
+/**
+ * US state abbreviations (2-letter) used in location strings like "Palo Alto, CA".
+ * We match ", XX" pattern to avoid false positives (e.g. "IN" matching India).
+ */
+const US_STATE_ABBREVS = [
+  'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA',
+  'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD',
+  'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ',
+  'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC',
+  'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY',
+  'DC',
+]
+
+/**
+ * Location keywords that indicate an incompatible timezone (outside UTC+3..UTC+11).
+ * Matched case-insensitively against the job location field.
+ */
+const LOCATION_REJECT_PATTERNS = [
+  // US country-level
+  'united states', 'united states of america', 'usa',
+  // US timezone abbreviations
+  'est', 'cst', 'pst', 'mst', 'eastern time', 'pacific time', 'central time', 'mountain time',
+  // Major US cities
+  'new york', 'san francisco', 'los angeles', 'chicago', 'seattle',
+  'austin', 'denver', 'boston', 'atlanta', 'miami', 'dallas',
+  'houston', 'portland', 'san diego', 'san jose', 'palo alto',
+  'menlo park', 'mountain view', 'cupertino', 'sunnyvale', 'redwood city',
+  'santa clara', 'irvine', 'scottsdale', 'salt lake city', 'raleigh',
+  'durham', 'charlotte', 'nashville', 'phoenix', 'pittsburgh',
+  'philadelphia', 'washington dc', 'minneapolis', 'columbus',
+  'indianapolis', 'detroit', 'milwaukee', 'kansas city', 'st louis',
+  'tampa', 'orlando', 'sacramento', 'las vegas', 'baltimore',
+  'richmond', 'oakland', 'boulder', 'provo', 'lehi',
+  // Canada
+  'canada', 'toronto', 'vancouver', 'montreal', 'ottawa', 'calgary',
+  'edmonton', 'winnipeg', 'quebec', 'québec', 'ontario', 'british columbia',
+  // EU countries & cities
+  'europe', 'emea', 'united kingdom', 'london', 'berlin', 'paris',
+  'amsterdam', 'dublin', 'madrid', 'barcelona', 'lisbon', 'munich',
+  'hamburg', 'vienna', 'zurich', 'zürich', 'geneva', 'stockholm',
+  'copenhagen', 'oslo', 'helsinki', 'warsaw', 'prague', 'bucharest',
+  'brussels', 'milan', 'rome',
+  // EU timezone abbreviations
+  'cet', 'gmt+0', 'gmt+1', 'gmt+2', 'utc+0', 'utc+1', 'utc+2',
+  // LATAM
+  'latam', 'latin america', 'south america', 'americas', 'north america',
+  'buenos aires', 'sao paulo', 'são paulo', 'mexico city', 'bogota', 'bogotá',
+  'santiago', 'lima', 'brazil', 'brasil', 'argentina', 'colombia', 'chile',
+  'peru', 'mexico', 'costa rica', 'panama', 'caribbean',
+  // Africa
+  'lagos', 'nairobi', 'cape town', 'johannesburg', 'accra', 'cairo',
+  'africa',
+]
+
+/**
+ * Check if a location string contains a US state abbreviation pattern.
+ * Matches patterns like "City, CA" or "City, CA, US" or "Remote, US".
+ */
+function hasUSStateAbbrev(location: string): boolean {
+  // Match ", XX" at end or ", XX," or ", XX " patterns — case-sensitive for state codes
+  for (const state of US_STATE_ABBREVS) {
+    // Pattern: comma + optional space + 2-letter state code + end/comma/space/parenthesis
+    const pattern = new RegExp(`,\\s*${state}(?:\\s*$|\\s*,|\\s+|\\))`, 'i')
+    if (pattern.test(location)) {
+      // Extra check: the state code should be uppercase in the original to avoid
+      // false positives like "Remote, IN" (Indiana vs India).
+      // But since we also have "india" in APAC-compatible locations, we do a
+      // secondary check: if location also contains an APAC keyword, skip.
+      const locationLower = location.toLowerCase()
+      const apacSafe = ['india', 'bangalore', 'bengaluru', 'mumbai', 'hyderabad',
+        'pune', 'delhi', 'chennai', 'indonesia', 'jakarta', 'bangkok', 'thailand',
+        'singapore', 'malaysia', 'philippines', 'manila', 'vietnam', 'japan',
+        'tokyo', 'korea', 'seoul', 'taiwan', 'hong kong', 'china', 'australia',
+        'dubai', 'uae', 'qatar', 'saudi', 'pakistan', 'karachi', 'lahore',
+        'islamabad', 'bangladesh', 'dhaka', 'nepal', 'sri lanka', 'cambodia',
+        'myanmar', 'laos'].some(kw => locationLower.includes(kw))
+      if (!apacSafe) return true
+    }
+  }
+  return false
+}
+
+/**
+ * Check if a location is in an incompatible timezone for preQualify.
+ * Returns a rejection reason string, or null if location is acceptable.
+ *
+ * Unlike the scout's isTimezoneCompatible() which uses an allowlist approach,
+ * this uses a blocklist approach to catch US/EU/LATAM/Africa locations that
+ * slip through. The scout filter runs first; this is a safety net in preQualify.
+ */
+function getLocationRejectionReason(location: string): string | null {
+  if (!location) return null
+
+  const lower = location.toLowerCase().trim()
+
+  // Never reject empty or clearly APAC-compatible locations
+  if (!lower || lower === 'remote' || lower === 'anywhere' || lower === 'worldwide') {
+    // Bare "Remote" is already handled by the scout layer for LinkedIn.
+    // If it reaches preQualify, it means it passed the scout filter (e.g. from RemoteOK).
+    return null
+  }
+
+  // Check for US state abbreviation patterns (e.g. "Palo Alto, CA")
+  if (hasUSStateAbbrev(location)) {
+    return `US location detected: "${location}"`
+  }
+
+  // Check for short "US" patterns — "Remote, US", "US", ", US", "Remote (US)"
+  // Can't use simple .includes('us') because it matches "campus", "focus", etc.
+  // Use word-boundary regex instead.
+  if (/\bUS\b/.test(location) || /\bU\.S\.?\b/i.test(location)) {
+    // Double-check: not a false positive from an APAC location
+    const apacCheck = ['india', 'singapore', 'australia', 'japan', 'korea',
+      'apac', 'asia', 'thailand', 'philippines', 'indonesia', 'vietnam',
+      'malaysia', 'dubai', 'uae', 'hong kong', 'china', 'taiwan'].some(
+      kw => lower.includes(kw))
+    if (!apacCheck) {
+      return `US location detected: "${location}"`
+    }
+  }
+
+  // Check against explicit reject patterns
+  for (const pattern of LOCATION_REJECT_PATTERNS) {
+    if (lower.includes(pattern)) {
+      // Safety: check if location ALSO contains an APAC keyword (e.g. "Remote - India, Americas")
+      // In that case, don't reject — the APAC signal takes priority
+      const apacKeywords = [
+        'bangkok', 'thailand', 'singapore', 'malaysia', 'indonesia', 'philippines',
+        'vietnam', 'japan', 'korea', 'taiwan', 'hong kong', 'china', 'india',
+        'australia', 'dubai', 'uae', 'apac', 'asia', 'southeast asia',
+      ]
+      const hasApacSignal = apacKeywords.some(kw => lower.includes(kw))
+      if (!hasApacSignal) {
+        return `Incompatible timezone location "${pattern}" in: "${location}"`
+      }
+    }
+  }
+
+  return null
+}
+
 /**
  * Title-based blacklist patterns — eliminates obviously irrelevant roles
  * BEFORE sending to Haiku. Each entry is matched case-insensitively against
  * the job title. Easy to extend: just add a new string to the array.
+ *
+ * NOTE: "graphic designer" is handled by TITLE_BLACKLIST_REGEX below
+ * (needs allowlist logic so "UX/Graphic Designer" isn't rejected).
  */
 const TITLE_BLACKLIST_PATTERNS = [
-  'graphic designer',
   'visual merchandis', // catches "visual merchandiser" and "visual merchandising"
   'shopify',
   'wordpress',
@@ -115,6 +262,59 @@ const TITLE_BLACKLIST_PATTERNS = [
   'content creator',
   'social media designer',
   'email designer',
+  // Packaging / print design — not product design
+  'packaging designer',
+  'packaging design',
+  'print designer',
+  // Social media roles — not product design
+  'social media',
+  // Non-role / generic listings
+  'bootcamp',
+  'participant',
+  'freelancers', // generic "Freelancers" listing, not a specific role
+  // Branding-only roles (unless combined with product/UX — caught by regex below)
+  'branding',
+]
+
+/**
+ * Regex-based title blacklist — for patterns that need allowlist override.
+ * Each { pattern, label } is tested against the lowercased title.
+ * If matched AND no TITLE_ALLOWLIST_PATTERNS entry is found in the title,
+ * the job is rejected.
+ *
+ * This handles "graphic designer" correctly:
+ *   REJECTED: "Graphic Designer", "Shopify Graphic Designer",
+ *     "Senior Graphic Designer (Branding Focus)", "Graphic Packaging Designer",
+ *     "PERMANENT Work From Home! | Graphic Designer"
+ *   ALLOWED: "UX/Graphic Designer", "Product & Graphic Designer"
+ */
+const TITLE_BLACKLIST_REGEX: Array<{ pattern: RegExp; label: string }> = [
+  { pattern: /graphic\s*design/i, label: 'graphic design' },
+]
+
+/**
+ * Allowlist patterns — if a title contains one of these AND matches a
+ * TITLE_BLACKLIST_REGEX entry, the regex rejection is overridden.
+ * This prevents false positives on hybrid roles like "UX/Graphic Designer".
+ *
+ * NOTE: These ONLY override TITLE_BLACKLIST_REGEX, not TITLE_BLACKLIST_PATTERNS.
+ */
+const TITLE_ALLOWLIST_PATTERNS = [
+  'product',
+  'ux',
+  'ui',
+  'interaction',
+  'design system',
+  'design ops',
+  'service design',
+  'content design',
+  'design technolog',
+  'design lead',
+  'head of design',
+  'design manager',
+  'staff designer',
+  'principal designer',
+  'design strategist',
 ]
 
 /**
@@ -179,6 +379,28 @@ export function preQualify(
     return { pass: false, reason: `Irrelevant role type "${matchedBlacklist}" in title: "${job.title}"`, rule: 'title_blacklist' }
   }
 
+  // Rule 5b: Regex-based title blacklist with allowlist override
+  // Handles patterns like "graphic designer" that need to allow hybrid roles
+  // (e.g. "UX/Graphic Designer" is OK, but "Graphic Designer" alone is not)
+  const hasAllowlistKeyword = TITLE_ALLOWLIST_PATTERNS.some(kw => titleLower.includes(kw))
+  if (!hasAllowlistKeyword) {
+    const matchedRegex = TITLE_BLACKLIST_REGEX.find(({ pattern }) => pattern.test(titleLower))
+    if (matchedRegex) {
+      return { pass: false, reason: `Irrelevant role type "${matchedRegex.label}" in title: "${job.title}"`, rule: 'title_blacklist' }
+    }
+  }
+
+  // Rule 6: Location/timezone rejection — catch US/EU/LATAM/Africa locations
+  // This is the safety net for jobs that slipped through the scout's TZ filter.
+  // The scout uses an allowlist (only pass known APAC locations), but some jobs
+  // reach preQualify from sources that bypass the scout (e.g. Trigger.dev direct).
+  if (job.location) {
+    const locationRejectReason = getLocationRejectionReason(job.location)
+    if (locationRejectReason) {
+      return { pass: false, reason: locationRejectReason, rule: 'incompatible_timezone' }
+    }
+  }
+
   // All rules passed — this job proceeds to Haiku scoring
   return { pass: true }
 }
@@ -234,6 +456,7 @@ export function formatPreQualifyStats(stats: PreQualifyStats): string {
     excluded_company: 'excluded company',
     blacklisted_industry: 'blacklisted industry',
     title_blacklist: 'irrelevant role type',
+    incompatible_timezone: 'wrong timezone',
   }
 
   for (const [rule, count] of Object.entries(stats.breakdown)) {

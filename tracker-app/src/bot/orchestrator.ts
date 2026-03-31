@@ -17,6 +17,7 @@ import {
   logBotActivity,
   getExistingApplications,
   getActiveSearchProfile,
+  cleanupZombieRuns,
   type ActivityLogEntry,
 } from './supabase-server'
 
@@ -867,6 +868,9 @@ export async function runPipeline(config: PipelineConfig & { onProgress?: (p: Pi
     // Keep only last 30 activities
     if (progressActivities.length > 30) progressActivities.length = 30
   }
+
+  // Clean up any zombie runs from previous crashed processes (OOM/timeout)
+  await cleanupZombieRuns(config.userId)
 
   // Create a bot run record
   const runId = await createBotRun(config.userId, config.searchProfile.id)

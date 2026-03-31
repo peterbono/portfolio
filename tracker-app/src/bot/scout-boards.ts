@@ -37,7 +37,22 @@ const COMPATIBLE_TZ_KEYWORDS = [
 
 /** Keywords that signal an incompatible timezone requirement */
 const INCOMPATIBLE_TZ_KEYWORDS = [
-  'est', 'cst', 'pst', 'mst', 'eastern', 'pacific', 'central time',
+  // US country-level
+  'united states', 'united states of america',
+  // US timezones
+  'est', 'cst', 'pst', 'mst', 'eastern time', 'pacific time', 'central time', 'mountain time',
+  // Major US cities — top tech hubs and metros
+  'new york', 'san francisco', 'los angeles', 'chicago', 'seattle',
+  'austin', 'denver', 'boston', 'atlanta', 'miami', 'dallas',
+  'houston', 'portland', 'san diego', 'san jose', 'palo alto',
+  'menlo park', 'mountain view', 'cupertino', 'sunnyvale', 'redwood city',
+  'santa clara', 'irvine', 'scottsdale', 'salt lake city', 'raleigh',
+  'durham', 'charlotte', 'nashville', 'phoenix', 'pittsburgh',
+  'philadelphia', 'washington dc', 'minneapolis', 'columbus',
+  'indianapolis', 'detroit', 'milwaukee', 'kansas city', 'st louis',
+  'tampa', 'orlando', 'sacramento', 'las vegas', 'baltimore',
+  'richmond', 'oakland', 'boulder', 'provo', 'lehi',
+  // EU timezones
   'cet', 'gmt+0', 'gmt+1', 'gmt+2', 'utc+0', 'utc+1', 'utc+2',
   // LATAM / Americas (country + city names)
   'latam', 'latin america', 'south america', 'americas', 'north america',
@@ -45,11 +60,42 @@ const INCOMPATIBLE_TZ_KEYWORDS = [
   'santiago', 'lima', 'medellin', 'medellín', 'montevideo',
   'brazil', 'brasil', 'argentina', 'colombia', 'chile', 'peru', 'mexico',
   'costa rica', 'panama', 'caribbean', 'canada', 'toronto', 'vancouver', 'montreal',
+  'ottawa', 'calgary', 'edmonton', 'winnipeg', 'quebec', 'québec', 'ontario', 'british columbia',
   // EU countries / cities
   'europe', 'emea', 'united kingdom', 'london', 'berlin', 'paris', 'amsterdam',
-  // Africa
-  'lagos', 'nairobi', 'cape town', 'johannesburg', 'accra', 'cairo',
+  'dublin', 'madrid', 'barcelona', 'lisbon', 'munich', 'hamburg', 'vienna',
+  'zurich', 'zürich', 'geneva', 'stockholm', 'copenhagen', 'oslo', 'helsinki',
+  'warsaw', 'prague', 'bucharest', 'brussels', 'milan', 'rome',
+  // Africa (too far)
+  'lagos', 'nairobi', 'cape town', 'johannesburg', 'accra', 'cairo', 'africa',
 ]
+
+/**
+ * US state abbreviations for detecting "City, XX" patterns in locations.
+ */
+const US_STATE_ABBREVS = [
+  'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA',
+  'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD',
+  'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ',
+  'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC',
+  'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY',
+  'DC',
+]
+
+/**
+ * Check if a location contains a US state abbreviation pattern like "City, CA".
+ */
+function hasUSStateAbbrev(location: string): boolean {
+  for (const state of US_STATE_ABBREVS) {
+    const pattern = new RegExp(`,\\s*${state}(?:\\s*$|\\s*,|\\s+|\\))`)
+    if (pattern.test(location)) {
+      const lower = location.toLowerCase()
+      const apacSafe = COMPATIBLE_TZ_KEYWORDS.some(kw => lower.includes(kw))
+      if (!apacSafe) return true
+    }
+  }
+  return false
+}
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -59,6 +105,16 @@ function isTimezoneCompatible(location: string): boolean {
   const lower = location.toLowerCase()
 
   if (INCOMPATIBLE_TZ_KEYWORDS.some(kw => lower.includes(kw))) {
+    return false
+  }
+
+  // Reject if contains US state abbreviation pattern (e.g. "Palo Alto, CA")
+  if (hasUSStateAbbrev(location)) {
+    return false
+  }
+
+  // Reject short "US" patterns — "Remote, US", "US", "Remote (US)"
+  if (/\bUS\b/.test(location) || /\bU\.S\.?\b/i.test(location)) {
     return false
   }
 
@@ -93,19 +149,35 @@ const DESIGN_KEYWORDS = [
 
 /** Non-product design disciplines — reject before Haiku */
 const NON_PRODUCT_DESIGN_BLOCKLIST = [
-  'graphic designer', 'generative ai', 'ai designer', 'ai artist',
+  'graphic designer', 'graphic design',
+  'generative ai', 'ai designer', 'ai artist',
   'motion designer', 'motion graphic', 'animation', 'animator',
   'video designer', 'video editor', 'brand designer',
   'creative director', 'art director', 'illustrat',
   'concept artist', '3d designer', '3d artist', 'game designer',
   'fashion designer', 'interior designer', 'content creator',
-  'social media designer', 'email designer',
+  'social media designer', 'social media', 'email designer',
+  'packaging designer', 'packaging design', 'print designer',
+  'bootcamp', 'participant', 'freelancers', 'branding',
+]
+
+/**
+ * Allowlist — if title contains one of these, override the blocklist.
+ * Prevents false positives on hybrid roles like "UX/Graphic Designer".
+ */
+const PRODUCT_DESIGN_ALLOWLIST = [
+  'product', 'ux', 'ui', 'interaction', 'design system', 'design ops',
+  'service design', 'content design', 'design technolog', 'design lead',
+  'head of design', 'design manager', 'staff designer', 'principal designer',
+  'design strategist',
 ]
 
 function isDesignRole(title: string): boolean {
   const lower = title.toLowerCase()
-  // Reject non-product design disciplines first
-  if (NON_PRODUCT_DESIGN_BLOCKLIST.some(kw => lower.includes(kw))) {
+  // Check if title has a product-design allowlist keyword
+  const hasAllowlistKeyword = PRODUCT_DESIGN_ALLOWLIST.some(kw => lower.includes(kw))
+  // Reject non-product design disciplines — unless allowlisted
+  if (!hasAllowlistKeyword && NON_PRODUCT_DESIGN_BLOCKLIST.some(kw => lower.includes(kw))) {
     return false
   }
   return DESIGN_KEYWORDS.some(kw => lower.includes(kw))
