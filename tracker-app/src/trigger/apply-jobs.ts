@@ -195,7 +195,13 @@ export const applyJobsTask = task({
         msg.includes('domain limit') || msg.includes('domain_limit') ||
         msg.includes('ERR_CONNECTION_REFUSED') ||
         msg.includes('ERR_NAME_NOT_RESOLVED') || /net::ERR_/.test(msg) ||
-        msg.includes('Target closed') || msg.includes('Browser closed')
+        msg.includes('Target closed') || msg.includes('Browser closed') ||
+        msg.includes('Timeout') || msg.includes('timeout')
+
+      // Timeout errors should skip SBR retries entirely and go straight to local fallback.
+      // Lever (and similar sites) block SBR proxy — retrying SBR just wastes 20s × N.
+      const isTimeoutError = (msg: string) =>
+        msg.includes('Timeout') || msg.includes('timeout')
 
       const isDomainLimitError = (msg: string) =>
         msg.includes('domain limit') || msg.includes('domain_limit')
@@ -349,6 +355,16 @@ export const applyJobsTask = task({
                 break
               }
 
+              // Timeout errors: skip remaining SBR retries, jump straight to local fallback.
+              // Sites like Lever block SBR proxy — retrying just wastes 20s per attempt.
+              if (isProxyErr && applyResult.reason && isTimeoutError(applyResult.reason) && ats.usingSBR && attempt <= MAX_SBR_RETRIES) {
+                console.log(`[apply-jobs]   SBR timeout detected (attempt ${attempt}) — skipping remaining SBR retries, forcing local fallback`)
+                await page.close().catch(() => {})
+                if (localBrowser) await localBrowser.close().catch(() => {})
+                attempt = MAX_SBR_RETRIES // next iteration will be attempt > MAX_SBR_RETRIES → local fallback
+                continue
+              }
+
               if (isProxyErr && attempt <= MAX_SBR_RETRIES) {
                 const delay = attempt * 8_000
                 console.log(`[apply-jobs]   SBR proxy error (attempt ${attempt}/${MAX_SBR_RETRIES + 1}), retrying in ${delay / 1000}s...`)
@@ -370,6 +386,15 @@ export const applyJobsTask = task({
                 if (localBrowser) await localBrowser.close().catch(() => {})
                 needsSbrRecycle = true
                 break
+              }
+
+              // Timeout exceptions: skip remaining SBR retries, jump straight to local fallback
+              if (isSbrProxyError(errMsg) && isTimeoutError(errMsg) && ats.usingSBR && attempt <= MAX_SBR_RETRIES) {
+                console.log(`[apply-jobs]   SBR timeout exception (attempt ${attempt}) — skipping remaining SBR retries, forcing local fallback`)
+                await page.close().catch(() => {})
+                if (localBrowser) await localBrowser.close().catch(() => {})
+                attempt = MAX_SBR_RETRIES // next iteration will be attempt > MAX_SBR_RETRIES → local fallback
+                continue
               }
 
               if (isSbrProxyError(errMsg) && attempt <= MAX_SBR_RETRIES) {
@@ -499,7 +524,7 @@ export const applyJobsTask = task({
       const atsResults = results.filter(r => r.ats !== 'LinkedIn Easy Apply')
       const atsFailed = atsResults.filter(r => r.status === 'failed')
       if (atsResults.length > 0 && atsFailed.length === atsResults.length) {
-        const sbrErrorPattern = /502|no_peer|probe_timeout|proxy_error|domain limit|domain_limit|ERR_CONNECTION_REFUSED|ERR_NAME_NOT_RESOLVED|net::ERR_|Target closed|Browser closed/
+        const sbrErrorPattern = /502|no_peer|probe_timeout|proxy_error|domain limit|domain_limit|ERR_CONNECTION_REFUSED|ERR_NAME_NOT_RESOLVED|net::ERR_|Target closed|Browser closed|[Tt]imeout/
         const sbrFailures = atsFailed.filter(r => r.reason && sbrErrorPattern.test(r.reason))
         if (sbrFailures.length >= Math.ceil(atsResults.length * 0.8)) {
           const uniqueReasons = Array.from(new Set(sbrFailures.map(r => r.reason))).slice(0, 3).join('; ')

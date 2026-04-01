@@ -29,7 +29,7 @@ export const lever: ATSAdapter = {
 
     try {
       // Step 1: Navigate to job page
-      await page.goto(jobUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 })
+      await page.goto(jobUrl, { waitUntil: 'domcontentloaded', timeout: 20_000 })
       await humanDelay(1500, 3000)
 
       company = await extractCompanyName(page, jobUrl)
