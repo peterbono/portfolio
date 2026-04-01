@@ -170,14 +170,16 @@ export const greenhouse: ATSAdapter = {
               }
             }
 
-            // No error, no explicit confirmation — likely succeeded
+            // No error, no explicit confirmation — cannot claim success
+            const noConfirmScreenshot2 = await takeScreenshot(page)
             return {
-              success: true,
-              status: 'applied',
+              success: false,
+              status: 'needs_manual',
               company,
               role,
               ats: 'Greenhouse',
-              reason: 'Applied after security code (no explicit confirmation)',
+              reason: 'Submitted after security code but no confirmation — verify manually',
+              screenshotUrl: noConfirmScreenshot2,
               duration: Date.now() - start,
             }
           } else {
@@ -281,14 +283,17 @@ export const greenhouse: ATSAdapter = {
         }
       }
 
-      // Truly no code, no error, no confirmation — likely succeeded
+      // No confirmation detected — do NOT claim "applied".
+      // Without explicit confirmation, we can't verify the submission went through.
+      const noConfirmScreenshot = await takeScreenshot(page)
       return {
-        success: true,
-        status: 'applied',
+        success: false,
+        status: 'needs_manual',
         company,
         role,
         ats: 'Greenhouse',
-        reason: 'Submitted but no explicit confirmation detected',
+        reason: 'Submitted but no confirmation detected — verify manually',
+        screenshotUrl: noConfirmScreenshot,
         duration: Date.now() - start,
       }
 

@@ -154,13 +154,19 @@ export const lever: ATSAdapter = {
         }
       }
 
+      // No confirmation detected after submit — do NOT claim "applied".
+      // Lever always sends a confirmation email on success, so if the page
+      // didn't show a confirmation, the submission likely failed silently
+      // (CAPTCHA, validation, cloud IP block, etc.)
+      const noConfirmScreenshot = await takeScreenshot(page)
       return {
-        success: true,
-        status: 'applied',
+        success: false,
+        status: 'needs_manual',
         company,
         role,
         ats: 'Lever',
-        reason: 'Submitted but no explicit confirmation detected',
+        reason: 'Submitted but no confirmation detected — apply manually to verify',
+        screenshotUrl: noConfirmScreenshot,
         duration: Date.now() - start,
       }
 
