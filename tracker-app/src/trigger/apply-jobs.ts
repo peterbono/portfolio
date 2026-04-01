@@ -231,15 +231,42 @@ export const applyJobsTask = task({
           )
 
           // SBR proxy can intermittently return 502 (no_peer, probe_timeout).
-          // Retry up to 3 times with exponential backoff for proxy errors.
-          const MAX_RETRIES = 3
+          // Retry up to 2 times with SBR, then fall back to local Chromium.
+          const MAX_SBR_RETRIES = 2
           let attempt = 0
           let applyResult: ApplyResult | null = null
-          let lastError: unknown = null
+          let usedLocalFallback = false
 
-          while (attempt < MAX_RETRIES) {
+          const isSbrProxyError = (msg: string) =>
+            msg.includes('502') || msg.includes('no_peer') ||
+            msg.includes('probe_timeout') || msg.includes('proxy_error')
+
+          while (attempt <= MAX_SBR_RETRIES) {
             attempt++
-            const page = await atsContext.newPage()
+
+            // On final retry with SBR, or if SBR already failed twice:
+            // try local Chromium as fallback (Greenhouse/Lever don't need residential proxy)
+            let pageContext = atsContext
+            let localBrowser: Awaited<ReturnType<typeof chromium.launch>> | null = null
+
+            if (attempt > MAX_SBR_RETRIES && usingSBR) {
+              console.log(`[apply-jobs]   SBR failed ${MAX_SBR_RETRIES} times, falling back to local Chromium`)
+              try {
+                localBrowser = await chromium.launch({ headless: true, args: LOCAL_ARGS })
+                pageContext = await localBrowser.newContext({
+                  viewport: { width: 1280, height: 900 },
+                  userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                  ignoreHTTPSErrors: true,
+                })
+                await blockUnnecessaryResources(pageContext, 'moderate')
+                usedLocalFallback = true
+              } catch (localErr) {
+                console.error(`[apply-jobs]   Local Chromium fallback failed: ${(localErr as Error).message}`)
+                break
+              }
+            }
+
+            const page = await pageContext.newPage()
 
             try {
               const adapter = detectAdapter(job.url)
@@ -252,17 +279,14 @@ export const applyJobsTask = task({
               applyResult = await adapter.apply(page, job.url, profile)
 
               // Check if the result is a proxy error that should be retried
-              const isProxyError = applyResult.status === 'failed' &&
-                applyResult.reason &&
-                (applyResult.reason.includes('502') ||
-                 applyResult.reason.includes('no_peer') ||
-                 applyResult.reason.includes('probe_timeout') ||
-                 applyResult.reason.includes('proxy_error'))
+              const isProxyErr = applyResult.status === 'failed' &&
+                applyResult.reason && isSbrProxyError(applyResult.reason)
 
-              if (isProxyError && attempt < MAX_RETRIES) {
-                const delay = attempt * 10_000 // 10s, 20s
-                console.log(`[apply-jobs]   SBR proxy error (attempt ${attempt}/${MAX_RETRIES}), retrying in ${delay / 1000}s...`)
+              if (isProxyErr && attempt <= MAX_SBR_RETRIES) {
+                const delay = attempt * 8_000
+                console.log(`[apply-jobs]   SBR proxy error (attempt ${attempt}/${MAX_SBR_RETRIES + 1}), retrying in ${delay / 1000}s...`)
                 await page.close().catch(() => {})
+                if (localBrowser) await localBrowser.close().catch(() => {})
                 await new Promise(r => setTimeout(r, delay))
                 continue
               }
@@ -270,17 +294,13 @@ export const applyJobsTask = task({
               break // Success or non-retryable failure
 
             } catch (err) {
-              lastError = err
               const errMsg = err instanceof Error ? err.message : String(err)
-              const isProxyError = errMsg.includes('502') ||
-                errMsg.includes('no_peer') ||
-                errMsg.includes('probe_timeout') ||
-                errMsg.includes('proxy_error')
 
-              if (isProxyError && attempt < MAX_RETRIES) {
-                const delay = attempt * 10_000
-                console.log(`[apply-jobs]   SBR proxy exception (attempt ${attempt}/${MAX_RETRIES}), retrying in ${delay / 1000}s...`)
+              if (isSbrProxyError(errMsg) && attempt <= MAX_SBR_RETRIES) {
+                const delay = attempt * 8_000
+                console.log(`[apply-jobs]   SBR proxy exception (attempt ${attempt}/${MAX_SBR_RETRIES + 1}), retrying in ${delay / 1000}s...`)
                 await page.close().catch(() => {})
+                if (localBrowser) await localBrowser.close().catch(() => {})
                 await new Promise(r => setTimeout(r, delay))
                 continue
               }
@@ -289,6 +309,7 @@ export const applyJobsTask = task({
               let screenshotBase64: string | undefined
               try { screenshotBase64 = await takeScreenshot(page) } catch { /* */ }
               await page.close().catch(() => {})
+              if (localBrowser) await localBrowser.close().catch(() => {})
 
               const result: ApplyJobResult = {
                 url: job.url,
@@ -305,9 +326,8 @@ export const applyJobsTask = task({
               console.error(`[apply-jobs]   Error: ${result.reason}`)
               break
             } finally {
-              if (applyResult || (attempt >= MAX_RETRIES && !applyResult)) {
-                await page.close().catch(() => {})
-              }
+              await page.close().catch(() => {})
+              if (localBrowser) await localBrowser.close().catch(() => {})
             }
           }
 

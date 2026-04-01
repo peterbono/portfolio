@@ -427,9 +427,12 @@ async function fillLocation(page: Page, profile: ApplicantProfile): Promise<void
 }
 
 async function handleScreeningQuestions(page: Page, profile: ApplicantProfile): Promise<void> {
-  // Greenhouse custom questions are in fieldsets or divs with data-question attributes
+  // Greenhouse custom questions are in fieldsets or divs with field-related classes.
+  // Important: `.field` matches <div class="field"> but NOT <div class="field-wrapper">,
+  // so we need both selectors. Greenhouse uses both patterns depending on the form version.
   const questionContainerSelectors = [
     '.field',
+    '.field-wrapper',
     '[class*="custom-question"]',
     '[data-question]',
     'fieldset',
