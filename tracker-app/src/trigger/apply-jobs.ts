@@ -93,6 +93,7 @@ export const applyJobsTask = task({
     jobs: ApplyJobPayload[]
     userProfile: Record<string, unknown>
     linkedInCookie?: string
+    gmailAccessToken?: string
     enrichedProfile?: {
       totalYearsExperience?: number
       skills?: Array<{ name: string; level: number; levelLabel: string; yearsUsed: number }>
@@ -127,6 +128,7 @@ export const applyJobsTask = task({
       ...(payload.userProfile.portfolio && { portfolio: String(payload.userProfile.portfolio) }),
       ...(payload.userProfile.cvUrl && { cvUrl: String(payload.userProfile.cvUrl) }),
       ...(payload.userProfile.currentCompany && { currentCompany: String(payload.userProfile.currentCompany) }),
+      ...(payload.gmailAccessToken && { gmailAccessToken: payload.gmailAccessToken }),
     }
 
     // ---------- Merge enrichedProfile data if available ----------

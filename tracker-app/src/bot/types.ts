@@ -32,6 +32,9 @@ export interface ApplicantProfile {
    *  Used by JobBoardRedirect adapter to skip unreliable page loads (e.g. RemoteOK + dead aiok.co)
    *  and probe ATS platforms directly. */
   jobMeta?: { company?: string; role?: string }
+  /** Google OAuth access token for Gmail API calls (e.g. Greenhouse security code verification).
+   *  Passed from the frontend/trigger payload. Short-lived (~1h). */
+  gmailAccessToken?: string
 }
 
 export interface ApplicantAchievement {

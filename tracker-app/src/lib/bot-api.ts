@@ -424,6 +424,21 @@ export async function triggerApplyJobs(
   const linkedInCookie = getLinkedInCookie()
   const enrichedProfile = getEnrichedProfile()
 
+  // Get Gmail access token for Greenhouse security code verification
+  let gmailAccessToken: string | null = null
+  try {
+    const { createClient } = await import('@supabase/supabase-js')
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+    const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+    if (supabaseUrl && supabaseAnonKey) {
+      const sb = createClient(supabaseUrl, supabaseAnonKey)
+      const { data: { session } } = await sb.auth.getSession()
+      gmailAccessToken = session?.provider_token ?? null
+    }
+  } catch {
+    console.warn('[bot-api] Could not retrieve Gmail access token')
+  }
+
   const payload: Record<string, unknown> = {
     userId,
     jobs: cloudJobs,
@@ -434,6 +449,11 @@ export async function triggerApplyJobs(
   // Include LinkedIn cookie for any LinkedIn jobs going to cloud (fallback)
   if (linkedInCookie && cloudJobs.some(j => /linkedin\.com\/jobs/i.test(j.url))) {
     payload.linkedInCookie = linkedInCookie
+  }
+
+  // Include Gmail token for Greenhouse security code verification
+  if (gmailAccessToken) {
+    payload.gmailAccessToken = gmailAccessToken
   }
 
   const response = await fetch(PROXY_TASK_URL, {

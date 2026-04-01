@@ -123,7 +123,93 @@ export const greenhouse: ATSAdapter = {
         }
       }
 
-      // Check for validation errors
+      // Step 11.5: Check for Greenhouse security code verification screen
+      // After submission, Greenhouse may show "Enter security code" instead of confirmation.
+      // The code is sent to the applicant's email and must be entered to finalize.
+      const needsSecurityCode = await detectSecurityCodeScreen(page)
+      if (needsSecurityCode) {
+        console.log(`[greenhouse] Security code screen detected for ${company}`)
+
+        if (profile.gmailAccessToken) {
+          // Poll Gmail for the code (emails take a few seconds to arrive)
+          const code = await pollForSecurityCode(company, profile.gmailAccessToken, 45_000)
+          if (code) {
+            console.log(`[greenhouse] Got security code: ${code.substring(0, 3)}***`)
+            await enterSecurityCode(page, code)
+            await humanDelay(1000, 2000)
+            await submitForm(page)
+            await humanDelay(3000, 5000)
+
+            const confirmedAfterCode = await checkForConfirmation(page)
+            if (confirmedAfterCode) {
+              return {
+                success: true,
+                status: 'applied',
+                company,
+                role,
+                ats: 'Greenhouse',
+                reason: 'Applied after security code verification',
+                duration: Date.now() - start,
+              }
+            }
+
+            // Check if code was wrong or another error
+            const postCodeError = await page.locator('.field--error, .error, [class*="error"]').first().isVisible({ timeout: 3000 }).catch(() => false)
+            if (postCodeError) {
+              const errText = await page.locator('.field--error, .error, [class*="error"]').first().textContent().catch(() => '')
+              const screenshot = await takeScreenshot(page)
+              return {
+                success: false,
+                status: 'needs_manual',
+                company,
+                role,
+                ats: 'Greenhouse',
+                reason: `Security code entered but error: ${errText}`,
+                screenshotUrl: screenshot,
+                duration: Date.now() - start,
+              }
+            }
+
+            // No error, no explicit confirmation — likely succeeded
+            return {
+              success: true,
+              status: 'applied',
+              company,
+              role,
+              ats: 'Greenhouse',
+              reason: 'Applied after security code (no explicit confirmation)',
+              duration: Date.now() - start,
+            }
+          } else {
+            const screenshot = await takeScreenshot(page)
+            return {
+              success: false,
+              status: 'needs_manual',
+              company,
+              role,
+              ats: 'Greenhouse',
+              reason: 'Security code required — code email not found in Gmail within 45s',
+              screenshotUrl: screenshot,
+              duration: Date.now() - start,
+            }
+          }
+        } else {
+          // No Gmail token — can't fetch the code
+          const screenshot = await takeScreenshot(page)
+          return {
+            success: false,
+            status: 'needs_manual',
+            company,
+            role,
+            ats: 'Greenhouse',
+            reason: 'Security code required — no Gmail access token provided',
+            screenshotUrl: screenshot,
+            duration: Date.now() - start,
+          }
+        }
+      }
+
+      // Check for validation errors (NOT the security code screen)
       const hasErrors = await page.locator('.field--error, .error, [class*="error"]').first().isVisible({ timeout: 3000 }).catch(() => false)
       if (hasErrors) {
         const errorText = await page.locator('.field--error, .error, [class*="error"]').first().textContent().catch(() => 'Unknown validation error')
@@ -667,4 +753,152 @@ async function submitForm(page: Page): Promise<boolean> {
   }
 
   return false
+}
+
+// ─── Security code verification (Greenhouse email OTP) ──────────────
+
+/**
+ * Detect if the page shows Greenhouse's security code verification screen.
+ * After form submission, Greenhouse may require email verification before
+ * finalizing the application.
+ */
+async function detectSecurityCodeScreen(page: Page): Promise<boolean> {
+  const codeIndicators = [
+    'text=/security code/i',
+    'text=/enter the code/i',
+    'text=/check your email/i',
+    'text=/verification code/i',
+    'text=/code was sent/i',
+    'text=/emailed you a code/i',
+    'input[name*="security_code"]',
+    'input[id*="security_code"]',
+    'input[name*="verification_code"]',
+  ]
+
+  for (const sel of codeIndicators) {
+    try {
+      const visible = await page.locator(sel).first().isVisible({ timeout: 2000 })
+      if (visible) return true
+    } catch {
+      continue
+    }
+  }
+  return false
+}
+
+/**
+ * Poll Gmail for a Greenhouse security code email.
+ * Greenhouse sends: "Copy and paste this code into the security code field
+ * on your application: XXXXXXXX"
+ *
+ * @param company - Company name to match in the email subject
+ * @param accessToken - Google OAuth access token with gmail.readonly scope
+ * @param maxWaitMs - Maximum polling duration (default 45s)
+ * @returns The security code string, or null if not found
+ */
+async function pollForSecurityCode(
+  company: string,
+  accessToken: string,
+  maxWaitMs = 45_000,
+): Promise<string | null> {
+  const startTime = Date.now()
+  const pollInterval = 5_000
+
+  while (Date.now() - startTime < maxWaitMs) {
+    const code = await fetchCodeFromGmail(company, accessToken)
+    if (code) return code
+
+    console.log(`[greenhouse] Waiting for security code email... (${Math.round((Date.now() - startTime) / 1000)}s)`)
+    await new Promise(r => setTimeout(r, pollInterval))
+  }
+
+  console.warn(`[greenhouse] Security code not found after ${maxWaitMs / 1000}s`)
+  return null
+}
+
+/**
+ * Single attempt to fetch the Greenhouse security code from Gmail.
+ */
+async function fetchCodeFromGmail(company: string, accessToken: string): Promise<string | null> {
+  try {
+    // Search for security code emails from Greenhouse for this company (last 10 minutes)
+    const query = `from:greenhouse subject:"security code" subject:"${company}" newer_than:10m`
+    const listUrl = `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=1`
+
+    const listRes = await fetch(listUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+
+    if (listRes.status === 401) {
+      console.warn('[greenhouse] Gmail token expired (401)')
+      return null
+    }
+    if (!listRes.ok) {
+      console.warn(`[greenhouse] Gmail API error: ${listRes.status}`)
+      return null
+    }
+
+    const listData = await listRes.json() as { messages?: Array<{ id: string }> }
+    if (!listData.messages?.length) return null
+
+    // Get the most recent email
+    const msgId = listData.messages[0].id
+    const msgUrl = `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}?format=full`
+    const msgRes = await fetch(msgUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+    if (!msgRes.ok) return null
+
+    const msgData = await msgRes.json() as { snippet?: string }
+    const snippet = msgData.snippet || ''
+
+    // Extract code: "...security code field on your application: XXXXXXXX After you enter..."
+    const codeMatch = snippet.match(/application:\s*(\S+)\s+After/i)
+    if (codeMatch) return codeMatch[1]
+
+    // Fallback: 6-10 char alphanumeric code after a colon
+    const fallback = snippet.match(/:\s*([A-Za-z0-9]{6,10})\s/)
+    if (fallback) return fallback[1]
+
+    console.warn('[greenhouse] Could not extract code from email snippet:', snippet.substring(0, 100))
+    return null
+  } catch (err) {
+    console.warn('[greenhouse] Gmail fetch error:', err instanceof Error ? err.message : err)
+    return null
+  }
+}
+
+/**
+ * Enter the security code into the verification form.
+ */
+async function enterSecurityCode(page: Page, code: string): Promise<void> {
+  const codeInputSelectors = [
+    'input[name*="security_code"]',
+    'input[id*="security_code"]',
+    'input[name*="verification_code"]',
+    'input[id*="verification_code"]',
+    'input[name*="code"]',
+    'input[aria-label*="code" i]',
+    'input[placeholder*="code" i]',
+    // Last resort: any visible text input on the code page
+    'input[type="text"]',
+  ]
+
+  for (const sel of codeInputSelectors) {
+    try {
+      const input = page.locator(sel).first()
+      const visible = await input.isVisible({ timeout: 2000 })
+      if (visible) {
+        await input.click()
+        await humanDelay(200, 400)
+        await input.fill(code)
+        console.log(`[greenhouse] Entered security code in ${sel}`)
+        return
+      }
+    } catch {
+      continue
+    }
+  }
+
+  console.warn('[greenhouse] Could not find security code input field')
 }
