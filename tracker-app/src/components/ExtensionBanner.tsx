@@ -10,9 +10,9 @@ import { Chrome, X, ExternalLink, Zap } from 'lucide-react'
 const DISMISS_KEY = 'jobtracker_ext_banner_dismissed'
 const DISMISS_DURATION_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
 
-// CWS extension ID: hpelihgiaifkflknjhmfbmhhfkjjcbeo
+// CWS extension ID (draft, not yet published): hpelihgiaifkflknjhmfbmhhfkjjcbeo
 const CWS_URL = 'https://chromewebstore.google.com/detail/jobtracker-auto-apply/hpelihgiaifkflknjhmfbmhhfkjjcbeo'
-const IS_CWS_LIVE = true
+const IS_CWS_LIVE = false // flip to true once SaaS is ready + extension approved
 
 export function ExtensionBanner() {
   const [extensionDetected, setExtensionDetected] = useState(false)
