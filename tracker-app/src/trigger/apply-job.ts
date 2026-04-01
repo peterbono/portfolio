@@ -55,14 +55,38 @@ export const applyJobTask = task({
     // Strategy: use Bright Data for scouting (public LinkedIn job search
     // doesn't require auth). Use local Chromium + cookie for Easy Apply.
     const SBR_AUTH = (process.env.BRIGHTDATA_SBR_AUTH || '').trim() || undefined
-    const browser = SBR_AUTH
-      ? await chromium.connectOverCDP(`wss://${SBR_AUTH}@brd.superproxy.io:9222`)
-      : await chromium.launch({ headless: true, args: ["--no-sandbox", "--disable-setuid-sandbox"] })
+
+    // SBR connectOverCDP can hang indefinitely — wrap with 30s timeout + local fallback
+    let browser: Awaited<ReturnType<typeof chromium.connectOverCDP>>
+    let usingSBR = false
+    if (SBR_AUTH) {
+      try {
+        browser = await Promise.race([
+          chromium.connectOverCDP(`wss://${SBR_AUTH}@brd.superproxy.io:9222`),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('SBR connection timeout (30s)')), 30_000)
+          ),
+        ])
+        usingSBR = true
+        console.log('[apply-job] Connected to Bright Data SBR')
+      } catch (sbrErr) {
+        console.warn(`[apply-job] SBR connection failed: ${(sbrErr as Error).message} — falling back to local Chromium`)
+        browser = await chromium.launch({
+          headless: true,
+          args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+        })
+      }
+    } else {
+      browser = await chromium.launch({
+        headless: true,
+        args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+      })
+    }
 
     // No cookie injection on Bright Data — scout uses public LinkedIn search
     // The linkedInCookie will be used later for Easy Apply via local Chromium
     let browserContext: Awaited<ReturnType<typeof browser.newContext>> | undefined
-    console.log(`[apply-job] Using ${SBR_AUTH ? 'Bright Data' : 'local Chromium'}, cookie: ${payload.linkedInCookie ? 'provided' : 'none'}`)
+    console.log(`[apply-job] Using ${usingSBR ? 'Bright Data' : 'local Chromium'}, cookie: ${payload.linkedInCookie ? 'provided' : 'none'}`)
 
     try {
       const result = await runPipelineFromInline({
