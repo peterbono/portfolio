@@ -108,8 +108,8 @@ export const greenhouse: ATSAdapter = {
         }
       }
 
-      // Step 11: Wait for confirmation
-      await humanDelay(2000, 4000)
+      // Step 11: Wait for page to settle after submission (Greenhouse may redirect to code page)
+      await humanDelay(4000, 7000)
       const confirmed = await checkForConfirmation(page)
 
       if (confirmed) {
@@ -226,7 +226,62 @@ export const greenhouse: ATSAdapter = {
         }
       }
 
-      // No confirmation but no error either — might have succeeded
+      // No confirmation, no error — but the security code screen may load late.
+      // Wait extra and re-check before assuming success (prevents false "applied").
+      await humanDelay(4000, 6000)
+      const lateSecurityCode = await detectSecurityCodeScreen(page)
+      if (lateSecurityCode) {
+        console.log(`[greenhouse] Late security code screen detected for ${company}`)
+        if (profile.gmailAccessToken) {
+          const code = await pollForSecurityCode(company, profile.gmailAccessToken, 45_000)
+          if (code) {
+            console.log(`[greenhouse] Got late security code: ${code.substring(0, 3)}***`)
+            await enterSecurityCode(page, code)
+            await humanDelay(1000, 2000)
+            await submitForm(page)
+            await humanDelay(3000, 5000)
+            const confirmedLate = await checkForConfirmation(page)
+            return {
+              success: confirmedLate,
+              status: confirmedLate ? 'applied' : 'needs_manual',
+              company,
+              role,
+              ats: 'Greenhouse',
+              reason: confirmedLate ? 'Applied after late security code' : 'Late security code entered but no confirmation',
+              duration: Date.now() - start,
+            }
+          }
+        }
+        const screenshot = await takeScreenshot(page)
+        return {
+          success: false,
+          status: 'needs_manual',
+          company,
+          role,
+          ats: 'Greenhouse',
+          reason: 'Security code required (late detection) — no Gmail token or code not found',
+          screenshotUrl: screenshot,
+          duration: Date.now() - start,
+        }
+      }
+
+      // Also check URL — Greenhouse may redirect to a code page
+      const currentUrl = page.url()
+      if (currentUrl.includes('security') || currentUrl.includes('verify') || currentUrl.includes('code')) {
+        const screenshot = await takeScreenshot(page)
+        return {
+          success: false,
+          status: 'needs_manual',
+          company,
+          role,
+          ats: 'Greenhouse',
+          reason: `Redirected to verification page: ${currentUrl}`,
+          screenshotUrl: screenshot,
+          duration: Date.now() - start,
+        }
+      }
+
+      // Truly no code, no error, no confirmation — likely succeeded
       return {
         success: true,
         status: 'applied',
