@@ -119,6 +119,8 @@ const DEAD_CONNECTION_PATTERNS = [
   'ECONNRESET',
   'EPIPE',
   'socket hang up',
+  'Scout search timeout',  // Per-search 90s timeout — SBR froze silently
+  'Scout retry timeout',   // Retry also timed out
 ]
 
 /** Check if an error indicates the browser/CDP connection is dead (not just a page load failure) */
@@ -961,14 +963,22 @@ export async function scoutJobsMultiPass(
     )
 
     try {
-      const result = await scoutJobs(
-        currentPage,
-        searchProfile,
-        existingApplications,
-        pagesPerSearch,
-        keyword,
-        location,
-      )
+      // Per-search timeout: SBR can die silently (no error, just hangs).
+      // If a single search takes >90s, abort and try next keyword×location.
+      const SEARCH_TIMEOUT_MS = 90_000
+      const result = await Promise.race([
+        scoutJobs(
+          currentPage,
+          searchProfile,
+          existingApplications,
+          pagesPerSearch,
+          keyword,
+          location,
+        ),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Scout search timeout (90s) — SBR likely frozen')), SEARCH_TIMEOUT_MS)
+        ),
+      ])
 
       globalTotalFound += result.totalFound
       globalFilteredOut += result.filteredOut
@@ -1036,16 +1046,21 @@ export async function scoutJobsMultiPass(
               `Retrying search "${keyword}" × "${location}"...`,
             )
 
-            // Retry the same search with the fresh page
+            // Retry the same search with the fresh page (with timeout)
             try {
-              const retryResult = await scoutJobs(
-                currentPage,
-                searchProfile,
-                existingApplications,
-                pagesPerSearch,
-                keyword,
-                location,
-              )
+              const retryResult = await Promise.race([
+                scoutJobs(
+                  currentPage,
+                  searchProfile,
+                  existingApplications,
+                  pagesPerSearch,
+                  keyword,
+                  location,
+                ),
+                new Promise<never>((_, reject) =>
+                  setTimeout(() => reject(new Error('Scout retry timeout (90s)')), 90_000)
+                ),
+              ])
 
               globalTotalFound += retryResult.totalFound
               globalFilteredOut += retryResult.filteredOut
