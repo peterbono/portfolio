@@ -221,13 +221,24 @@ function extractAtsUrlFromHtml(html: string): string | null {
     }
   }
 
-  // Fallback: look for href="..." containing /apply or /jobs/
+  // Fallback 1: look for href="..." containing /apply or /jobs/ or /career
   const hrefMatch = html.match(/href=["'](https?:\/\/[^"']+(?:\/apply|\/jobs\/|\/career)[^"']*?)["']/i)
   if (hrefMatch) {
     const url = hrefMatch[1]
-    // Skip remoteok.com links
+    // Skip remoteok.com and tracking domain links
     if (!url.includes('remoteok.com') && !url.includes('aiok.co')) {
       console.log(`[scout:remoteok] Extracted apply URL from description href: ${url}`)
+      return url
+    }
+  }
+
+  // Fallback 2: plain-text URLs with /apply, /jobs/, /careers/ (not in href)
+  // Catches "Apply at https://company.com/careers/role" in job descriptions
+  const plainUrlMatch = html.match(/https?:\/\/[^\s"'<>]+(?:\/apply|\/jobs\/|\/careers\/)[^\s"'<>]*/i)
+  if (plainUrlMatch) {
+    const url = plainUrlMatch[0].replace(/[&;'"<>)}\]]+$/, '')
+    if (!url.includes('remoteok.com') && !url.includes('aiok.co')) {
+      console.log(`[scout:remoteok] Extracted apply URL from plain text: ${url}`)
       return url
     }
   }

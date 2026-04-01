@@ -30,6 +30,20 @@ const JOB_BOARD_PATTERNS = [
   /remotive\.com/i,
 ]
 
+// Known tracking/redirect domains that don't host ATS forms.
+// These domains are used by job boards (e.g. RemoteOK → aiok.co) as
+// intermediate click-tracking redirects. DNS often fails on Trigger.dev workers.
+const TRACKING_DOMAINS = ['aiok.co', 'bit.ly', 'tinyurl.com', 't.co', 'ow.ly', 'buff.ly']
+
+function isTrackingDomain(url: string): boolean {
+  try {
+    const hostname = new URL(url).hostname
+    return TRACKING_DOMAINS.some(d => hostname === d || hostname.endsWith(`.${d}`))
+  } catch {
+    return false
+  }
+}
+
 export const jobBoardRedirect: ATSAdapter = {
   name: 'JobBoardRedirect',
 
@@ -74,10 +88,33 @@ export const jobBoardRedirect: ATSAdapter = {
       // Step 3: Follow HTTP redirect chain server-side to get the FINAL employer URL.
       // Job boards like RemoteOK use intermediate tracking domains (e.g., aiok.co)
       // that 302-redirect to the actual employer ATS. We resolve via fetch() first.
-      const finalUrl = await resolveRedirectChain(employerUrl)
+      let finalUrl = await resolveRedirectChain(employerUrl)
+
+      // Fallback A: if redirect chain failed on a tracking domain (e.g. aiok.co DNS error),
+      // try browser-based resolution — SBR proxy may have better DNS than the worker.
+      if (!finalUrl && isTrackingDomain(employerUrl)) {
+        console.log(`[job-board-redirect] Redirect chain failed on tracking domain, trying Playwright fallback`)
+        finalUrl = await resolveViaPlaywright(page, employerUrl)
+      }
+
+      // Fallback B: go back to listing page and extract ATS URL from rendered HTML.
+      // Description may contain direct Greenhouse/Lever/etc. links we missed earlier.
+      if (!finalUrl) {
+        console.log(`[job-board-redirect] All redirect strategies failed, trying ATS extraction from listing page`)
+        try {
+          await page.goto(jobUrl, { waitUntil: 'domcontentloaded', timeout: 15_000 })
+          await humanDelay(1500, 2500)
+          finalUrl = await extractAtsUrlFromPage(page)
+          if (finalUrl) {
+            console.log(`[job-board-redirect] Fallback B: found ATS URL in listing HTML: ${finalUrl}`)
+          }
+        } catch (e) {
+          console.log(`[job-board-redirect] Fallback B failed: ${e instanceof Error ? e.message : e}`)
+        }
+      }
 
       if (!finalUrl) {
-        // Redirect chain failed (dead domain, DNS error, etc.)
+        // All strategies exhausted — needs manual application
         const screenshot = await takeScreenshot(page)
         return {
           success: false,
@@ -138,21 +175,32 @@ export const jobBoardRedirect: ATSAdapter = {
 async function resolveEmployerUrl(page: Page, listingUrl: string): Promise<string | null> {
   const listingDomain = new URL(listingUrl).hostname
 
+  // ─── Strategy 0: Extract ATS URL directly from rendered page HTML ──
+  // Job descriptions often contain direct Greenhouse/Lever/etc. links,
+  // bypassing broken tracking redirect chains (aiok.co, etc.)
+  const directAts = await extractAtsUrlFromPage(page)
+  if (directAts) {
+    console.log(`[job-board-redirect] Strategy 0: Found ATS URL in page HTML: ${directAts}`)
+    return directAts
+  }
+
   // ─── Strategy 1: Click Apply and follow the redirect chain ────────
   const applyResult = await clickApplyAndFollow(page, listingDomain)
-  if (applyResult) return applyResult
+  if (applyResult && !isTrackingDomain(applyResult)) return applyResult
 
   // ─── Strategy 2: Navigate directly to /l/{id} for RemoteOK ────────
   if (/remoteok\.com/i.test(listingUrl)) {
     const directResult = await resolveRemoteOKDirect(page, listingUrl)
-    if (directResult) return directResult
+    if (directResult && !isTrackingDomain(directResult)) return directResult
   }
 
   // ─── Strategy 3: Extract external links from page (Himalayas, etc.) ──
   const externalLink = await extractExternalApplyLink(page, listingDomain)
-  if (externalLink) return externalLink
+  if (externalLink && !isTrackingDomain(externalLink)) return externalLink
 
-  return null
+  // If we only got a tracking URL from strategies 1/2, return it anyway —
+  // the caller will try resolveRedirectChain + Playwright fallback on it
+  return applyResult || null
 }
 
 /**
@@ -403,6 +451,122 @@ async function extractExternalApplyLink(page: Page, listingDomain: string): Prom
     }
     return null
   }, listingDomain)
+}
+
+/**
+ * Extract ATS URLs directly from the rendered page HTML.
+ * Scans all <a href> links and the full page body for known ATS domain patterns.
+ * This catches direct Greenhouse/Lever/etc. links embedded in job descriptions,
+ * bypassing broken tracking redirects (aiok.co, etc.).
+ */
+async function extractAtsUrlFromPage(page: Page): Promise<string | null> {
+  return page.evaluate(() => {
+    const knownATS = [
+      'greenhouse.io', 'lever.co', 'workable.com', 'breezy.hr',
+      'ashbyhq.com', 'recruitee.com', 'smartrecruiters.com',
+      'bamboohr.com', 'myworkdayjobs.com', 'icims.com',
+      'jobvite.com', 'teamtailor.com',
+    ]
+
+    // First pass: check all <a href> links on the page
+    const links = document.querySelectorAll('a[href]')
+    for (const link of links) {
+      const href = (link as HTMLAnchorElement).href
+      try {
+        const u = new URL(href)
+        if (knownATS.some(ats => u.hostname.includes(ats))) return href
+      } catch { /* skip invalid URLs */ }
+    }
+
+    // Second pass: check all links for any external URL with apply/career/jobs keywords
+    // (catches companies using their own career pages, not just known ATS)
+    const skipDomains = ['remoteok.com', 'aiok.co', 'bit.ly', 'tinyurl.com']
+    for (const link of links) {
+      const href = (link as HTMLAnchorElement).href
+      try {
+        const u = new URL(href)
+        const isSkipped = skipDomains.some(d => u.hostname.includes(d))
+        if (!isSkipped && (href.includes('/apply') || href.includes('/careers') || href.includes('/jobs/'))) {
+          return href
+        }
+      } catch { /* skip */ }
+    }
+
+    // Third pass: regex scan page HTML for ATS URL patterns
+    // (catches URLs in data attributes, JS, or non-link HTML)
+    const html = document.body?.innerHTML || ''
+    const patterns = [
+      /https?:\/\/[a-z0-9-]+\.greenhouse\.io\/[^\s"'<]+/i,
+      /https?:\/\/boards\.greenhouse\.io\/[^\s"'<]+/i,
+      /https?:\/\/[a-z0-9-]+\.lever\.co\/[^\s"'<]+/i,
+      /https?:\/\/jobs\.lever\.co\/[^\s"'<]+/i,
+      /https?:\/\/[a-z0-9-]+\.workable\.com\/[^\s"'<]+/i,
+      /https?:\/\/[a-z0-9-]+\.breezy\.hr\/[^\s"'<]+/i,
+      /https?:\/\/[a-z0-9-]+\.ashbyhq\.com\/[^\s"'<]+/i,
+      /https?:\/\/[a-z0-9-]+\.recruitee\.com\/[^\s"'<]+/i,
+      /https?:\/\/[a-z0-9-]+\.smartrecruiters\.com\/[^\s"'<]+/i,
+      /https?:\/\/[a-z0-9-]+\.bamboohr\.com\/[^\s"'<]+/i,
+      /https?:\/\/[a-z0-9-]+\.myworkdayjobs\.com\/[^\s"'<]+/i,
+      /https?:\/\/[a-z0-9-]+\.jobvite\.com\/[^\s"'<]+/i,
+      /https?:\/\/[a-z0-9-]+\.teamtailor\.com\/[^\s"'<]+/i,
+    ]
+    for (const p of patterns) {
+      const match = html.match(p)
+      if (match) return match[0].replace(/[&;'"<>)}\]]+$/, '')
+    }
+
+    return null
+  })
+}
+
+/**
+ * Fallback: resolve a URL by navigating to it in the browser (Playwright/SBR).
+ * SBR (Bright Data Super Browser) uses residential/datacenter DNS that may
+ * resolve domains unreachable from the Trigger.dev worker's Node.js fetch().
+ * Useful for tracking domains like aiok.co.
+ */
+async function resolveViaPlaywright(page: Page, url: string): Promise<string | null> {
+  console.log(`[job-board-redirect] Attempting Playwright navigation fallback: ${url}`)
+  try {
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15_000 })
+    await humanDelay(2000, 3000)
+
+    const finalUrl = page.url()
+    const srcHostname = new URL(url).hostname
+    const dstHostname = new URL(finalUrl).hostname
+
+    // If the browser navigated to a different domain, that's our result
+    if (dstHostname !== srcHostname && !isTrackingDomain(finalUrl)) {
+      console.log(`[job-board-redirect] Playwright resolved: ${url} → ${finalUrl}`)
+      return finalUrl
+    }
+
+    // Check for meta-refresh or JS-based redirects that haven't fired yet
+    const jsRedirect = await page.evaluate(() => {
+      // meta http-equiv="refresh"
+      const meta = document.querySelector('meta[http-equiv="refresh"]')
+      if (meta) {
+        const m = meta.getAttribute('content')?.match(/url=(.+)/i)
+        if (m) return m[1].trim()
+      }
+      // window.location assignments in inline scripts
+      const scripts = document.querySelectorAll('script:not([src])')
+      for (const s of scripts) {
+        const text = s.textContent || ''
+        const m = text.match(/window\.location(?:\.href)?\s*=\s*["']([^"']+)["']/)
+        if (m && !m[1].includes(location.hostname)) return m[1]
+      }
+      return null
+    })
+
+    if (jsRedirect && !isTrackingDomain(jsRedirect)) {
+      console.log(`[job-board-redirect] Playwright found JS redirect target: ${jsRedirect}`)
+      return jsRedirect
+    }
+  } catch (err) {
+    console.log(`[job-board-redirect] Playwright fallback failed: ${err instanceof Error ? err.message : err}`)
+  }
+  return null
 }
 
 /**
