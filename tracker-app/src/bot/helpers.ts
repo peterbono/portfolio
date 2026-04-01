@@ -753,25 +753,52 @@ export async function extractRoleTitle(page: Page): Promise<string> {
  * Check if a confirmation/success message appeared after submission.
  */
 export async function checkForConfirmation(page: Page): Promise<boolean> {
+  // Wait a moment for any post-submit redirect/render
+  await new Promise(r => setTimeout(r, 2000))
+
   const successPatterns = [
     'text=Thank you',
+    'text=thank you',
     'text=Application submitted',
     'text=application has been received',
     'text=successfully submitted',
     'text=Thanks for applying',
+    'text=thanks for applying',
     'text=We have received your application',
     'text=Your application has been submitted',
     'text=Merci',
+    'text=Application received',
+    'text=application received',
+    'text=We got your application',
+    'text=received your submission',
+    'text=You\'re all set',
+    // Lever-specific patterns
+    'text=Thanks for your interest',
+    'text=Your application to',
+    '.application-confirmation',
+    '.confirmation-message',
+    '[class*="success"]',
+    '[class*="confirmation"]',
+    // Greenhouse-specific patterns
+    '.flash-success',
+    '#application_confirmation',
+    // URL-based detection (some ATS redirect to /thank-you or /confirmation)
   ]
 
   for (const pattern of successPatterns) {
     try {
       const element = page.locator(pattern).first()
-      const visible = await element.isVisible({ timeout: 3000 })
+      const visible = await element.isVisible({ timeout: 2000 })
       if (visible) return true
     } catch {
       // Continue checking
     }
+  }
+
+  // Also check URL for confirmation indicators
+  const url = page.url().toLowerCase()
+  if (url.includes('thank') || url.includes('confirmation') || url.includes('success') || url.includes('submitted')) {
+    return true
   }
 
   return false
