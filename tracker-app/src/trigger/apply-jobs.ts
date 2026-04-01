@@ -184,52 +184,86 @@ export const applyJobsTask = task({
         "--disable-gpu", "--single-process", "--disable-extensions",
         "--js-flags=--max-old-space-size=256",
       ]
-      let atsBrowser: Awaited<ReturnType<typeof chromium.connectOverCDP>>
-      let usingSBR = false
-      if (SBR_AUTH) {
-        try {
-          const sbrBrowser = await Promise.race([
-            chromium.connectOverCDP(`wss://${SBR_AUTH}@brd.superproxy.io:9222`),
-            new Promise<never>((_, reject) =>
-              setTimeout(() => reject(new Error('SBR connection timeout (30s)')), 30_000)
-            ),
-          ])
-          // Health check: verify CDP is responsive (not a zombie session)
-          const testCtx = await Promise.race([
-            sbrBrowser.newContext(),
-            new Promise<never>((_, reject) =>
-              setTimeout(() => reject(new Error('SBR health check timeout (10s)')), 10_000)
-            ),
-          ])
-          await testCtx.close()
-          atsBrowser = sbrBrowser
-          usingSBR = true
-          console.log('[apply-jobs] Connected to Bright Data SBR (health check passed)')
-        } catch (sbrErr) {
-          console.warn(`[apply-jobs] SBR failed: ${(sbrErr as Error).message} — falling back to local Chromium`)
-          atsBrowser = await chromium.launch({ headless: true, args: LOCAL_ARGS }) as unknown as Awaited<ReturnType<typeof chromium.connectOverCDP>>
-        }
-      } else {
-        atsBrowser = await chromium.launch({ headless: true, args: LOCAL_ARGS }) as unknown as Awaited<ReturnType<typeof chromium.connectOverCDP>>
+
+      // ── SBR domain limit & proxy error detection ──
+      // Bright Data SBR enforces a per-session domain navigation limit (~3-5 cross-domain navs).
+      // After that, CDP throws "Page.navigate domain limit reached".
+      // We detect this and similar errors to trigger session recycling.
+      const isSbrProxyError = (msg: string) =>
+        msg.includes('502') || msg.includes('no_peer') ||
+        msg.includes('probe_timeout') || msg.includes('proxy_error') ||
+        msg.includes('domain limit') || msg.includes('domain_limit') ||
+        msg.includes('ERR_CONNECTION_REFUSED') ||
+        msg.includes('ERR_NAME_NOT_RESOLVED') || /net::ERR_/.test(msg) ||
+        msg.includes('Target closed') || msg.includes('Browser closed')
+
+      const isDomainLimitError = (msg: string) =>
+        msg.includes('domain limit') || msg.includes('domain_limit')
+
+      // Proactively recycle SBR session every N jobs to avoid hitting the domain limit
+      const SBR_RECYCLE_EVERY = 3
+
+      // ── Helper: connect to SBR or fall back to local Chromium ──
+      // Returns a bundle with browser, context, and whether SBR is in use.
+      // This is called at startup and again each time we need to recycle.
+      type BrowserBundle = {
+        browser: Awaited<ReturnType<typeof chromium.connectOverCDP>>
+        context: Awaited<ReturnType<Awaited<ReturnType<typeof chromium.connectOverCDP>>['newContext']>>
+        usingSBR: boolean
       }
 
+      const connectAtsBrowser = async (): Promise<BrowserBundle> => {
+        if (SBR_AUTH) {
+          try {
+            const sbrBrowser = await Promise.race([
+              chromium.connectOverCDP(`wss://${SBR_AUTH}@brd.superproxy.io:9222`),
+              new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error('SBR connection timeout (30s)')), 30_000)
+              ),
+            ])
+            // Health check: verify CDP is responsive (not a zombie session)
+            const testCtx = await Promise.race([
+              sbrBrowser.newContext(),
+              new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error('SBR health check timeout (10s)')), 10_000)
+              ),
+            ])
+            await testCtx.close()
+
+            // SBR via CDP doesn't support newContext() — use default context
+            const ctx = sbrBrowser.contexts()[0] || await sbrBrowser.newContext({
+              viewport: { width: 1280, height: 900 },
+              ignoreHTTPSErrors: true,
+            })
+            await blockUnnecessaryResources(ctx, 'moderate')
+            console.log('[apply-jobs] Connected to Bright Data SBR (health check passed)')
+            return { browser: sbrBrowser, context: ctx, usingSBR: true }
+          } catch (sbrErr) {
+            console.warn(`[apply-jobs] SBR connect failed: ${(sbrErr as Error).message} — falling back to local Chromium`)
+          }
+        }
+        // Local Chromium fallback
+        const localBrowser = await chromium.launch({ headless: true, args: LOCAL_ARGS }) as unknown as Awaited<ReturnType<typeof chromium.connectOverCDP>>
+        const ctx = await localBrowser.newContext({
+          viewport: { width: 1280, height: 900 },
+          userAgent:
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+          ignoreHTTPSErrors: true,
+        })
+        await blockUnnecessaryResources(ctx, 'moderate')
+        return { browser: localBrowser, context: ctx, usingSBR: false }
+      }
+
+      const closeAtsBrowser = async (bundle: BrowserBundle): Promise<void> => {
+        await bundle.context.close().catch((err) => console.warn('[apply-jobs] Context close failed:', err))
+        await bundle.browser.close().catch((err) => console.warn('[apply-jobs] Browser close failed:', err))
+      }
+
+      // ── Initial connection ──
+      let ats = await connectAtsBrowser()
+      let jobsSinceRecycle = 0
+
       try {
-        // SBR via CDP doesn't support newContext() — use default context
-        const atsContext = usingSBR
-          ? atsBrowser.contexts()[0] || await atsBrowser.newContext({
-              viewport: { width: 1280, height: 900 },
-              ignoreHTTPSErrors: true,
-            })
-          : await atsBrowser.newContext({
-              viewport: { width: 1280, height: 900 },
-              userAgent:
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-              ignoreHTTPSErrors: true,
-            })
-
-        // Moderate mode: block images, fonts, media, trackers but KEEP CSS (ATS forms need it)
-        await blockUnnecessaryResources(atsContext, 'moderate')
-
         for (let i = 0; i < atsJobs.length; i++) {
           const job = atsJobs[i]
           const jobStart = Date.now()
@@ -238,29 +272,33 @@ export const applyJobsTask = task({
             `[apply-jobs] [${i + 1}/${atsJobs.length}] ATS: ${job.company} — ${job.role}`,
           )
 
-          // SBR proxy can intermittently return 502 (no_peer, probe_timeout).
+          // ── Proactive SBR session recycling every N jobs ──
+          // This prevents hitting the domain limit before it occurs.
+          if (ats.usingSBR && jobsSinceRecycle >= SBR_RECYCLE_EVERY) {
+            console.log(`[apply-jobs]   Proactive SBR recycle after ${jobsSinceRecycle} jobs (limit: ${SBR_RECYCLE_EVERY})`)
+            await closeAtsBrowser(ats)
+            await new Promise(r => setTimeout(r, 2_000)) // brief cooldown
+            ats = await connectAtsBrowser()
+            jobsSinceRecycle = 0
+          }
+
+          // SBR proxy can intermittently return 502 (no_peer, probe_timeout, domain limit).
           // Retry up to 2 times with SBR, then fall back to local Chromium.
           const MAX_SBR_RETRIES = 2
           let attempt = 0
           let applyResult: ApplyResult | null = null
           let usedLocalFallback = false
-
-          const isSbrProxyError = (msg: string) =>
-            msg.includes('502') || msg.includes('no_peer') ||
-            msg.includes('probe_timeout') || msg.includes('proxy_error') ||
-            msg.includes('domain limit') || msg.includes('ERR_CONNECTION_REFUSED') ||
-            msg.includes('ERR_NAME_NOT_RESOLVED') || /net::ERR_/.test(msg) ||
-            msg.includes('Target closed') || msg.includes('Browser closed')
+          let needsSbrRecycle = false
 
           while (attempt <= MAX_SBR_RETRIES) {
             attempt++
 
             // On final retry with SBR, or if SBR already failed twice:
             // try local Chromium as fallback (Greenhouse/Lever don't need residential proxy)
-            let pageContext = atsContext
+            let pageContext = ats.context
             let localBrowser: Awaited<ReturnType<typeof chromium.launch>> | null = null
 
-            if (attempt > MAX_SBR_RETRIES && usingSBR) {
+            if (attempt > MAX_SBR_RETRIES && ats.usingSBR) {
               console.log(`[apply-jobs]   SBR failed ${MAX_SBR_RETRIES} times, falling back to local Chromium`)
               try {
                 localBrowser = await chromium.launch({ headless: true, args: LOCAL_ARGS })
@@ -293,6 +331,17 @@ export const applyJobsTask = task({
               const isProxyErr = applyResult.status === 'failed' &&
                 applyResult.reason && isSbrProxyError(applyResult.reason)
 
+              // Domain limit errors need full session recycle, not just page retry
+              if (applyResult.status === 'failed' && applyResult.reason &&
+                  isDomainLimitError(applyResult.reason) && ats.usingSBR) {
+                console.log(`[apply-jobs]   SBR domain limit hit (result) — will recycle session and retry this job`)
+                await page.close().catch(() => {})
+                if (localBrowser) await localBrowser.close().catch(() => {})
+                needsSbrRecycle = true
+                applyResult = null // will retry with fresh session
+                break
+              }
+
               if (isProxyErr && attempt <= MAX_SBR_RETRIES) {
                 const delay = attempt * 8_000
                 console.log(`[apply-jobs]   SBR proxy error (attempt ${attempt}/${MAX_SBR_RETRIES + 1}), retrying in ${delay / 1000}s...`)
@@ -306,6 +355,15 @@ export const applyJobsTask = task({
 
             } catch (err) {
               const errMsg = err instanceof Error ? err.message : String(err)
+
+              // Domain limit exception: recycle entire SBR session
+              if (isDomainLimitError(errMsg) && ats.usingSBR) {
+                console.log(`[apply-jobs]   SBR domain limit exception — will recycle session and retry this job`)
+                await page.close().catch(() => {})
+                if (localBrowser) await localBrowser.close().catch(() => {})
+                needsSbrRecycle = true
+                break
+              }
 
               if (isSbrProxyError(errMsg) && attempt <= MAX_SBR_RETRIES) {
                 const delay = attempt * 8_000
@@ -346,6 +404,20 @@ export const applyJobsTask = task({
               if (localBrowser) await localBrowser.close().catch(() => {})
             }
           }
+
+          // ── SBR domain limit recovery: recycle session and retry this job ──
+          if (needsSbrRecycle) {
+            console.log(`[apply-jobs]   Closing stale SBR session and reconnecting...`)
+            await closeAtsBrowser(ats)
+            await new Promise(r => setTimeout(r, 3_000)) // cooldown before reconnect
+            ats = await connectAtsBrowser()
+            jobsSinceRecycle = 0
+            // Decrement i so the current job is retried with the fresh session
+            i--
+            continue
+          }
+
+          jobsSinceRecycle++
 
           // Process the final applyResult (if we got one from the retry loop)
           if (applyResult) {
@@ -410,10 +482,8 @@ export const applyJobsTask = task({
             await humanDelay(ATS_GAP_MS, ATS_GAP_MS + 5000)
           }
         }
-
-        await atsContext.close().catch((err) => console.warn('[apply-jobs] Cleanup failed:', err))
       } finally {
-        await atsBrowser.close().catch((err) => console.warn('[apply-jobs] Cleanup failed:', err))
+        await closeAtsBrowser(ats)
       }
 
       // ---------- SBR total failure detection ----------
@@ -422,10 +492,10 @@ export const applyJobsTask = task({
       const atsResults = results.filter(r => r.ats !== 'LinkedIn Easy Apply')
       const atsFailed = atsResults.filter(r => r.status === 'failed')
       if (atsResults.length > 0 && atsFailed.length === atsResults.length) {
-        const sbrErrorPattern = /502|no_peer|probe_timeout|proxy_error|domain limit|ERR_CONNECTION_REFUSED|ERR_NAME_NOT_RESOLVED|net::ERR_|Target closed|Browser closed/
+        const sbrErrorPattern = /502|no_peer|probe_timeout|proxy_error|domain limit|domain_limit|ERR_CONNECTION_REFUSED|ERR_NAME_NOT_RESOLVED|net::ERR_|Target closed|Browser closed/
         const sbrFailures = atsFailed.filter(r => r.reason && sbrErrorPattern.test(r.reason))
         if (sbrFailures.length >= Math.ceil(atsResults.length * 0.8)) {
-          const uniqueReasons = [...new Set(sbrFailures.map(r => r.reason))].slice(0, 3).join('; ')
+          const uniqueReasons = Array.from(new Set(sbrFailures.map(r => r.reason))).slice(0, 3).join('; ')
           console.error(
             `[apply-jobs] SBR TOTAL FAILURE: All ${atsResults.length} ATS jobs failed due to proxy/browser errors. ` +
             `Reasons: ${uniqueReasons}. ` +
@@ -642,15 +712,14 @@ export const applyJobsTask = task({
     } finally {
       // ---------- Update bot run in Supabase (ALWAYS runs) ----------
       const totalDuration = Date.now() - runStart
-      const runStatus = fatalError ? 'crashed' : 'completed'
+      const runStatus = fatalError ? 'failed' : 'completed'
       if (runId) {
         await updateBotRun(runId, {
           status: runStatus,
-          finished_at: new Date().toISOString(),
+          completed_at: new Date().toISOString(),
           jobs_applied: applied,
           jobs_skipped: skipped,
           jobs_failed: failed + needsManual,
-          duration_ms: totalDuration,
           ...(fatalError && { error_message: fatalError.message }),
         }).catch((err) => console.warn("[apply-jobs] Update run error:", err))
       }
