@@ -426,6 +426,29 @@ async function fillLocation(page: Page, profile: ApplicantProfile): Promise<void
   }
 }
 
+/**
+ * Determine answer for checkbox/radio screening questions in Greenhouse fieldsets.
+ * Covers the most common patterns; textual questions go through the generic helper.
+ */
+function getFieldsetAnswer(questionText: string, profile: ApplicantProfile): string {
+  const q = questionText.toLowerCase()
+  if (q.includes('employment') || q.includes('work type') || q.includes('contract type') || q.includes('arrangement') || q.includes('engagement')) return 'Contract'
+  if (q.includes('availability') || q.includes('hours') || q.includes('commitment')) return 'Full-time'
+  if (q.includes('how did you') || q.includes('hear about') || q.includes('source') || q.includes('referr')) return 'LinkedIn'
+  if (q.includes('remote') || q.includes('work from home')) return 'Yes'
+  if (q.includes('relocat')) return 'Open to relocation'
+  if (q.includes('authorized') || q.includes('visa') || q.includes('sponsor') || q.includes('work permit') || q.includes('legally')) return profile.workAuth
+  if (q.includes('gender') || q.includes('pronoun')) return 'Prefer not to say'
+  if (q.includes('disability') || q.includes('handicap')) return 'Prefer not to say'
+  if (q.includes('race') || q.includes('ethnic')) return 'Prefer not to say'
+  if (q.includes('veteran')) return 'No'
+  if (q.includes('salary') || q.includes('compensation')) return '70000 EUR'
+  if (q.includes('notice') || q.includes('start') || q.includes('when can you')) return profile.noticePeriod
+  if (q.includes('language') && !q.includes('programming')) return 'English'
+  if (q.includes('do you') || q.includes('are you') || q.includes('have you') || q.includes('can you')) return 'Yes'
+  return 'Yes'
+}
+
 async function handleScreeningQuestions(page: Page, profile: ApplicantProfile): Promise<void> {
   // Greenhouse custom questions are in fieldsets or divs with field-related classes.
   // Important: `.field` matches <div class="field"> but NOT <div class="field-wrapper">,
@@ -446,6 +469,68 @@ async function handleScreeningQuestions(page: Page, profile: ApplicantProfile): 
       const container = containers.nth(i)
 
       try {
+        // ──── Handle checkbox/radio fieldsets FIRST ────
+        // Greenhouse checkboxes: <fieldset><legend>Question</legend><div class="checkbox__wrapper">
+        //   <div class="checkbox__input"><input type="checkbox"/></div><label>Option</label></div>
+        // Must run BEFORE generic label-reading because:
+        //  (a) question text is in <legend>, not <label> (<label> = option text)
+        //  (b) input IDs contain [] which break CSS # selectors
+        //  (c) nested div structure confuses the generic handleRadioOrCheckbox helper
+        const containerTag = await container.evaluate(el => el.tagName.toLowerCase()).catch(() => '')
+        const fieldsetLoc = containerTag === 'fieldset' ? container : container.locator('fieldset').first()
+        const hasFieldsetWithInputs = await fieldsetLoc.count() > 0
+
+        if (hasFieldsetWithInputs) {
+          const cbCount = await fieldsetLoc.locator('input[type="checkbox"]').count()
+          const rdCount = await fieldsetLoc.locator('input[type="radio"]').count()
+
+          if (cbCount > 0 || rdCount > 0) {
+            const fType = cbCount > 0 ? 'checkbox' : 'radio'
+            const anyChecked = await fieldsetLoc.locator(`input[type="${fType}"]:checked`).count() > 0
+            if (anyChecked) continue
+
+            const legendText = await fieldsetLoc.locator('legend').first().textContent({ timeout: 1000 }).catch(() => '')
+            if (!legendText || legendText.trim().length < 3) continue
+
+            await fieldsetLoc.scrollIntoViewIfNeeded().catch(() => {})
+            const answer = getFieldsetAnswer(legendText, profile)
+            const desired = answer.toLowerCase()
+
+            const optLabels = fieldsetLoc.locator('label')
+            const optCount = await optLabels.count()
+
+            let bestIdx = -1
+            let bestScore = 0
+            for (let j = 0; j < optCount; j++) {
+              const text = (await optLabels.nth(j).textContent())?.toLowerCase().trim() || ''
+              if (!text || text.length < 2) continue
+              let score = 0
+              if (text === desired) score = 100
+              else if (text.includes(desired)) score = 80
+              else if (desired.includes(text)) score = 60
+              else {
+                const desiredWords = desired.split(/[\s/,]+/)
+                const textWords = text.split(/[\s/,]+/)
+                const matching = desiredWords.filter(w => textWords.some(tw => tw.includes(w) || w.includes(tw)))
+                if (matching.length > 0) score = 20 + matching.length * 10
+              }
+              if (score > bestScore) { bestScore = score; bestIdx = j }
+            }
+
+            if (bestIdx >= 0 && bestScore >= 20) {
+              const chosen = await optLabels.nth(bestIdx).textContent()
+              await optLabels.nth(bestIdx).click()
+              console.log(`[screening] Fieldset ${fType}: clicked "${chosen?.trim()}" (score ${bestScore}) for "${legendText.trim()}"`)
+            } else if (optCount > 0) {
+              const fb = await optLabels.nth(0).textContent()
+              await optLabels.nth(0).click()
+              console.log(`[screening] Fieldset ${fType}: fallback clicked "${fb?.trim()}" for "${legendText.trim()}"`)
+            }
+            await humanDelay(300, 600)
+            continue
+          }
+        }
+
         // Get the question text from label
         const label = container.locator('label').first()
         const labelText = await label.textContent({ timeout: 1000 }).catch(() => '')
@@ -510,7 +595,8 @@ async function handleScreeningQuestions(page: Page, profile: ApplicantProfile): 
 
         // Build a selector for the input
         const inputId = await input.evaluate((el) => el.id).catch(() => '')
-        const inputSelector = inputId ? `#${inputId}` : `${containerSel}:nth-child(${i + 1}) input, ${containerSel}:nth-child(${i + 1}) textarea, ${containerSel}:nth-child(${i + 1}) select`
+        // Use [id="..."] instead of #id — IDs may contain [] which break CSS # selectors
+        const inputSelector = inputId ? `[id="${inputId}"]` : `${containerSel}:nth-child(${i + 1}) input, ${containerSel}:nth-child(${i + 1}) textarea, ${containerSel}:nth-child(${i + 1}) select`
 
         await scrollToElement(page, inputSelector)
         await answerScreeningQuestion(page, labelText, inputSelector, profile)
