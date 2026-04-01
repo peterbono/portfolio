@@ -49,6 +49,7 @@ import { useAuthWallContext } from '../context/AuthWallContext'
 import CompanyChipInput from '../components/CompanyChipInput'
 import { ProfileSetupModal, isProfileComplete } from '../components/ProfileSetupModal'
 import CardStackReview from '../components/CardStackReview'
+import { ExtensionBanner } from '../components/ExtensionBanner'
 import CalibrationExercise from '../components/CalibrationExercise'
 import {
   recordSignal,
@@ -5035,6 +5036,8 @@ export function AutopilotView() {
 
         {/* RIGHT: Main content */}
         <div className="autopilot-main-panel" style={layoutStyles.main}>
+          {/* Chrome extension install banner */}
+          <ExtensionBanner />
           {/* Trial expired banner */}
           {trialIsExpired && basePlan === 'free' && (
             <div style={{

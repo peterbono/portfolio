@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy - JobTracker Chrome Extension</title>
+  <style>
+    :root { --bg: #0f1117; --surface: #1a1d27; --text: #e2e8f0; --muted: #94a3b8; --accent: #6366f1; --border: #2d3348; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.7; padding: 2rem 1rem; }
+    .container { max-width: 720px; margin: 0 auto; }
+    h1 { font-size: 1.75rem; margin-bottom: 0.5rem; }
+    h2 { font-size: 1.25rem; margin-top: 2rem; margin-bottom: 0.75rem; color: var(--accent); }
+    p, li { color: var(--muted); margin-bottom: 0.75rem; }
+    ul { padding-left: 1.5rem; }
+    li { margin-bottom: 0.5rem; }
+    .badge { display: inline-block; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 0.25rem 0.75rem; font-size: 0.8rem; color: var(--muted); margin-bottom: 1rem; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .updated { color: var(--muted); font-size: 0.85rem; margin-bottom: 2rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <span class="badge">Chrome Extension</span>
+    <h1>Privacy Policy</h1>
+    <p class="updated">Last updated: April 1, 2026</p>
+
+    <p>JobTracker - Auto Apply ("the Extension") is a browser extension that helps job seekers discover and apply to jobs. This policy explains what data the Extension accesses and how it is used.</p>
+
+    <h2>Data We Access</h2>
+    <ul>
+      <li><strong>LinkedIn session cookie (li_at):</strong> Read from your browser to authenticate job searches and Easy Apply submissions on your behalf. This cookie is never sent to any third-party server.</li>
+      <li><strong>Job page content:</strong> The Extension reads job listing pages on LinkedIn and ATS platforms (Greenhouse, Lever, Workable, etc.) to extract job details and fill application forms.</li>
+      <li><strong>Local storage:</strong> The Extension stores your connection status and preferences locally in your browser using <code>chrome.storage.local</code>.</li>
+    </ul>
+
+    <h2>Data We Do NOT Collect</h2>
+    <ul>
+      <li>We do not collect, transmit, or store your LinkedIn credentials (email/password).</li>
+      <li>We do not send your session cookie to any external server.</li>
+      <li>We do not track your browsing activity outside of job application pages.</li>
+      <li>We do not sell, share, or monetize any user data.</li>
+      <li>We do not use analytics, telemetry, or tracking scripts in the Extension.</li>
+    </ul>
+
+    <h2>How Data Flows</h2>
+    <p>All communication stays within your browser:</p>
+    <ul>
+      <li>The Extension communicates with the JobTracker dashboard (<code>tracker-app-lyart.vercel.app</code>) via in-page messaging (<code>window.postMessage</code>). No data leaves your browser.</li>
+      <li>When you apply to a job, the Extension opens the application page in your browser and fills the form using your profile data that you configured in the dashboard.</li>
+      <li>Application results (success/failure) are stored locally and displayed in your dashboard.</li>
+    </ul>
+
+    <h2>Permissions Explained</h2>
+    <ul>
+      <li><strong>cookies:</strong> Read your LinkedIn session cookie to verify you are logged in.</li>
+      <li><strong>storage:</strong> Save connection status and apply results locally.</li>
+      <li><strong>tabs:</strong> Open job application pages and navigate between them.</li>
+      <li><strong>scripting:</strong> Inject form-filling scripts into ATS application pages.</li>
+      <li><strong>Host permissions (LinkedIn, Greenhouse, Lever, etc.):</strong> Access job listing and application pages to read job details and submit applications.</li>
+    </ul>
+
+    <h2>Data Retention</h2>
+    <p>All data is stored locally in your browser. Uninstalling the Extension removes all stored data. No server-side data retention exists.</p>
+
+    <h2>Third-Party Services</h2>
+    <p>The Extension interacts with the following services only when you initiate a job application:</p>
+    <ul>
+      <li>LinkedIn (linkedin.com) — job discovery and Easy Apply</li>
+      <li>ATS platforms (Greenhouse, Lever, Workable, Ashby, etc.) — external job applications</li>
+    </ul>
+    <p>These interactions use your existing browser sessions. The Extension does not create accounts or authenticate with these services independently.</p>
+
+    <h2>Contact</h2>
+    <p>For questions about this privacy policy, contact: <a href="mailto:florian.gouloubi@gmail.com">florian.gouloubi@gmail.com</a></p>
+
+    <h2>Changes</h2>
+    <p>We may update this policy. Changes will be posted on this page with an updated date.</p>
+  </div>
+</body>
+</html>

@@ -1,19 +1,20 @@
 {
   "manifest_version": 3,
-  "name": "JobTracker - LinkedIn Connect",
-  "version": "3.2.0",
-  "description": "Connect your LinkedIn account to JobTracker \u2014 auto-discover and apply to jobs (Easy Apply + External ATS)",
+  "name": "JobTracker - Auto Apply",
+  "short_name": "JobTracker",
+  "version": "3.3.0",
+  "description": "Connect your LinkedIn account to JobTracker — auto-discover and apply to jobs via Easy Apply and 15+ ATS platforms (Greenhouse, Lever, Workable, and more).",
+  "author": "JobTracker",
+  "homepage_url": "https://tracker-app-lyart.vercel.app",
   "permissions": [
     "cookies",
     "storage",
     "tabs",
-    "scripting",
-    "debugger"
+    "scripting"
   ],
   "host_permissions": [
     "https://*.linkedin.com/*",
     "https://tracker-app-lyart.vercel.app/*",
-    "http://localhost:5173/*",
     "https://*.greenhouse.io/*",
     "https://boards.greenhouse.io/*",
     "https://*.lever.co/*",
@@ -29,8 +30,7 @@
     "https://*.jobvite.com/*",
     "https://*.icims.com/*",
     "https://*.myworkdayjobs.com/*",
-    "https://*.workday.com/*",
-    "https://mail.google.com/*"
+    "https://*.workday.com/*"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -47,9 +47,7 @@
   },
   "externally_connectable": {
     "matches": [
-      "https://tracker-app-lyart.vercel.app/*",
-      "http://localhost:5173/*",
-      "http://localhost:4173/*"
+      "https://tracker-app-lyart.vercel.app/*"
     ]
   },
   "background": {
@@ -58,9 +56,7 @@
   "content_scripts": [
     {
       "matches": [
-        "https://tracker-app-lyart.vercel.app/*",
-        "http://localhost:5173/*",
-        "http://localhost:4173/*"
+        "https://tracker-app-lyart.vercel.app/*"
       ],
       "js": ["content.js"],
       "run_at": "document_idle"
