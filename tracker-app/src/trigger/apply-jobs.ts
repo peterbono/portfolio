@@ -106,6 +106,7 @@ export const applyJobsTask = task({
     const { chromium } = await import("playwright")
     const { detectAdapter } = await import("../bot/adapters")
     const { APPLICANT } = await import("../bot/types")
+    type ApplyResult = import("../bot/types").ApplyResult
     const { takeScreenshot, humanDelay, blockUnnecessaryResources } = await import("../bot/helpers")
     const {
       createBotRun,
@@ -229,18 +230,89 @@ export const applyJobsTask = task({
             `[apply-jobs] [${i + 1}/${atsJobs.length}] ATS: ${job.company} — ${job.role}`,
           )
 
-          const page = await atsContext.newPage()
+          // SBR proxy can intermittently return 502 (no_peer, probe_timeout).
+          // Retry up to 3 times with exponential backoff for proxy errors.
+          const MAX_RETRIES = 3
+          let attempt = 0
+          let applyResult: ApplyResult | null = null
+          let lastError: unknown = null
 
-          try {
-            const adapter = detectAdapter(job.url)
-            console.log(`[apply-jobs]   Adapter: ${adapter.name}`)
+          while (attempt < MAX_RETRIES) {
+            attempt++
+            const page = await atsContext.newPage()
 
-            // Thread the per-job cover letter snippet + metadata into the profile
-            profile.coverLetterSnippet = job.coverLetterSnippet || undefined
-            profile.jobMeta = { company: job.company, role: job.role }
+            try {
+              const adapter = detectAdapter(job.url)
+              if (attempt === 1) console.log(`[apply-jobs]   Adapter: ${adapter.name}`)
 
-            const applyResult = await adapter.apply(page, job.url, profile)
+              // Thread the per-job cover letter snippet + metadata into the profile
+              profile.coverLetterSnippet = job.coverLetterSnippet || undefined
+              profile.jobMeta = { company: job.company, role: job.role }
 
+              applyResult = await adapter.apply(page, job.url, profile)
+
+              // Check if the result is a proxy error that should be retried
+              const isProxyError = applyResult.status === 'failed' &&
+                applyResult.reason &&
+                (applyResult.reason.includes('502') ||
+                 applyResult.reason.includes('no_peer') ||
+                 applyResult.reason.includes('probe_timeout') ||
+                 applyResult.reason.includes('proxy_error'))
+
+              if (isProxyError && attempt < MAX_RETRIES) {
+                const delay = attempt * 10_000 // 10s, 20s
+                console.log(`[apply-jobs]   SBR proxy error (attempt ${attempt}/${MAX_RETRIES}), retrying in ${delay / 1000}s...`)
+                await page.close().catch(() => {})
+                await new Promise(r => setTimeout(r, delay))
+                continue
+              }
+
+              break // Success or non-retryable failure
+
+            } catch (err) {
+              lastError = err
+              const errMsg = err instanceof Error ? err.message : String(err)
+              const isProxyError = errMsg.includes('502') ||
+                errMsg.includes('no_peer') ||
+                errMsg.includes('probe_timeout') ||
+                errMsg.includes('proxy_error')
+
+              if (isProxyError && attempt < MAX_RETRIES) {
+                const delay = attempt * 10_000
+                console.log(`[apply-jobs]   SBR proxy exception (attempt ${attempt}/${MAX_RETRIES}), retrying in ${delay / 1000}s...`)
+                await page.close().catch(() => {})
+                await new Promise(r => setTimeout(r, delay))
+                continue
+              }
+
+              // Non-retryable error
+              let screenshotBase64: string | undefined
+              try { screenshotBase64 = await takeScreenshot(page) } catch { /* */ }
+              await page.close().catch(() => {})
+
+              const result: ApplyJobResult = {
+                url: job.url,
+                company: job.company,
+                role: job.role,
+                ats: "Unknown",
+                status: "failed",
+                reason: errMsg,
+                screenshotBase64,
+                durationMs: Date.now() - jobStart,
+              }
+              results.push(result)
+              failed++
+              console.error(`[apply-jobs]   Error: ${result.reason}`)
+              break
+            } finally {
+              if (applyResult || (attempt >= MAX_RETRIES && !applyResult)) {
+                await page.close().catch(() => {})
+              }
+            }
+          }
+
+          // Process the final applyResult (if we got one from the retry loop)
+          if (applyResult) {
             const result: ApplyJobResult = {
               url: job.url,
               company: applyResult.company || job.company,
@@ -254,23 +326,13 @@ export const applyJobsTask = task({
 
             results.push(result)
 
-            // Update counters
             switch (applyResult.status) {
-              case "applied":
-                applied++
-                break
-              case "skipped":
-                skipped++
-                break
-              case "failed":
-                failed++
-                break
-              case "needs_manual":
-                needsManual++
-                break
+              case "applied": applied++; break
+              case "skipped": skipped++; break
+              case "failed": failed++; break
+              case "needs_manual": needsManual++; break
             }
 
-            // Log to Supabase
             if (runId) {
               await logBotActivity({
                 user_id: payload.userId,
@@ -302,33 +364,8 @@ export const applyJobsTask = task({
             }
 
             console.log(
-              `[apply-jobs]   Result: ${applyResult.status}${applyResult.reason ? ` — ${applyResult.reason}` : ""}`,
+              `[apply-jobs]   Result: ${applyResult.status}${applyResult.reason ? ` — ${applyResult.reason}` : ""} (attempt ${attempt})`,
             )
-          } catch (err) {
-            // Screenshot on unexpected error
-            let screenshotBase64: string | undefined
-            try {
-              screenshotBase64 = await takeScreenshot(page)
-            } catch {
-              // screenshot failed too
-            }
-
-            const result: ApplyJobResult = {
-              url: job.url,
-              company: job.company,
-              role: job.role,
-              ats: "Unknown",
-              status: "failed",
-              reason: err instanceof Error ? err.message : String(err),
-              screenshotBase64,
-              durationMs: Date.now() - jobStart,
-            }
-            results.push(result)
-            failed++
-
-            console.error(`[apply-jobs]   Error: ${result.reason}`)
-          } finally {
-            await page.close().catch((err) => console.warn('[apply-jobs] Cleanup failed:', err))
           }
 
           // Rate limiting: 15s gap for ATS jobs (no bot detection) — skip for last if no LinkedIn follows

@@ -393,10 +393,20 @@ export async function answerScreeningQuestion(
   const inputElement = page.locator(inputSelector).first()
   const tagName = await inputElement.evaluate((el) => el.tagName.toLowerCase())
   const inputType = await inputElement.evaluate((el) => (el as HTMLInputElement).type?.toLowerCase() || '')
+  const inputRole = await inputElement.evaluate((el) => el.getAttribute('role') || '').catch(() => '')
 
   if (tagName === 'select') {
-    // Try to find a matching option
+    // Standard HTML select
     await selectBestOption(page, inputSelector, answer)
+  } else if (inputRole === 'combobox' || await inputElement.evaluate(el => {
+    // Detect React Select: parent has class containing "select" or has react-select id prefix
+    const parent = el.closest('[class*="select__"]') || el.closest('[class*="Select"]')
+    const hasReactSelectId = el.id?.startsWith('react-select-')
+    return !!(parent || hasReactSelectId)
+  }).catch(() => false)) {
+    // React Select / combobox — type, wait for dropdown, click matching option
+    console.log(`[screening] Handling React Select combobox for answer: "${answer}"`)
+    await handleReactSelect(page, inputSelector, answer)
   } else if (inputType === 'radio' || inputType === 'checkbox') {
     // For radio/checkbox, try to click the one matching our answer
     await handleRadioOrCheckbox(page, inputSelector, answer)
@@ -465,6 +475,80 @@ async function handleRadioOrCheckbox(
   if (count > 0) {
     await labels.first().click()
   }
+}
+
+/**
+ * Handle React Select / combobox dropdowns (common in Greenhouse, Ashby forms).
+ * Types the desired value, waits for the dropdown to appear, then clicks the best match.
+ */
+async function handleReactSelect(
+  page: Page,
+  selector: string,
+  desiredValue: string,
+): Promise<void> {
+  const input = page.locator(selector).first()
+
+  // Click to open the dropdown
+  await input.click()
+  await new Promise(r => setTimeout(r, 300))
+
+  // Clear any existing value and type the desired answer
+  await input.fill('')
+  await input.pressSequentially(desiredValue.substring(0, 20), { delay: 50 })
+  await new Promise(r => setTimeout(r, 500))
+
+  // Look for dropdown options — React Select uses various class patterns
+  const optionSelectors = [
+    '[class*="select__option"]',
+    '[class*="option"]',
+    '[role="option"]',
+    '[id*="option"]',
+    '.menu-option',
+  ]
+
+  const desired = desiredValue.toLowerCase()
+
+  for (const optSel of optionSelectors) {
+    const options = page.locator(optSel)
+    const count = await options.count()
+    if (count === 0) continue
+
+    // Find the best matching option
+    for (let i = 0; i < count; i++) {
+      const text = (await options.nth(i).textContent())?.toLowerCase() || ''
+      if (text.includes(desired) || desired.includes(text.trim())) {
+        await options.nth(i).click()
+        console.log(`[screening] React Select: selected option "${text.trim()}"`)
+        return
+      }
+    }
+
+    // For yes/no style questions, match more broadly
+    if (desired === 'yes' || desired === 'no') {
+      for (let i = 0; i < count; i++) {
+        const text = (await options.nth(i).textContent())?.toLowerCase() || ''
+        if (text.includes(desired)) {
+          await options.nth(i).click()
+          console.log(`[screening] React Select: selected yes/no option "${text.trim()}"`)
+          return
+        }
+      }
+    }
+
+    // Fallback: click first non-empty option
+    if (count > 0) {
+      const firstText = await options.first().textContent()
+      if (firstText && firstText.trim()) {
+        await options.first().click()
+        console.log(`[screening] React Select: fallback to first option "${firstText.trim()}"`)
+        return
+      }
+    }
+  }
+
+  // Final fallback: press Enter to select the first suggestion
+  await page.keyboard.press('Enter')
+  console.log(`[screening] React Select: pressed Enter as final fallback`)
 }
 
 /**
