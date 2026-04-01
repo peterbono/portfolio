@@ -488,13 +488,22 @@ async function handleScreeningQuestions(page: Page, profile: ApplicantProfile): 
         const inputExists = await input.count()
         if (inputExists === 0) continue
 
-        // Check if already filled
-        const currentValue = await input.evaluate((el) => {
-          if (el instanceof HTMLSelectElement) return el.value
-          return (el as HTMLInputElement).value
-        }).catch(() => '')
+        // Check if already filled — but for radio/checkbox, check 'checked' not 'value'
+        // (radio buttons always have a value attribute even when not selected)
+        const inputType = await input.evaluate((el) => (el as HTMLInputElement).type?.toLowerCase() || '').catch(() => '')
+        const isRadioOrCheckbox = inputType === 'radio' || inputType === 'checkbox'
 
-        if (currentValue && currentValue.trim().length > 0) continue
+        if (isRadioOrCheckbox) {
+          // For radio groups: check if ANY radio in the container is checked
+          const anyChecked = await container.locator('input[type="radio"]:checked, input[type="checkbox"]:checked').count() > 0
+          if (anyChecked) continue
+        } else {
+          const currentValue = await input.evaluate((el) => {
+            if (el instanceof HTMLSelectElement) return el.value
+            return (el as HTMLInputElement).value
+          }).catch(() => '')
+          if (currentValue && currentValue.trim().length > 0) continue
+        }
 
         // Build a selector for the input
         const inputId = await input.evaluate((el) => el.id).catch(() => '')

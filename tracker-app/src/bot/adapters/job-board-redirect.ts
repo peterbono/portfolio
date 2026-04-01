@@ -706,6 +706,9 @@ async function probeCompanyAtsPages(companyName: string, roleTitle?: string): Pr
     'https://careers.smartrecruiters.com/{slug}',
   ]
 
+  // Track career pages found (fallback if no specific job match)
+  let bestCareerPage: string | null = null
+
   for (const slug of slugs) {
     for (const template of ATS_TEMPLATES) {
       const url = template.replace('{slug}', slug)
@@ -722,16 +725,19 @@ async function probeCompanyAtsPages(companyName: string, roleTitle?: string): Pr
           const careerPageUrl = response.url || url
           console.log(`[job-board-redirect] ATS probe hit: ${careerPageUrl} (HTTP ${response.status})`)
 
-          // Career page found — now find the SPECIFIC job matching the role title
+          // Career page found — try to find the SPECIFIC job matching the role title
           if (roleTitle) {
             const specificJob = await findJobOnCareerPage(careerPageUrl, roleTitle)
             if (specificJob) {
               console.log(`[job-board-redirect] Found specific job URL: ${specificJob}`)
               return specificJob
             }
+            console.log(`[job-board-redirect] No role match on ${careerPageUrl}, continuing probe...`)
           }
-          // Return career page as fallback (adapter may handle listing pages)
-          return careerPageUrl
+          // Save as fallback — prefer pages with known adapters (Greenhouse, Lever)
+          if (!bestCareerPage || careerPageUrl.includes('greenhouse') || careerPageUrl.includes('lever')) {
+            bestCareerPage = careerPageUrl
+          }
         }
       } catch (err) {
         // Skip — this ATS/slug combo doesn't work (DNS error, timeout, 404)
@@ -765,11 +771,17 @@ async function probeCompanyAtsPages(companyName: string, roleTitle?: string): Pr
           const specificJob = await findJobOnCareerPage(careerPageUrl, roleTitle)
           if (specificJob) return specificJob
         }
-        return careerPageUrl
+        if (!bestCareerPage) bestCareerPage = careerPageUrl
       }
     } catch {
       // Skip
     }
+  }
+
+  // Return career listing page as last resort (better than nothing)
+  if (bestCareerPage) {
+    console.log(`[job-board-redirect] ATS probe: returning career listing page as fallback: ${bestCareerPage}`)
+    return bestCareerPage
   }
 
   console.log(`[job-board-redirect] ATS probe: no career page found for "${companyName}"`)
@@ -793,12 +805,17 @@ async function findJobOnCareerPage(careerPageUrl: string, roleTitle: string): Pr
     if (!response.ok) return null
     const html = await response.text()
 
-    // Tokenize role title into significant words (3+ chars)
+    // Tokenize role title into significant words.
+    // Keep 2-letter industry terms (UX, UI, AI, QA, PM, VP, HR) — they're critical for matching.
+    const INDUSTRY_TERMS = new Set(['ux', 'ui', 'ai', 'qa', 'pm', 'vp', 'hr', 'sr', 'cx', 'dx', 'ml'])
     const roleWords = roleTitle.toLowerCase()
       .split(/[\s/,\-–—·•]+/)
-      .filter(w => w.length >= 3 && !['the', 'and', 'for', 'with'].includes(w))
+      .filter(w => (w.length >= 3 || INDUSTRY_TERMS.has(w)) && !['the', 'and', 'for', 'with', 'at', 'in', 'of'].includes(w))
 
     if (roleWords.length === 0) return null
+
+    // Adaptive threshold: require match of at least half the role words (min 1)
+    const minScore = Math.max(1, Math.ceil(roleWords.length / 2))
 
     // Extract all links: href + text
     const linkRegex = /<a\s[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi
@@ -814,7 +831,7 @@ async function findJobOnCareerPage(careerPageUrl: string, roleTitle: string): Pr
 
       // Score: count how many role words appear in the link text
       const score = roleWords.filter(w => text.includes(w)).length
-      if (score >= 2 && (!bestMatch || score > bestMatch.score)) {
+      if (score >= minScore && (!bestMatch || score > bestMatch.score)) {
         // Resolve relative URLs against career page
         try {
           const absoluteUrl = new URL(href, careerPageUrl).href
