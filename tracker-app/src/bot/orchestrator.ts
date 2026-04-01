@@ -405,10 +405,15 @@ async function phaseScout(
       'design', 'ux', 'ui', 'product-designer', 'ux-designer',
       'ui-designer', 'visual-designer', 'design-system',
     ]
-    remoteokJobs = await scoutRemoteOK(
-      remoteokTags,
-      config.searchProfile.excluded_companies ?? [],
-    )
+    remoteokJobs = await Promise.race([
+      scoutRemoteOK(
+        remoteokTags,
+        config.searchProfile.excluded_companies ?? [],
+      ),
+      new Promise<DiscoveredJob[]>((resolve) =>
+        setTimeout(() => { console.warn('[pipeline] RemoteOK timeout (60s)'); resolve([]) }, 60_000)
+      ),
+    ])
 
     // Filter out already-applied jobs
     remoteokJobs = remoteokJobs.filter(j => {
@@ -440,17 +445,26 @@ async function phaseScout(
   }
 
   // --- Wellfound (Playwright — parallel-safe with new page) ---
+  // Wrap entire Wellfound with 90s timeout — context.newPage() can hang if SBR died
   console.log('[pipeline] Phase 1c: SCOUT Wellfound')
   let wellfoundJobs: DiscoveredJob[] = []
   try {
-    const wellfoundPage = await page.context().newPage()
-    const wellfoundKeywords = uniqueKeywords.slice(0, 4) // Top 4 keywords
-    wellfoundJobs = await scoutWellfound(
-      wellfoundPage,
-      wellfoundKeywords,
-      config.searchProfile.excluded_companies ?? [],
-    )
-    await wellfoundPage.close().catch(() => {})
+    wellfoundJobs = await Promise.race([
+      (async () => {
+        const wellfoundPage = await page.context().newPage()
+        const wellfoundKeywords = uniqueKeywords.slice(0, 4) // Top 4 keywords
+        const jobs = await scoutWellfound(
+          wellfoundPage,
+          wellfoundKeywords,
+          config.searchProfile.excluded_companies ?? [],
+        )
+        await wellfoundPage.close().catch(() => {})
+        return jobs
+      })(),
+      new Promise<DiscoveredJob[]>((resolve) =>
+        setTimeout(() => { console.warn('[pipeline] Wellfound timeout (90s)'); resolve([]) }, 90_000)
+      ),
+    ])
 
     // Filter already-applied
     wellfoundJobs = wellfoundJobs.filter(j => {
@@ -489,10 +503,15 @@ async function phaseScout(
       'product designer', 'ux designer', 'ui designer',
       'design lead', 'design system',
     ]
-    himalayasJobs = await scoutHimalayas(
-      himalayasTerms,
-      config.searchProfile.excluded_companies ?? [],
-    )
+    himalayasJobs = await Promise.race([
+      scoutHimalayas(
+        himalayasTerms,
+        config.searchProfile.excluded_companies ?? [],
+      ),
+      new Promise<DiscoveredJob[]>((resolve) =>
+        setTimeout(() => { console.warn('[pipeline] Himalayas timeout (60s)'); resolve([]) }, 60_000)
+      ),
+    ])
 
     // Filter out already-applied jobs
     himalayasJobs = himalayasJobs.filter(j => {
