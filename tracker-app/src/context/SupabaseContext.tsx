@@ -24,13 +24,17 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
   const [isOnline, setIsOnline] = useState(true)
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle')
 
-  // Check Supabase reachability
+  // Check Supabase reachability (with 5s timeout to avoid hanging when throttled)
   const checkConnection = useCallback(async () => {
     try {
-      // A lightweight query to verify the connection is alive
-      const { error } = await supabase.from('profiles').select('id', { count: 'exact', head: true })
-      // Even a permission error means Supabase is reachable
-      setIsOnline(!error || error.code !== 'NETWORK_ERROR')
+      const result = await Promise.race([
+        supabase.from('profiles').select('id', { count: 'exact', head: true }),
+        new Promise<{ error: { code: string } }>((resolve) =>
+          setTimeout(() => resolve({ error: { code: 'TIMEOUT' } }), 5_000)
+        ),
+      ])
+      const error = (result as any).error
+      setIsOnline(!error || (error.code !== 'NETWORK_ERROR' && error.code !== 'TIMEOUT'))
     } catch {
       setIsOnline(false)
     }
@@ -65,13 +69,30 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       }
     )
 
-    // Get initial session
+    // Get initial session — with timeout fallback so the app doesn't hang
+    // when Supabase is throttled/down (e.g. egress quota exceeded → 522)
+    let resolved = false
+    const timeout = setTimeout(() => {
+      if (!resolved) {
+        console.warn('[auth] Supabase auth timed out after 5s — rendering without session')
+        setAuthLoading(false)
+      }
+    }, 5_000)
+
     supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
+      resolved = true
+      clearTimeout(timeout)
       setSession(initialSession)
+      setAuthLoading(false)
+    }).catch(() => {
+      resolved = true
+      clearTimeout(timeout)
+      console.warn('[auth] Supabase auth.getSession() failed — rendering without session')
       setAuthLoading(false)
     })
 
     return () => {
+      clearTimeout(timeout)
       subscription.unsubscribe()
     }
   }, [])
