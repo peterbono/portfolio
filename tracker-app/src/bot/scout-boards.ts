@@ -189,6 +189,52 @@ function randomDelay(min: number, max: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
+/**
+ * Extract a direct ATS URL from job description HTML.
+ * RemoteOK descriptions often contain "Apply" links pointing directly
+ * to Greenhouse, Lever, Workable, etc. — bypassing their broken
+ * aiok.co tracking redirect.
+ */
+function extractAtsUrlFromHtml(html: string): string | null {
+  const KNOWN_ATS_PATTERNS = [
+    /https?:\/\/[a-z0-9-]+\.greenhouse\.io\/[^\s"'<]+/gi,
+    /https?:\/\/boards\.greenhouse\.io\/[^\s"'<]+/gi,
+    /https?:\/\/[a-z0-9-]+\.lever\.co\/[^\s"'<]+/gi,
+    /https?:\/\/jobs\.lever\.co\/[^\s"'<]+/gi,
+    /https?:\/\/[a-z0-9-]+\.workable\.com\/[^\s"'<]+/gi,
+    /https?:\/\/[a-z0-9-]+\.breezy\.hr\/[^\s"'<]+/gi,
+    /https?:\/\/[a-z0-9-]+\.ashbyhq\.com\/[^\s"'<]+/gi,
+    /https?:\/\/[a-z0-9-]+\.recruitee\.com\/[^\s"'<]+/gi,
+    /https?:\/\/[a-z0-9-]+\.smartrecruiters\.com\/[^\s"'<]+/gi,
+    /https?:\/\/[a-z0-9-]+\.bamboohr\.com\/[^\s"'<]+/gi,
+    /https?:\/\/[a-z0-9-]+\.myworkdayjobs\.com\/[^\s"'<]+/gi,
+    /https?:\/\/[a-z0-9-]+\.jobvite\.com\/[^\s"'<]+/gi,
+  ]
+
+  for (const pattern of KNOWN_ATS_PATTERNS) {
+    const match = html.match(pattern)
+    if (match) {
+      // Clean trailing HTML entities/punctuation
+      const clean = match[0].replace(/[&;'"<>)}\]]+$/, '')
+      console.log(`[scout:remoteok] Extracted ATS URL from description: ${clean}`)
+      return clean
+    }
+  }
+
+  // Fallback: look for href="..." containing /apply or /jobs/
+  const hrefMatch = html.match(/href=["'](https?:\/\/[^"']+(?:\/apply|\/jobs\/|\/career)[^"']*?)["']/i)
+  if (hrefMatch) {
+    const url = hrefMatch[1]
+    // Skip remoteok.com links
+    if (!url.includes('remoteok.com') && !url.includes('aiok.co')) {
+      console.log(`[scout:remoteok] Extracted apply URL from description href: ${url}`)
+      return url
+    }
+  }
+
+  return null
+}
+
 // ---------------------------------------------------------------------------
 // RemoteOK scraper (JSON API — no Playwright needed)
 // ---------------------------------------------------------------------------
@@ -286,16 +332,22 @@ export async function scoutRemoteOK(
         const titleLower = title.toLowerCase()
         if (titleLower.includes('poker') || titleLower.includes('gambling')) continue
 
-        // Build URL — prefer apply_url (direct ATS link) over listing page
-        const jobUrl = job.apply_url
-          ? job.apply_url
-          : job.url
+        // Build URL — extract direct ATS link from description HTML if available,
+        // otherwise use the RemoteOK listing page.
+        // RemoteOK's apply_url always equals the listing URL (useless).
+        // Their /l/{id} redirect goes through aiok.co (dead domain).
+        // Best strategy: parse description HTML for Greenhouse/Lever/etc. links.
+        const descHtml = job.description ?? ''
+        const atsUrlFromDesc = extractAtsUrlFromHtml(descHtml)
+
+        const jobUrl = atsUrlFromDesc
+          || (job.url
             ? job.url
             : job.slug
               ? `https://remoteok.com/remote-jobs/${job.slug}`
               : job.id
                 ? `https://remoteok.com/remote-jobs/${job.id}`
-                : ''
+                : '')
 
         if (!jobUrl) continue
 

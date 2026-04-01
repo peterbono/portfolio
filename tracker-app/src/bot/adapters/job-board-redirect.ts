@@ -69,16 +69,38 @@ export const jobBoardRedirect: ATSAdapter = {
         }
       }
 
-      console.log(`[job-board-redirect] Resolved employer URL: ${employerUrl}`)
+      console.log(`[job-board-redirect] Resolved employer URL (may be tracking redirect): ${employerUrl}`)
 
-      // Step 3: Re-detect the correct adapter for the actual career page
+      // Step 3: Follow HTTP redirect chain server-side to get the FINAL employer URL.
+      // Job boards like RemoteOK use intermediate tracking domains (e.g., aiok.co)
+      // that 302-redirect to the actual employer ATS. We resolve via fetch() first.
+      const finalUrl = await resolveRedirectChain(employerUrl)
+
+      if (!finalUrl) {
+        // Redirect chain failed (dead domain, DNS error, etc.)
+        const screenshot = await takeScreenshot(page)
+        return {
+          success: false,
+          status: 'needs_manual',
+          company,
+          role,
+          ats: 'JobBoardRedirect',
+          reason: `Redirect chain unresolvable: ${employerUrl} — apply manually via job board listing`,
+          screenshotUrl: screenshot,
+          duration: Date.now() - start,
+        }
+      }
+
+      console.log(`[job-board-redirect] Final URL after redirect chain: ${finalUrl}`)
+
+      // Step 4: Re-detect the correct adapter for the actual career page
       const { detectAdapter } = await import('./index')
-      const realAdapter = detectAdapter(employerUrl)
+      const realAdapter = detectAdapter(finalUrl)
 
-      console.log(`[job-board-redirect] Delegating to ${realAdapter.name} adapter for: ${employerUrl}`)
+      console.log(`[job-board-redirect] Delegating to ${realAdapter.name} adapter for: ${finalUrl}`)
 
-      // Step 4: Delegate to the correct adapter
-      const result = await realAdapter.apply(page, employerUrl, profile)
+      // Step 5: Delegate to the correct adapter
+      const result = await realAdapter.apply(page, finalUrl, profile)
 
       // Enrich with metadata from the listing page (adapter might return 'Unknown')
       if (result.company === 'Unknown' && company !== 'Unknown') result.company = company
@@ -381,4 +403,89 @@ async function extractExternalApplyLink(page: Page, listingDomain: string): Prom
     }
     return null
   }, listingDomain)
+}
+
+/**
+ * Follow HTTP redirect chain server-side using fetch().
+ *
+ * Job boards use intermediate tracking domains (aiok.co, bit.ly, etc.)
+ * that 302-redirect to the actual employer ATS. SBR proxy often can't
+ * resolve these domains' DNS, so we follow redirects with Node.js fetch()
+ * (which uses the Trigger.dev worker's DNS, not SBR's) before handing
+ * the final URL to Playwright.
+ *
+ * Max 10 hops to prevent infinite loops.
+ */
+/**
+ * Returns null if the URL can't be resolved at all (dead domain, DNS error).
+ * Returns the final resolved URL if redirect chain was followed successfully.
+ * Returns the original URL if it's directly reachable (no redirects).
+ */
+async function resolveRedirectChain(url: string, maxHops = 10): Promise<string | null> {
+  let currentUrl = url
+  let hops = 0
+  let reachable = false
+
+  while (hops < maxHops) {
+    try {
+      const response = await fetch(currentUrl, {
+        method: 'HEAD',
+        redirect: 'manual',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        },
+        signal: AbortSignal.timeout(10_000),
+      })
+
+      reachable = true
+
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get('location')
+        if (!location) break
+        currentUrl = new URL(location, currentUrl).href
+        hops++
+        console.log(`[job-board-redirect] Redirect hop ${hops}: ${response.status} → ${currentUrl}`)
+        continue
+      }
+
+      break // 2xx or other — final URL
+
+    } catch (err) {
+      // HEAD might fail — try GET as fallback
+      if (!reachable) {
+        try {
+          const response = await fetch(currentUrl, {
+            method: 'GET',
+            redirect: 'follow',
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            },
+            signal: AbortSignal.timeout(15_000),
+          })
+          reachable = true
+          if (response.url && response.url !== currentUrl) {
+            console.log(`[job-board-redirect] GET redirect resolved: ${currentUrl} → ${response.url}`)
+            currentUrl = response.url
+          }
+        } catch (getErr) {
+          // Both HEAD and GET failed — domain is unreachable
+          console.log(`[job-board-redirect] Domain unreachable: ${currentUrl} — ${getErr instanceof Error ? getErr.message : getErr}`)
+          return null
+        }
+      }
+      break
+    }
+  }
+
+  if (!reachable) {
+    console.log(`[job-board-redirect] URL unreachable after ${hops} hops: ${currentUrl}`)
+    return null
+  }
+
+  if (hops >= maxHops) {
+    console.log(`[job-board-redirect] Redirect chain exceeded ${maxHops} hops, stopping at: ${currentUrl}`)
+  }
+
+  return currentUrl
 }
