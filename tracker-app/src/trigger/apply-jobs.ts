@@ -325,7 +325,14 @@ export const applyJobsTask = task({
               profile.coverLetterSnippet = job.coverLetterSnippet || undefined
               profile.jobMeta = { company: job.company, role: job.role }
 
-              applyResult = await adapter.apply(page, job.url, profile)
+              // Per-job timeout: 3 minutes max to prevent hanging on stuck adapters
+              const JOB_TIMEOUT_MS = 180_000
+              applyResult = await Promise.race([
+                adapter.apply(page, job.url, profile),
+                new Promise<ApplyResult>((_, reject) =>
+                  setTimeout(() => reject(new Error(`Job timeout: adapter did not complete within ${JOB_TIMEOUT_MS / 1000}s`)), JOB_TIMEOUT_MS)
+                ),
+              ])
 
               // Check if the result is a proxy error that should be retried
               const isProxyErr = applyResult.status === 'failed' &&

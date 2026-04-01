@@ -108,18 +108,14 @@ export function useBotActivity(): UseBotActivityReturn {
 
       if (runData && runData.length > 0) {
         const run = toRunStatus(runData[0])
-        // Auto-expire: if run has been 'running' for > 10 minutes, treat as stale/failed
+        // Auto-expire for UI only: if run has been 'running' for > 15 minutes, show as failed
+        // IMPORTANT: only update local state — never write to DB from client.
+        // The Trigger.dev worker owns the DB state via updateBotRun in its finally block.
         if (run.status === 'running' && run.startedAt) {
           const elapsed = Date.now() - new Date(run.startedAt).getTime()
-          if (elapsed > 10 * 60 * 1000) {
+          if (elapsed > 15 * 60 * 1000) {
             run.status = 'failed'
-            run.errorMessage = 'Run expired (stale > 10 minutes)'
-            // Also update Supabase so it doesn't keep coming back
-            ;(supabase as any).from('bot_runs').update({
-              status: 'failed',
-              completed_at: new Date().toISOString(),
-              error_message: 'Auto-expired: stale run > 10 minutes',
-            }).eq('id', run.id).then(() => {})
+            run.errorMessage = 'Run appears stale (> 15 minutes) — check Trigger.dev dashboard'
           }
         }
         setCurrentRun(run)
