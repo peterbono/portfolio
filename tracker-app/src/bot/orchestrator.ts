@@ -22,6 +22,18 @@ import {
 } from './supabase-server'
 
 // ---------------------------------------------------------------------------
+// Supabase resilience wrappers (module-level — used by all pipeline functions)
+// Trigger.dev workers can't always reach Supabase (upstream request timeout).
+// All DB calls are non-critical: pipeline MUST run even if tracking fails.
+// ---------------------------------------------------------------------------
+export const fireLog = (entry: ActivityLogEntry) => {
+  logBotActivity(entry).catch(e => console.warn(`[pipeline] logBotActivity failed: ${(e as Error).message}`))
+}
+export const fireUpdate = (id: string, stats: Record<string, unknown>) => {
+  updateBotRun(id, stats).catch(e => console.warn(`[pipeline] updateBotRun failed: ${(e as Error).message}`))
+}
+
+// ---------------------------------------------------------------------------
 // Pipeline configuration & result types
 // ---------------------------------------------------------------------------
 
@@ -343,7 +355,7 @@ async function phaseScout(
     action: 'scout_start',
     reason: `Multi-pass: ${uniqueKeywords.length} keywords × ${uniqueLocations.length} locations × ${PAGES_PER_SEARCH} pages (keywords: ${uniqueKeywords.join(', ')})`,
   }
-  await logBotActivity(logEntry)
+  fireLog(logEntry)
   activities.push(logEntry)
 
   // Use multi-pass scout for maximum coverage
@@ -369,7 +381,7 @@ async function phaseScout(
     action: 'scout_linkedin_complete',
     reason: `LinkedIn: ${uniqueKeywords.length}kw × ${uniqueLocations.length}loc = ${uniqueKeywords.length * uniqueLocations.length} searches. Found ${linkedinResult.totalFound}, filtered ${linkedinResult.filteredOut}, unique: ${linkedinResult.jobs.length}`,
   }
-  await logBotActivity(linkedinDone)
+  fireLog(linkedinDone)
   activities.push(linkedinDone)
 
   // Build dedup set for cross-source filtering
@@ -383,7 +395,7 @@ async function phaseScout(
     action: 'scout_remoteok_start',
     reason: `RemoteOK: ${uniqueKeywords.length} tags`,
   }
-  await logBotActivity(remoteokLogEntry)
+  fireLog(remoteokLogEntry)
   activities.push(remoteokLogEntry)
 
   let remoteokJobs: DiscoveredJob[] = []
@@ -413,7 +425,7 @@ async function phaseScout(
       action: 'scout_remoteok_complete',
       reason: `RemoteOK: found ${remoteokJobs.length} unique design jobs`,
     }
-    await logBotActivity(remoteokDone)
+    fireLog(remoteokDone)
     activities.push(remoteokDone)
   } catch (err) {
     const remoteokErr: ActivityLogEntry = {
@@ -422,7 +434,7 @@ async function phaseScout(
       action: 'scout_remoteok_error',
       reason: `RemoteOK scraping failed: ${(err as Error).message}`,
     }
-    await logBotActivity(remoteokErr)
+    fireLog(remoteokErr)
     activities.push(remoteokErr)
     console.warn('[pipeline] RemoteOK scout failed, continuing with LinkedIn results only:', (err as Error).message)
   }
@@ -455,7 +467,7 @@ async function phaseScout(
       action: 'scout_wellfound_complete',
       reason: `Wellfound: found ${wellfoundJobs.length} unique design jobs`,
     }
-    await logBotActivity(wellfoundDone)
+    fireLog(wellfoundDone)
     activities.push(wellfoundDone)
   } catch (err) {
     console.warn('[pipeline] Wellfound scout failed:', (err as Error).message)
@@ -465,7 +477,7 @@ async function phaseScout(
       action: 'scout_wellfound_error',
       reason: `Wellfound failed: ${(err as Error).message}`,
     }
-    await logBotActivity(wellfoundErr)
+    fireLog(wellfoundErr)
     activities.push(wellfoundErr)
   }
 
@@ -497,7 +509,7 @@ async function phaseScout(
       action: 'scout_himalayas_complete',
       reason: `Himalayas: found ${himalayasJobs.length} unique design jobs`,
     }
-    await logBotActivity(himalayasDone)
+    fireLog(himalayasDone)
     activities.push(himalayasDone)
   } catch (err) {
     const himalayasErr: ActivityLogEntry = {
@@ -506,7 +518,7 @@ async function phaseScout(
       action: 'scout_himalayas_error',
       reason: `Himalayas scraping failed: ${(err as Error).message}`,
     }
-    await logBotActivity(himalayasErr)
+    fireLog(himalayasErr)
     activities.push(himalayasErr)
     console.warn('[pipeline] Himalayas scout failed, continuing with other sources:', (err as Error).message)
   }
@@ -563,12 +575,10 @@ async function phaseScout(
     action: 'scout_complete',
     reason: `LinkedIn: ${linkedinResult.jobs.length}, RemoteOK: ${remoteokJobs.length}, Wellfound: ${wellfoundJobs.length}, Himalayas: ${himalayasJobs.length}, dedup: -${totalDedup}, total: ${mergedJobs.length}`,
   }
-  await logBotActivity(scoutDone)
+  fireLog(scoutDone)
   activities.push(scoutDone)
 
-  await updateBotRun(runId, {
-    jobs_found: mergedJobs.length,
-  })
+  fireUpdate(runId, { jobs_found: mergedJobs.length })
 
   return mergedJobs
 }
@@ -612,7 +622,7 @@ async function phaseQualify(
     action: 'qualify_prefilter',
     reason: preFilterSummary,
   }
-  await logBotActivity(preFilterEntry)
+  fireLog(preFilterEntry)
   activities.push(preFilterEntry)
   onQualifyProgress?.({ action: 'found', reason: preFilterSummary, preFiltered: stats.filtered })
 
@@ -775,7 +785,7 @@ async function phaseQualify(
           role: job.title,
           reason: error?.message ?? 'unknown error',
         }
-        await logBotActivity(errEntry)
+        fireLog(errEntry)
         activities.push(errEntry)
         continue
       }
@@ -788,7 +798,7 @@ async function phaseQualify(
         role: job.title,
         reason: `Score ${result.score}: ${result.reasoning}`,
       }
-      await logBotActivity(qualEntry)
+      fireLog(qualEntry)
       activities.push(qualEntry)
 
       // Emit progress after qualification
@@ -833,6 +843,8 @@ export async function runPipeline(config: PipelineConfig & { onProgress?: (p: Pi
   const progressActivities: PipelineProgress['activities'] = []
   const costTracker = createCostTracker()
 
+  // fireLog / fireUpdate are module-level — see top of file
+
   // Default values
   const minScore = config.minScore ?? 45
   const maxApplications = config.maxApplications ?? 20
@@ -869,11 +881,30 @@ export async function runPipeline(config: PipelineConfig & { onProgress?: (p: Pi
     if (progressActivities.length > 30) progressActivities.length = 30
   }
 
-  // Clean up any zombie runs from previous crashed processes (OOM/timeout)
-  await cleanupZombieRuns(config.userId)
+  // Clean up zombie runs — non-critical, don't block pipeline if Supabase is slow
+  try {
+    await Promise.race([
+      cleanupZombieRuns(config.userId),
+      new Promise<void>((resolve) => setTimeout(resolve, 5_000)), // 5s timeout
+    ])
+  } catch (e) {
+    console.warn('[pipeline] cleanupZombieRuns failed:', (e as Error).message)
+  }
 
-  // Create a bot run record
-  const runId = await createBotRun(config.userId, config.searchProfile.id)
+  // Create a bot run record — non-critical, use local fallback ID if Supabase is down
+  let runId: string
+  try {
+    runId = await Promise.race([
+      createBotRun(config.userId, config.searchProfile.id),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('createBotRun timeout (10s)')), 10_000)
+      ),
+    ])
+  } catch (e) {
+    // Generate local run ID so pipeline can continue without Supabase
+    runId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    console.warn(`[pipeline] createBotRun failed: ${(e as Error).message} — using local runId: ${runId}`)
+  }
 
   console.log(`[pipeline] Starting run ${runId} (dryRun: ${config.dryRun})`)
 
@@ -883,7 +914,8 @@ export async function runPipeline(config: PipelineConfig & { onProgress?: (p: Pi
     action: 'pipeline_start',
     reason: `Profile: ${config.searchProfile.name}, max: ${maxApplications}, dryRun: ${config.dryRun}`,
   }
-  await logBotActivity(startEntry)
+  // logBotActivity is non-critical — fire and forget
+  logBotActivity(startEntry).catch((e) => console.warn('[pipeline] logBotActivity failed:', (e as Error).message))
   activities.push(startEntry)
   addProgressActivity({ action: 'found', reason: startEntry.reason ?? '' })
   emitProgress('starting')
@@ -960,7 +992,7 @@ export async function runPipeline(config: PipelineConfig & { onProgress?: (p: Pi
 
     if (discoveredJobs.length === 0) {
       console.log('[pipeline] No jobs found — ending early')
-      await updateBotRun(runId, {
+      fireUpdate(runId, {
         status: 'completed',
         completed_at: new Date().toISOString(),
         jobs_found: 0,
@@ -997,7 +1029,7 @@ export async function runPipeline(config: PipelineConfig & { onProgress?: (p: Pi
         action: 'pipeline_reconnect',
         reason: 'SBR session died, reconnecting browser for JD extraction',
       }
-      await logBotActivity(logEntry)
+      fireLog(logEntry)
       activities.push(logEntry)
 
       try {
@@ -1109,10 +1141,10 @@ export async function runPipeline(config: PipelineConfig & { onProgress?: (p: Pi
       action: 'pipeline_error',
       reason: errorMessage,
     }
-    await logBotActivity(errEntry)
+    fireLog(errEntry)
     activities.push(errEntry)
 
-    await updateBotRun(runId, {
+    fireUpdate(runId, {
       status: 'failed',
       completed_at: new Date().toISOString(),
       error_message: errorMessage,
@@ -1137,8 +1169,8 @@ export async function runPipeline(config: PipelineConfig & { onProgress?: (p: Pi
 
   const duration = Date.now() - startTime
 
-  // Finalize bot run
-  await updateBotRun(runId, {
+  // Finalize bot run (fire-and-forget — don't delay return)
+  fireUpdate(runId, {
     status: 'completed',
     completed_at: new Date().toISOString(),
     jobs_found: jobsFound,
@@ -1156,7 +1188,7 @@ export async function runPipeline(config: PipelineConfig & { onProgress?: (p: Pi
     action: 'pipeline_complete',
     reason: `Found ${jobsFound}, qualified ${jobsQualified}, applied ${jobsApplied}, skipped ${jobsSkipped}, failed ${jobsFailed} in ${Math.round(duration / 1000)}s`,
   }
-  await logBotActivity(doneEntry)
+  fireLog(doneEntry)
   activities.push(doneEntry)
 
   console.log(
