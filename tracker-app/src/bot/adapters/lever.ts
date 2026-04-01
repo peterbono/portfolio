@@ -13,6 +13,9 @@ import {
   extractRoleTitle,
   checkForConfirmation,
   scrollToElement,
+  solveCaptchaIfPresent,
+  solveHCaptchaViaCapsolver,
+  injectHCaptchaToken,
 } from '../helpers'
 
 export const lever: ATSAdapter = {
@@ -103,7 +106,7 @@ export const lever: ATSAdapter = {
 
       await humanDelay(1000, 2000)
 
-      // Step 13: Submit
+      // Step 13: Submit (triggers invisible reCAPTCHA v3)
       const submitted = await submitForm(page)
       if (!submitted) {
         const screenshot = await takeScreenshot(page)
@@ -119,9 +122,36 @@ export const lever: ATSAdapter = {
         }
       }
 
-      // Step 14: Check confirmation
+      // Step 13.5: Solve CAPTCHA AFTER submit click
+      // Lever uses hCaptcha (sometimes invisible reCAPTCHA v3), triggered by form submit JS.
+      // Strategy:
+      //   1. Try SBR's built-in Captcha.waitForSolve (works for reCAPTCHA, unreliable for hCaptcha)
+      //   2. If SBR fails, try CapSolver API as fallback (requires CAPSOLVER_API_KEY env var)
+      //   3. If both fail, fall through to needs_manual
+      await humanDelay(2000, 3000) // Give CAPTCHA time to fire
+
+      let captchaSolvedViaSBR = false
+      try {
+        captchaSolvedViaSBR = await solveCaptchaIfPresent(page, 45_000)
+        if (captchaSolvedViaSBR) {
+          console.log('[lever] CAPTCHA solved via SBR after submit')
+          await humanDelay(2000, 3000)
+          // After CAPTCHA is solved, try submitting again in case form needs re-click
+          const resubmitted = await submitForm(page)
+          if (resubmitted) {
+            console.log('[lever] Re-submitted form after SBR CAPTCHA solve')
+            await humanDelay(3000, 5000)
+          }
+        } else {
+          console.log('[lever] SBR did not solve CAPTCHA — will try CapSolver fallback')
+        }
+      } catch (captchaErr) {
+        console.warn('[lever] SBR CAPTCHA solving failed:', captchaErr instanceof Error ? captchaErr.message : captchaErr)
+      }
+
+      // Step 14: Check confirmation (SBR might have been enough)
       await humanDelay(2000, 4000)
-      const confirmed = await checkForConfirmation(page)
+      let confirmed = await checkForConfirmation(page)
 
       if (confirmed) {
         return {
@@ -134,7 +164,76 @@ export const lever: ATSAdapter = {
         }
       }
 
-      // Check for errors
+      // Step 14.5: CapSolver fallback — try if SBR did not solve the CAPTCHA
+      // Check for hCaptcha presence on the page (visible iframe or error message)
+      if (!captchaSolvedViaSBR) {
+        const hcaptchaDetected = await page.locator(
+          'iframe[src*="hcaptcha.com"], [class*="h-captcha"], .error:has-text("verif"), .error:has-text("captcha")',
+        ).first().isVisible({ timeout: 3000 }).catch(() => false)
+
+        if (hcaptchaDetected || !confirmed) {
+          console.log('[lever] Attempting CapSolver hCaptcha fallback...')
+
+          // Extract hCaptcha site key from the page, or use the known Lever default
+          const LEVER_HCAPTCHA_SITEKEY = 'e33f87f8-88ec-4e1a-9a13-df9bbb1d8120'
+          const extractedSiteKey = await page.evaluate(() => {
+            const hcaptchaDiv = document.querySelector('[data-sitekey]')
+            if (hcaptchaDiv) return hcaptchaDiv.getAttribute('data-sitekey')
+            const iframe = document.querySelector('iframe[src*="hcaptcha.com"]')
+            if (iframe) {
+              const src = iframe.getAttribute('src') || ''
+              const match = src.match(/sitekey=([a-f0-9-]+)/)
+              return match ? match[1] : null
+            }
+            return null
+          }).catch(() => null)
+
+          const siteKey = extractedSiteKey || LEVER_HCAPTCHA_SITEKEY
+          console.log(`[lever] hCaptcha site key: ${siteKey}`)
+
+          const capsolverToken = await solveHCaptchaViaCapsolver(page.url(), siteKey)
+
+          if (capsolverToken) {
+            console.log('[lever] CapSolver returned a token — injecting into page...')
+            await injectHCaptchaToken(page, capsolverToken)
+            await humanDelay(1000, 2000)
+
+            // Re-submit the form after injecting the token
+            const resubmitted = await submitForm(page)
+            if (resubmitted) {
+              console.log('[lever] Re-submitted form after CapSolver hCaptcha injection')
+              await humanDelay(3000, 5000)
+            }
+
+            // Check confirmation again
+            confirmed = await checkForConfirmation(page)
+            if (confirmed) {
+              return {
+                success: true,
+                status: 'applied',
+                company,
+                role,
+                ats: 'Lever',
+                duration: Date.now() - start,
+              }
+            }
+
+            // Even if no confirmation page, check for errors — the token might have worked
+            // but the page just didn't redirect yet
+            const postCapsolverErrors = await page.locator('.error, [class*="error"], .invalid-feedback').first()
+              .isVisible({ timeout: 3000 }).catch(() => false)
+            if (!postCapsolverErrors) {
+              console.log('[lever] No errors after CapSolver injection — possible silent success, marking needs_manual for safety')
+            } else {
+              console.warn('[lever] Errors still present after CapSolver injection — CAPTCHA token may have been rejected')
+            }
+          } else {
+            console.warn('[lever] CapSolver did not return a token — falling through to needs_manual')
+          }
+        }
+      }
+
+      // Check for errors (including hCaptcha verification failure)
       const hasErrors = await page.locator('.error, [class*="error"], .invalid-feedback').first()
         .isVisible({ timeout: 3000 }).catch(() => false)
 
@@ -142,13 +241,21 @@ export const lever: ATSAdapter = {
         const errorText = await page.locator('.error, [class*="error"]').first()
           .textContent().catch(() => 'Unknown validation error')
         const screenshot = await takeScreenshot(page)
+
+        // Detect hCaptcha verification failure specifically
+        const isHcaptchaError = errorText?.toLowerCase().includes('verifying') ||
+          errorText?.toLowerCase().includes('captcha')
+        const reason = isHcaptchaError
+          ? `hCaptcha verification failed (SBR + CapSolver both failed) — apply manually at: ${jobUrl}`
+          : `Validation error: ${errorText}`
+
         return {
           success: false,
-          status: 'failed',
+          status: isHcaptchaError ? 'needs_manual' : 'failed',
           company,
           role,
           ats: 'Lever',
-          reason: `Validation error: ${errorText}`,
+          reason,
           screenshotUrl: screenshot,
           duration: Date.now() - start,
         }

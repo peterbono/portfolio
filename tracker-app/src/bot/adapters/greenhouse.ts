@@ -14,6 +14,7 @@ import {
   extractRoleTitle,
   checkForConfirmation,
   scrollToElement,
+  solveCaptchaIfPresent,
 } from '../helpers'
 
 const TIMEOUT = 180_000 // 3 minutes
@@ -92,6 +93,19 @@ export const greenhouse: ATSAdapter = {
 
       await humanDelay(1000, 2000)
 
+      // Step 9.5: Solve CAPTCHA if present (some Greenhouse forms use reCAPTCHA)
+      try {
+        const captchaSolved = await solveCaptchaIfPresent(page, 30_000)
+        if (captchaSolved) {
+          console.log('[greenhouse] ✅ CAPTCHA solved via SBR')
+          await humanDelay(1000, 2000)
+        } else {
+          console.log('[greenhouse] No CAPTCHA detected or not using SBR')
+        }
+      } catch (captchaErr) {
+        console.warn('[greenhouse] CAPTCHA solving failed:', captchaErr instanceof Error ? captchaErr.message : captchaErr)
+      }
+
       // Step 10: Submit
       const submitted = await submitForm(page)
       if (!submitted) {
@@ -130,9 +144,11 @@ export const greenhouse: ATSAdapter = {
       if (needsSecurityCode) {
         console.log(`[greenhouse] Security code screen detected for ${company}`)
 
-        if (profile.gmailAccessToken) {
+        // Check if we have ANY way to get security codes (direct Gmail or Apps Script proxy)
+        const hasGmailAccess = profile.gmailAccessToken || process.env.GMAIL_PROXY_URL
+        if (hasGmailAccess) {
           // Poll Gmail for the code (emails take a few seconds to arrive)
-          const code = await pollForSecurityCode(company, profile.gmailAccessToken, 45_000)
+          const code = await pollForSecurityCode(company, profile.gmailAccessToken || 'proxy-only', 45_000)
           if (code) {
             console.log(`[greenhouse] Got security code: ${code.substring(0, 3)}***`)
             await enterSecurityCode(page, code)
@@ -196,7 +212,7 @@ export const greenhouse: ATSAdapter = {
             }
           }
         } else {
-          // No Gmail token — can't fetch the code
+          // No Gmail token AND no proxy — can't fetch the code
           const screenshot = await takeScreenshot(page)
           return {
             success: false,
@@ -204,7 +220,7 @@ export const greenhouse: ATSAdapter = {
             company,
             role,
             ats: 'Greenhouse',
-            reason: 'Security code required — no Gmail access token provided',
+            reason: 'Security code required — set GMAIL_PROXY_URL or GOOGLE_REFRESH_TOKEN in env vars',
             screenshotUrl: screenshot,
             duration: Date.now() - start,
           }
@@ -234,8 +250,9 @@ export const greenhouse: ATSAdapter = {
       const lateSecurityCode = await detectSecurityCodeScreen(page)
       if (lateSecurityCode) {
         console.log(`[greenhouse] Late security code screen detected for ${company}`)
-        if (profile.gmailAccessToken) {
-          const code = await pollForSecurityCode(company, profile.gmailAccessToken, 45_000)
+        const hasLateGmailAccess = profile.gmailAccessToken || process.env.GMAIL_PROXY_URL
+        if (hasLateGmailAccess) {
+          const code = await pollForSecurityCode(company, profile.gmailAccessToken || 'proxy-only', 45_000)
           if (code) {
             console.log(`[greenhouse] Got late security code: ${code.substring(0, 3)}***`)
             await enterSecurityCode(page, code)
@@ -877,55 +894,73 @@ async function pollForSecurityCode(
 }
 
 /**
- * Single attempt to fetch the Greenhouse security code from Gmail.
+ * Single attempt to fetch the Greenhouse security code.
+ * Tries two approaches in order:
+ *   1. Gmail API (if accessToken is provided)
+ *   2. Apps Script proxy (if GMAIL_PROXY_URL env var is set)
  */
 async function fetchCodeFromGmail(company: string, accessToken: string): Promise<string | null> {
-  try {
-    // Search for security code emails from Greenhouse for this company (last 10 minutes)
-    const query = `from:greenhouse subject:"security code" subject:"${company}" newer_than:10m`
-    const listUrl = `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=1`
+  // ── Approach 1: Direct Gmail API ──
+  if (accessToken && accessToken !== 'proxy-only') {
+    try {
+      const query = `from:greenhouse subject:"security code" subject:"${company}" newer_than:10m`
+      const listUrl = `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=1`
 
-    const listRes = await fetch(listUrl, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    })
+      const listRes = await fetch(listUrl, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
 
-    if (listRes.status === 401) {
-      console.warn('[greenhouse] Gmail token expired (401)')
-      return null
+      if (listRes.status === 401) {
+        console.warn('[greenhouse] Gmail token expired (401) — trying proxy fallback')
+      } else if (listRes.ok) {
+        const listData = await listRes.json() as { messages?: Array<{ id: string }> }
+        if (listData.messages?.length) {
+          const msgId = listData.messages[0].id
+          const msgUrl = `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}?format=full`
+          const msgRes = await fetch(msgUrl, {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          })
+          if (msgRes.ok) {
+            const msgData = await msgRes.json() as { snippet?: string }
+            const snippet = msgData.snippet || ''
+            const codeMatch = snippet.match(/application:\s*(\S+)\s+After/i)
+            if (codeMatch) return codeMatch[1]
+            const fallback = snippet.match(/:\s*([A-Za-z0-9]{6,10})\s/)
+            if (fallback) return fallback[1]
+            console.warn('[greenhouse] Could not extract code from email snippet:', snippet.substring(0, 100))
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[greenhouse] Gmail API error:', err instanceof Error ? err.message : err)
     }
-    if (!listRes.ok) {
-      console.warn(`[greenhouse] Gmail API error: ${listRes.status}`)
-      return null
-    }
-
-    const listData = await listRes.json() as { messages?: Array<{ id: string }> }
-    if (!listData.messages?.length) return null
-
-    // Get the most recent email
-    const msgId = listData.messages[0].id
-    const msgUrl = `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}?format=full`
-    const msgRes = await fetch(msgUrl, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    })
-    if (!msgRes.ok) return null
-
-    const msgData = await msgRes.json() as { snippet?: string }
-    const snippet = msgData.snippet || ''
-
-    // Extract code: "...security code field on your application: XXXXXXXX After you enter..."
-    const codeMatch = snippet.match(/application:\s*(\S+)\s+After/i)
-    if (codeMatch) return codeMatch[1]
-
-    // Fallback: 6-10 char alphanumeric code after a colon
-    const fallback = snippet.match(/:\s*([A-Za-z0-9]{6,10})\s/)
-    if (fallback) return fallback[1]
-
-    console.warn('[greenhouse] Could not extract code from email snippet:', snippet.substring(0, 100))
-    return null
-  } catch (err) {
-    console.warn('[greenhouse] Gmail fetch error:', err instanceof Error ? err.message : err)
-    return null
   }
+
+  // ── Approach 2: Apps Script proxy ──
+  const proxyUrl = process.env.GMAIL_PROXY_URL
+  const proxyToken = process.env.GMAIL_PROXY_TOKEN || 'greenhouse-code-proxy-2026'
+  if (proxyUrl) {
+    try {
+      const url = `${proxyUrl}?company=${encodeURIComponent(company)}&maxAge=10&token=${encodeURIComponent(proxyToken)}`
+      const res = await fetch(url, { signal: AbortSignal.timeout(10_000) })
+      if (res.ok) {
+        const data = await res.json() as { ok: boolean; code: string | null; error?: string }
+        if (data.ok && data.code) {
+          console.log(`[greenhouse] Got security code via Apps Script proxy for ${company}`)
+          return data.code
+        }
+        if (!data.ok) {
+          console.warn(`[greenhouse] Proxy error: ${data.error}`)
+        }
+      } else {
+        console.warn(`[greenhouse] Proxy HTTP error: ${res.status}`)
+      }
+    } catch (err) {
+      console.warn('[greenhouse] Proxy fetch error:', err instanceof Error ? err.message : err)
+    }
+  }
+
+  return null
 }
 
 /**

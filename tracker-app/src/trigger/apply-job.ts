@@ -1,4 +1,4 @@
-import { task, metadata } from "@trigger.dev/sdk/v3"
+import { task, metadata, tasks } from "@trigger.dev/sdk/v3"
 
 export const applyJobTask = task({
   id: "apply-job-pipeline",
@@ -9,6 +9,7 @@ export const applyJobTask = task({
     dryRun?: boolean
     plan?: 'free' | 'starter' | 'pro' | 'boost'
     linkedInCookie?: string
+    gmailAccessToken?: string
     searchConfig?: {
       keywords: string[]
       locationRules: Array<{
@@ -22,6 +23,7 @@ export const applyJobTask = task({
       dailyLimit: number
     }
     userProfile?: Record<string, unknown>
+    autoApply?: boolean // If true (default), automatically trigger apply-jobs after qualify
   }) => {
     const { runPipelineFromInline } = await import("../bot/orchestrator")
     const { chromium } = await import("playwright")
@@ -123,17 +125,77 @@ export const applyJobTask = task({
         },
       })
 
+      // ---------- Auto-Apply Phase ----------
+      // After scout+qualify, automatically trigger apply-jobs with qualified jobs
+      // unless dryRun is true or autoApply is explicitly false
+      const autoApply = payload.autoApply !== false && !payload.dryRun
+      const qualifiedJobs = result.qualifiedJobs ?? []
+
+      let applyResult: { applied: number; failed: number; needsManual: number } = {
+        applied: 0, failed: 0, needsManual: 0
+      }
+
+      if (autoApply && qualifiedJobs.length > 0) {
+        console.log(`[apply-job-pipeline] Auto-applying to ${qualifiedJobs.length} qualified jobs...`)
+
+        try {
+          metadata.set("progress", {
+            phase: "apply",
+            jobsFound: result.jobsFound,
+            jobsProcessed: 0,
+            jobsQualified: qualifiedJobs.length,
+            jobsPreFiltered: 0,
+            currentJob: null,
+            activities: [{
+              action: "found",
+              reason: `Starting auto-apply for ${qualifiedJobs.length} qualified jobs`,
+              timestamp: new Date().toISOString(),
+            }],
+          })
+
+          // Trigger apply-jobs as a child task
+          const applyJobsPayload = {
+            userId: payload.userId,
+            jobs: qualifiedJobs.slice(0, payload.maxApplications ?? 20).map(j => ({
+              url: j.url,
+              company: j.company,
+              role: j.title,
+              coverLetterSnippet: j.coverLetterSnippet || '',
+              matchScore: j.score,
+            })),
+            userProfile: payload.userProfile || {},
+            linkedInCookie: payload.linkedInCookie,
+            gmailAccessToken: payload.gmailAccessToken,
+          }
+
+          // Use tasks.triggerAndWait to run apply-jobs as child task
+          const handle = await tasks.trigger("apply-jobs", applyJobsPayload)
+          console.log(`[apply-job-pipeline] Triggered apply-jobs: ${handle.id}`)
+
+          // Don't wait — let it run asynchronously. The pipeline returns immediately
+          // with qualified jobs. Apply results will be tracked separately in Supabase.
+          applyResult = { applied: -1, failed: -1, needsManual: -1 } // -1 = in progress
+        } catch (applyErr) {
+          console.warn(`[apply-job-pipeline] Auto-apply trigger failed:`, (applyErr as Error).message)
+        }
+      } else if (!autoApply) {
+        console.log(`[apply-job-pipeline] Auto-apply disabled (dryRun: ${payload.dryRun}, autoApply: ${payload.autoApply})`)
+      } else {
+        console.log(`[apply-job-pipeline] No qualified jobs to apply to`)
+      }
+
       return {
         runId: result.runId,
         jobsFound: result.jobsFound,
         jobsPreFiltered: (result.jobsFound ?? 0) - (result.jobsQualified ?? 0),
         jobsQualified: result.jobsQualified,
-        jobsApplied: result.jobsApplied,
+        jobsApplied: applyResult.applied,
         jobsSkipped: result.jobsSkipped,
-        jobsFailed: result.jobsFailed,
+        jobsFailed: applyResult.failed,
         duration: result.duration,
         discoveredJobs: result.discoveredJobs ?? [],
         qualifiedJobs: result.qualifiedJobs ?? [],
+        autoApplyTriggered: autoApply && qualifiedJobs.length > 0,
       }
     } finally {
       if (browserContext) {

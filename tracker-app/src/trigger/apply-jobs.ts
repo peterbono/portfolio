@@ -131,6 +131,39 @@ export const applyJobsTask = task({
       ...(payload.gmailAccessToken && { gmailAccessToken: payload.gmailAccessToken }),
     }
 
+    // ---------- Auto-exchange Gmail refresh token → access token ----------
+    // If no gmailAccessToken was passed in the payload, try to obtain one
+    // from env vars (GOOGLE_REFRESH_TOKEN + GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET).
+    // This enables Greenhouse security code verification without manual token management.
+    if (!profile.gmailAccessToken) {
+      const refreshToken = process.env.GOOGLE_REFRESH_TOKEN
+      const clientId = process.env.GOOGLE_CLIENT_ID
+      const clientSecret = process.env.GOOGLE_CLIENT_SECRET
+      if (refreshToken && clientId && clientSecret) {
+        try {
+          const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+              grant_type: 'refresh_token',
+              refresh_token: refreshToken,
+              client_id: clientId,
+              client_secret: clientSecret,
+            }),
+          })
+          if (tokenRes.ok) {
+            const tokenData = await tokenRes.json() as { access_token: string }
+            profile.gmailAccessToken = tokenData.access_token
+            console.log('[apply-jobs] Gmail access token obtained from refresh token ✅')
+          } else {
+            console.warn(`[apply-jobs] Gmail token exchange failed: ${tokenRes.status}`)
+          }
+        } catch (err) {
+          console.warn('[apply-jobs] Gmail token exchange error:', err instanceof Error ? err.message : err)
+        }
+      }
+    }
+
     // ---------- Merge enrichedProfile data if available ----------
     if (payload.enrichedProfile) {
       if (payload.enrichedProfile.totalYearsExperience) {

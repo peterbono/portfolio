@@ -53,6 +53,192 @@ export async function solveCaptchaIfPresent(page: Page, timeout = 30000): Promis
   }
 }
 
+// ---------------------------------------------------------------------------
+// CapSolver hCaptcha integration (fallback when SBR auto-solve fails)
+// ---------------------------------------------------------------------------
+
+const CAPSOLVER_CREATE_URL = 'https://api.capsolver.com/createTask'
+const CAPSOLVER_RESULT_URL = 'https://api.capsolver.com/getTaskResult'
+const CAPSOLVER_POLL_INTERVAL_MS = 3_000
+const CAPSOLVER_MAX_POLL_ATTEMPTS = 40 // ~2 minutes max
+
+/**
+ * Solve an hCaptcha challenge using CapSolver's API.
+ *
+ * Requires the CAPSOLVER_API_KEY environment variable to be set.
+ * Returns the hCaptcha response token on success, or null on failure.
+ *
+ * @param websiteUrl - The page URL where hCaptcha is displayed
+ * @param websiteKey - The hCaptcha site key (data-sitekey attribute)
+ */
+export async function solveHCaptchaViaCapsolver(
+  websiteUrl: string,
+  websiteKey: string,
+): Promise<string | null> {
+  const apiKey = process.env.CAPSOLVER_API_KEY
+  if (!apiKey) {
+    console.log('[capsolver] CAPSOLVER_API_KEY not set — skipping CapSolver')
+    return null
+  }
+
+  console.log(`[capsolver] Creating HCaptchaTaskProxyless for ${websiteUrl} (siteKey: ${websiteKey})`)
+
+  try {
+    // Step 1: Create the task
+    const createResponse = await fetch(CAPSOLVER_CREATE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        clientKey: apiKey,
+        task: {
+          type: 'HCaptchaTaskProxyless',
+          websiteURL: websiteUrl,
+          websiteKey,
+        },
+      }),
+    })
+
+    if (!createResponse.ok) {
+      console.warn(`[capsolver] createTask HTTP error: ${createResponse.status}`)
+      return null
+    }
+
+    const createData = (await createResponse.json()) as {
+      errorId: number
+      errorCode?: string
+      errorDescription?: string
+      taskId?: string
+    }
+
+    if (createData.errorId !== 0 || !createData.taskId) {
+      console.warn(
+        `[capsolver] createTask failed: ${createData.errorCode} — ${createData.errorDescription}`,
+      )
+      return null
+    }
+
+    const taskId = createData.taskId
+    console.log(`[capsolver] Task created: ${taskId} — polling for result...`)
+
+    // Step 2: Poll for result
+    for (let attempt = 0; attempt < CAPSOLVER_MAX_POLL_ATTEMPTS; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, CAPSOLVER_POLL_INTERVAL_MS))
+
+      const resultResponse = await fetch(CAPSOLVER_RESULT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientKey: apiKey,
+          taskId,
+        }),
+      })
+
+      if (!resultResponse.ok) {
+        console.warn(`[capsolver] getTaskResult HTTP error: ${resultResponse.status}`)
+        continue
+      }
+
+      const resultData = (await resultResponse.json()) as {
+        errorId: number
+        errorCode?: string
+        errorDescription?: string
+        status: 'idle' | 'processing' | 'ready'
+        solution?: {
+          gRecaptchaResponse?: string
+          // CapSolver returns the token in gRecaptchaResponse for hCaptcha too
+        }
+      }
+
+      if (resultData.errorId !== 0) {
+        console.warn(
+          `[capsolver] getTaskResult error: ${resultData.errorCode} — ${resultData.errorDescription}`,
+        )
+        return null
+      }
+
+      if (resultData.status === 'ready') {
+        const token = resultData.solution?.gRecaptchaResponse
+        if (token) {
+          console.log(`[capsolver] hCaptcha solved successfully (token length: ${token.length})`)
+          return token
+        }
+        console.warn('[capsolver] Task ready but no token in solution')
+        return null
+      }
+
+      // Still processing — continue polling
+      if (attempt % 5 === 0) {
+        console.log(`[capsolver] Still solving... (attempt ${attempt + 1}/${CAPSOLVER_MAX_POLL_ATTEMPTS})`)
+      }
+    }
+
+    console.warn('[capsolver] Timed out waiting for hCaptcha solution')
+    return null
+  } catch (error) {
+    console.error(
+      '[capsolver] Unexpected error:',
+      error instanceof Error ? error.message : error,
+    )
+    return null
+  }
+}
+
+/**
+ * Inject an hCaptcha token into the page DOM and dispatch the necessary events
+ * so the form recognizes the CAPTCHA as solved.
+ *
+ * This sets:
+ * - textarea[name="h-captcha-response"] value
+ * - textarea[name="g-recaptcha-response"] value (some forms alias this)
+ * - Calls the hcaptcha callback if available on window
+ */
+export async function injectHCaptchaToken(page: Page, token: string): Promise<void> {
+  await page.evaluate((tok) => {
+    // Set all hCaptcha / reCAPTCHA response textareas
+    const textareas = document.querySelectorAll<HTMLTextAreaElement>(
+      'textarea[name="h-captcha-response"], textarea[name="g-recaptcha-response"]',
+    )
+    textareas.forEach((ta) => {
+      ta.value = tok
+      ta.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    // Also set via the hcaptcha iframe bridge if present
+    const hcaptchaIframe = document.querySelector<HTMLIFrameElement>(
+      'iframe[src*="hcaptcha.com"], iframe[data-hcaptcha-widget-id]',
+    )
+    if (hcaptchaIframe) {
+      // Set the response in the parent's hidden fields
+      const widgetId = hcaptchaIframe.getAttribute('data-hcaptcha-widget-id') || '0'
+      try {
+        // Try the official hcaptcha JS API if loaded
+        const hcaptchaApi = (window as any).hcaptcha
+        if (hcaptchaApi && typeof hcaptchaApi.setResponse === 'function') {
+          hcaptchaApi.setResponse(tok, { widgetID: widgetId })
+        }
+      } catch {
+        // Silently ignore — the textarea approach should suffice
+      }
+    }
+
+    // Trigger any registered callback (Lever registers one via hCaptcha render config)
+    try {
+      const hcaptchaApi = (window as any).hcaptcha
+      if (hcaptchaApi) {
+        // Some integrations store the callback ref; try to invoke it
+        const callbacks = (window as any).hcaptchaCallback || (window as any).onHCaptchaSuccess
+        if (typeof callbacks === 'function') {
+          callbacks(tok)
+        }
+      }
+    } catch {
+      // Callback invocation is best-effort
+    }
+
+    console.log(`[injectHCaptchaToken] Injected token into ${textareas.length} textarea(s)`)
+  }, token)
+}
+
 /**
  * Human-like delay between actions to avoid bot detection.
  * Randomized between min and max milliseconds.
@@ -756,9 +942,14 @@ export async function checkForConfirmation(page: Page): Promise<boolean> {
   // Wait a moment for any post-submit redirect/render
   await new Promise(r => setTimeout(r, 2000))
 
+  // ── Strategy: text-based patterns are reliable, CSS class patterns are NOT ──
+  // Removed `[class*="success"]` and `[class*="confirmation"]` — these are WAY
+  // too broad and match CSS utility classes (e.g. `btn-success`, `form-success`)
+  // that have nothing to do with application confirmation.  This was causing
+  // false-positive "applied" claims with no email confirmation.
+
   const successPatterns = [
-    'text=Thank you',
-    'text=thank you',
+    // ---------- Text patterns (high confidence) ----------
     'text=Application submitted',
     'text=application has been received',
     'text=successfully submitted',
@@ -766,38 +957,75 @@ export async function checkForConfirmation(page: Page): Promise<boolean> {
     'text=thanks for applying',
     'text=We have received your application',
     'text=Your application has been submitted',
-    'text=Merci',
     'text=Application received',
     'text=application received',
     'text=We got your application',
     'text=received your submission',
-    'text=You\'re all set',
-    // Lever-specific patterns
+    // Lever-specific
     'text=Thanks for your interest',
     'text=Your application to',
+    'text=Application has been submitted',
+    // Greenhouse-specific
+    'text=Your application has been received',
+    // Generic ATS
+    'text=You\'re all set',
+    'text=Application complete',
+    'text=Application sent',
+    // ---------- Structural selectors (high confidence) ----------
     '.application-confirmation',
     '.confirmation-message',
-    '[class*="success"]',
-    '[class*="confirmation"]',
-    // Greenhouse-specific patterns
     '.flash-success',
     '#application_confirmation',
-    // URL-based detection (some ATS redirect to /thank-you or /confirmation)
+    // Lever confirmation page has a specific class
+    '.msg-success',
+    '.application-complete',
+    // Greenhouse confirmation page
+    '#application_confirmation',
   ]
 
   for (const pattern of successPatterns) {
     try {
       const element = page.locator(pattern).first()
       const visible = await element.isVisible({ timeout: 2000 })
-      if (visible) return true
+      if (visible) {
+        console.log(`[checkForConfirmation] ✅ Match found: ${pattern}`)
+        return true
+      }
     } catch {
       // Continue checking
     }
   }
 
-  // Also check URL for confirmation indicators
+  // ---------- "Thank you" text check — ONLY in the main content area ----------
+  // Avoid matching header/footer "Thank you for visiting" type text.
+  // Require "thank you" near application-related words.
+  try {
+    const bodyText = await page.locator('main, #content, .content, [role="main"], body').first()
+      .textContent({ timeout: 2000 }).catch(() => '')
+    if (bodyText) {
+      const lower = bodyText.toLowerCase()
+      const hasThankYou = lower.includes('thank you') || lower.includes('merci')
+      const hasApplicationContext = lower.includes('application') || lower.includes('apply') ||
+        lower.includes('candidature') || lower.includes('submitted') || lower.includes('received')
+      if (hasThankYou && hasApplicationContext) {
+        console.log('[checkForConfirmation] ✅ "Thank you" + application context found in body text')
+        return true
+      }
+    }
+  } catch {
+    // Continue
+  }
+
+  // ---------- URL-based detection ----------
+  // Only match confirmation-specific URL paths (not just "success" anywhere)
   const url = page.url().toLowerCase()
-  if (url.includes('thank') || url.includes('confirmation') || url.includes('success') || url.includes('submitted')) {
+  if (
+    url.includes('/thank') ||
+    url.includes('/confirmation') ||
+    url.includes('/application-submitted') ||
+    url.includes('/applied')
+  ) {
+    console.log(`[checkForConfirmation] ✅ Confirmation URL detected: ${url}`)
     return true
   }
 
