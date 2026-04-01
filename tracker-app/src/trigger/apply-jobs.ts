@@ -176,17 +176,28 @@ export const applyJobsTask = task({
         "--js-flags=--max-old-space-size=256",
       ]
       let atsBrowser: Awaited<ReturnType<typeof chromium.connectOverCDP>>
+      let usingSBR = false
       if (SBR_AUTH) {
         try {
-          atsBrowser = await Promise.race([
+          const sbrBrowser = await Promise.race([
             chromium.connectOverCDP(`wss://${SBR_AUTH}@brd.superproxy.io:9222`),
             new Promise<never>((_, reject) =>
               setTimeout(() => reject(new Error('SBR connection timeout (30s)')), 30_000)
             ),
           ])
-          console.log('[apply-jobs] Connected to Bright Data SBR')
+          // Health check: verify CDP is responsive (not a zombie session)
+          const testCtx = await Promise.race([
+            sbrBrowser.newContext(),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error('SBR health check timeout (10s)')), 10_000)
+            ),
+          ])
+          await testCtx.close()
+          atsBrowser = sbrBrowser
+          usingSBR = true
+          console.log('[apply-jobs] Connected to Bright Data SBR (health check passed)')
         } catch (sbrErr) {
-          console.warn(`[apply-jobs] SBR connection failed: ${(sbrErr as Error).message} — falling back to local Chromium`)
+          console.warn(`[apply-jobs] SBR failed: ${(sbrErr as Error).message} — falling back to local Chromium`)
           atsBrowser = await chromium.launch({ headless: true, args: LOCAL_ARGS }) as unknown as Awaited<ReturnType<typeof chromium.connectOverCDP>>
         }
       } else {
@@ -195,7 +206,7 @@ export const applyJobsTask = task({
 
       try {
         // SBR via CDP doesn't support newContext() — use default context
-        const atsContext = SBR_AUTH
+        const atsContext = usingSBR
           ? atsBrowser.contexts()[0] || await atsBrowser.newContext({
               viewport: { width: 1280, height: 900 },
               ignoreHTTPSErrors: true,

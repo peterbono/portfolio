@@ -898,13 +898,35 @@ export async function runPipeline(config: PipelineConfig & { onProgress?: (p: Pi
     if (config.browserContext) {
       context = config.browserContext
     } else {
-      context = await config.browser.newContext({
-        viewport: { width: 1280, height: 900 },
-        userAgent:
-          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        locale: 'en-US',
-        timezoneId: 'Asia/Bangkok',
-      })
+      // browser.newContext() can hang if the CDP connection is a zombie — wrap with 15s timeout
+      try {
+        context = await Promise.race([
+          config.browser.newContext({
+            viewport: { width: 1280, height: 900 },
+            userAgent:
+              'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            locale: 'en-US',
+            timezoneId: 'Asia/Bangkok',
+          }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('browser.newContext() timeout (15s) — zombie CDP?')), 15_000)
+          ),
+        ])
+      } catch (ctxErr) {
+        console.warn(`[pipeline] newContext failed: ${(ctxErr as Error).message} — launching local Chromium`)
+        const { chromium } = await import('playwright')
+        const localBrowser = await chromium.launch({
+          headless: true,
+          args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+        })
+        context = await localBrowser.newContext({
+          viewport: { width: 1280, height: 900 },
+          userAgent:
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          locale: 'en-US',
+          timezoneId: 'Asia/Bangkok',
+        })
+      }
     }
 
     // Block images, CSS, fonts, media, and trackers to reduce Bright Data bandwidth (~70% savings)
@@ -979,18 +1001,31 @@ export async function runPipeline(config: PipelineConfig & { onProgress?: (p: Pi
       activities.push(logEntry)
 
       try {
-        // Try SBR reconnect first
+        const { chromium } = await import('playwright')
+        // Try SBR reconnect first (30s timeout to avoid hangs)
         const sbrAuth = (process.env.BRIGHTDATA_SBR_AUTH || '').trim() || undefined
+        let reconnected = false
         if (sbrAuth) {
-          const { chromium } = await import('playwright')
-          const newBrowser = await chromium.connectOverCDP(`wss://${sbrAuth}@brd.superproxy.io:9222`)
-          reconnectedContext = newBrowser.contexts()[0] || await newBrowser.newContext({
-            viewport: { width: 1280, height: 900 },
-            ignoreHTTPSErrors: true,
-          })
-        } else {
+          try {
+            const newBrowser = await Promise.race([
+              chromium.connectOverCDP(`wss://${sbrAuth}@brd.superproxy.io:9222`),
+              new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error('SBR reconnect timeout (30s)')), 30_000)
+              ),
+            ])
+            reconnectedContext = newBrowser.contexts()[0] || await Promise.race([
+              newBrowser.newContext({ viewport: { width: 1280, height: 900 }, ignoreHTTPSErrors: true }),
+              new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error('SBR newContext timeout (10s)')), 10_000)
+              ),
+            ])
+            reconnected = true
+          } catch (sbrErr) {
+            console.warn(`[pipeline] SBR reconnect failed: ${(sbrErr as Error).message} — using local Chromium`)
+          }
+        }
+        if (!reconnected) {
           // Local Chromium fallback
-          const { chromium } = await import('playwright')
           const newBrowser = await chromium.launch({
             headless: true,
             args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage',
@@ -1003,7 +1038,7 @@ export async function runPipeline(config: PipelineConfig & { onProgress?: (p: Pi
         }
         await blockUnnecessaryResources(reconnectedContext, 'aggressive')
         qualifyPage = await reconnectedContext.newPage()
-        console.log('[pipeline] Browser reconnected successfully for qualify phase')
+        console.log(`[pipeline] Browser reconnected successfully (${reconnected ? 'SBR' : 'local'}) for qualify phase`)
       } catch (reconnErr) {
         console.error('[pipeline] Browser reconnect failed:', (reconnErr as Error).message)
         // Continue anyway — JD extraction will fail but Haiku can still score on metadata

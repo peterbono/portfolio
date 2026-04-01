@@ -56,31 +56,42 @@ export const applyJobTask = task({
     // doesn't require auth). Use local Chromium + cookie for Easy Apply.
     const SBR_AUTH = (process.env.BRIGHTDATA_SBR_AUTH || '').trim() || undefined
 
-    // SBR connectOverCDP can hang indefinitely — wrap with 30s timeout + local fallback
+    // SBR connectOverCDP can hang indefinitely OR return a zombie browser.
+    // Strategy: 30s connect timeout + health check (newContext + close) + local fallback.
+    const LOCAL_ARGS = ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
     let browser: Awaited<ReturnType<typeof chromium.connectOverCDP>>
     let usingSBR = false
+
+    const launchLocal = async () => {
+      console.log('[apply-job] Launching local Chromium')
+      return await chromium.launch({ headless: true, args: LOCAL_ARGS })
+    }
+
     if (SBR_AUTH) {
       try {
-        browser = await Promise.race([
+        const sbrBrowser = await Promise.race([
           chromium.connectOverCDP(`wss://${SBR_AUTH}@brd.superproxy.io:9222`),
           new Promise<never>((_, reject) =>
             setTimeout(() => reject(new Error('SBR connection timeout (30s)')), 30_000)
           ),
         ])
+        // Health check: verify browser is actually responsive (not a zombie CDP session)
+        const testCtx = await Promise.race([
+          sbrBrowser.newContext(),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('SBR health check timeout (10s)')), 10_000)
+          ),
+        ])
+        await testCtx.close()
+        browser = sbrBrowser
         usingSBR = true
-        console.log('[apply-job] Connected to Bright Data SBR')
+        console.log('[apply-job] Connected to Bright Data SBR (health check passed)')
       } catch (sbrErr) {
-        console.warn(`[apply-job] SBR connection failed: ${(sbrErr as Error).message} — falling back to local Chromium`)
-        browser = await chromium.launch({
-          headless: true,
-          args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
-        })
+        console.warn(`[apply-job] SBR failed: ${(sbrErr as Error).message} — falling back to local Chromium`)
+        browser = await launchLocal() as unknown as typeof browser
       }
     } else {
-      browser = await chromium.launch({
-        headless: true,
-        args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
-      })
+      browser = await launchLocal() as unknown as typeof browser
     }
 
     // No cookie injection on Bright Data — scout uses public LinkedIn search
