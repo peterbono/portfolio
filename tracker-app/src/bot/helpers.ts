@@ -380,8 +380,20 @@ export async function answerScreeningQuestion(
       ].join('\n')
     }
   }
+  // Employment type / preference / arrangement
+  else if (q.includes('employment') || q.includes('work type') || q.includes('contract type') || q.includes('arrangement') || q.includes('engagement')) {
+    answer = 'Contract'
+  }
+  // Availability / hours / commitment
+  else if (q.includes('availability') || q.includes('hours') || q.includes('full-time') || q.includes('part-time')) {
+    answer = 'Full-time'
+  }
+  // Language / proficiency
+  else if (q.includes('language') && !q.includes('programming')) {
+    answer = 'English (Fluent), French (Native)'
+  }
   // Boolean yes/no questions — default to "Yes" for positive framing
-  else if (q.includes('do you') || q.includes('are you') || q.includes('have you') || q.includes('can you')) {
+  else if (q.includes('do you') || q.includes('are you') || q.includes('have you') || q.includes('can you') || q.includes('what is your')) {
     answer = 'Yes'
   }
   // Fallback: leave a generic answer with portfolio link
