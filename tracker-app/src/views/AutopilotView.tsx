@@ -3727,7 +3727,7 @@ export function AutopilotView() {
       return JSON.parse(saved).startTime ?? null
     } catch { return null }
   })
-  const [polledRunStatus, setPolledRunStatus] = useState<'QUEUED' | 'EXECUTING' | 'COMPLETED' | 'FAILED' | 'CRASHED' | 'REATTEMPTING' | null>(null)
+  const [polledRunStatus, setPolledRunStatus] = useState<'QUEUED' | 'EXECUTING' | 'COMPLETED' | 'FAILED' | 'CRASHED' | 'REATTEMPTING' | 'TIMED_OUT' | null>(null)
   const [applyRunId, _setApplyRunId] = useState<string | null>(() => {
     try {
       return localStorage.getItem(APPLY_RUN_LS_KEY) ?? null
@@ -3937,7 +3937,7 @@ export function AutopilotView() {
   // ---- Trigger.dev run polling via Vercel proxy (every 5s) -----------
   useEffect(() => {
     if (!activeRunId) return
-    const TERMINAL = ['COMPLETED', 'FAILED', 'CRASHED', 'CANCELED', 'SYSTEM_FAILURE']
+    const TERMINAL = ['COMPLETED', 'FAILED', 'CRASHED', 'CANCELED', 'SYSTEM_FAILURE', 'TIMED_OUT']
 
     const poll = async () => {
       try {
@@ -4123,7 +4123,7 @@ export function AutopilotView() {
   // ---- Handle apply-jobs completion: update 'submitting' items to final status ----
   useEffect(() => {
     if (!applyRunId) return
-    if (polledRunStatus !== 'COMPLETED' && polledRunStatus !== 'FAILED' && polledRunStatus !== 'CRASHED') return
+    if (polledRunStatus !== 'COMPLETED' && polledRunStatus !== 'FAILED' && polledRunStatus !== 'CRASHED' && polledRunStatus !== 'TIMED_OUT') return
 
     console.log('[AutopilotView] Apply run completed with status:', polledRunStatus)
 
@@ -4321,7 +4321,7 @@ export function AutopilotView() {
 
   // Derived: is a polled run actively in progress
   const isRunPolling = activeRunId !== null
-  const isRunTerminal = polledRunStatus === 'COMPLETED' || polledRunStatus === 'FAILED' || polledRunStatus === 'CRASHED'
+  const isRunTerminal = polledRunStatus === 'COMPLETED' || polledRunStatus === 'FAILED' || polledRunStatus === 'CRASHED' || polledRunStatus === 'TIMED_OUT'
 
   // Don't show stale terminal banners on initial load — only show if run is recent (< 5 min)
   const isStaleTerminalRun = !isRunPolling && !isTriggering && !isBotActive && currentRun != null &&
@@ -5184,9 +5184,9 @@ export function AutopilotView() {
                 const metaJf = polledMetadata?.jobsFound
                 const jf = metaJf ?? (polledRunOutput?.jobsFound as number | undefined) ?? currentRun?.jobsFound ?? 0
                 const discovered = (polledRunOutput?.discoveredJobs ?? polledRunOutput?.discovered_jobs ?? []) as DiscoveredJob[]
-                const isRunning = (isTriggering || isRunPolling || isBotActive) && !(polledRunStatus === 'COMPLETED' || polledRunStatus === 'FAILED' || polledRunStatus === 'CRASHED')
+                const isRunning = (isTriggering || isRunPolling || isBotActive) && !(polledRunStatus === 'COMPLETED' || polledRunStatus === 'FAILED' || polledRunStatus === 'CRASHED' || polledRunStatus === 'TIMED_OUT')
                 const isComplete = polledRunStatus === 'COMPLETED' || (!isRunPolling && !isTriggering && currentRun?.status === 'completed')
-                const isFailed = polledRunStatus === 'FAILED' || polledRunStatus === 'CRASHED' || (!isRunPolling && !isTriggering && currentRun?.status === 'failed')
+                const isFailed = polledRunStatus === 'FAILED' || polledRunStatus === 'CRASHED' || polledRunStatus === 'TIMED_OUT' || (!isRunPolling && !isTriggering && currentRun?.status === 'failed')
 
                 // Smart progress: use metadata phase for accurate progress
                 const metaPhase = polledMetadata?.phase
