@@ -479,7 +479,11 @@ async function handleRadioOrCheckbox(
 
 /**
  * Handle React Select / combobox dropdowns (common in Greenhouse, Ashby forms).
- * Types the desired value, waits for the dropdown to appear, then clicks the best match.
+ *
+ * Strategy:
+ * 1. First try: open dropdown via ArrowDown, scan all options, click best match
+ * 2. If no match: type the desired value to filter, then try again
+ * 3. Fallback: click first available option (better than leaving empty for required fields)
  */
 async function handleReactSelect(
   page: Page,
@@ -487,68 +491,122 @@ async function handleReactSelect(
   desiredValue: string,
 ): Promise<void> {
   const input = page.locator(selector).first()
-
-  // Click to open the dropdown
-  await input.click()
-  await new Promise(r => setTimeout(r, 300))
-
-  // Clear any existing value and type the desired answer
-  await input.fill('')
-  await input.pressSequentially(desiredValue.substring(0, 20), { delay: 50 })
-  await new Promise(r => setTimeout(r, 500))
-
-  // Look for dropdown options — React Select uses various class patterns
-  const optionSelectors = [
-    '[class*="select__option"]',
-    '[class*="option"]',
-    '[role="option"]',
-    '[id*="option"]',
-    '.menu-option',
-  ]
-
   const desired = desiredValue.toLowerCase()
 
-  for (const optSel of optionSelectors) {
-    const options = page.locator(optSel)
-    const count = await options.count()
-    if (count === 0) continue
+  // Option selectors — React Select uses these class patterns
+  const optionSelectors = [
+    '[class*="select__option"]',
+    '[role="option"]',
+    '[id*="option"]',
+  ]
 
-    // Find the best matching option
-    for (let i = 0; i < count; i++) {
-      const text = (await options.nth(i).textContent())?.toLowerCase() || ''
-      if (text.includes(desired) || desired.includes(text.trim())) {
-        await options.nth(i).click()
-        console.log(`[screening] React Select: selected option "${text.trim()}"`)
-        return
-      }
-    }
+  // Helper: find and click the best matching option from visible dropdown options
+  const trySelectOption = async (): Promise<boolean> => {
+    for (const optSel of optionSelectors) {
+      const options = page.locator(optSel)
+      const count = await options.count()
+      if (count === 0) continue
 
-    // For yes/no style questions, match more broadly
-    if (desired === 'yes' || desired === 'no') {
+      // Score each option and pick the best match
+      let bestIdx = -1
+      let bestScore = 0
       for (let i = 0; i < count; i++) {
-        const text = (await options.nth(i).textContent())?.toLowerCase() || ''
-        if (text.includes(desired)) {
+        const text = (await options.nth(i).textContent())?.toLowerCase().trim() || ''
+        if (!text) continue
+
+        let score = 0
+        if (text === desired) score = 100 // Exact match
+        else if (text.includes(desired)) score = 80 // Contains desired
+        else if (desired.includes(text)) score = 60 // Desired contains option
+        else {
+          // Partial word matching
+          const desiredWords = desired.split(/\s+/)
+          const textWords = text.split(/\s+/)
+          const matching = desiredWords.filter(w => textWords.some(tw => tw.includes(w) || w.includes(tw)))
+          if (matching.length > 0) score = 20 + matching.length * 10
+        }
+
+        if (score > bestScore) {
+          bestScore = score
+          bestIdx = i
+        }
+      }
+
+      if (bestIdx >= 0 && bestScore >= 20) {
+        const selectedText = await options.nth(bestIdx).textContent()
+        await options.nth(bestIdx).click()
+        console.log(`[screening] React Select: selected "${selectedText?.trim()}" (score ${bestScore})`)
+        return true
+      }
+
+      // For yes/no, try broader matching
+      if (desired === 'yes' || desired === 'no') {
+        for (let i = 0; i < count; i++) {
+          const text = (await options.nth(i).textContent())?.toLowerCase() || ''
+          if (text.includes(desired)) {
+            await options.nth(i).click()
+            console.log(`[screening] React Select: selected yes/no "${text.trim()}"`)
+            return true
+          }
+        }
+      }
+
+      // Last resort: click first non-empty option for required fields
+      for (let i = 0; i < count; i++) {
+        const text = (await options.nth(i).textContent())?.trim() || ''
+        if (text && !text.toLowerCase().includes('select')) {
           await options.nth(i).click()
-          console.log(`[screening] React Select: selected yes/no option "${text.trim()}"`)
-          return
+          console.log(`[screening] React Select: fallback first option "${text}"`)
+          return true
         }
       }
     }
-
-    // Fallback: click first non-empty option
-    if (count > 0) {
-      const firstText = await options.first().textContent()
-      if (firstText && firstText.trim()) {
-        await options.first().click()
-        console.log(`[screening] React Select: fallback to first option "${firstText.trim()}"`)
-        return
-      }
-    }
+    return false
   }
 
-  // Final fallback: press Enter to select the first suggestion
+  // Strategy 1: Click input to focus, then press ArrowDown to open full dropdown
+  try {
+    await input.click()
+    await new Promise(r => setTimeout(r, 200))
+    await page.keyboard.press('ArrowDown')
+    await new Promise(r => setTimeout(r, 400))
+
+    if (await trySelectOption()) return
+  } catch {
+    // Strategy 1 failed
+  }
+
+  // Strategy 2: Type the desired value to filter options
+  try {
+    await input.click()
+    await new Promise(r => setTimeout(r, 200))
+    // Use keyboard to type (more reliable than fill for React controlled inputs)
+    for (const char of desiredValue.substring(0, 15)) {
+      await page.keyboard.type(char, { delay: 30 })
+    }
+    await new Promise(r => setTimeout(r, 600))
+
+    if (await trySelectOption()) return
+  } catch {
+    // Strategy 2 failed
+  }
+
+  // Strategy 3: Try clicking the select control/indicator to open dropdown
+  try {
+    const selectControl = page.locator(selector).first()
+      .locator('xpath=ancestor::*[contains(@class, "select__control")]').first()
+    if (await selectControl.count() > 0) {
+      await selectControl.click()
+      await new Promise(r => setTimeout(r, 400))
+      if (await trySelectOption()) return
+    }
+  } catch {
+    // Strategy 3 failed
+  }
+
+  // Final fallback: press Enter (selects highlighted option if any)
   await page.keyboard.press('Enter')
-  console.log(`[screening] React Select: pressed Enter as final fallback`)
+  console.log(`[screening] React Select: exhausted all strategies, pressed Enter`)
 }
 
 /**
