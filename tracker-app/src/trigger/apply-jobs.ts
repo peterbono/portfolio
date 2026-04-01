@@ -235,8 +235,9 @@ export const applyJobsTask = task({
             const adapter = detectAdapter(job.url)
             console.log(`[apply-jobs]   Adapter: ${adapter.name}`)
 
-            // Thread the per-job cover letter snippet into the profile
+            // Thread the per-job cover letter snippet + metadata into the profile
             profile.coverLetterSnippet = job.coverLetterSnippet || undefined
+            profile.jobMeta = { company: job.company, role: job.role }
 
             const applyResult = await adapter.apply(page, job.url, profile)
 
@@ -431,8 +432,9 @@ export const applyJobsTask = task({
               const adapter = detectAdapter(job.url) // will match linkedInEasyApply
               console.log(`[apply-jobs]   Adapter: ${adapter.name}`)
 
-              // Thread the per-job cover letter snippet into the profile
+              // Thread the per-job cover letter snippet + metadata into the profile
               profile.coverLetterSnippet = job.coverLetterSnippet || undefined
+              profile.jobMeta = { company: job.company, role: job.role }
 
               const applyResult = await adapter.apply(page, job.url, profile)
 

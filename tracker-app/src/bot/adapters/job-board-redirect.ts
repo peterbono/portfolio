@@ -53,23 +53,94 @@ export const jobBoardRedirect: ATSAdapter = {
 
   async apply(page: Page, jobUrl: string, profile: ApplicantProfile): Promise<ApplyResult> {
     const start = Date.now()
-    let company = 'Unknown'
-    let role = 'Unknown'
+
+    // Use pre-populated metadata from the pipeline payload when available.
+    // This is critical for RemoteOK: SBR proxy often returns 502 on remoteok.com,
+    // so we can't reliably extract company/role from the page itself.
+    let company = profile.jobMeta?.company || 'Unknown'
+    let role = profile.jobMeta?.role || 'Unknown'
 
     try {
+      // ─── FAST PATH: RemoteOK with known company ─────────────────────
+      // RemoteOK's Apply links redirect through dead aiok.co domain,
+      // and SBR proxy frequently returns 502 "no_peers" for remoteok.com.
+      // Since we already have company/role from the pipeline payload,
+      // probe ATS platforms directly via server-side fetch() (no SBR needed).
+      if (/remoteok\.com/i.test(jobUrl) && company !== 'Unknown') {
+        console.log(`[job-board-redirect] RemoteOK fast path: probing ATS for "${company}" — "${role}"`)
+        const atsUrl = await probeCompanyAtsPages(company, role)
+        if (atsUrl) {
+          console.log(`[job-board-redirect] Fast path found ATS URL: ${atsUrl}`)
+          const { detectAdapter } = await import('./index')
+          const realAdapter = detectAdapter(atsUrl)
+          console.log(`[job-board-redirect] Delegating to ${realAdapter.name} for: ${atsUrl}`)
+          const result = await realAdapter.apply(page, atsUrl, profile)
+          if (result.company === 'Unknown' && company !== 'Unknown') result.company = company
+          if (result.role === 'Unknown' && role !== 'Unknown') result.role = role
+          return result
+        }
+        console.log(`[job-board-redirect] Fast path: no ATS found via probing, falling back to page load`)
+      }
+
+      // ─── STANDARD PATH: load listing page + resolve redirects ───────
       // Step 1: Navigate to the job board listing page
       console.log(`[job-board-redirect] Navigating to listing: ${jobUrl}`)
-      await page.goto(jobUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 })
-      await humanDelay(2000, 3500)
+      let pageLoaded = false
+      try {
+        await page.goto(jobUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 })
+        await humanDelay(2000, 3500)
+        pageLoaded = true
 
-      // Extract metadata from the listing page
-      company = await extractCompanyName(page, jobUrl)
-      role = await extractRoleTitle(page)
+        // Extract metadata from the listing page (enrich if we don't have it yet)
+        const pageCompany = await extractCompanyName(page, jobUrl)
+        const pageRole = await extractRoleTitle(page)
+        if (company === 'Unknown' && pageCompany !== 'Unknown') company = pageCompany
+        if (role === 'Unknown' && pageRole !== 'Unknown') role = pageRole
+      } catch (navErr) {
+        console.log(`[job-board-redirect] Page load failed: ${navErr instanceof Error ? navErr.message : navErr}`)
+        // If page couldn't load but we have company data, try ATS probing
+        if (company !== 'Unknown') {
+          console.log(`[job-board-redirect] Page failed but have company "${company}", probing ATS...`)
+          const atsUrl = await probeCompanyAtsPages(company, role)
+          if (atsUrl) {
+            console.log(`[job-board-redirect] Post-failure probe found: ${atsUrl}`)
+            const { detectAdapter } = await import('./index')
+            const realAdapter = detectAdapter(atsUrl)
+            const result = await realAdapter.apply(page, atsUrl, profile)
+            if (result.company === 'Unknown') result.company = company
+            if (result.role === 'Unknown') result.role = role
+            return result
+          }
+        }
+        // No fallback worked — report failure with the nav error
+        return {
+          success: false,
+          status: 'failed',
+          company,
+          role,
+          ats: 'JobBoardRedirect',
+          reason: `Page load failed: ${navErr instanceof Error ? navErr.message : navErr}`,
+          duration: Date.now() - start,
+        }
+      }
 
       // Step 2: Resolve the actual employer URL
       const employerUrl = await resolveEmployerUrl(page, jobUrl)
 
       if (!employerUrl) {
+        // Last chance: ATS probing if we have company name
+        if (company !== 'Unknown') {
+          const probeUrl = await probeCompanyAtsPages(company, role)
+          if (probeUrl) {
+            console.log(`[job-board-redirect] Post-resolve probe found: ${probeUrl}`)
+            const { detectAdapter } = await import('./index')
+            const realAdapter = detectAdapter(probeUrl)
+            const result = await realAdapter.apply(page, probeUrl, profile)
+            if (result.company === 'Unknown') result.company = company
+            if (result.role === 'Unknown') result.role = role
+            return result
+          }
+        }
         const screenshot = await takeScreenshot(page)
         return {
           success: false,
@@ -86,8 +157,6 @@ export const jobBoardRedirect: ATSAdapter = {
       console.log(`[job-board-redirect] Resolved employer URL (may be tracking redirect): ${employerUrl}`)
 
       // Step 3: Follow HTTP redirect chain server-side to get the FINAL employer URL.
-      // Job boards like RemoteOK use intermediate tracking domains (e.g., aiok.co)
-      // that 302-redirect to the actual employer ATS. We resolve via fetch() first.
       let finalUrl = await resolveRedirectChain(employerUrl)
 
       // Fallback A: if redirect chain failed on a tracking domain (e.g. aiok.co DNS error),
@@ -98,7 +167,6 @@ export const jobBoardRedirect: ATSAdapter = {
       }
 
       // Fallback B: go back to listing page and extract ATS URL from rendered HTML.
-      // Description may contain direct Greenhouse/Lever/etc. links we missed earlier.
       if (!finalUrl) {
         console.log(`[job-board-redirect] All redirect strategies failed, trying ATS extraction from listing page`)
         try {
@@ -114,8 +182,6 @@ export const jobBoardRedirect: ATSAdapter = {
       }
 
       // Fallback C: probe common ATS platforms with company name slug.
-      // RemoteOK's aiok.co is a dead domain — but we know the company name,
-      // so we try Greenhouse, Lever, Ashby, Workable with the company slug.
       if (!finalUrl && company !== 'Unknown') {
         console.log(`[job-board-redirect] Fallback C: probing ATS platforms for company "${company}"`)
         finalUrl = await probeCompanyAtsPages(company, role)
@@ -125,7 +191,6 @@ export const jobBoardRedirect: ATSAdapter = {
       }
 
       if (!finalUrl) {
-        // All strategies exhausted — needs manual application
         const screenshot = await takeScreenshot(page)
         return {
           success: false,
@@ -150,7 +215,6 @@ export const jobBoardRedirect: ATSAdapter = {
       // Step 5: Delegate to the correct adapter
       const result = await realAdapter.apply(page, finalUrl, profile)
 
-      // Enrich with metadata from the listing page (adapter might return 'Unknown')
       if (result.company === 'Unknown' && company !== 'Unknown') result.company = company
       if (result.role === 'Unknown' && role !== 'Unknown') result.role = role
 
@@ -599,15 +663,35 @@ async function probeCompanyAtsPages(companyName: string, roleTitle?: string): Pr
   // "Circle.so" → ["circleso", "circle-so", "circle"]
   // "OpenRouter" → ["openrouter"]
   // "The Real Deal" → ["therealdeal", "the-real-deal", "realdeal"]
+  // "Fueled" → ["fueled", "fueledcareers"] (some use {company}careers on Greenhouse)
+  // "Ethena Labs" → ["ethenalabs", "ethena-labs", "ethena"]
   const raw = companyName.toLowerCase().replace(/['']/g, '')
   const slugs = new Set<string>()
-  slugs.add(raw.replace(/[^a-z0-9]+/g, ''))           // circleso, openrouter
-  slugs.add(raw.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')) // circle-so
-  // Remove common prefixes
+  const baseSlug = raw.replace(/[^a-z0-9]+/g, '')          // circleso, openrouter
+  const dashSlug = raw.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') // circle-so
+  slugs.add(baseSlug)
+  slugs.add(dashSlug)
+  // {slug}careers variant (common on Greenhouse: e.g. "fueledcareers")
+  slugs.add(baseSlug + 'careers')
+  slugs.add(baseSlug + '-careers')
+  // Remove common suffixes: "Labs", "Inc", "Co", "HQ", "IO"
+  const noSuffix = raw.replace(/\s+(labs?|inc|co|hq|io|ai|corp|group|tech|digital)\s*$/i, '')
+  if (noSuffix !== raw) {
+    slugs.add(noSuffix.replace(/[^a-z0-9]+/g, ''))
+    slugs.add(noSuffix.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''))
+  }
+  // Remove common prefixes: "The", "A", "An"
   const noPrefixRaw = raw.replace(/^(the|a|an)\s+/i, '')
   if (noPrefixRaw !== raw) {
     slugs.add(noPrefixRaw.replace(/[^a-z0-9]+/g, ''))
     slugs.add(noPrefixRaw.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''))
+  }
+  // CamelCase split: "JumpCloud" → "jump-cloud" (already handled), "SkySlope" → "skyslope"
+  // Try removing dots/periods: "Circle.so" → "circleso" (already there)
+  // Try just the first word for multi-word names: "Ethena Labs" → "ethena"
+  const firstWord = raw.split(/[^a-z0-9]+/)[0]
+  if (firstWord && firstWord.length >= 3 && firstWord !== baseSlug) {
+    slugs.add(firstWord)
   }
 
   // ATS URL templates — {slug} is replaced with each slug variant
@@ -649,11 +733,14 @@ async function probeCompanyAtsPages(companyName: string, roleTitle?: string): Pr
           // Return career page as fallback (adapter may handle listing pages)
           return careerPageUrl
         }
-      } catch {
-        // Skip — this ATS/slug combo doesn't work
+      } catch (err) {
+        // Skip — this ATS/slug combo doesn't work (DNS error, timeout, 404)
+        console.log(`[job-board-redirect] ATS probe miss: ${url} — ${err instanceof Error ? err.message : 'error'}`)
       }
     }
   }
+
+  console.log(`[job-board-redirect] ATS template probing done, trying company domains...`)
 
   // Also try the company's own domain /careers page
   const domainVariants = [

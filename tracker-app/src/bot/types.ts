@@ -28,6 +28,10 @@ export interface ApplicantProfile {
   coverLetterSnippet?: string
   /** Current company name (for "current employer" fields) */
   currentCompany?: string
+  /** Pre-populated job metadata from the pipeline payload (company name, role title).
+   *  Used by JobBoardRedirect adapter to skip unreliable page loads (e.g. RemoteOK + dead aiok.co)
+   *  and probe ATS platforms directly. */
+  jobMeta?: { company?: string; role?: string }
 }
 
 export interface ApplicantAchievement {
