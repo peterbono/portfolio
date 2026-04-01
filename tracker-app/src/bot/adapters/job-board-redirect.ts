@@ -778,13 +778,16 @@ async function probeCompanyAtsPages(companyName: string, roleTitle?: string): Pr
     }
   }
 
-  // Return career listing page as last resort (better than nothing)
+  // IMPORTANT: Do NOT return career listing pages as fallback.
+  // If we found career pages but couldn't match the specific job,
+  // returning the listing page would cause the adapter to apply to
+  // a RANDOM job (e.g., JumpCloud "Software Engineer" instead of "Product Designer").
+  // It's better to return null → needs_manual than to apply to the wrong position.
   if (bestCareerPage) {
-    console.log(`[job-board-redirect] ATS probe: returning career listing page as fallback: ${bestCareerPage}`)
-    return bestCareerPage
+    console.log(`[job-board-redirect] ATS probe: found career page ${bestCareerPage} but no specific job match — NOT returning listing page to avoid wrong-job applications`)
   }
 
-  console.log(`[job-board-redirect] ATS probe: no career page found for "${companyName}"`)
+  console.log(`[job-board-redirect] ATS probe: no specific job found for "${companyName}" — "${roleTitle}"`)
   return null
 }
 

@@ -462,6 +462,17 @@ async function selectBestOption(
 
 /**
  * Handle radio button or checkbox groups.
+ *
+ * Greenhouse uses nested structure:
+ *   <fieldset class="checkbox">
+ *     <div class="checkbox__wrapper">
+ *       <div class="checkbox__input"><input type="checkbox"/></div>
+ *       <label>Option text</label>
+ *     </div>
+ *   </fieldset>
+ *
+ * So we search for labels across multiple parent levels and also
+ * use the fieldset/form as the search boundary.
  */
 async function handleRadioOrCheckbox(
   page: Page,
@@ -469,23 +480,79 @@ async function handleRadioOrCheckbox(
   desiredValue: string,
 ): Promise<void> {
   const desired = desiredValue.toLowerCase()
+  const input = page.locator(selector).first()
 
-  // Look for a label containing our desired value near the input
-  const container = page.locator(selector).first().locator('..')
-  const labels = container.locator('label')
-  const count = await labels.count()
+  // Strategy 1: Find the closest fieldset, form, or .field-wrapper ancestor and search its labels
+  const searchContainers = [
+    input.locator('xpath=ancestor::fieldset[1]'),
+    input.locator('xpath=ancestor::*[contains(@class, "field-wrapper")][1]'),
+    input.locator('xpath=ancestor::*[contains(@class, "field")][1]'),
+    input.locator('..').locator('..'), // grandparent
+    input.locator('..').locator('..').locator('..'), // great-grandparent
+  ]
 
-  for (let i = 0; i < count; i++) {
-    const text = (await labels.nth(i).textContent())?.toLowerCase() || ''
-    if (text.includes(desired) || (desired === 'yes' && text.includes('yes')) || (desired === 'no' && text.includes('no'))) {
-      await labels.nth(i).click()
-      return
+  for (const container of searchContainers) {
+    try {
+      if (await container.count() === 0) continue
+
+      const labels = container.locator('label')
+      const count = await labels.count()
+      if (count <= 1) continue // Need at least 2 labels (one is the question, rest are options)
+
+      // Find best matching label
+      let bestLabel = -1
+      let bestScore = 0
+      for (let i = 0; i < count; i++) {
+        const text = (await labels.nth(i).textContent())?.toLowerCase().trim() || ''
+        if (!text || text.length < 2) continue
+
+        let score = 0
+        if (text === desired) score = 100
+        else if (text.includes(desired)) score = 80
+        else if (desired.includes(text)) score = 60
+        // Word-level matching
+        else {
+          const desiredWords = desired.split(/\s+/)
+          const matching = desiredWords.filter(w => text.includes(w))
+          if (matching.length > 0) score = 20 + matching.length * 10
+        }
+        // Special: yes/no matching
+        if (score === 0 && (desired === 'yes' || desired === 'no') && text.includes(desired)) {
+          score = 50
+        }
+
+        if (score > bestScore) {
+          bestScore = score
+          bestLabel = i
+        }
+      }
+
+      if (bestLabel >= 0 && bestScore >= 20) {
+        const labelText = await labels.nth(bestLabel).textContent()
+        await labels.nth(bestLabel).click()
+        console.log(`[screening] Radio/checkbox: clicked "${labelText?.trim()}" (score ${bestScore})`)
+        return
+      }
+
+      // Fallback: click first option label (skip first which might be the question text)
+      const startIdx = count > 2 ? 1 : 0
+      if (count > startIdx) {
+        const labelText = await labels.nth(startIdx).textContent()
+        await labels.nth(startIdx).click()
+        console.log(`[screening] Radio/checkbox: fallback clicked "${labelText?.trim()}"`)
+        return
+      }
+    } catch {
+      continue
     }
   }
 
-  // Fallback: click the first option
-  if (count > 0) {
-    await labels.first().click()
+  // Last resort: click the input itself (checks it)
+  try {
+    await input.click()
+    console.log(`[screening] Radio/checkbox: clicked input directly as last resort`)
+  } catch {
+    // Give up
   }
 }
 
