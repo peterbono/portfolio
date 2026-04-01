@@ -4193,7 +4193,13 @@ export function AutopilotView() {
           count: appliedCount,
         })
       } else {
-        setTriggerError(`Application returned: ${results.map(r => `${r.company}: ${r.status} — ${r.reason}`).join('; ') || 'No applications were submitted. Jobs may require manual application.'}`)
+        const manualCount = results.filter(r => r.status === 'needs_manual').length
+        const failedNames = results.filter(r => r.status !== 'needs_manual').map(r => `"${r.role}" at ${r.company}`).join(', ')
+        const manualNames = results.filter(r => r.status === 'needs_manual').map(r => `"${r.role}" at ${r.company}`).join(', ')
+        const parts: string[] = []
+        if (manualCount > 0) parts.push(`${manualCount} job${manualCount > 1 ? 's' : ''} need${manualCount === 1 ? 's' : ''} manual application — see below`)
+        if (failedNames) parts.push(`Failed: ${failedNames}`)
+        setTriggerError(parts.join('. ') || 'No applications were submitted.')
       }
     } else {
       const failMsg = `Application run ${polledRunStatus.toLowerCase()}. Please retry.`
@@ -5231,9 +5237,14 @@ export function AutopilotView() {
                 const scoutStatusDetail = scoutSearchesTotal > 0 && metaProcessed > 0
                   ? ` (search ${metaProcessed}/${scoutSearchesTotal})`
                   : ''
+                const appliedTotal = (polledRunOutput?.applied as number | undefined) ?? 0
+                const needsManualTotal = reviewQueue.filter(i => i.status === 'needs_manual').length
+                const failedTotal = reviewQueue.filter(i => i.status === 'failed').length
+                const applyAllFailed = isComplete && isApplyRun && appliedTotal === 0
                 const statusText = isApplyRun
                   ? (isFailed ? 'Application failed'
-                    : isComplete ? 'Applications submitted'
+                    : applyAllFailed ? (needsManualTotal > 0 ? `${needsManualTotal} job${needsManualTotal > 1 ? 's' : ''} to submit manually` : 'No applications submitted')
+                    : isComplete ? `${appliedTotal} application${appliedTotal !== 1 ? 's' : ''} submitted`
                     : polledRunStatus === 'QUEUED' || polledRunStatus === 'REATTEMPTING' || isTriggering ? 'Submitting applications...'
                     : 'Submitting applications...')
                   : (isFailed ? 'Search failed'
@@ -5294,6 +5305,11 @@ export function AutopilotView() {
                             <XCircle size={16} color="#f43f5e" />
                             <span style={{ fontWeight: 600, color: '#f43f5e' }}>{statusText}</span>
                           </>
+                        ) : applyAllFailed ? (
+                          <>
+                            <AlertTriangle size={16} color="#f59e0b" />
+                            <span style={{ fontWeight: 600, color: '#f59e0b' }}>{statusText}</span>
+                          </>
                         ) : isComplete ? (
                           <>
                             <CheckCircle2 size={16} color="#34d399" />
@@ -5340,9 +5356,9 @@ export function AutopilotView() {
                     {isComplete && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <div style={{ ...progressBannerStyles.barTrack, flex: 1 }}>
-                          <div style={{ ...progressBannerStyles.barFillComplete, width: '100%' }} />
+                          <div style={{ ...progressBannerStyles.barFillComplete, width: '100%', ...(applyAllFailed ? { background: 'linear-gradient(90deg, #f59e0b, #d97706)' } : {}) }} />
                         </div>
-                        <span style={{ fontSize: 11, fontWeight: 600, color: '#34d399', minWidth: 32, textAlign: 'right' as const }}>100%</span>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: applyAllFailed ? '#f59e0b' : '#34d399', minWidth: 32, textAlign: 'right' as const }}>{applyAllFailed ? '⚠' : '100%'}</span>
                       </div>
                     )}
 
@@ -5372,9 +5388,12 @@ export function AutopilotView() {
                         <span style={progressBannerStyles.resultText}>
                           {isApplyRun ? (
                             <>
-                              {(polledRunOutput?.applied as number | undefined) ?? 0} submitted
-                              {((polledRunOutput?.failed as number | undefined) ?? 0) > 0 && (
-                                <> &middot; {polledRunOutput?.failed as number} failed</>
+                              {appliedTotal} submitted
+                              {needsManualTotal > 0 && (
+                                <> &middot; <span style={{ color: '#f59e0b' }}>{needsManualTotal} to submit manually</span></>
+                              )}
+                              {failedTotal > 0 && (
+                                <> &middot; <span style={{ color: '#f43f5e' }}>{failedTotal} failed</span></>
                               )}
                             </>
                           ) : (
@@ -5502,6 +5521,83 @@ export function AutopilotView() {
                 reviewMode={reviewMode}
                 onToggleMode={handleToggleReviewMode}
               />
+            </div>
+          )}
+
+          {/* ─── To Submit Manually — shows needs_manual jobs with apply links ─── */}
+          {reviewQueue.filter(i => i.status === 'needs_manual').length > 0 && (
+            <div style={{
+              background: 'rgba(245, 158, 11, 0.06)',
+              border: '1px solid rgba(245, 158, 11, 0.2)',
+              borderRadius: 12,
+              padding: '16px 20px',
+              marginBottom: 16,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                <AlertTriangle size={16} color="#f59e0b" />
+                <span style={{ fontWeight: 600, fontSize: 14, color: '#f59e0b' }}>
+                  To Submit Manually ({reviewQueue.filter(i => i.status === 'needs_manual').length})
+                </span>
+              </div>
+              <p style={{ fontSize: 12, color: '#94a3b8', margin: '0 0 12px 0', lineHeight: 1.4 }}>
+                These jobs couldn't be auto-submitted. Click to open the application page and apply manually.
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 8 }}>
+                {reviewQueue.filter(i => i.status === 'needs_manual').map(item => (
+                  <div key={item.id} style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    padding: '10px 12px',
+                    background: 'rgba(30, 32, 44, 0.6)',
+                    borderRadius: 8,
+                    border: '1px solid rgba(245, 158, 11, 0.12)',
+                  }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: 13, color: '#e2e8f0', whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.role}</div>
+                      <div style={{ fontSize: 12, color: '#94a3b8' }}>{item.company}</div>
+                    </div>
+                    {item.jobUrl && (
+                      <a
+                        href={item.jobUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          padding: '6px 12px',
+                          background: '#f59e0b',
+                          color: '#000',
+                          borderRadius: 6,
+                          fontSize: 12,
+                          fontWeight: 600,
+                          textDecoration: 'none',
+                          whiteSpace: 'nowrap' as const,
+                          flexShrink: 0,
+                        }}
+                      >
+                        Apply <ExternalLink size={11} />
+                      </a>
+                    )}
+                    <button
+                      onClick={() => handleReviewDismiss(item.id)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: '#64748b',
+                        cursor: 'pointer',
+                        padding: 4,
+                        display: 'flex',
+                        flexShrink: 0,
+                      }}
+                      title="Dismiss"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
