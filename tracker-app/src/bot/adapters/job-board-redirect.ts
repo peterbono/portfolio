@@ -113,6 +113,17 @@ export const jobBoardRedirect: ATSAdapter = {
         }
       }
 
+      // Fallback C: probe common ATS platforms with company name slug.
+      // RemoteOK's aiok.co is a dead domain — but we know the company name,
+      // so we try Greenhouse, Lever, Ashby, Workable with the company slug.
+      if (!finalUrl && company !== 'Unknown') {
+        console.log(`[job-board-redirect] Fallback C: probing ATS platforms for company "${company}"`)
+        finalUrl = await probeCompanyAtsPages(company, role)
+        if (finalUrl) {
+          console.log(`[job-board-redirect] Fallback C: found career page at ${finalUrl}`)
+        }
+      }
+
       if (!finalUrl) {
         // All strategies exhausted — needs manual application
         const screenshot = await takeScreenshot(page)
@@ -283,12 +294,17 @@ async function clickApplyAndFollow(page: Page, listingDomain: string): Promise<s
 
       // Case C: Check if the page has a redirect_url embedded in any visible link
       const embeddedRedirect = await page.evaluate((domain: string) => {
+        const skipDomains = ['aiok.co', 'bit.ly', 'asyncok.com', 'nomadlist.com',
+          'web3.career', 'photoai.com', 'interiorai.com', 'chatbase.co',
+          'producthunt.com', 'ideasandbugs.com', 'wip.co', 'levelsio.com',
+          'buffer.com', 'news.ycombinator.com']
         const links = document.querySelectorAll('a[href]')
         for (const link of links) {
           const href = (link as HTMLAnchorElement).href
           try {
             const u = new URL(href)
-            if (u.hostname !== domain && !href.includes('remoteok.com') && !href.includes('sign-up')) {
+            if (u.hostname !== domain && !href.includes('remoteok.com') && !href.includes('sign-up')
+                && !skipDomains.some(d => u.hostname.includes(d))) {
               return href
             }
             // Check redirect_url in the link itself
@@ -566,6 +582,94 @@ async function resolveViaPlaywright(page: Page, url: string): Promise<string | n
   } catch (err) {
     console.log(`[job-board-redirect] Playwright fallback failed: ${err instanceof Error ? err.message : err}`)
   }
+  return null
+}
+
+/**
+ * Probe common ATS platforms to find a company's career page.
+ * When tracking domain redirects fail (aiok.co dead), we can still find the
+ * employer's real career page by trying known ATS URL patterns with the company
+ * name slugified. If a specific job title is provided, we try to find the matching
+ * job listing on the career page.
+ *
+ * Returns the career page URL if found (or specific job URL), null otherwise.
+ */
+async function probeCompanyAtsPages(companyName: string, roleTitle?: string): Promise<string | null> {
+  // Generate slug variants from company name
+  // "Circle.so" → ["circleso", "circle-so", "circle"]
+  // "OpenRouter" → ["openrouter"]
+  // "The Real Deal" → ["therealdeal", "the-real-deal", "realdeal"]
+  const raw = companyName.toLowerCase().replace(/['']/g, '')
+  const slugs = new Set<string>()
+  slugs.add(raw.replace(/[^a-z0-9]+/g, ''))           // circleso, openrouter
+  slugs.add(raw.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')) // circle-so
+  // Remove common prefixes
+  const noPrefixRaw = raw.replace(/^(the|a|an)\s+/i, '')
+  if (noPrefixRaw !== raw) {
+    slugs.add(noPrefixRaw.replace(/[^a-z0-9]+/g, ''))
+    slugs.add(noPrefixRaw.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''))
+  }
+
+  // ATS URL templates — {slug} is replaced with each slug variant
+  const ATS_TEMPLATES = [
+    'https://job-boards.greenhouse.io/{slug}',
+    'https://boards.greenhouse.io/{slug}',
+    'https://jobs.lever.co/{slug}',
+    'https://jobs.ashbyhq.com/{slug}',
+    'https://apply.workable.com/{slug}/',
+    'https://{slug}.breezy.hr',
+    'https://{slug}.recruitee.com/o',
+    'https://careers.smartrecruiters.com/{slug}',
+  ]
+
+  for (const slug of slugs) {
+    for (const template of ATS_TEMPLATES) {
+      const url = template.replace('{slug}', slug)
+      try {
+        const response = await fetch(url, {
+          method: 'HEAD',
+          redirect: 'follow',
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          },
+          signal: AbortSignal.timeout(5_000),
+        })
+        if (response.ok) {
+          console.log(`[job-board-redirect] ATS probe hit: ${url} (HTTP ${response.status})`)
+          return response.url || url // Use the final URL after redirects
+        }
+      } catch {
+        // Skip — this ATS/slug combo doesn't work
+      }
+    }
+  }
+
+  // Also try the company's own domain /careers page
+  const domainVariants = [
+    `https://${raw.replace(/[^a-z0-9]+/g, '')}.com/careers`,
+    `https://${raw.replace(/[^a-z0-9]+/g, '')}.io/careers`,
+    `https://${raw.replace(/[^a-z0-9]+/g, '')}.ai/careers`,
+    `https://www.${raw.replace(/[^a-z0-9]+/g, '')}.com/careers`,
+  ]
+
+  for (const url of domainVariants) {
+    try {
+      const response = await fetch(url, {
+        method: 'HEAD',
+        redirect: 'follow',
+        headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)' },
+        signal: AbortSignal.timeout(5_000),
+      })
+      if (response.ok) {
+        console.log(`[job-board-redirect] Company domain probe hit: ${url} (HTTP ${response.status})`)
+        return response.url || url
+      }
+    } catch {
+      // Skip
+    }
+  }
+
+  console.log(`[job-board-redirect] ATS probe: no career page found for "${companyName}"`)
   return null
 }
 
