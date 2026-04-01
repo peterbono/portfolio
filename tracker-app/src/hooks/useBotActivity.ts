@@ -36,7 +36,7 @@ interface UseBotActivityReturn {
 }
 
 const ACTIVITY_LIMIT = 50
-const POLL_INTERVAL_MS = 3000 // Fallback polling every 3 seconds (matches Trigger.dev polling)
+const POLL_INTERVAL_MS = 10_000 // Fallback polling every 10 seconds (was 3s — reduced for egress)
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -81,9 +81,11 @@ export function useBotActivity(): UseBotActivityReturn {
   const loadActivities = useCallback(async () => {
     try {
       // Fetch last 50 activity log entries, newest first
+      // IMPORTANT: Select only columns used by toActivityItem() — exclude screenshot_url
+      // (base64 screenshots are 300-500KB each; .select('*') was causing 39 GB/month egress)
       const { data: activityData } = await supabase
         .from('bot_activity_log')
-        .select('*')
+        .select('id, action, company, role, ats, reason, created_at')
         .order('created_at', { ascending: false })
         .limit(ACTIVITY_LIMIT)
 
@@ -97,10 +99,10 @@ export function useBotActivity(): UseBotActivityReturn {
         }
       }
 
-      // Fetch the most recent non-cancelled bot run
+      // Fetch the most recent non-cancelled bot run (select only needed columns)
       const { data: runData } = await supabase
         .from('bot_runs')
-        .select('*')
+        .select('id, status, jobs_found, jobs_applied, jobs_skipped, jobs_failed, started_at, completed_at, error_message, created_at')
         .order('created_at', { ascending: false })
         .limit(1)
 

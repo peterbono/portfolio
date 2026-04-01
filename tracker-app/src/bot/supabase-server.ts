@@ -114,6 +114,73 @@ export async function updateBotRun(
 }
 
 // ---------------------------------------------------------------------------
+// Screenshot storage — upload to Supabase Storage instead of inline base64
+// ---------------------------------------------------------------------------
+
+const SCREENSHOT_BUCKET = 'bot-screenshots'
+let bucketEnsured = false
+
+/**
+ * Ensure the screenshots storage bucket exists (idempotent, runs once per process).
+ */
+async function ensureScreenshotBucket(): Promise<void> {
+  if (bucketEnsured) return
+  try {
+    const { error } = await supabaseServer.storage.createBucket(SCREENSHOT_BUCKET, {
+      public: true, // public URLs for easy viewing in dashboard
+      fileSizeLimit: 1024 * 1024, // 1MB max per screenshot
+    })
+    // Ignore "already exists" error
+    if (error && !error.message?.includes('already exists')) {
+      console.warn(`[supabase] Could not create bucket "${SCREENSHOT_BUCKET}":`, error.message)
+    }
+  } catch (err) {
+    console.warn('[supabase] Bucket creation error:', err)
+  }
+  bucketEnsured = true
+}
+
+/**
+ * Upload a base64 screenshot to Supabase Storage and return the public URL.
+ * Returns null on failure (non-blocking — screenshot is optional debug data).
+ */
+async function uploadScreenshot(base64Data: string, runId: string | null): Promise<string | null> {
+  try {
+    await ensureScreenshotBucket()
+
+    // Strip data URI prefix if present
+    const raw = base64Data.replace(/^data:image\/\w+;base64,/, '')
+    const buffer = Buffer.from(raw, 'base64')
+
+    // Generate a unique path: run_id/timestamp.jpg
+    const prefix = runId ?? 'unknown'
+    const filename = `${prefix}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`
+
+    const { error } = await supabaseServer.storage
+      .from(SCREENSHOT_BUCKET)
+      .upload(filename, buffer, {
+        contentType: 'image/jpeg',
+        upsert: false,
+      })
+
+    if (error) {
+      console.warn(`[supabase] Screenshot upload failed:`, error.message)
+      return null
+    }
+
+    // Get public URL
+    const { data: urlData } = supabaseServer.storage
+      .from(SCREENSHOT_BUCKET)
+      .getPublicUrl(filename)
+
+    return urlData?.publicUrl ?? null
+  } catch (err) {
+    console.warn('[supabase] Screenshot upload error:', err)
+    return null
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Activity log
 // ---------------------------------------------------------------------------
 
@@ -160,8 +227,18 @@ function normalizeAction(action: string): string {
   return 'found'
 }
 
-/** Insert a single activity log entry */
+/** Insert a single activity log entry.
+ *  If screenshot_url contains base64 data (>1KB), uploads it to Supabase Storage
+ *  and stores only the public URL (~100 bytes instead of 300-500KB). */
 export async function logBotActivity(entry: ActivityLogEntry): Promise<void> {
+  let screenshotUrl: string | null = entry.screenshot_url ?? null
+
+  // Detect base64 screenshot (raw base64 or data URI) and upload to Storage
+  if (screenshotUrl && screenshotUrl.length > 1000) {
+    const storageUrl = await uploadScreenshot(screenshotUrl, entry.run_id)
+    screenshotUrl = storageUrl // null if upload failed (non-blocking)
+  }
+
   const { error } = await insertRowNoReturn('bot_activity_log', {
     user_id: entry.user_id,
     run_id: entry.run_id,
@@ -170,7 +247,7 @@ export async function logBotActivity(entry: ActivityLogEntry): Promise<void> {
     role: entry.role ?? null,
     ats: entry.ats ?? null,
     reason: entry.reason ?? null,
-    screenshot_url: entry.screenshot_url ?? null,
+    screenshot_url: screenshotUrl,
   })
 
   if (error) {
