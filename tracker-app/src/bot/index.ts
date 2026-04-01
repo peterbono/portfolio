@@ -39,7 +39,7 @@ export {
 export type { ActivityLogEntry } from './supabase-server'
 
 // ATS Adapters
-export { adapters, detectAdapter, greenhouse, lever, linkedInEasyApply, generic } from './adapters'
+export { adapters, detectAdapter, greenhouse, lever, ashby, linkedInEasyApply, generic } from './adapters'
 
 // Helpers
 export {

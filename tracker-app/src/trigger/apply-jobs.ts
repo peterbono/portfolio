@@ -171,6 +171,12 @@ export const applyJobsTask = task({
     let failed = 0
     let needsManual = 0
 
+    // ---------- Wrap entire job processing in try/finally ----------
+    // Ensures updateBotRun ALWAYS executes even if browsers crash or unhandled errors occur.
+    // Without this, a browser crash leaves the run stuck in "running" status forever.
+    let fatalError: Error | undefined
+    try {
+
     // ---------- Process ATS jobs (Greenhouse, Lever, Generic) ----------
     if (atsJobs.length > 0) {
       const LOCAL_ARGS = [
@@ -241,7 +247,10 @@ export const applyJobsTask = task({
 
           const isSbrProxyError = (msg: string) =>
             msg.includes('502') || msg.includes('no_peer') ||
-            msg.includes('probe_timeout') || msg.includes('proxy_error')
+            msg.includes('probe_timeout') || msg.includes('proxy_error') ||
+            msg.includes('domain limit') || msg.includes('ERR_CONNECTION_REFUSED') ||
+            msg.includes('ERR_NAME_NOT_RESOLVED') || /net::ERR_/.test(msg) ||
+            msg.includes('Target closed') || msg.includes('Browser closed')
 
           while (attempt <= MAX_SBR_RETRIES) {
             attempt++
@@ -307,9 +316,14 @@ export const applyJobsTask = task({
                 continue
               }
 
-              // Non-retryable error
+              // Non-retryable error — screenshot with 5s timeout to avoid hanging on crashed pages
               let screenshotBase64: string | undefined
-              try { screenshotBase64 = await takeScreenshot(page) } catch { /* */ }
+              try {
+                screenshotBase64 = await Promise.race([
+                  takeScreenshot(page),
+                  new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 5_000)),
+                ])
+              } catch { /* screenshot failed */ }
               await page.close().catch(() => {})
               if (localBrowser) await localBrowser.close().catch(() => {})
 
@@ -400,6 +414,24 @@ export const applyJobsTask = task({
         await atsContext.close().catch((err) => console.warn('[apply-jobs] Cleanup failed:', err))
       } finally {
         await atsBrowser.close().catch((err) => console.warn('[apply-jobs] Cleanup failed:', err))
+      }
+
+      // ---------- SBR total failure detection ----------
+      // If ALL ATS jobs failed and most errors look like proxy/browser issues,
+      // log a clear summary so the root cause is immediately visible.
+      const atsResults = results.filter(r => r.ats !== 'LinkedIn Easy Apply')
+      const atsFailed = atsResults.filter(r => r.status === 'failed')
+      if (atsResults.length > 0 && atsFailed.length === atsResults.length) {
+        const sbrErrorPattern = /502|no_peer|probe_timeout|proxy_error|domain limit|ERR_CONNECTION_REFUSED|ERR_NAME_NOT_RESOLVED|net::ERR_|Target closed|Browser closed/
+        const sbrFailures = atsFailed.filter(r => r.reason && sbrErrorPattern.test(r.reason))
+        if (sbrFailures.length >= Math.ceil(atsResults.length * 0.8)) {
+          const uniqueReasons = [...new Set(sbrFailures.map(r => r.reason))].slice(0, 3).join('; ')
+          console.error(
+            `[apply-jobs] SBR TOTAL FAILURE: All ${atsResults.length} ATS jobs failed due to proxy/browser errors. ` +
+            `Reasons: ${uniqueReasons}. ` +
+            `Action required: check Bright Data SBR status, quota, or switch to local Chromium.`
+          )
+        }
       }
     }
 
@@ -560,9 +592,13 @@ export const applyJobsTask = task({
                 `[apply-jobs]   Result: ${applyResult.status}${applyResult.reason ? ` — ${applyResult.reason}` : ""}`,
               )
             } catch (err) {
+              // Screenshot with 5s timeout to avoid hanging on crashed pages
               let screenshotBase64: string | undefined
               try {
-                screenshotBase64 = await takeScreenshot(page)
+                screenshotBase64 = await Promise.race([
+                  takeScreenshot(page),
+                  new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 5_000)),
+                ])
               } catch {
                 // screenshot failed
               }
@@ -599,20 +635,67 @@ export const applyJobsTask = task({
       }
     }
 
-    // ---------- Update bot run in Supabase ----------
-    const totalDuration = Date.now() - runStart
-    if (runId) {
-      await updateBotRun(runId, {
-        status: "completed",
-        finished_at: new Date().toISOString(),
-        jobs_applied: applied,
-        jobs_skipped: skipped,
-        jobs_failed: failed + needsManual,
-        duration_ms: totalDuration,
-      }).catch((err) => console.warn("[apply-jobs] Update run error:", err))
+    } catch (err) {
+      // Capture fatal/unhandled errors (browser crash, OOM, etc.)
+      fatalError = err instanceof Error ? err : new Error(String(err))
+      console.error(`[apply-jobs] FATAL ERROR during job processing: ${fatalError.message}`)
+    } finally {
+      // ---------- Update bot run in Supabase (ALWAYS runs) ----------
+      const totalDuration = Date.now() - runStart
+      const runStatus = fatalError ? 'crashed' : 'completed'
+      if (runId) {
+        await updateBotRun(runId, {
+          status: runStatus,
+          finished_at: new Date().toISOString(),
+          jobs_applied: applied,
+          jobs_skipped: skipped,
+          jobs_failed: failed + needsManual,
+          duration_ms: totalDuration,
+          ...(fatalError && { error_message: fatalError.message }),
+        }).catch((err) => console.warn("[apply-jobs] Update run error:", err))
+      }
+
+      console.log(
+        `[apply-jobs] Done (${runStatus}): ${applied} applied, ${skipped} skipped, ${failed} failed, ${needsManual} manual — ${(totalDuration / 1000).toFixed(1)}s`,
+      )
+
+      // ─── Send notifications (fire-and-forget) ──────────────────────────
+      // Batch notification for successfully applied jobs
+      if (applied > 0) {
+        const appliedResults = results.filter(r => r.status === 'applied')
+        const firstApplied = appliedResults[0]
+        sendServerNotification(payload.userId, 'application_submitted', {
+          company: firstApplied?.company ?? 'Unknown',
+          role: firstApplied?.role ?? 'Unknown Role',
+          count: applied,
+        }).catch(() => {}) // swallow — already logged inside
+      }
+
+      // Notify on critical failure (all jobs failed, run-level error, or crash)
+      if (applied === 0 && (failed > 0 || fatalError)) {
+        const failReasons = fatalError
+          ? `CRASH: ${fatalError.message}`
+          : results
+              .filter(r => r.status === 'failed')
+              .map(r => `${r.company}: ${r.reason}`)
+              .slice(0, 3)
+              .join('; ')
+        sendServerNotification(payload.userId, 'bot_error', {
+          errorMessage: fatalError
+            ? `Run crashed: ${fatalError.message}. ${applied} applied, ${failed} failed before crash.`
+            : `All ${failed} application(s) failed. ${failReasons}`,
+          runId: runId ?? `apply-jobs-${runStart}`,
+        }).catch(() => {}) // swallow — already logged inside
+      }
     }
 
-    const output: ApplyJobsOutput = {
+    // If there was a fatal error, re-throw so Trigger.dev marks the task as failed
+    if (fatalError) {
+      throw fatalError
+    }
+
+    const totalDuration = Date.now() - runStart
+    return {
       totalProcessed: results.length,
       applied,
       skipped,
@@ -621,36 +704,5 @@ export const applyJobsTask = task({
       results,
       durationMs: totalDuration,
     }
-
-    console.log(
-      `[apply-jobs] Done: ${applied} applied, ${skipped} skipped, ${failed} failed, ${needsManual} manual — ${(totalDuration / 1000).toFixed(1)}s`,
-    )
-
-    // ─── Send notifications (fire-and-forget) ──────────────────────────
-    // Batch notification for successfully applied jobs
-    if (applied > 0) {
-      const appliedResults = results.filter(r => r.status === 'applied')
-      const firstApplied = appliedResults[0]
-      sendServerNotification(payload.userId, 'application_submitted', {
-        company: firstApplied?.company ?? 'Unknown',
-        role: firstApplied?.role ?? 'Unknown Role',
-        count: applied,
-      }).catch(() => {}) // swallow — already logged inside
-    }
-
-    // Notify on critical failure (all jobs failed or run-level error)
-    if (applied === 0 && failed > 0) {
-      const failReasons = results
-        .filter(r => r.status === 'failed')
-        .map(r => `${r.company}: ${r.reason}`)
-        .slice(0, 3)
-        .join('; ')
-      sendServerNotification(payload.userId, 'bot_error', {
-        errorMessage: `All ${failed} application(s) failed. ${failReasons}`,
-        runId: runId ?? `apply-jobs-${runStart}`,
-      }).catch(() => {}) // swallow — already logged inside
-    }
-
-    return output
   },
 })
