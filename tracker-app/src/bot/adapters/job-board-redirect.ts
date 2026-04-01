@@ -635,8 +635,19 @@ async function probeCompanyAtsPages(companyName: string, roleTitle?: string): Pr
           signal: AbortSignal.timeout(5_000),
         })
         if (response.ok) {
-          console.log(`[job-board-redirect] ATS probe hit: ${url} (HTTP ${response.status})`)
-          return response.url || url // Use the final URL after redirects
+          const careerPageUrl = response.url || url
+          console.log(`[job-board-redirect] ATS probe hit: ${careerPageUrl} (HTTP ${response.status})`)
+
+          // Career page found — now find the SPECIFIC job matching the role title
+          if (roleTitle) {
+            const specificJob = await findJobOnCareerPage(careerPageUrl, roleTitle)
+            if (specificJob) {
+              console.log(`[job-board-redirect] Found specific job URL: ${specificJob}`)
+              return specificJob
+            }
+          }
+          // Return career page as fallback (adapter may handle listing pages)
+          return careerPageUrl
         }
       } catch {
         // Skip — this ATS/slug combo doesn't work
@@ -661,8 +672,13 @@ async function probeCompanyAtsPages(companyName: string, roleTitle?: string): Pr
         signal: AbortSignal.timeout(5_000),
       })
       if (response.ok) {
-        console.log(`[job-board-redirect] Company domain probe hit: ${url} (HTTP ${response.status})`)
-        return response.url || url
+        const careerPageUrl = response.url || url
+        console.log(`[job-board-redirect] Company domain probe hit: ${careerPageUrl}`)
+        if (roleTitle) {
+          const specificJob = await findJobOnCareerPage(careerPageUrl, roleTitle)
+          if (specificJob) return specificJob
+        }
+        return careerPageUrl
       }
     } catch {
       // Skip
@@ -670,6 +686,71 @@ async function probeCompanyAtsPages(companyName: string, roleTitle?: string): Pr
   }
 
   console.log(`[job-board-redirect] ATS probe: no career page found for "${companyName}"`)
+  return null
+}
+
+/**
+ * Find a specific job listing on an ATS career page by matching the role title.
+ * Fetches the career page HTML and scans all links for one whose text matches
+ * the role title. Returns the job-specific URL or null.
+ */
+async function findJobOnCareerPage(careerPageUrl: string, roleTitle: string): Promise<string | null> {
+  try {
+    const response = await fetch(careerPageUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'text/html',
+      },
+      signal: AbortSignal.timeout(10_000),
+    })
+    if (!response.ok) return null
+    const html = await response.text()
+
+    // Tokenize role title into significant words (3+ chars)
+    const roleWords = roleTitle.toLowerCase()
+      .split(/[\s/,\-–—·•]+/)
+      .filter(w => w.length >= 3 && !['the', 'and', 'for', 'with'].includes(w))
+
+    if (roleWords.length === 0) return null
+
+    // Extract all links: href + text
+    const linkRegex = /<a\s[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi
+    let bestMatch: { url: string; score: number } | null = null
+    let match: RegExpExecArray | null
+
+    while ((match = linkRegex.exec(html)) !== null) {
+      const href = match[1]
+      // Strip HTML tags from link text
+      const text = match[2].replace(/<[^>]+>/g, '').trim().toLowerCase()
+
+      if (!text || text.length < 3) continue
+
+      // Score: count how many role words appear in the link text
+      const score = roleWords.filter(w => text.includes(w)).length
+      if (score >= 2 && (!bestMatch || score > bestMatch.score)) {
+        // Resolve relative URLs against career page
+        try {
+          const absoluteUrl = new URL(href, careerPageUrl).href
+          // Only accept URLs on the same domain or known ATS domains
+          const urlHost = new URL(absoluteUrl).hostname
+          const baseHost = new URL(careerPageUrl).hostname
+          if (urlHost === baseHost || urlHost.includes('greenhouse') || urlHost.includes('lever')
+              || urlHost.includes('ashby') || urlHost.includes('workable')) {
+            bestMatch = { url: absoluteUrl, score }
+          }
+        } catch { /* skip invalid URLs */ }
+      }
+    }
+
+    if (bestMatch) {
+      console.log(`[job-board-redirect] Career page job match (score ${bestMatch.score}/${roleWords.length}): ${bestMatch.url}`)
+      return bestMatch.url
+    }
+
+    console.log(`[job-board-redirect] No job matching "${roleTitle}" on career page ${careerPageUrl}`)
+  } catch (err) {
+    console.log(`[job-board-redirect] Career page fetch failed: ${err instanceof Error ? err.message : err}`)
+  }
   return null
 }
 
