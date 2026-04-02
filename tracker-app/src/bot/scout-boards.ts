@@ -1254,6 +1254,7 @@ export async function scoutWWR(
       const link = extractTag('link')
       const pubDate = extractTag('pubDate')
       const rawDescription = extractTag('description')
+      const region = extractTag('region')
 
       if (!rawTitle || !link) continue
 
@@ -1274,17 +1275,20 @@ export async function scoutWWR(
       // Filter: excluded companies
       if (company && isExcludedCompany(company, excluded)) continue
 
-      // Filter: timezone — WWR is US-heavy. Check title + description for incompatible signals.
-      // Accept if no incompatible signal found (remote-first board, similar to RemoteOK logic).
-      const descPlain = rawDescription
-        .replace(/<[^>]+>/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim()
-      const combinedText = `${title} ${company} ${descPlain}`.toLowerCase()
+      // Filter: timezone — Use <region> tag as primary signal.
+      // WWR region "Anywhere in the World" = accept (like RemoteOK bare "Remote").
+      // If region is specific (e.g. "USA Only"), check against INCOMPATIBLE_TZ_KEYWORDS.
+      const regionLower = region.toLowerCase()
+      const isGlobalRemote = regionLower.includes('anywhere') || regionLower.includes('worldwide')
 
-      // Reject if description has strong US/EU/LATAM signals
-      const hasIncompatibleSignal = INCOMPATIBLE_TZ_KEYWORDS.some(kw => combinedText.includes(kw))
-      if (hasIncompatibleSignal) continue
+      if (!isGlobalRemote) {
+        // Check region + title for incompatible TZ (skip description — too many false positives from US HQ addresses)
+        const tzCheckText = `${region} ${title} ${company}`.toLowerCase()
+        const hasIncompatibleSignal = INCOMPATIBLE_TZ_KEYWORDS.some(kw => tzCheckText.includes(kw))
+        if (hasIncompatibleSignal) continue
+        if (hasUSStateAbbrev(region)) continue
+        if (/\bUS\b/.test(region) || /\bU\.S\.?\b/i.test(region)) continue
+      }
 
       // Filter: poker / gambling
       const titleLower = title.toLowerCase()
@@ -1548,7 +1552,7 @@ interface JobicyApiResponse {
  * Scout jobs from Jobicy using their public JSON API.
  * No Playwright page needed — uses plain fetch().
  *
- * API: https://jobicy.com/api/v2/remote-jobs?count=50&industry=design&tag={keyword}
+ * API: https://jobicy.com/api/v2/remote-jobs?count=50&tag={keyword}
  *
  * @param keywords - Search tags, e.g. ['product designer', 'ux designer']
  * @param excludedCompanies - Additional company names to exclude
@@ -1569,7 +1573,7 @@ export async function scoutJobicy(
     : ['product designer', 'ux designer', 'ui designer', 'design lead']
 
   for (const term of searchTerms) {
-    const apiUrl = `https://jobicy.com/api/v2/remote-jobs?count=50&industry=design&tag=${encodeURIComponent(term)}`
+    const apiUrl = `https://jobicy.com/api/v2/remote-jobs?count=50&tag=${encodeURIComponent(term)}`
     console.log(`[scout:jobicy] Fetching: ${apiUrl}`)
 
     try {

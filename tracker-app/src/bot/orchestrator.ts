@@ -129,6 +129,7 @@ export interface PipelineResult {
     location: string
     url: string
     isEasyApply: boolean
+    source?: string
   }>
   qualifiedJobs?: QualifiedJobOutput[]
 }
@@ -1108,6 +1109,7 @@ export async function runPipeline(config: PipelineConfig & { onProgress?: (p: Pi
       location: j.location,
       url: j.url,
       isEasyApply: j.isEasyApply,
+      source: j.source,
     }))
 
     qualifiedJobsOutput = qualifiedJobs.map(qj => ({
