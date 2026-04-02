@@ -216,6 +216,9 @@ function normalizeAction(action: string): string {
 
   // Apply phase
   if (action === 'apply_applied' || action === 'apply_dry_run') return 'applied'
+  // NOTE: apply_needs_manual is mapped to 'skipped' due to DB CHECK constraint
+  // limiting allowed values. It's not truly skipped — it means submitted but
+  // unconfirmed. A future migration could add 'needs_manual' to the constraint.
   if (action === 'apply_skipped' || action === 'apply_needs_manual' || action === 'apply_no_adapter') return 'skipped'
   if (action === 'apply_failed') return 'failed'
 

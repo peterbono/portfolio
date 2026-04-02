@@ -300,6 +300,7 @@ interface BotRunHistoryItem {
   jobsApplied: number
   jobsSkipped: number
   jobsFailed: number
+  jobsNeedsManual: number
   errorMessage: string | null
 }
 
@@ -3930,6 +3931,7 @@ export function AutopilotView() {
             jobsApplied: (row.jobs_applied as number) ?? 0,
             jobsSkipped: (row.jobs_skipped as number) ?? 0,
             jobsFailed: (row.jobs_failed as number) ?? 0,
+            jobsNeedsManual: ((row as any).jobs_needs_manual as number) ?? 0,
             errorMessage: (row.error_message as string) ?? null,
           })))
         }
@@ -5768,6 +5770,7 @@ export function AutopilotView() {
                     <span style={{ ...styles.historyCell, flex: 1, textAlign: 'right' as const }}>Applied</span>
                     <span style={{ ...styles.historyCell, flex: 1, textAlign: 'right' as const }}>Skipped</span>
                     <span style={{ ...styles.historyCell, flex: 1, textAlign: 'right' as const }}>Failed</span>
+                    <span style={{ ...styles.historyCell, flex: 1, textAlign: 'right' as const }}>Manual</span>
                     <span style={{ ...styles.historyCell, flex: 1, textAlign: 'right' as const }}>Duration</span>
                   </div>
                   {runHistory.map((run) => (
@@ -5780,6 +5783,7 @@ export function AutopilotView() {
                       <span style={{ ...styles.historyCellValue, flex: 1, textAlign: 'right' as const, color: '#34d399' }}>{run.jobsApplied}</span>
                       <span style={{ ...styles.historyCellValue, flex: 1, textAlign: 'right' as const, color: '#fbbf24' }}>{run.jobsSkipped}</span>
                       <span style={{ ...styles.historyCellValue, flex: 1, textAlign: 'right' as const, color: '#f43f5e' }}>{run.jobsFailed}</span>
+                      <span style={{ ...styles.historyCellValue, flex: 1, textAlign: 'right' as const, color: '#f59e0b' }}>{run.jobsNeedsManual}</span>
                       <span style={{ ...styles.historyCellValue, flex: 1, textAlign: 'right' as const }}>{formatDuration(run.startedAt, run.completedAt)}</span>
                     </div>
                   ))}

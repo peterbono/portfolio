@@ -54,18 +54,27 @@ export async function solveCaptchaIfPresent(page: Page, timeout = 30000): Promis
 }
 
 // ---------------------------------------------------------------------------
-// CapSolver hCaptcha integration (fallback when SBR auto-solve fails)
+// CAPTCHA solver integration
+// ---------------------------------------------------------------------------
+// CapSolver: used for reCAPTCHA v2/v3 (hCaptcha support was DROPPED ~Q1 2026)
+// 2Captcha:  used for hCaptcha (still fully supported)
 // ---------------------------------------------------------------------------
 
 const CAPSOLVER_CREATE_URL = 'https://api.capsolver.com/createTask'
 const CAPSOLVER_RESULT_URL = 'https://api.capsolver.com/getTaskResult'
-const CAPSOLVER_POLL_INTERVAL_MS = 3_000
-const CAPSOLVER_MAX_POLL_ATTEMPTS = 40 // ~2 minutes max
+
+const TWOCAPTCHA_CREATE_URL = 'https://api.2captcha.com/createTask'
+const TWOCAPTCHA_RESULT_URL = 'https://api.2captcha.com/getTaskResult'
+const CAPTCHA_POLL_INTERVAL_MS = 3_000
+const CAPTCHA_MAX_POLL_ATTEMPTS = 40 // ~2 minutes max
 
 /**
- * Solve an hCaptcha challenge using CapSolver's API.
+ * Solve an hCaptcha challenge using 2Captcha's API (primary) or CapSolver (fallback).
  *
- * Requires the CAPSOLVER_API_KEY environment variable to be set.
+ * CapSolver dropped hCaptcha support in early 2026 (returns ERROR_INVALID_TASK_DATA
+ * immediately). 2Captcha still supports it via HCaptchaTaskProxyless.
+ *
+ * Requires TWO_CAPTCHA_API_KEY (primary) or CAPSOLVER_API_KEY (fallback) env var.
  * Returns the hCaptcha response token on success, or null on failure.
  *
  * @param websiteUrl - The page URL where hCaptcha is displayed
@@ -75,16 +84,99 @@ export async function solveHCaptchaViaCapsolver(
   websiteUrl: string,
   websiteKey: string,
 ): Promise<string | null> {
-  const apiKey = process.env.CAPSOLVER_API_KEY
-  if (!apiKey) {
-    console.log('[capsolver] CAPSOLVER_API_KEY not set — skipping CapSolver')
+  // Try 2Captcha first (primary hCaptcha solver)
+  const twoCaptchaKey = process.env.TWO_CAPTCHA_API_KEY
+  if (twoCaptchaKey) {
+    console.log(`[2captcha] Attempting hCaptcha solve for ${websiteUrl} (siteKey: ${websiteKey})`)
+    const token = await solveHCaptchaWith2Captcha(websiteUrl, websiteKey, twoCaptchaKey)
+    if (token) return token
+    console.warn('[2captcha] hCaptcha solve failed — trying CapSolver fallback')
+  } else {
+    console.log('[2captcha] TWO_CAPTCHA_API_KEY not set — skipping 2Captcha')
+  }
+
+  // Fallback: try CapSolver (may not work — they dropped hCaptcha support)
+  const capsolverKey = process.env.CAPSOLVER_API_KEY
+  if (!capsolverKey) {
+    console.warn('[capsolver] Neither TWO_CAPTCHA_API_KEY nor CAPSOLVER_API_KEY set — cannot solve hCaptcha')
     return null
   }
 
-  console.log(`[capsolver] Creating HCaptchaTaskProxyless for ${websiteUrl} (siteKey: ${websiteKey})`)
+  console.log(`[capsolver] Attempting hCaptcha solve for ${websiteUrl} (siteKey: ${websiteKey})`)
+  console.log(`[capsolver] WARNING: CapSolver dropped hCaptcha support — this will likely fail`)
+  return await solveHCaptchaWithCapsolver(websiteUrl, websiteKey, capsolverKey)
+}
 
+/**
+ * Solve hCaptcha via 2Captcha API (compatible with the standard captcha protocol).
+ */
+async function solveHCaptchaWith2Captcha(
+  websiteUrl: string,
+  websiteKey: string,
+  apiKey: string,
+): Promise<string | null> {
   try {
-    // Step 1: Create the task
+    const createResponse = await fetch(TWOCAPTCHA_CREATE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        clientKey: apiKey,
+        task: {
+          type: 'HCaptchaTaskProxyless',
+          websiteURL: websiteUrl,
+          websiteKey,
+        },
+      }),
+    })
+
+    console.log(`[2captcha] createTask HTTP status: ${createResponse.status}`)
+
+    if (!createResponse.ok) {
+      const errBody = await createResponse.text().catch(() => '<empty>')
+      console.warn(`[2captcha] createTask HTTP error ${createResponse.status}: ${errBody}`)
+      return null
+    }
+
+    const createData = (await createResponse.json()) as {
+      errorId: number
+      errorCode?: string
+      errorDescription?: string
+      taskId?: string
+    }
+
+    console.log(`[2captcha] createTask response: ${JSON.stringify(createData)}`)
+
+    if (createData.errorId !== 0 || !createData.taskId) {
+      console.warn(
+        `[2captcha] createTask failed: ${createData.errorCode} — ${createData.errorDescription}`,
+      )
+      return null
+    }
+
+    const taskId = createData.taskId
+    console.log(`[2captcha] Task created: ${taskId} — polling for result...`)
+
+    return await pollForCaptchaResult(TWOCAPTCHA_RESULT_URL, apiKey, taskId, '2captcha')
+  } catch (error) {
+    console.error(
+      '[2captcha] Unexpected error:',
+      error instanceof Error ? error.message : error,
+    )
+    return null
+  }
+}
+
+/**
+ * Solve hCaptcha via CapSolver API (legacy fallback — likely to fail since Q1 2026).
+ */
+async function solveHCaptchaWithCapsolver(
+  websiteUrl: string,
+  websiteKey: string,
+  apiKey: string,
+): Promise<string | null> {
+  try {
+    console.log(`[capsolver] API key present: true, length: ${apiKey.length}`)
+
     const createResponse = await fetch(CAPSOLVER_CREATE_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -98,8 +190,11 @@ export async function solveHCaptchaViaCapsolver(
       }),
     })
 
+    console.log(`[capsolver] createTask HTTP status: ${createResponse.status}`)
+
     if (!createResponse.ok) {
-      console.warn(`[capsolver] createTask HTTP error: ${createResponse.status}`)
+      const errBody = await createResponse.text().catch(() => '<empty>')
+      console.warn(`[capsolver] createTask HTTP error ${createResponse.status}: ${errBody}`)
       return null
     }
 
@@ -110,70 +205,27 @@ export async function solveHCaptchaViaCapsolver(
       taskId?: string
     }
 
+    console.log(`[capsolver] createTask full response: ${JSON.stringify(createData)}`)
+
     if (createData.errorId !== 0 || !createData.taskId) {
-      console.warn(
-        `[capsolver] createTask failed: ${createData.errorCode} — ${createData.errorDescription}`,
-      )
+      // CapSolver dropped hCaptcha — this is the expected error path
+      if (createData.errorCode === 'ERROR_INVALID_TASK_DATA') {
+        console.warn(
+          `[capsolver] hCaptcha NOT SUPPORTED by CapSolver: ${createData.errorDescription}. ` +
+          `Set TWO_CAPTCHA_API_KEY env var to use 2Captcha instead.`,
+        )
+      } else {
+        console.warn(
+          `[capsolver] createTask failed: ${createData.errorCode} — ${createData.errorDescription}`,
+        )
+      }
       return null
     }
 
     const taskId = createData.taskId
     console.log(`[capsolver] Task created: ${taskId} — polling for result...`)
 
-    // Step 2: Poll for result
-    for (let attempt = 0; attempt < CAPSOLVER_MAX_POLL_ATTEMPTS; attempt++) {
-      await new Promise((resolve) => setTimeout(resolve, CAPSOLVER_POLL_INTERVAL_MS))
-
-      const resultResponse = await fetch(CAPSOLVER_RESULT_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          clientKey: apiKey,
-          taskId,
-        }),
-      })
-
-      if (!resultResponse.ok) {
-        console.warn(`[capsolver] getTaskResult HTTP error: ${resultResponse.status}`)
-        continue
-      }
-
-      const resultData = (await resultResponse.json()) as {
-        errorId: number
-        errorCode?: string
-        errorDescription?: string
-        status: 'idle' | 'processing' | 'ready'
-        solution?: {
-          gRecaptchaResponse?: string
-          // CapSolver returns the token in gRecaptchaResponse for hCaptcha too
-        }
-      }
-
-      if (resultData.errorId !== 0) {
-        console.warn(
-          `[capsolver] getTaskResult error: ${resultData.errorCode} — ${resultData.errorDescription}`,
-        )
-        return null
-      }
-
-      if (resultData.status === 'ready') {
-        const token = resultData.solution?.gRecaptchaResponse
-        if (token) {
-          console.log(`[capsolver] hCaptcha solved successfully (token length: ${token.length})`)
-          return token
-        }
-        console.warn('[capsolver] Task ready but no token in solution')
-        return null
-      }
-
-      // Still processing — continue polling
-      if (attempt % 5 === 0) {
-        console.log(`[capsolver] Still solving... (attempt ${attempt + 1}/${CAPSOLVER_MAX_POLL_ATTEMPTS})`)
-      }
-    }
-
-    console.warn('[capsolver] Timed out waiting for hCaptcha solution')
-    return null
+    return await pollForCaptchaResult(CAPSOLVER_RESULT_URL, apiKey, taskId, 'capsolver')
   } catch (error) {
     console.error(
       '[capsolver] Unexpected error:',
@@ -181,6 +233,70 @@ export async function solveHCaptchaViaCapsolver(
     )
     return null
   }
+}
+
+/**
+ * Shared polling logic for both 2Captcha and CapSolver.
+ */
+async function pollForCaptchaResult(
+  resultUrl: string,
+  apiKey: string,
+  taskId: string,
+  label: string,
+): Promise<string | null> {
+  for (let attempt = 0; attempt < CAPTCHA_MAX_POLL_ATTEMPTS; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, CAPTCHA_POLL_INTERVAL_MS))
+
+    const resultResponse = await fetch(resultUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        clientKey: apiKey,
+        taskId,
+      }),
+    })
+
+    if (!resultResponse.ok) {
+      console.warn(`[${label}] getTaskResult HTTP error: ${resultResponse.status}`)
+      continue
+    }
+
+    const resultData = (await resultResponse.json()) as {
+      errorId: number
+      errorCode?: string
+      errorDescription?: string
+      status: 'idle' | 'processing' | 'ready'
+      solution?: {
+        gRecaptchaResponse?: string
+        token?: string
+      }
+    }
+
+    if (resultData.errorId !== 0) {
+      console.warn(
+        `[${label}] getTaskResult error: ${resultData.errorCode} — ${resultData.errorDescription}`,
+      )
+      return null
+    }
+
+    if (resultData.status === 'ready') {
+      const token = resultData.solution?.gRecaptchaResponse || resultData.solution?.token
+      if (token) {
+        console.log(`[${label}] hCaptcha solved successfully (token length: ${token.length})`)
+        return token
+      }
+      console.warn(`[${label}] Task ready but no token in solution: ${JSON.stringify(resultData.solution)}`)
+      return null
+    }
+
+    // Still processing — continue polling
+    if (attempt % 5 === 0) {
+      console.log(`[${label}] Still solving... (attempt ${attempt + 1}/${CAPTCHA_MAX_POLL_ATTEMPTS})`)
+    }
+  }
+
+  console.warn(`[${label}] Timed out waiting for hCaptcha solution`)
+  return null
 }
 
 /**
@@ -217,14 +333,19 @@ export async function solveReCaptchaViaCapsolver(
       }),
     })
 
+    console.log(`[capsolver] reCAPTCHA createTask HTTP status: ${createResponse.status}`)
+
     if (!createResponse.ok) {
-      console.warn(`[capsolver] reCAPTCHA createTask HTTP error: ${createResponse.status}`)
+      const errBody = await createResponse.text().catch(() => '<empty>')
+      console.warn(`[capsolver] reCAPTCHA createTask HTTP error ${createResponse.status}: ${errBody}`)
       return null
     }
 
     const createData = (await createResponse.json()) as {
       errorId: number; errorCode?: string; errorDescription?: string; taskId?: string
     }
+
+    console.log(`[capsolver] reCAPTCHA createTask response: ${JSON.stringify(createData)}`)
 
     if (createData.errorId !== 0 || !createData.taskId) {
       console.warn(`[capsolver] reCAPTCHA createTask failed: ${createData.errorCode} — ${createData.errorDescription}`)
@@ -234,43 +355,7 @@ export async function solveReCaptchaViaCapsolver(
     const taskId = createData.taskId
     console.log(`[capsolver] reCAPTCHA task created: ${taskId} — polling...`)
 
-    for (let attempt = 0; attempt < CAPSOLVER_MAX_POLL_ATTEMPTS; attempt++) {
-      await new Promise((resolve) => setTimeout(resolve, CAPSOLVER_POLL_INTERVAL_MS))
-
-      const resultResponse = await fetch(CAPSOLVER_RESULT_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clientKey: apiKey, taskId }),
-      })
-
-      if (!resultResponse.ok) continue
-
-      const resultData = (await resultResponse.json()) as {
-        errorId: number; errorCode?: string; status: 'idle' | 'processing' | 'ready'
-        solution?: { gRecaptchaResponse?: string }
-      }
-
-      if (resultData.errorId !== 0) {
-        console.warn(`[capsolver] reCAPTCHA error: ${resultData.errorCode}`)
-        return null
-      }
-
-      if (resultData.status === 'ready') {
-        const token = resultData.solution?.gRecaptchaResponse
-        if (token) {
-          console.log(`[capsolver] reCAPTCHA solved (token length: ${token.length})`)
-          return token
-        }
-        return null
-      }
-
-      if (attempt % 5 === 0) {
-        console.log(`[capsolver] reCAPTCHA still solving... (${attempt + 1}/${CAPSOLVER_MAX_POLL_ATTEMPTS})`)
-      }
-    }
-
-    console.warn('[capsolver] reCAPTCHA timed out')
-    return null
+    return await pollForCaptchaResult(CAPSOLVER_RESULT_URL, apiKey, taskId, 'capsolver-recaptcha')
   } catch (error) {
     console.error('[capsolver] reCAPTCHA error:', error instanceof Error ? error.message : error)
     return null

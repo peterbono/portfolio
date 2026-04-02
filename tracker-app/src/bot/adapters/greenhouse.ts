@@ -132,59 +132,7 @@ export const greenhouse: ATSAdapter = {
 
       // Step 9.6: CapSolver fallback for reCAPTCHA v2 / v2 Enterprise (when SBR didn't solve it)
       if (!captchaSolved) {
-        try {
-          const { siteKey, isEnterprise } = await page.evaluate(() => {
-            const el = document.querySelector('.g-recaptcha[data-sitekey], [data-sitekey]')
-            const key = el?.getAttribute('data-sitekey') ?? null
-            // Detect Enterprise: grecaptcha.enterprise namespace or enterprise script src
-            const hasEnterpriseApi = typeof (window as any).grecaptcha?.enterprise?.execute === 'function'
-            const hasEnterpriseScript = !!document.querySelector('script[src*="enterprise.js"], script[src*="enterprise"]')
-            return { siteKey: key, isEnterprise: hasEnterpriseApi || hasEnterpriseScript }
-          })
-          if (siteKey) {
-            console.log(`[greenhouse] reCAPTCHA detected (siteKey: ${siteKey}, enterprise: ${isEnterprise}) — solving via CapSolver`)
-            const token = await solveReCaptchaViaCapsolver(page.url(), siteKey, isEnterprise)
-            if (token) {
-              await page.evaluate((t) => {
-                // Inject token into all g-recaptcha-response textareas
-                const textareas = document.querySelectorAll('#g-recaptcha-response, textarea[name="g-recaptcha-response"]')
-                for (const ta of textareas) {
-                  const el = ta as HTMLTextAreaElement
-                  el.style.display = 'block'
-                  el.value = t
-                  el.dispatchEvent(new Event('change', { bubbles: true }))
-                }
-
-                // Deep-walk ___grecaptcha_cfg to find and invoke callbacks (nested 3-6 levels deep)
-                if (typeof (window as any).___grecaptcha_cfg !== 'undefined') {
-                  const findAndInvokeCallbacks = (obj: any, depth = 0): void => {
-                    if (!obj || depth > 8 || typeof obj !== 'object') return
-                    for (const val of Object.values(obj)) {
-                      if (typeof val === 'function') {
-                        try { (val as Function)(t) } catch {}
-                      } else if (typeof val === 'object') {
-                        findAndInvokeCallbacks(val, depth + 1)
-                      }
-                    }
-                  }
-                  findAndInvokeCallbacks((window as any).___grecaptcha_cfg.clients)
-                }
-
-                // Also try grecaptcha.enterprise.execute if available
-                try {
-                  const gr = (window as any).grecaptcha
-                  if (gr?.enterprise?.execute) gr.enterprise.execute()
-                  else if (gr?.execute) gr.execute()
-                } catch {}
-              }, token)
-              captchaSolved = true
-              console.log('[greenhouse] ✅ reCAPTCHA solved via CapSolver')
-              await humanDelay(1000, 2000)
-            }
-          }
-        } catch (capsolverErr) {
-          console.warn('[greenhouse] CapSolver reCAPTCHA fallback failed:', capsolverErr instanceof Error ? capsolverErr.message : capsolverErr)
-        }
+        captchaSolved = await solveAndInjectReCaptcha(page)
       }
 
       // Step 10: Submit
@@ -220,209 +168,8 @@ export const greenhouse: ATSAdapter = {
 
       // Step 11.5: Check for Greenhouse security code verification screen
       // After submission, Greenhouse may show "Enter security code" instead of confirmation.
-      // The code is sent to the applicant's email and must be entered to finalize.
-      const needsSecurityCode = await detectSecurityCodeScreen(page)
-      if (needsSecurityCode) {
-        console.log(`[greenhouse] Security code screen detected for ${company}`)
-
-        // Check if we have ANY way to get security codes (direct Gmail or Apps Script proxy)
-        const hasGmailAccess = profile.gmailAccessToken || process.env.GMAIL_PROXY_URL
-        if (hasGmailAccess) {
-          // Poll Gmail for the code (emails take a few seconds to arrive)
-          const code = await pollForSecurityCode(company, profile.gmailAccessToken || 'proxy-only', 45_000)
-          if (code) {
-            console.log(`[greenhouse] Got security code: ${code.substring(0, 3)}***`)
-            const debugLog: string[] = []
-            debugLog.push(`code=${code.substring(0, 3)}***`)
-            await enterSecurityCode(page, code)
-            debugLog.push('code_entered')
-            await humanDelay(1000, 2000)
-            debugLog.push(`url_after_code=${page.url().substring(0, 80)}`)
-
-            // reCAPTCHA resets after security code — must solve again before re-submit
-            try {
-              const { siteKey: reKey, isEnterprise: reEnterprise } = await page.evaluate(() => {
-                const el = document.querySelector('.g-recaptcha[data-sitekey], [data-sitekey]')
-                const key = el?.getAttribute('data-sitekey') ?? null
-                const hasEnt = typeof (window as any).grecaptcha?.enterprise?.execute === 'function' ||
-                  !!document.querySelector('script[src*="enterprise"]')
-                return { siteKey: key, isEnterprise: hasEnt }
-              })
-              if (reKey) {
-                console.log(`[greenhouse] reCAPTCHA detected post-security-code (siteKey: ${reKey}) — solving via CapSolver`)
-                const reToken = await solveReCaptchaViaCapsolver(page.url(), reKey, reEnterprise)
-                if (reToken) {
-                  await page.evaluate((t) => {
-                    const ta = document.querySelector('#g-recaptcha-response, textarea[name="g-recaptcha-response"]') as HTMLTextAreaElement | null
-                    if (ta) { ta.style.display = 'block'; ta.value = t; ta.dispatchEvent(new Event('change', { bubbles: true })) }
-                    if (typeof (window as any).___grecaptcha_cfg !== 'undefined') {
-                      const walk = (obj: any, d = 0): void => {
-                        if (!obj || d > 8 || typeof obj !== 'object') return
-                        for (const v of Object.values(obj)) {
-                          if (typeof v === 'function') { try { (v as Function)(t) } catch {} }
-                          else if (typeof v === 'object') walk(v, d + 1)
-                        }
-                      }
-                      walk((window as any).___grecaptcha_cfg.clients)
-                    }
-                  }, reToken)
-                  console.log('[greenhouse] ✅ reCAPTCHA solved post-security-code via CapSolver')
-                  await humanDelay(1000, 2000)
-                }
-              }
-            } catch (reCapErr) {
-              console.warn('[greenhouse] Post-security-code reCAPTCHA solve failed:', reCapErr instanceof Error ? reCapErr.message : reCapErr)
-            }
-
-            // Wait for the form to fully reload after security code redirect
-            console.log('[greenhouse] Waiting for form to reload after security code...')
-            await page.waitForSelector('form, button[type="submit"], input[type="submit"], #submit_app', { timeout: 10_000 }).catch(() => {
-              console.warn('[greenhouse] Form not found after security code redirect')
-            })
-            await humanDelay(2000, 3000)
-            debugLog.push(`url_pre_resubmit=${page.url().substring(0, 80)}`)
-
-            // Dump all visible buttons for debugging
-            const allButtons = await page.evaluate(() => {
-              const btns = Array.from(document.querySelectorAll('button, input[type="submit"], a[class*="btn"]'))
-              return btns.map(b => `${b.tagName}#${b.id}[${b.getAttribute('type')||''}]="${(b.textContent||'').trim().substring(0,30)}"`).join(' | ')
-            }).catch(() => '?')
-            debugLog.push(`buttons=${allButtons.substring(0, 200)}`)
-
-            // Scroll to bottom where submit button is
-            await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
-            await humanDelay(1000, 2000)
-
-            // Wait for a submit-like button to appear (Remix SPA may still be re-rendering)
-            console.log('[greenhouse] Looking for submit button after security code (waitForFunction)...')
-            const submitHandle = await page.waitForFunction(() => {
-              const btns = Array.from(document.querySelectorAll('button, input[type="submit"]'))
-              const match = btns.find(b => {
-                const text = ((b.textContent || '') + ' ' + ((b as HTMLInputElement).value || '')).toLowerCase()
-                return /submit|apply|verify|continue|confirm/.test(text) && (b as HTMLElement).offsetHeight > 0
-              })
-              return match || null
-            }, { timeout: 10_000 }).catch(() => null)
-
-            let resubmitted = false
-            if (submitHandle) {
-              try {
-                await submitHandle.asElement()?.click()
-                resubmitted = true
-                debugLog.push('waitForFunction_btn_clicked')
-                console.log('[greenhouse] ✅ Clicked submit button via waitForFunction')
-              } catch {
-                debugLog.push('waitForFunction_click_failed')
-              }
-            }
-
-            if (!resubmitted) {
-              // Try submitForm() as fallback (legacy boards.greenhouse.io)
-              resubmitted = await submitForm(page)
-              debugLog.push(`submitForm=${resubmitted}`)
-            }
-
-            if (!resubmitted) {
-              // JS form.submit() fallback
-              const jsSubmit = await page.evaluate(() => {
-                const form = document.querySelector('form')
-                if (form) { form.submit(); return true }
-                return false
-              }).catch(() => false)
-              debugLog.push(`js_submit=${jsSubmit}`)
-              if (!jsSubmit) {
-                await page.keyboard.press('Enter')
-                debugLog.push('enter_fallback')
-              }
-            }
-
-            // Wait for Remix SPA processing + server response
-            await humanDelay(5000, 8000)
-            debugLog.push(`url_final=${page.url().substring(0, 80)}`)
-
-            // Check page title/heading for clues
-            const pageTitle = await page.title().catch(() => '?')
-            const h1Text = await page.locator('h1, h2').first().textContent({ timeout: 2000 }).catch(() => '?')
-            debugLog.push(`title=${pageTitle.substring(0, 50)}`)
-            debugLog.push(`h1=${(h1Text || '?').substring(0, 50)}`)
-
-            let confirmedAfterCode = await checkForConfirmation(page, jobUrl)
-            debugLog.push(`confirmed1=${confirmedAfterCode}`)
-            if (!confirmedAfterCode) {
-              console.log('[greenhouse] No confirmation yet after security code — waiting 5s and retrying...')
-              await humanDelay(5000, 7000)
-              confirmedAfterCode = await checkForConfirmation(page, jobUrl)
-              debugLog.push(`confirmed2=${confirmedAfterCode}`)
-            }
-            if (confirmedAfterCode) {
-              return {
-                success: true,
-                status: 'applied',
-                company,
-                role,
-                ats: 'Greenhouse',
-                reason: `Applied after security code [${debugLog.join('|')}]`,
-                duration: Date.now() - start,
-              }
-            }
-
-            // Check if code was wrong or another error
-            const postCodeError = await page.locator('.field--error, .error, [class*="error"]').first().isVisible({ timeout: 3000 }).catch(() => false)
-            if (postCodeError) {
-              const errText = await page.locator('.field--error, .error, [class*="error"]').first().textContent().catch(() => '')
-              const screenshot = await takeScreenshot(page)
-              return {
-                success: false,
-                status: 'needs_manual',
-                company,
-                role,
-                ats: 'Greenhouse',
-                reason: `Security code entered but error: ${errText}`,
-                screenshotUrl: screenshot,
-                duration: Date.now() - start,
-              }
-            }
-
-            // No error, no explicit confirmation — cannot claim success
-            const noConfirmScreenshot2 = await takeScreenshot(page)
-            return {
-              success: false,
-              status: 'needs_manual',
-              company,
-              role,
-              ats: 'Greenhouse',
-              reason: `Submitted after security code but no confirmation [${debugLog.join('|')}]`,
-              screenshotUrl: noConfirmScreenshot2,
-              duration: Date.now() - start,
-            }
-          } else {
-            const screenshot = await takeScreenshot(page)
-            return {
-              success: false,
-              status: 'needs_manual',
-              company,
-              role,
-              ats: 'Greenhouse',
-              reason: 'Security code required — code email not found in Gmail within 45s',
-              screenshotUrl: screenshot,
-              duration: Date.now() - start,
-            }
-          }
-        } else {
-          // No Gmail token AND no proxy — can't fetch the code
-          const screenshot = await takeScreenshot(page)
-          return {
-            success: false,
-            status: 'needs_manual',
-            company,
-            role,
-            ats: 'Greenhouse',
-            reason: 'Security code required — set GMAIL_PROXY_URL or GOOGLE_REFRESH_TOKEN in env vars',
-            screenshotUrl: screenshot,
-            duration: Date.now() - start,
-          }
-        }
-      } // end if (needsSecurityCode)
+      const securityCodeResult = await handleSecurityCode(page, company, role, profile, jobUrl, start)
+      if (securityCodeResult) return securityCodeResult
 
       // Check for validation errors (NOT the security code screen)
       const hasErrors = await page.locator('.field--error, .error, [class*="error"]').first().isVisible({ timeout: 3000 }).catch(() => false)
@@ -444,42 +191,8 @@ export const greenhouse: ATSAdapter = {
       // No confirmation, no error — but the security code screen may load late.
       // Wait extra and re-check before assuming success (prevents false "applied").
       await humanDelay(4000, 6000)
-      const lateSecurityCode = await detectSecurityCodeScreen(page)
-      if (lateSecurityCode) {
-        console.log(`[greenhouse] Late security code screen detected for ${company}`)
-        const hasLateGmailAccess = profile.gmailAccessToken || process.env.GMAIL_PROXY_URL
-        if (hasLateGmailAccess) {
-          const code = await pollForSecurityCode(company, profile.gmailAccessToken || 'proxy-only', 45_000)
-          if (code) {
-            console.log(`[greenhouse] Got late security code: ${code.substring(0, 3)}***`)
-            await enterSecurityCode(page, code)
-            await humanDelay(1000, 2000)
-            await submitForm(page)
-            await humanDelay(3000, 5000)
-            const confirmedLate = await checkForConfirmation(page, jobUrl)
-            return {
-              success: confirmedLate,
-              status: confirmedLate ? 'applied' : 'needs_manual',
-              company,
-              role,
-              ats: 'Greenhouse',
-              reason: confirmedLate ? 'Applied after late security code' : 'Late security code entered but no confirmation',
-              duration: Date.now() - start,
-            }
-          }
-        }
-        const screenshot = await takeScreenshot(page)
-        return {
-          success: false,
-          status: 'needs_manual',
-          company,
-          role,
-          ats: 'Greenhouse',
-          reason: 'Security code required (late detection) — no Gmail token or code not found',
-          screenshotUrl: screenshot,
-          duration: Date.now() - start,
-        }
-      }
+      const lateSecurityCodeResult = await handleSecurityCode(page, company, role, profile, jobUrl, start)
+      if (lateSecurityCodeResult) return lateSecurityCodeResult
 
       // Also check URL — Greenhouse may redirect to a code page
       const currentUrl = page.url()
@@ -528,6 +241,192 @@ export const greenhouse: ATSAdapter = {
 }
 
 // ─── Internal helpers ────────────────────────────────────────────────
+
+/**
+ * Detect reCAPTCHA siteKey, solve via CapSolver, and inject the token.
+ * Returns true if a reCAPTCHA was found and solved, false otherwise.
+ */
+async function solveAndInjectReCaptcha(page: Page): Promise<boolean> {
+  try {
+    const { siteKey, isEnterprise } = await page.evaluate(() => {
+      const el = document.querySelector('.g-recaptcha[data-sitekey], [data-sitekey]')
+      const key = el?.getAttribute('data-sitekey') ?? null
+      const hasEnterpriseApi = typeof (window as any).grecaptcha?.enterprise?.execute === 'function'
+      const hasEnterpriseScript = !!document.querySelector('script[src*="enterprise.js"], script[src*="enterprise"]')
+      return { siteKey: key, isEnterprise: hasEnterpriseApi || hasEnterpriseScript }
+    })
+    if (!siteKey) return false
+
+    console.log(`[greenhouse] reCAPTCHA detected (siteKey: ${siteKey}, enterprise: ${isEnterprise}) — solving via CapSolver`)
+    const token = await solveReCaptchaViaCapsolver(page.url(), siteKey, isEnterprise)
+    if (!token) return false
+
+    await page.evaluate((t) => {
+      // Inject token into all g-recaptcha-response textareas
+      const textareas = document.querySelectorAll('#g-recaptcha-response, textarea[name="g-recaptcha-response"]')
+      for (const ta of textareas) {
+        const el = ta as HTMLTextAreaElement
+        el.style.display = 'block'
+        el.value = t
+        el.dispatchEvent(new Event('change', { bubbles: true }))
+      }
+
+      // Deep-walk ___grecaptcha_cfg to find and invoke callbacks
+      if (typeof (window as any).___grecaptcha_cfg !== 'undefined') {
+        const findAndInvokeCallbacks = (obj: any, depth = 0): void => {
+          if (!obj || depth > 8 || typeof obj !== 'object') return
+          for (const val of Object.values(obj)) {
+            if (typeof val === 'function') {
+              try { (val as Function)(t) } catch {}
+            } else if (typeof val === 'object') {
+              findAndInvokeCallbacks(val, depth + 1)
+            }
+          }
+        }
+        findAndInvokeCallbacks((window as any).___grecaptcha_cfg.clients)
+      }
+
+      // Also try grecaptcha.enterprise.execute if available
+      try {
+        const gr = (window as any).grecaptcha
+        if (gr?.enterprise?.execute) gr.enterprise.execute()
+        else if (gr?.execute) gr.execute()
+      } catch {}
+    }, token)
+
+    console.log('[greenhouse] reCAPTCHA solved via CapSolver')
+    await humanDelay(1000, 2000)
+    return true
+  } catch (err) {
+    console.warn('[greenhouse] CapSolver reCAPTCHA solve failed:', err instanceof Error ? err.message : err)
+    return false
+  }
+}
+
+/**
+ * Handle Greenhouse security code (email OTP) flow.
+ * Polls Gmail for the code, enters it, re-solves reCAPTCHA if needed,
+ * waits for confirmation, and returns the ApplyResult.
+ * Returns null if security code screen is not detected (caller should continue).
+ */
+async function handleSecurityCode(
+  page: Page,
+  company: string,
+  role: string,
+  profile: ApplicantProfile,
+  jobUrl: string,
+  start: number,
+): Promise<ApplyResult | null> {
+  const needsSecurityCode = await detectSecurityCodeScreen(page)
+  if (!needsSecurityCode) return null
+
+  console.log(`[greenhouse] Security code screen detected for ${company}`)
+
+  const hasGmailAccess = profile.gmailAccessToken || process.env.GMAIL_PROXY_URL
+  if (!hasGmailAccess) {
+    const screenshot = await takeScreenshot(page)
+    return {
+      success: false,
+      status: 'needs_manual',
+      company,
+      role,
+      ats: 'Greenhouse',
+      reason: 'Security code required — set GMAIL_PROXY_URL or GOOGLE_REFRESH_TOKEN in env vars',
+      screenshotUrl: screenshot,
+      duration: Date.now() - start,
+    }
+  }
+
+  const code = await pollForSecurityCode(company, profile.gmailAccessToken || 'proxy-only', 45_000)
+  if (!code) {
+    const screenshot = await takeScreenshot(page)
+    return {
+      success: false,
+      status: 'needs_manual',
+      company,
+      role,
+      ats: 'Greenhouse',
+      reason: 'Security code required — code email not found in Gmail within 45s',
+      screenshotUrl: screenshot,
+      duration: Date.now() - start,
+    }
+  }
+
+  console.log(`[greenhouse] Got security code: ${code.substring(0, 3)}***`)
+
+  // Enter the code (this also clicks submit/presses Enter inside enterSecurityCode)
+  await enterSecurityCode(page, code)
+  await humanDelay(1000, 2000)
+
+  // reCAPTCHA may reset after security code entry — solve again if present
+  const reCaptchaSolved = await solveAndInjectReCaptcha(page)
+  if (reCaptchaSolved) {
+    console.log('[greenhouse] reCAPTCHA re-solved after security code entry')
+  }
+
+  // Wait for form/page to settle after code submission
+  await page.waitForSelector('form, button[type="submit"], input[type="submit"], #submit_app', { timeout: 10_000 }).catch(() => {
+    console.warn('[greenhouse] Form not found after security code redirect')
+  })
+  await humanDelay(2000, 3000)
+
+  // Scroll to bottom where submit button lives
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
+  await humanDelay(1000, 2000)
+
+  // Wait for Remix SPA processing + server response
+  await humanDelay(5000, 8000)
+
+  // Check for confirmation
+  let confirmed = await checkForConfirmation(page, jobUrl)
+  if (!confirmed) {
+    console.log('[greenhouse] No confirmation yet after security code — waiting and retrying...')
+    await humanDelay(5000, 7000)
+    confirmed = await checkForConfirmation(page, jobUrl)
+  }
+
+  if (confirmed) {
+    return {
+      success: true,
+      status: 'applied',
+      company,
+      role,
+      ats: 'Greenhouse',
+      reason: 'Applied after security code verification',
+      duration: Date.now() - start,
+    }
+  }
+
+  // Check for validation errors after code entry
+  const postCodeError = await page.locator('.field--error, .error, [class*="error"]').first().isVisible({ timeout: 3000 }).catch(() => false)
+  if (postCodeError) {
+    const errText = await page.locator('.field--error, .error, [class*="error"]').first().textContent().catch(() => '')
+    const screenshot = await takeScreenshot(page)
+    return {
+      success: false,
+      status: 'needs_manual',
+      company,
+      role,
+      ats: 'Greenhouse',
+      reason: `Security code entered but error: ${errText}`,
+      screenshotUrl: screenshot,
+      duration: Date.now() - start,
+    }
+  }
+
+  // No error, no explicit confirmation
+  const screenshot = await takeScreenshot(page)
+  return {
+    success: false,
+    status: 'needs_manual',
+    company,
+    role,
+    ats: 'Greenhouse',
+    reason: 'Submitted after security code but no confirmation detected',
+    screenshotUrl: screenshot,
+    duration: Date.now() - start,
+  }
+}
 
 async function fillBasicFields(page: Page, profile: ApplicantProfile): Promise<void> {
   // First name
@@ -1327,6 +1226,5 @@ async function enterSecurityCode(page: Page, code: string): Promise<void> {
   }, { timeout: 10_000 }).catch(() => {
     console.warn('[greenhouse] Timed out waiting for page state change after security code')
   })
-  await humanDelay(3000, 5000)
   await humanDelay(3000, 5000)
 }

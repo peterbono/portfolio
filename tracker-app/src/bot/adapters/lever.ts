@@ -76,15 +76,16 @@ export const lever: ATSAdapter = {
 
       // Early CAPTCHA bailout: detect hCaptcha before wasting time filling form
       const hasVisibleCaptcha = await page.locator('iframe[src*="hcaptcha"], .h-captcha, [data-hcaptcha-sitekey]').first().isVisible({ timeout: 3000 }).catch(() => false)
-      if (hasVisibleCaptcha && !process.env.CAPSOLVER_API_KEY) {
-        console.log('[lever] hCaptcha detected on page load, no CapSolver configured — skipping')
+      const hasCaptchaSolver = !!(process.env.TWO_CAPTCHA_API_KEY || process.env.CAPSOLVER_API_KEY)
+      if (hasVisibleCaptcha && !hasCaptchaSolver) {
+        console.log('[lever] hCaptcha detected on page load, no CAPTCHA solver configured — skipping')
         return {
           success: false,
           status: 'skipped' as const,
           company,
           role,
           ats: 'Lever',
-          reason: 'hCaptcha detected before form fill — no solver available',
+          reason: 'hCaptcha detected before form fill — no solver available (set TWO_CAPTCHA_API_KEY or CAPSOLVER_API_KEY)',
           duration: Date.now() - start,
         }
       }

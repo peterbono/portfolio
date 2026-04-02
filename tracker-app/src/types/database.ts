@@ -262,6 +262,7 @@ export interface Database {
           jobs_applied: number | null
           jobs_skipped: number | null
           jobs_failed: number | null
+          jobs_needs_manual: number | null
           error_message: string | null
           created_at: string
         }
@@ -276,6 +277,7 @@ export interface Database {
           jobs_applied?: number | null
           jobs_skipped?: number | null
           jobs_failed?: number | null
+          jobs_needs_manual?: number | null
           error_message?: string | null
           created_at?: string
         }
@@ -290,6 +292,7 @@ export interface Database {
           jobs_applied?: number | null
           jobs_skipped?: number | null
           jobs_failed?: number | null
+          jobs_needs_manual?: number | null
           error_message?: string | null
           created_at?: string
         }

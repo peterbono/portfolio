@@ -22,6 +22,7 @@ export interface BotRunStatus {
   jobsApplied: number
   jobsSkipped: number
   jobsFailed: number
+  jobsNeedsManual: number
   startedAt?: string
   completedAt?: string
   errorMessage?: string
@@ -61,6 +62,7 @@ function toRunStatus(row: Record<string, unknown>): BotRunStatus {
     jobsApplied: (row.jobs_applied as number) ?? 0,
     jobsSkipped: (row.jobs_skipped as number) ?? 0,
     jobsFailed: (row.jobs_failed as number) ?? 0,
+    jobsNeedsManual: (row.jobs_needs_manual as number) ?? 0,
     startedAt: (row.started_at as string) ?? undefined,
     completedAt: (row.completed_at as string) ?? undefined,
     errorMessage: (row.error_message as string) ?? undefined,
@@ -102,7 +104,7 @@ export function useBotActivity(): UseBotActivityReturn {
       // Fetch the most recent non-cancelled bot run (select only needed columns)
       const { data: runData } = await supabase
         .from('bot_runs')
-        .select('id, status, jobs_found, jobs_applied, jobs_skipped, jobs_failed, started_at, completed_at, error_message, created_at')
+        .select('id, status, jobs_found, jobs_applied, jobs_skipped, jobs_failed, jobs_needs_manual, started_at, completed_at, error_message, created_at')
         .order('created_at', { ascending: false })
         .limit(1)
 

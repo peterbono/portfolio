@@ -800,7 +800,8 @@ export const applyJobsTask = task({
           completed_at: new Date().toISOString(),
           jobs_applied: applied,
           jobs_skipped: skipped,
-          jobs_failed: failed + needsManual,
+          jobs_failed: failed,
+          jobs_needs_manual: needsManual,
           ...(fatalError && { error_message: fatalError.message }),
         }).catch((err) => console.warn("[apply-jobs] Update run error:", err))
       }
