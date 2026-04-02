@@ -14,7 +14,7 @@ export interface DiscoveredJob {
   isEasyApply: boolean
   postedDate: string
   matchScore?: number
-  source?: 'linkedin' | 'indeed' | 'remoteok' | 'wellfound' | 'himalayas'
+  source?: 'linkedin' | 'indeed' | 'remoteok' | 'wellfound' | 'himalayas' | 'remotive' | 'wwr' | 'dribbble' | 'jobicy'
   description?: string // Pre-fetched JD (e.g. RemoteOK API provides full description)
 }
 

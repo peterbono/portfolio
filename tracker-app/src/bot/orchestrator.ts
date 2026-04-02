@@ -2,7 +2,7 @@ import type { Page, Browser, BrowserContext } from 'playwright'
 import type { SearchProfile } from '../types/database'
 import { APPLICANT } from './types'
 import { scoutJobsMultiPass, normalizeForDedup, type DiscoveredJob, type MultiPassConfig, type ScoutProgressUpdate } from './scout'
-import { scoutRemoteOK, scoutWellfound, scoutHimalayas } from './scout-boards'
+import { scoutRemoteOK, scoutWellfound, scoutHimalayas, scoutRemotive, scoutWWR, scoutDribbble, scoutJobicy } from './scout-boards'
 import {
   qualifyJob,
   clearQualificationCache,
@@ -151,6 +151,18 @@ const COST_REMOTEOK_PER_PAGE = 0
 
 /** Himalayas is a free JSON API — no proxy needed */
 const COST_HIMALAYAS_PER_PAGE = 0
+
+/** Remotive is a free JSON API — no proxy needed */
+const COST_REMOTIVE_PER_PAGE = 0
+
+/** WWR is a free RSS feed — no proxy needed */
+const COST_WWR_PER_PAGE = 0
+
+/** Dribbble uses Playwright (browser-based scraping) — uses Bright Data proxy */
+const COST_DRIBBBLE_PER_PAGE = 0.005
+
+/** Jobicy is a free JSON API — no proxy needed */
+const COST_JOBICY_PER_PAGE = 0
 
 /** Simple in-memory cost accumulator for a single pipeline run */
 function createCostTracker() {
@@ -386,161 +398,125 @@ async function phaseScout(
 
   // Build dedup set for cross-source filtering
   const existingSet = new Set(existing)
+  const excludedCompanies = config.searchProfile.excluded_companies ?? []
 
-  // --- RemoteOK (JSON API — fast, no Playwright needed) ---
-  console.log('[pipeline] Phase 1b: SCOUT RemoteOK (JSON API)')
-  const remoteokLogEntry: ActivityLogEntry = {
-    user_id: config.userId,
-    run_id: runId,
-    action: 'scout_remoteok_start',
-    reason: `RemoteOK: ${uniqueKeywords.length} tags`,
-  }
-  fireLog(remoteokLogEntry)
-  activities.push(remoteokLogEntry)
+  // ─── PARALLEL SCOUT: API sources + browser sources ────────────────────
+  // API sources (no browser needed) run in parallel via Promise.allSettled.
+  // Browser sources (Wellfound, Dribbble) run in parallel on separate pages.
+  // Both groups run concurrently — total time = max(API group, browser group).
+  console.log('[pipeline] Phase 1b: SCOUT all secondary sources in parallel')
 
-  let remoteokJobs: DiscoveredJob[] = []
-  try {
-    // Map keywords to RemoteOK-friendly tags
-    const remoteokTags = [
-      'design', 'ux', 'ui', 'product-designer', 'ux-designer',
-      'ui-designer', 'visual-designer', 'design-system',
-    ]
-    remoteokJobs = await Promise.race([
-      scoutRemoteOK(
-        remoteokTags,
-        config.searchProfile.excluded_companies ?? [],
-      ),
-      new Promise<DiscoveredJob[]>((resolve) =>
-        setTimeout(() => { console.warn('[pipeline] RemoteOK timeout (60s)'); resolve([]) }, 60_000)
+  // --- Helper: wrap a source in timeout + error handling ---
+  const withTimeout = <T>(promise: Promise<T>, ms: number, label: string): Promise<T | null> =>
+    Promise.race([
+      promise,
+      new Promise<null>((resolve) =>
+        setTimeout(() => { console.warn(`[pipeline] ${label} timeout (${ms / 1000}s)`); resolve(null) }, ms)
       ),
     ])
 
-    // Filter out already-applied jobs
-    remoteokJobs = remoteokJobs.filter(j => {
-      const dedupKey = `${normalizeForDedup(j.company)}|${normalizeForDedup(j.title)}`
-      return !existingSet.has(dedupKey)
-    })
+  // --- API group (all run in parallel, no Playwright needed) ---
+  const remoteokTags = [
+    'design', 'ux', 'ui', 'product-designer', 'ux-designer',
+    'ui-designer', 'visual-designer', 'design-system',
+  ]
+  const himalayasTerms = [
+    'product designer', 'ux designer', 'ui designer',
+    'design lead', 'design system',
+  ]
+  const remotiveTerms = [
+    'product designer', 'ux designer', 'ui designer',
+    'design lead', 'design system', 'visual designer',
+  ]
+  const wwrCategories = ['design', 'product']
+  const jobicyTerms = [
+    'product designer', 'ux designer', 'ui designer',
+    'design lead', 'design system',
+  ]
+  const wellfoundKeywords = uniqueKeywords.slice(0, 4)
+  const dribbbleKeywords = uniqueKeywords.slice(0, 4)
 
-    // RemoteOK is free (JSON API, no proxy)
-    costTracker?.addScoutCost(remoteokTags.length * COST_REMOTEOK_PER_PAGE)
-
-    const remoteokDone: ActivityLogEntry = {
-      user_id: config.userId,
-      run_id: runId,
-      action: 'scout_remoteok_complete',
-      reason: `RemoteOK: found ${remoteokJobs.length} unique design jobs`,
-    }
-    fireLog(remoteokDone)
-    activities.push(remoteokDone)
-  } catch (err) {
-    const remoteokErr: ActivityLogEntry = {
-      user_id: config.userId,
-      run_id: runId,
-      action: 'scout_remoteok_error',
-      reason: `RemoteOK scraping failed: ${(err as Error).message}`,
-    }
-    fireLog(remoteokErr)
-    activities.push(remoteokErr)
-    console.warn('[pipeline] RemoteOK scout failed, continuing with LinkedIn results only:', (err as Error).message)
-  }
-
-  // --- Wellfound (Playwright — parallel-safe with new page) ---
-  // Wrap entire Wellfound with 90s timeout — context.newPage() can hang if SBR died
-  console.log('[pipeline] Phase 1c: SCOUT Wellfound')
-  let wellfoundJobs: DiscoveredJob[] = []
-  try {
-    wellfoundJobs = await Promise.race([
-      (async () => {
-        const wellfoundPage = await page.context().newPage()
-        const wellfoundKeywords = uniqueKeywords.slice(0, 4) // Top 4 keywords
-        const jobs = await scoutWellfound(
-          wellfoundPage,
-          wellfoundKeywords,
-          config.searchProfile.excluded_companies ?? [],
-        )
+  const [
+    remoteokResult,
+    himalayasResult,
+    remotiveResult,
+    wwrResult,
+    jobicyResult,
+    wellfoundResult,
+    dribbbleResult,
+  ] = await Promise.allSettled([
+    // --- API sources (no browser) ---
+    withTimeout(scoutRemoteOK(remoteokTags, excludedCompanies), 60_000, 'RemoteOK'),
+    withTimeout(scoutHimalayas(himalayasTerms, excludedCompanies), 60_000, 'Himalayas'),
+    withTimeout(scoutRemotive(remotiveTerms, excludedCompanies), 60_000, 'Remotive'),
+    withTimeout(scoutWWR(wwrCategories, excludedCompanies), 60_000, 'WWR'),
+    withTimeout(scoutJobicy(jobicyTerms, excludedCompanies), 60_000, 'Jobicy'),
+    // --- Browser sources (separate pages, safe to run in parallel) ---
+    withTimeout((async () => {
+      const wellfoundPage = await page.context().newPage()
+      try {
+        return await scoutWellfound(wellfoundPage, wellfoundKeywords, excludedCompanies)
+      } finally {
         await wellfoundPage.close().catch(() => {})
-        return jobs
-      })(),
-      new Promise<DiscoveredJob[]>((resolve) =>
-        setTimeout(() => { console.warn('[pipeline] Wellfound timeout (90s)'); resolve([]) }, 90_000)
-      ),
-    ])
+      }
+    })(), 90_000, 'Wellfound'),
+    withTimeout((async () => {
+      const dribbblePage = await page.context().newPage()
+      try {
+        return await scoutDribbble(dribbblePage, dribbbleKeywords, excludedCompanies)
+      } finally {
+        await dribbblePage.close().catch(() => {})
+      }
+    })(), 90_000, 'Dribbble'),
+  ])
 
-    // Filter already-applied
-    wellfoundJobs = wellfoundJobs.filter(j => {
-      const dedupKey = `${normalizeForDedup(j.company)}|${normalizeForDedup(j.title)}`
-      return !existingSet.has(dedupKey)
-    })
-
-    // Wellfound uses Bright Data proxy (~$0.005/page, one page per keyword)
-    costTracker?.addScoutCost(wellfoundKeywords.length * COST_WELLFOUND_PER_PAGE)
-
-    const wellfoundDone: ActivityLogEntry = {
-      user_id: config.userId,
-      run_id: runId,
-      action: 'scout_wellfound_complete',
-      reason: `Wellfound: found ${wellfoundJobs.length} unique design jobs`,
+  // --- Extract results + log each source ---
+  const extractResult = (
+    result: PromiseSettledResult<DiscoveredJob[] | null>,
+    sourceName: string,
+    costPerPage: number,
+    pageCount: number,
+  ): DiscoveredJob[] => {
+    if (result.status === 'rejected') {
+      console.warn(`[pipeline] ${sourceName} scout failed:`, result.reason?.message ?? result.reason)
+      const errEntry: ActivityLogEntry = {
+        user_id: config.userId, run_id: runId,
+        action: `scout_${sourceName.toLowerCase()}_error`,
+        reason: `${sourceName} failed: ${result.reason?.message ?? result.reason}`,
+      }
+      fireLog(errEntry)
+      activities.push(errEntry)
+      return []
     }
-    fireLog(wellfoundDone)
-    activities.push(wellfoundDone)
-  } catch (err) {
-    console.warn('[pipeline] Wellfound scout failed:', (err as Error).message)
-    const wellfoundErr: ActivityLogEntry = {
-      user_id: config.userId,
-      run_id: runId,
-      action: 'scout_wellfound_error',
-      reason: `Wellfound failed: ${(err as Error).message}`,
-    }
-    fireLog(wellfoundErr)
-    activities.push(wellfoundErr)
-  }
 
-  // --- Himalayas.app (JSON API — fast, timezone=7 native filter) ---
-  console.log('[pipeline] Phase 1d: SCOUT Himalayas (JSON API)')
-  let himalayasJobs: DiscoveredJob[] = []
-  try {
-    const himalayasTerms = [
-      'product designer', 'ux designer', 'ui designer',
-      'design lead', 'design system',
-    ]
-    himalayasJobs = await Promise.race([
-      scoutHimalayas(
-        himalayasTerms,
-        config.searchProfile.excluded_companies ?? [],
-      ),
-      new Promise<DiscoveredJob[]>((resolve) =>
-        setTimeout(() => { console.warn('[pipeline] Himalayas timeout (60s)'); resolve([]) }, 60_000)
-      ),
-    ])
+    const jobs = result.value ?? []
 
     // Filter out already-applied jobs
-    himalayasJobs = himalayasJobs.filter(j => {
+    const filtered = jobs.filter(j => {
       const dedupKey = `${normalizeForDedup(j.company)}|${normalizeForDedup(j.title)}`
       return !existingSet.has(dedupKey)
     })
 
-    // Himalayas is free (JSON API, no proxy)
-    costTracker?.addScoutCost(himalayasTerms.length * COST_HIMALAYAS_PER_PAGE)
+    costTracker?.addScoutCost(pageCount * costPerPage)
 
-    const himalayasDone: ActivityLogEntry = {
-      user_id: config.userId,
-      run_id: runId,
-      action: 'scout_himalayas_complete',
-      reason: `Himalayas: found ${himalayasJobs.length} unique design jobs`,
+    const doneEntry: ActivityLogEntry = {
+      user_id: config.userId, run_id: runId,
+      action: `scout_${sourceName.toLowerCase()}_complete`,
+      reason: `${sourceName}: found ${filtered.length} unique design jobs`,
     }
-    fireLog(himalayasDone)
-    activities.push(himalayasDone)
-  } catch (err) {
-    const himalayasErr: ActivityLogEntry = {
-      user_id: config.userId,
-      run_id: runId,
-      action: 'scout_himalayas_error',
-      reason: `Himalayas scraping failed: ${(err as Error).message}`,
-    }
-    fireLog(himalayasErr)
-    activities.push(himalayasErr)
-    console.warn('[pipeline] Himalayas scout failed, continuing with other sources:', (err as Error).message)
+    fireLog(doneEntry)
+    activities.push(doneEntry)
+
+    return filtered
   }
+
+  const remoteokJobs = extractResult(remoteokResult, 'RemoteOK', COST_REMOTEOK_PER_PAGE, remoteokTags.length)
+  const himalayasJobs = extractResult(himalayasResult, 'Himalayas', COST_HIMALAYAS_PER_PAGE, himalayasTerms.length)
+  const remotiveJobs = extractResult(remotiveResult, 'Remotive', COST_REMOTIVE_PER_PAGE, remotiveTerms.length)
+  const wwrJobs = extractResult(wwrResult, 'WWR', COST_WWR_PER_PAGE, wwrCategories.length)
+  const jobicyJobs = extractResult(jobicyResult, 'Jobicy', COST_JOBICY_PER_PAGE, jobicyTerms.length)
+  const wellfoundJobs = extractResult(wellfoundResult, 'Wellfound', COST_WELLFOUND_PER_PAGE, wellfoundKeywords.length)
+  const dribbbleJobs = extractResult(dribbbleResult, 'Dribbble', COST_DRIBBBLE_PER_PAGE, dribbbleKeywords.length)
 
   // --- Merge & cross-source dedup ---
   const mergedJobs: DiscoveredJob[] = [...linkedinResult.jobs]
@@ -552,47 +528,53 @@ async function phaseScout(
     seenCompanyTitle.add(key)
   }
 
-  // Add RemoteOK jobs (dedup)
-  let remoteokDedupCount = 0
-  for (const job of remoteokJobs) {
-    const key = `${normalizeForDedup(job.company)}|${normalizeForDedup(job.title)}`
-    if (seenCompanyTitle.has(key)) { remoteokDedupCount++; continue }
-    seenCompanyTitle.add(key)
-    mergedJobs.push(job)
+  // Merge helper: dedup against seen set, return count of duplicates
+  const mergeWithDedup = (jobs: DiscoveredJob[]): number => {
+    let dupes = 0
+    for (const job of jobs) {
+      const key = `${normalizeForDedup(job.company)}|${normalizeForDedup(job.title)}`
+      if (seenCompanyTitle.has(key)) { dupes++; continue }
+      seenCompanyTitle.add(key)
+      mergedJobs.push(job)
+    }
+    return dupes
   }
 
-  // Add Wellfound jobs (dedup)
-  let wellfoundDedupCount = 0
-  for (const job of wellfoundJobs) {
-    const key = `${normalizeForDedup(job.company)}|${normalizeForDedup(job.title)}`
-    if (seenCompanyTitle.has(key)) { wellfoundDedupCount++; continue }
-    seenCompanyTitle.add(key)
-    mergedJobs.push(job)
+  const dedupCounts = {
+    remoteok: mergeWithDedup(remoteokJobs),
+    wellfound: mergeWithDedup(wellfoundJobs),
+    himalayas: mergeWithDedup(himalayasJobs),
+    remotive: mergeWithDedup(remotiveJobs),
+    wwr: mergeWithDedup(wwrJobs),
+    jobicy: mergeWithDedup(jobicyJobs),
+    dribbble: mergeWithDedup(dribbbleJobs),
   }
 
-  // Add Himalayas jobs (dedup)
-  let himalayasDedupCount = 0
-  for (const job of himalayasJobs) {
-    const key = `${normalizeForDedup(job.company)}|${normalizeForDedup(job.title)}`
-    if (seenCompanyTitle.has(key)) { himalayasDedupCount++; continue }
-    seenCompanyTitle.add(key)
-    mergedJobs.push(job)
-  }
-
-  const totalDedup = remoteokDedupCount + wellfoundDedupCount + himalayasDedupCount
+  const totalDedup = Object.values(dedupCounts).reduce((a, b) => a + b, 0)
   if (totalDedup > 0) {
-    console.log(`[pipeline] Cross-source dedup: removed ${totalDedup} duplicates (RemoteOK: ${remoteokDedupCount}, Wellfound: ${wellfoundDedupCount}, Himalayas: ${himalayasDedupCount})`)
+    console.log(`[pipeline] Cross-source dedup: removed ${totalDedup} duplicates (${Object.entries(dedupCounts).map(([k, v]) => `${k}: ${v}`).join(', ')})`)
+  }
+
+  const sourceCounts = {
+    LinkedIn: linkedinResult.jobs.length,
+    RemoteOK: remoteokJobs.length,
+    Wellfound: wellfoundJobs.length,
+    Himalayas: himalayasJobs.length,
+    Remotive: remotiveJobs.length,
+    WWR: wwrJobs.length,
+    Jobicy: jobicyJobs.length,
+    Dribbble: dribbbleJobs.length,
   }
 
   console.log(
-    `[pipeline] Scout complete: LinkedIn ${linkedinResult.jobs.length} + RemoteOK ${remoteokJobs.length} + Wellfound ${wellfoundJobs.length} + Himalayas ${himalayasJobs.length} - ${totalDedup} dupes = ${mergedJobs.length} unique candidates`,
+    `[pipeline] Scout complete: ${Object.entries(sourceCounts).map(([k, v]) => `${k} ${v}`).join(' + ')} - ${totalDedup} dupes = ${mergedJobs.length} unique candidates`,
   )
 
   const scoutDone: ActivityLogEntry = {
     user_id: config.userId,
     run_id: runId,
     action: 'scout_complete',
-    reason: `LinkedIn: ${linkedinResult.jobs.length}, RemoteOK: ${remoteokJobs.length}, Wellfound: ${wellfoundJobs.length}, Himalayas: ${himalayasJobs.length}, dedup: -${totalDedup}, total: ${mergedJobs.length}`,
+    reason: `${Object.entries(sourceCounts).map(([k, v]) => `${k}: ${v}`).join(', ')}, dedup: -${totalDedup}, total: ${mergedJobs.length}`,
   }
   fireLog(scoutDone)
   activities.push(scoutDone)

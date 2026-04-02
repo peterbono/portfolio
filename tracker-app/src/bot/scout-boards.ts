@@ -1046,3 +1046,621 @@ export async function scoutHimalayas(
   console.log(`[scout:himalayas] Total unique design jobs: ${allJobs.length}`)
   return allJobs
 }
+
+// ---------------------------------------------------------------------------
+// Remotive scraper (JSON API — no Playwright needed)
+// ---------------------------------------------------------------------------
+
+/**
+ * Raw shape returned by the Remotive public API.
+ */
+interface RemotiveJob {
+  id?: number
+  url?: string
+  title?: string
+  company_name?: string
+  category?: string
+  candidate_required_location?: string
+  publication_date?: string
+  description?: string
+  salary?: string
+  tags?: string[]
+}
+
+interface RemotiveApiResponse {
+  'api-version'?: string
+  'job-count'?: number
+  jobs: RemotiveJob[]
+}
+
+/**
+ * Scout jobs from Remotive using their public JSON API.
+ * No Playwright page needed — uses plain fetch().
+ *
+ * API: https://remotive.com/api/remote-jobs?category=design&search={keyword}
+ *
+ * @param keywords - Search terms, e.g. ['product designer', 'ux designer']
+ * @param excludedCompanies - Additional company names to exclude
+ * @returns DiscoveredJob[] with source = 'remotive'
+ */
+export async function scoutRemotive(
+  keywords: string[],
+  excludedCompanies: string[] = [],
+): Promise<DiscoveredJob[]> {
+  const allJobs: DiscoveredJob[] = []
+  const seenUrls = new Set<string>()
+  const seenCompanyTitle = new Set<string>()
+
+  const excluded = [...DEFAULT_EXCLUDED, ...excludedCompanies.map(c => c.toLowerCase())]
+
+  const searchTerms = keywords.length > 0
+    ? keywords
+    : ['product designer', 'ux designer', 'ui designer', 'design lead']
+
+  for (const term of searchTerms) {
+    const apiUrl = `https://remotive.com/api/remote-jobs?category=design&search=${encodeURIComponent(term)}`
+    console.log(`[scout:remotive] Fetching: ${apiUrl}`)
+
+    try {
+      const response = await fetch(apiUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; JobScout/1.0)',
+          'Accept': 'application/json',
+        },
+      })
+
+      if (!response.ok) {
+        console.warn(`[scout:remotive] HTTP ${response.status} for term="${term}"`)
+        continue
+      }
+
+      const data: RemotiveApiResponse = await response.json()
+      const jobs = data.jobs ?? []
+      console.log(`[scout:remotive] Term "${term}": ${jobs.length} raw jobs`)
+
+      for (const job of jobs) {
+        const title = job.title?.trim() ?? ''
+        const company = job.company_name?.trim() ?? ''
+        const location = job.candidate_required_location?.trim() || 'Remote'
+
+        // Skip if missing critical fields
+        if (!title || !company) continue
+
+        // Filter: design roles only
+        if (!isDesignRole(title)) continue
+
+        // Filter: excluded companies
+        if (isExcludedCompany(company, excluded)) continue
+
+        // Filter: timezone — reject if location contains incompatible TZ keywords
+        const locationLower = location.toLowerCase()
+        const hasIncompatibleSignal = INCOMPATIBLE_TZ_KEYWORDS.some(kw => locationLower.includes(kw))
+        if (hasIncompatibleSignal) continue
+
+        // Reject US state abbreviation patterns (e.g. "San Francisco, CA")
+        if (hasUSStateAbbrev(location)) continue
+
+        // Reject short "US" patterns
+        if (/\bUS\b/.test(location) || /\bU\.S\.?\b/i.test(location)) continue
+
+        // Filter: poker / gambling
+        const titleLower = title.toLowerCase()
+        if (titleLower.includes('poker') || titleLower.includes('gambling')) continue
+
+        // Build URL
+        const jobUrl = job.url ?? ''
+        if (!jobUrl) continue
+
+        // Dedup by URL
+        if (seenUrls.has(jobUrl)) continue
+        seenUrls.add(jobUrl)
+
+        // Dedup by company+title
+        const companyTitleKey = `${normalizeForDedup(company)}|${normalizeForDedup(title)}`
+        if (seenCompanyTitle.has(companyTitleKey)) continue
+        seenCompanyTitle.add(companyTitleKey)
+
+        // Strip HTML from description
+        const plainDesc = (job.description ?? '')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, 6000)
+
+        allJobs.push({
+          title,
+          company,
+          location,
+          url: jobUrl,
+          isEasyApply: false,
+          postedDate: job.publication_date ?? new Date().toISOString(),
+          source: 'remotive',
+          description: plainDesc || undefined,
+        })
+      }
+
+      // Random delay between keyword fetches (500-1500ms)
+      await randomDelay(500, 1500)
+    } catch (err) {
+      console.warn(`[scout:remotive] Error for term="${term}": ${(err as Error).message}`)
+    }
+  }
+
+  console.log(`[scout:remotive] Total unique design jobs: ${allJobs.length}`)
+  return allJobs
+}
+
+// ---------------------------------------------------------------------------
+// We Work Remotely (WWR) scraper (RSS feed — no Playwright needed)
+// ---------------------------------------------------------------------------
+
+/**
+ * Scout jobs from We Work Remotely using their public RSS feed.
+ * No Playwright page needed — fetches RSS XML and parses with regex.
+ *
+ * RSS: https://weworkremotely.com/categories/remote-design-jobs.rss
+ * WWR titles are formatted "Company: Job Title" — split on first ":".
+ *
+ * @param keywords - Search terms for post-fetch filtering (WWR RSS has no search param)
+ * @param excludedCompanies - Additional company names to exclude
+ * @returns DiscoveredJob[] with source = 'wwr'
+ */
+export async function scoutWWR(
+  keywords: string[],
+  excludedCompanies: string[] = [],
+): Promise<DiscoveredJob[]> {
+  const allJobs: DiscoveredJob[] = []
+  const seenUrls = new Set<string>()
+  const seenCompanyTitle = new Set<string>()
+
+  const excluded = [...DEFAULT_EXCLUDED, ...excludedCompanies.map(c => c.toLowerCase())]
+
+  const rssUrl = 'https://weworkremotely.com/categories/remote-design-jobs.rss'
+  console.log(`[scout:wwr] Fetching RSS feed: ${rssUrl}`)
+
+  try {
+    const response = await fetch(rssUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; JobScout/1.0)',
+        'Accept': 'application/rss+xml, application/xml, text/xml',
+      },
+    })
+
+    if (!response.ok) {
+      console.warn(`[scout:wwr] HTTP ${response.status}`)
+      return allJobs
+    }
+
+    const xml = await response.text()
+
+    // Parse <item> blocks from RSS XML using regex (no external lib)
+    const itemRegex = /<item>([\s\S]*?)<\/item>/gi
+    const items: string[] = []
+    let itemMatch: RegExpExecArray | null
+    while ((itemMatch = itemRegex.exec(xml)) !== null) {
+      items.push(itemMatch[1])
+    }
+
+    console.log(`[scout:wwr] RSS feed: ${items.length} raw items`)
+
+    for (const itemXml of items) {
+      // Extract fields from each <item> block
+      const extractTag = (tag: string): string => {
+        const match = itemXml.match(new RegExp(`<${tag}>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?<\\/${tag}>`, 'i'))
+        return match ? match[1].trim() : ''
+      }
+
+      const rawTitle = extractTag('title')
+      const link = extractTag('link')
+      const pubDate = extractTag('pubDate')
+      const rawDescription = extractTag('description')
+
+      if (!rawTitle || !link) continue
+
+      // WWR titles are "Company: Job Title" — split on first ":"
+      let company = ''
+      let title = rawTitle
+      const colonIdx = rawTitle.indexOf(':')
+      if (colonIdx > 0) {
+        company = rawTitle.substring(0, colonIdx).trim()
+        title = rawTitle.substring(colonIdx + 1).trim()
+      }
+
+      if (!title) continue
+
+      // Filter: design roles only
+      if (!isDesignRole(title)) continue
+
+      // Filter: excluded companies
+      if (company && isExcludedCompany(company, excluded)) continue
+
+      // Filter: timezone — WWR is US-heavy. Check title + description for incompatible signals.
+      // Accept if no incompatible signal found (remote-first board, similar to RemoteOK logic).
+      const descPlain = rawDescription
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+      const combinedText = `${title} ${company} ${descPlain}`.toLowerCase()
+
+      // Reject if description has strong US/EU/LATAM signals
+      const hasIncompatibleSignal = INCOMPATIBLE_TZ_KEYWORDS.some(kw => combinedText.includes(kw))
+      if (hasIncompatibleSignal) continue
+
+      // Filter: poker / gambling
+      const titleLower = title.toLowerCase()
+      if (titleLower.includes('poker') || titleLower.includes('gambling')) continue
+
+      // Dedup by URL
+      if (seenUrls.has(link)) continue
+      seenUrls.add(link)
+
+      // Dedup by company+title
+      if (company) {
+        const companyTitleKey = `${normalizeForDedup(company)}|${normalizeForDedup(title)}`
+        if (seenCompanyTitle.has(companyTitleKey)) continue
+        seenCompanyTitle.add(companyTitleKey)
+      }
+
+      // Truncate description for qualifier
+      const description = descPlain.slice(0, 6000) || undefined
+
+      allJobs.push({
+        title,
+        company: company || 'Unknown Company',
+        location: 'Remote',
+        url: link,
+        isEasyApply: false,
+        postedDate: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString(),
+        source: 'wwr',
+        description,
+      })
+    }
+  } catch (err) {
+    console.warn(`[scout:wwr] Error fetching RSS: ${(err as Error).message}`)
+  }
+
+  console.log(`[scout:wwr] Total unique design jobs: ${allJobs.length}`)
+  return allJobs
+}
+
+// ---------------------------------------------------------------------------
+// Dribbble Jobs scraper (HTML — needs Playwright page)
+// ---------------------------------------------------------------------------
+
+/**
+ * Scout jobs from Dribbble's job board by scraping their HTML listings.
+ * Requires a Playwright Page for rendering (Dribbble has client-side rendering).
+ *
+ * URL: https://dribbble.com/jobs?keyword={keyword}&location=Anywhere
+ *
+ * @param page - Playwright Page instance
+ * @param keywords - Search keywords, e.g. ['product designer', 'ux designer']
+ * @param excludedCompanies - Additional company names to exclude
+ * @returns DiscoveredJob[] with source = 'dribbble'
+ */
+export async function scoutDribbble(
+  page: Page,
+  keywords: string[],
+  excludedCompanies: string[] = [],
+): Promise<DiscoveredJob[]> {
+  const allJobs: DiscoveredJob[] = []
+  const seenUrls = new Set<string>()
+  const seenCompanyTitle = new Set<string>()
+
+  const excluded = [...DEFAULT_EXCLUDED, ...excludedCompanies.map(c => c.toLowerCase())]
+
+  const searchTerms = keywords.length > 0
+    ? keywords
+    : ['product designer', 'ux designer', 'ui designer']
+
+  for (const term of searchTerms) {
+    const searchUrl = `https://dribbble.com/jobs?keyword=${encodeURIComponent(term)}&location=Anywhere`
+    console.log(`[scout:dribbble] Navigating to: ${searchUrl}`)
+
+    try {
+      await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 })
+      await randomDelay(2000, 4000)
+
+      // Wait for job listing elements to appear
+      await page.waitForSelector(
+        '[class*="job"], [data-testid*="job"], article, [class*="listing"]',
+        { timeout: 10_000 },
+      ).catch(() => {
+        console.log(`[scout:dribbble] No job card selectors found for term="${term}", trying broad extraction`)
+      })
+
+      // Extract job data from the DOM
+      const cards = await page.evaluate(() => {
+        const results: Array<{
+          title: string
+          company: string
+          location: string
+          url: string
+        }> = []
+
+        // Dribbble job cards — try multiple selector strategies
+        const jobElements = document.querySelectorAll(
+          // Known Dribbble job board selectors (may change over time)
+          '[class*="job-card"], [class*="JobCard"], [class*="job-listing"], ' +
+          '[class*="jobs-list"] li, [class*="JobsList"] li, ' +
+          'a[href*="/jobs/"], article[class*="job"], ' +
+          '[data-testid*="job"], [role="listitem"]'
+        )
+
+        // If no specific job elements, try broad link-based approach
+        const elements = jobElements.length > 0
+          ? Array.from(jobElements)
+          : Array.from(document.querySelectorAll('a[href*="/jobs/"]')).map(
+              link => link.closest('li') ?? link.closest('article') ?? link.closest('div') ?? link
+            )
+
+        const seenHrefs = new Set<string>()
+
+        for (const el of elements) {
+          // --- URL: find the job link ---
+          const linkEl = (
+            el.tagName === 'A' ? el : el.querySelector('a[href*="/jobs/"]')
+          ) as HTMLAnchorElement | null
+          const url = linkEl?.href ?? ''
+          if (!url || !url.includes('/jobs/')) continue
+          // Skip duplicate hrefs within this page
+          if (seenHrefs.has(url)) continue
+          seenHrefs.add(url)
+
+          // --- Title: heading or link text ---
+          const titleEl =
+            el.querySelector('h1, h2, h3, h4, h5') ??
+            el.querySelector('[class*="title" i], [class*="role" i], [class*="name" i]') ??
+            linkEl
+          let title = titleEl?.textContent?.trim() ?? ''
+          if (!title) continue
+          if (title.length > 150) title = title.substring(0, 150)
+
+          // --- Company ---
+          let company = ''
+          const companyEl =
+            el.querySelector('[class*="company" i], [class*="Company" i]') ??
+            el.querySelector('[class*="org" i], [class*="employer" i]') ??
+            el.querySelector('span[class*="meta" i], span[class*="info" i]')
+          if (companyEl) {
+            company = companyEl.textContent?.trim() ?? ''
+          }
+          // If company text equals title, it's likely not the company
+          if (company === title) company = ''
+
+          // --- Location ---
+          const locationEl =
+            el.querySelector('[class*="location" i], [class*="Location" i]') ??
+            el.querySelector('[class*="where" i], [class*="place" i]')
+          const location = locationEl?.textContent?.trim() ?? 'Anywhere'
+
+          results.push({ title, company, location, url })
+        }
+
+        return results
+      })
+
+      console.log(`[scout:dribbble] Term "${term}": extracted ${cards.length} cards from DOM`)
+
+      for (const card of cards) {
+        const { title, company, location } = card
+        let { url } = card
+
+        // Ensure absolute URL
+        if (url && !url.startsWith('http')) {
+          url = `https://dribbble.com${url}`
+        }
+
+        // Strip tracking params
+        if (url.includes('?')) {
+          url = url.split('?')[0]
+        }
+
+        // Skip if missing critical fields
+        if (!title || !url) continue
+
+        // Filter: design roles (Dribbble is design-centric but still filter)
+        if (!isDesignRole(title)) continue
+
+        // Filter: excluded companies
+        if (company && isExcludedCompany(company, excluded)) continue
+
+        // Filter: timezone compatibility
+        const locationLower = location.toLowerCase()
+        // Accept "Anywhere" from Dribbble (design-focused remote board)
+        const isAnywhere = locationLower === 'anywhere' || locationLower === 'remote' || locationLower === 'worldwide'
+        if (!isAnywhere) {
+          // Check for incompatible TZ signals
+          const hasIncompatibleSignal = INCOMPATIBLE_TZ_KEYWORDS.some(kw => locationLower.includes(kw))
+          if (hasIncompatibleSignal) continue
+
+          // Reject US state abbreviation patterns
+          if (hasUSStateAbbrev(location)) continue
+
+          // Reject short "US" patterns
+          if (/\bUS\b/.test(location) || /\bU\.S\.?\b/i.test(location)) continue
+        }
+
+        // Filter: poker / gambling
+        const titleLower = title.toLowerCase()
+        if (titleLower.includes('poker') || titleLower.includes('gambling')) continue
+
+        // Dedup by URL
+        if (seenUrls.has(url)) continue
+        seenUrls.add(url)
+
+        // Dedup by company+title
+        if (company) {
+          const companyTitleKey = `${normalizeForDedup(company)}|${normalizeForDedup(title)}`
+          if (seenCompanyTitle.has(companyTitleKey)) continue
+          seenCompanyTitle.add(companyTitleKey)
+        }
+
+        allJobs.push({
+          title,
+          company: company || 'Unknown Company',
+          location: isAnywhere ? 'Remote' : location,
+          url,
+          isEasyApply: false,
+          postedDate: new Date().toISOString(),
+          source: 'dribbble',
+        })
+      }
+
+      await randomDelay(2000, 4000)
+    } catch (err) {
+      console.warn(`[scout:dribbble] Error for term="${term}": ${(err as Error).message}`)
+    }
+  }
+
+  console.log(`[scout:dribbble] Total unique design jobs: ${allJobs.length}`)
+  return allJobs
+}
+
+// ---------------------------------------------------------------------------
+// Jobicy scraper (JSON API — no Playwright needed)
+// ---------------------------------------------------------------------------
+
+/**
+ * Raw shape of a single job from the Jobicy API response.
+ */
+interface JobicyJob {
+  id?: number
+  url?: string
+  jobTitle?: string
+  companyName?: string
+  jobIndustry?: string
+  jobType?: string
+  jobGeo?: string
+  jobLevel?: string
+  jobExcerpt?: string
+  pubDate?: string
+}
+
+/**
+ * Response shape from the Jobicy /api/v2/remote-jobs endpoint.
+ */
+interface JobicyApiResponse {
+  jobs: JobicyJob[]
+}
+
+/**
+ * Scout jobs from Jobicy using their public JSON API.
+ * No Playwright page needed — uses plain fetch().
+ *
+ * API: https://jobicy.com/api/v2/remote-jobs?count=50&industry=design&tag={keyword}
+ *
+ * @param keywords - Search tags, e.g. ['product designer', 'ux designer']
+ * @param excludedCompanies - Additional company names to exclude
+ * @returns DiscoveredJob[] with source = 'jobicy'
+ */
+export async function scoutJobicy(
+  keywords: string[],
+  excludedCompanies: string[] = [],
+): Promise<DiscoveredJob[]> {
+  const allJobs: DiscoveredJob[] = []
+  const seenUrls = new Set<string>()
+  const seenCompanyTitle = new Set<string>()
+
+  const excluded = [...DEFAULT_EXCLUDED, ...excludedCompanies.map(c => c.toLowerCase())]
+
+  const searchTerms = keywords.length > 0
+    ? keywords
+    : ['product designer', 'ux designer', 'ui designer', 'design lead']
+
+  for (const term of searchTerms) {
+    const apiUrl = `https://jobicy.com/api/v2/remote-jobs?count=50&industry=design&tag=${encodeURIComponent(term)}`
+    console.log(`[scout:jobicy] Fetching: ${apiUrl}`)
+
+    try {
+      const response = await fetch(apiUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; JobScout/1.0)',
+          'Accept': 'application/json',
+        },
+      })
+
+      if (!response.ok) {
+        console.warn(`[scout:jobicy] HTTP ${response.status} for term="${term}"`)
+        continue
+      }
+
+      const data: JobicyApiResponse = await response.json()
+      const jobs = data.jobs ?? []
+      console.log(`[scout:jobicy] Term "${term}": ${jobs.length} raw jobs`)
+
+      for (const job of jobs) {
+        const title = job.jobTitle?.trim() ?? ''
+        const company = job.companyName?.trim() ?? ''
+        const location = job.jobGeo?.trim() || 'Remote'
+
+        // Skip if missing critical fields
+        if (!title || !company) continue
+
+        // Filter: design roles only
+        if (!isDesignRole(title)) continue
+
+        // Filter: excluded companies
+        if (isExcludedCompany(company, excluded)) continue
+
+        // Filter: timezone — reject if jobGeo contains incompatible TZ keywords
+        const locationLower = location.toLowerCase()
+        const hasIncompatibleSignal = INCOMPATIBLE_TZ_KEYWORDS.some(kw => locationLower.includes(kw))
+        if (hasIncompatibleSignal) continue
+
+        // Reject US state abbreviation patterns (e.g. "San Francisco, CA")
+        if (hasUSStateAbbrev(location)) continue
+
+        // Reject short "US" patterns
+        if (/\bUS\b/.test(location) || /\bU\.S\.?\b/i.test(location)) continue
+
+        // Filter: poker / gambling
+        const titleLower = title.toLowerCase()
+        const companyLower = company.toLowerCase()
+        if (
+          titleLower.includes('poker') || titleLower.includes('gambling') ||
+          companyLower.includes('poker') || companyLower.includes('gambling')
+        ) continue
+
+        // Build URL
+        const jobUrl = job.url ?? ''
+        if (!jobUrl) continue
+
+        // Dedup by URL
+        if (seenUrls.has(jobUrl)) continue
+        seenUrls.add(jobUrl)
+
+        // Dedup by company+title
+        const companyTitleKey = `${normalizeForDedup(company)}|${normalizeForDedup(title)}`
+        if (seenCompanyTitle.has(companyTitleKey)) continue
+        seenCompanyTitle.add(companyTitleKey)
+
+        // Strip HTML from jobExcerpt
+        const plainDesc = (job.jobExcerpt ?? '')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, 6000)
+
+        allJobs.push({
+          title,
+          company,
+          location,
+          url: jobUrl,
+          isEasyApply: false,
+          postedDate: job.pubDate ?? new Date().toISOString(),
+          source: 'jobicy',
+          description: plainDesc || undefined,
+        })
+      }
+
+      // Random delay between keyword fetches (500-1500ms)
+      await randomDelay(500, 1500)
+    } catch (err) {
+      console.warn(`[scout:jobicy] Error for term="${term}": ${(err as Error).message}`)
+    }
+  }
+
+  console.log(`[scout:jobicy] Total unique design jobs: ${allJobs.length}`)
+  return allJobs
+}
