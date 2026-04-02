@@ -155,9 +155,10 @@ export const applyJobsTask = task({
           if (tokenRes.ok) {
             const tokenData = await tokenRes.json() as { access_token: string }
             profile.gmailAccessToken = tokenData.access_token
-            console.log('[apply-jobs] Gmail access token obtained from refresh token ✅')
+            console.log(`[apply-jobs] Gmail access token obtained from refresh token ✅ (length: ${tokenData.access_token?.length ?? 0})`)
           } else {
-            console.warn(`[apply-jobs] Gmail token exchange failed: ${tokenRes.status}`)
+            const errBody = await tokenRes.text().catch(() => 'no body')
+            console.warn(`[apply-jobs] Gmail token exchange failed: ${tokenRes.status} — ${errBody}`)
           }
         } catch (err) {
           console.warn('[apply-jobs] Gmail token exchange error:', err instanceof Error ? err.message : err)

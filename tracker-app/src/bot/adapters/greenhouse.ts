@@ -336,10 +336,8 @@ export const greenhouse: ATSAdapter = {
               }
             }
 
-            // Wait longer for Remix SPA processing
+            // Wait for Remix SPA processing + server response
             await humanDelay(5000, 8000)
-            }
-            await humanDelay(3000, 5000)
             debugLog.push(`url_final=${page.url().substring(0, 80)}`)
 
             // Check page title/heading for clues
