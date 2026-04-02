@@ -1188,33 +1188,80 @@ async function fetchCodeFromGmail(company: string, accessToken: string): Promise
  * Enter the security code into the verification form.
  */
 async function enterSecurityCode(page: Page, code: string): Promise<void> {
-  const codeInputSelectors = [
-    'input[name*="security_code"]',
-    'input[id*="security_code"]',
-    'input[name*="verification_code"]',
-    'input[id*="verification_code"]',
-    'input[name*="code"]',
-    'input[aria-label*="code" i]',
-    'input[placeholder*="code" i]',
-    // Last resort: any visible text input on the code page
-    'input[type="text"]',
-  ]
-
+  // Strategy 1: OTP-style individual inputs (Greenhouse uses 8 separate input boxes)
+  // These are typically near the "Security code" or "verification code" text
   let codeEntered = false
-  for (const sel of codeInputSelectors) {
-    try {
-      const input = page.locator(sel).first()
-      const visible = await input.isVisible({ timeout: 2000 })
-      if (visible) {
-        await input.click()
-        await humanDelay(200, 400)
-        await input.fill(code)
-        console.log(`[greenhouse] Entered security code in ${sel}`)
-        codeEntered = true
-        break
+
+  try {
+    // Find OTP container: a group of single-char inputs near "security code" text
+    const otpInputs = await page.evaluate(() => {
+      // Look for text mentioning "security code" or "verification code"
+      const allText = document.body.innerText.toLowerCase()
+      if (!allText.includes('security code') && !allText.includes('verification code')) return 0
+
+      // Find groups of small inputs (OTP pattern: multiple inputs with maxlength=1)
+      const inputs = Array.from(document.querySelectorAll('input[maxlength="1"], input[type="text"][autocomplete="one-time-code"]'))
+      if (inputs.length >= 6) return inputs.length
+
+      // Also check for inputs near "security code" label
+      const labels = Array.from(document.querySelectorAll('label, div, span, p'))
+        .filter(el => /security.code|verification.code/i.test(el.textContent || ''))
+      for (const label of labels) {
+        const container = label.closest('div, section, fieldset') || label.parentElement
+        if (container) {
+          const nearbyInputs = container.querySelectorAll('input')
+          if (nearbyInputs.length >= 6) return nearbyInputs.length
+        }
       }
-    } catch {
-      continue
+      return 0
+    })
+
+    if (otpInputs >= 6) {
+      console.log(`[greenhouse] OTP-style code input detected (${otpInputs} boxes) — typing code char by char`)
+      // Click the first OTP input to focus
+      const firstOtp = page.locator('input[maxlength="1"]').first()
+      const firstVisible = await firstOtp.isVisible({ timeout: 2000 }).catch(() => false)
+      if (firstVisible) {
+        await firstOtp.click()
+        await humanDelay(200, 400)
+      }
+      // Type the code character by character — Greenhouse auto-advances to next input
+      await page.keyboard.type(code, { delay: 100 })
+      console.log(`[greenhouse] Typed ${code.length} chars into OTP inputs`)
+      codeEntered = true
+    }
+  } catch (otpErr) {
+    console.warn('[greenhouse] OTP detection error:', otpErr instanceof Error ? otpErr.message : otpErr)
+  }
+
+  // Strategy 2: Single input field (fallback for older Greenhouse)
+  if (!codeEntered) {
+    const codeInputSelectors = [
+      'input[name*="security_code"]',
+      'input[id*="security_code"]',
+      'input[name*="verification_code"]',
+      'input[id*="verification_code"]',
+      'input[autocomplete="one-time-code"]',
+      'input[name*="code"]',
+      'input[aria-label*="code" i]',
+      'input[placeholder*="code" i]',
+    ]
+
+    for (const sel of codeInputSelectors) {
+      try {
+        const input = page.locator(sel).first()
+        const visible = await input.isVisible({ timeout: 2000 })
+        if (visible) {
+          await input.click()
+          await humanDelay(200, 400)
+          await input.fill(code)
+          console.log(`[greenhouse] Entered security code in ${sel}`)
+          codeEntered = true
+          break
+        }
+      } catch {
+        continue
+      }
     }
   }
 
@@ -1223,9 +1270,18 @@ async function enterSecurityCode(page: Page, code: string): Promise<void> {
     return
   }
 
-  // Click the submit/verify button on the security code screen
+  // Click the "Submit application" button (same form, code is inline at bottom)
+  // On job-boards.greenhouse.io, the security code is part of the main form —
+  // NOT a separate screen. The "Submit application" button is the same button.
   await humanDelay(500, 1000)
+  // Scroll to the submit button (it's at the very bottom, past the code input)
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
+  await humanDelay(500, 800)
+
   const codeSubmitSelectors = [
+    'button:has-text("Submit application")',
+    'button:has-text("Submit Application")',
+    '#submit_app',
     'button[type="submit"]',
     'input[type="submit"]',
     'button:has-text("Submit")',
