@@ -1,6 +1,7 @@
 import type { ATSAdapter } from '../types'
 import { greenhouse } from './greenhouse'
 import { lever } from './lever'
+import { workable } from './workable'
 import { ashby } from './ashby'
 import { linkedInEasyApply } from './linkedin-easy-apply'
 import { jobBoardRedirect } from './job-board-redirect'
@@ -17,6 +18,7 @@ import { generic } from './generic'
 export const adapters: ATSAdapter[] = [
   greenhouse,
   lever,
+  workable,
   ashby,
   linkedInEasyApply,
   jobBoardRedirect,
@@ -32,4 +34,4 @@ export function detectAdapter(url: string): ATSAdapter {
   return adapters.find((a) => a.detect(url)) || generic
 }
 
-export { greenhouse, lever, ashby, linkedInEasyApply, jobBoardRedirect, generic }
+export { greenhouse, lever, workable, ashby, linkedInEasyApply, jobBoardRedirect, generic }

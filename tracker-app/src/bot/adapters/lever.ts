@@ -74,6 +74,21 @@ export const lever: ATSAdapter = {
 
       await humanDelay(1000, 2000)
 
+      // Early CAPTCHA bailout: detect hCaptcha before wasting time filling form
+      const hasVisibleCaptcha = await page.locator('iframe[src*="hcaptcha"], .h-captcha, [data-hcaptcha-sitekey]').first().isVisible({ timeout: 3000 }).catch(() => false)
+      if (hasVisibleCaptcha && !process.env.CAPSOLVER_API_KEY) {
+        console.log('[lever] hCaptcha detected on page load, no CapSolver configured — skipping')
+        return {
+          success: false,
+          status: 'skipped' as const,
+          company,
+          role,
+          ats: 'Lever',
+          reason: 'hCaptcha detected before form fill — no solver available',
+          duration: Date.now() - start,
+        }
+      }
+
       // Step 3: Fill name (Lever often has a single "Full name" field)
       await fillName(page, profile)
 

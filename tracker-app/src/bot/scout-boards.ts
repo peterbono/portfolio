@@ -247,6 +247,27 @@ function extractAtsUrlFromHtml(html: string): string | null {
 }
 
 // ---------------------------------------------------------------------------
+// ATS type classifier (exported for use in scout.ts and orchestrator)
+// ---------------------------------------------------------------------------
+
+/**
+ * Classify the ATS type from a job URL by pattern matching on known domains.
+ * Returns null if the URL doesn't match any known ATS pattern.
+ */
+export function classifyAtsFromUrl(url: string): string | null {
+  if (!url) return null
+  const lower = url.toLowerCase()
+  if (lower.includes('lever.co') || lower.includes('jobs.lever')) return 'lever'
+  if (lower.includes('greenhouse.io') || lower.includes('boards.greenhouse')) return 'greenhouse'
+  if (lower.includes('ashbyhq.com')) return 'ashby'
+  if (lower.includes('workable.com')) return 'workable'
+  if (lower.includes('teamtailor.com')) return 'teamtailor'
+  if (lower.includes('breezy.hr')) return 'breezy'
+  if (lower.includes('linkedin.com/jobs')) return 'linkedin'
+  return null
+}
+
+// ---------------------------------------------------------------------------
 // RemoteOK scraper (JSON API — no Playwright needed)
 // ---------------------------------------------------------------------------
 
@@ -387,6 +408,7 @@ export async function scoutRemoteOK(
           postedDate: job.date ?? new Date().toISOString(),
           source: 'remoteok',
           description: plainDesc || undefined,
+          ats: classifyAtsFromUrl(atsUrlFromDesc ?? '') ?? classifyAtsFromUrl(jobUrl) ?? undefined,
         })
       }
 
@@ -855,6 +877,7 @@ export async function scoutWellfound(
           postedDate: card.postedDate ?? new Date().toISOString(),
           source: 'wellfound',
           description,
+          ats: classifyAtsFromUrl(url) ?? undefined,
         })
       }
 
@@ -1022,6 +1045,7 @@ export async function scoutHimalayas(
             postedDate,
             source: 'himalayas',
             description: plainDesc || undefined,
+            ats: classifyAtsFromUrl(jobUrl) ?? undefined,
           })
         }
 
@@ -1176,6 +1200,7 @@ export async function scoutRemotive(
           postedDate: job.publication_date ?? new Date().toISOString(),
           source: 'remotive',
           description: plainDesc || undefined,
+          ats: classifyAtsFromUrl(jobUrl) ?? undefined,
         })
       }
 
@@ -1348,6 +1373,7 @@ export async function scoutWWR(
         postedDate: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString(),
         source: 'wwr',
         description,
+        ats: classifyAtsFromUrl(link) ?? undefined,
       })
     }
   } catch (err) {
@@ -1539,6 +1565,7 @@ export async function scoutDribbble(
           isEasyApply: false,
           postedDate: new Date().toISOString(),
           source: 'dribbble',
+          ats: classifyAtsFromUrl(url) ?? undefined,
         })
       }
 
@@ -1686,6 +1713,7 @@ export async function scoutJobicy(
           postedDate: job.pubDate ?? new Date().toISOString(),
           source: 'jobicy',
           description: plainDesc || undefined,
+          ats: classifyAtsFromUrl(jobUrl) ?? undefined,
         })
       }
 

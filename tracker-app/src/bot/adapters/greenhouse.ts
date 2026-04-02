@@ -71,6 +71,23 @@ export const greenhouse: ATSAdapter = {
 
       await humanDelay(1000, 2000)
 
+      // Early CAPTCHA bailout: detect reCAPTCHA before filling form
+      const hasVisibleRecaptcha = await page.locator('.g-recaptcha, [data-sitekey], iframe[src*="recaptcha"]').first().isVisible({ timeout: 3000 }).catch(() => false)
+      if (hasVisibleRecaptcha && !process.env.CAPSOLVER_API_KEY) {
+        console.log('[greenhouse] reCAPTCHA detected on page load, no CapSolver configured — skipping')
+        const screenshot = await takeScreenshot(page)
+        return {
+          success: false,
+          status: 'skipped' as const,
+          company,
+          role,
+          ats: 'Greenhouse',
+          reason: 'reCAPTCHA detected before form fill — no solver available',
+          screenshotUrl: screenshot,
+          duration: Date.now() - start,
+        }
+      }
+
       // Step 3: Fill basic fields
       await fillBasicFields(page, profile)
 

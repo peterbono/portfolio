@@ -153,6 +153,23 @@ export const applyJobTask = task({
             }],
           })
 
+          // Sort qualified jobs by ATS priority: Lever first, Ashby last
+          const ATS_PRIORITY: Record<string, number> = {
+            lever: 1,
+            workable: 2,
+            greenhouse: 3,
+            teamtailor: 4,
+            breezy: 4,
+            linkedin: 5,
+            ashby: 99,
+          }
+          qualifiedJobs.sort((a, b) => {
+            const pa = ATS_PRIORITY[a.ats ?? ''] ?? 6
+            const pb = ATS_PRIORITY[b.ats ?? ''] ?? 6
+            if (pa !== pb) return pa - pb
+            return (b.score ?? 0) - (a.score ?? 0)
+          })
+
           // Trigger apply-jobs as a child task
           const applyJobsPayload = {
             userId: payload.userId,
@@ -162,6 +179,7 @@ export const applyJobTask = task({
               role: j.title,
               coverLetterSnippet: j.coverLetterSnippet || '',
               matchScore: j.score,
+              ats: j.ats,
             })),
             userProfile: payload.userProfile || {},
             linkedInCookie: payload.linkedInCookie,

@@ -16,6 +16,7 @@ export interface DiscoveredJob {
   matchScore?: number
   source?: 'linkedin' | 'indeed' | 'remoteok' | 'wellfound' | 'himalayas' | 'remotive' | 'wwr' | 'dribbble' | 'jobicy'
   description?: string // Pre-fetched JD (e.g. RemoteOK API provides full description)
+  ats?: string // ATS type classification (lever, greenhouse, ashby, workable, etc.)
 }
 
 export interface ScoutResult {
@@ -831,6 +832,7 @@ export async function scoutJobs(
       isEasyApply: card.isEasyApply,
       postedDate: card.postedDate || new Date().toISOString(),
       source: 'linkedin',
+      ats: 'linkedin',
     })
   }
 

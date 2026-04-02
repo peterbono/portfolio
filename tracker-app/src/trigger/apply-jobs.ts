@@ -23,6 +23,7 @@ export interface ApplyJobPayload {
   role: string
   coverLetterSnippet: string
   matchScore: number
+  ats?: string
 }
 
 export interface ApplyJobResult {

@@ -103,6 +103,7 @@ export interface QualifiedJobOutput {
   score: number
   matchReasons: string[]
   coverLetterSnippet: string
+  ats?: string
 }
 
 /** Cost estimate breakdown for a pipeline run */
@@ -130,6 +131,7 @@ export interface PipelineResult {
     url: string
     isEasyApply: boolean
     source?: string
+    ats?: string
   }>
   qualifiedJobs?: QualifiedJobOutput[]
 }
@@ -1110,6 +1112,7 @@ export async function runPipeline(config: PipelineConfig & { onProgress?: (p: Pi
       url: j.url,
       isEasyApply: j.isEasyApply,
       source: j.source,
+      ats: j.ats,
     }))
 
     qualifiedJobsOutput = qualifiedJobs.map(qj => ({
@@ -1128,6 +1131,7 @@ export async function runPipeline(config: PipelineConfig & { onProgress?: (p: Pi
         qj.job.location || null,
       ].filter((r): r is string => r !== null),
       coverLetterSnippet: qj.qualification.coverLetterSnippet,
+      ats: qj.job.ats,
     }))
 
     // Phase 3 (Apply) disabled — will be a separate user-triggered action
