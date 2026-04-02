@@ -337,7 +337,8 @@ export const applyJobsTask = task({
           }
 
           // SBR proxy can intermittently return 502 (no_peer, probe_timeout, domain limit).
-          // Retry up to 2 times with SBR, then fall back to local Chromium.
+          // Retry up to 2 times with SBR, then fall back to local Chromium + 2Captcha.
+          // Strategy: SBR is PRIMARY (solves hCaptcha natively), 2Captcha is FALLBACK for local Chromium.
           const MAX_SBR_RETRIES = 2
           let attempt = 0
           let applyResult: ApplyResult | null = null
@@ -349,6 +350,7 @@ export const applyJobsTask = task({
 
             // On final retry with SBR, or if SBR already failed twice:
             // try local Chromium as fallback (Greenhouse/Lever don't need residential proxy)
+            // For Lever: MAX_SBR_RETRIES=0, so attempt 1 > 0 → always goes local
             let pageContext = ats.context
             let localBrowser: Awaited<ReturnType<typeof chromium.launch>> | null = null
 
