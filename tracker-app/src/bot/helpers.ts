@@ -184,6 +184,98 @@ export async function solveHCaptchaViaCapsolver(
 }
 
 /**
+ * Solve a reCAPTCHA v2 challenge using CapSolver's API.
+ *
+ * Requires the CAPSOLVER_API_KEY environment variable to be set.
+ * Returns the reCAPTCHA response token on success, or null on failure.
+ */
+export async function solveReCaptchaViaCapsolver(
+  websiteUrl: string,
+  websiteKey: string,
+): Promise<string | null> {
+  const apiKey = process.env.CAPSOLVER_API_KEY
+  if (!apiKey) {
+    console.log('[capsolver] CAPSOLVER_API_KEY not set — skipping reCAPTCHA solve')
+    return null
+  }
+
+  console.log(`[capsolver] Creating ReCaptchaV2TaskProxyless for ${websiteUrl} (siteKey: ${websiteKey})`)
+
+  try {
+    const createResponse = await fetch(CAPSOLVER_CREATE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        clientKey: apiKey,
+        task: {
+          type: 'ReCaptchaV2TaskProxyless',
+          websiteURL: websiteUrl,
+          websiteKey,
+        },
+      }),
+    })
+
+    if (!createResponse.ok) {
+      console.warn(`[capsolver] reCAPTCHA createTask HTTP error: ${createResponse.status}`)
+      return null
+    }
+
+    const createData = (await createResponse.json()) as {
+      errorId: number; errorCode?: string; errorDescription?: string; taskId?: string
+    }
+
+    if (createData.errorId !== 0 || !createData.taskId) {
+      console.warn(`[capsolver] reCAPTCHA createTask failed: ${createData.errorCode} — ${createData.errorDescription}`)
+      return null
+    }
+
+    const taskId = createData.taskId
+    console.log(`[capsolver] reCAPTCHA task created: ${taskId} — polling...`)
+
+    for (let attempt = 0; attempt < CAPSOLVER_MAX_POLL_ATTEMPTS; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, CAPSOLVER_POLL_INTERVAL_MS))
+
+      const resultResponse = await fetch(CAPSOLVER_RESULT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientKey: apiKey, taskId }),
+      })
+
+      if (!resultResponse.ok) continue
+
+      const resultData = (await resultResponse.json()) as {
+        errorId: number; errorCode?: string; status: 'idle' | 'processing' | 'ready'
+        solution?: { gRecaptchaResponse?: string }
+      }
+
+      if (resultData.errorId !== 0) {
+        console.warn(`[capsolver] reCAPTCHA error: ${resultData.errorCode}`)
+        return null
+      }
+
+      if (resultData.status === 'ready') {
+        const token = resultData.solution?.gRecaptchaResponse
+        if (token) {
+          console.log(`[capsolver] reCAPTCHA solved (token length: ${token.length})`)
+          return token
+        }
+        return null
+      }
+
+      if (attempt % 5 === 0) {
+        console.log(`[capsolver] reCAPTCHA still solving... (${attempt + 1}/${CAPSOLVER_MAX_POLL_ATTEMPTS})`)
+      }
+    }
+
+    console.warn('[capsolver] reCAPTCHA timed out')
+    return null
+  } catch (error) {
+    console.error('[capsolver] reCAPTCHA error:', error instanceof Error ? error.message : error)
+    return null
+  }
+}
+
+/**
  * Inject an hCaptcha token into the page DOM and dispatch the necessary events
  * so the form recognizes the CAPTCHA as solved.
  *

@@ -15,6 +15,7 @@ import {
   checkForConfirmation,
   scrollToElement,
   solveCaptchaIfPresent,
+  solveReCaptchaViaCapsolver,
 } from '../helpers'
 
 const TIMEOUT = 180_000 // 3 minutes
@@ -94,16 +95,59 @@ export const greenhouse: ATSAdapter = {
       await humanDelay(1000, 2000)
 
       // Step 9.5: Solve CAPTCHA if present (some Greenhouse forms use reCAPTCHA)
+      let captchaSolved = false
       try {
-        const captchaSolved = await solveCaptchaIfPresent(page, 30_000)
+        captchaSolved = await solveCaptchaIfPresent(page, 30_000)
         if (captchaSolved) {
           console.log('[greenhouse] ✅ CAPTCHA solved via SBR')
           await humanDelay(1000, 2000)
         } else {
-          console.log('[greenhouse] No CAPTCHA detected or not using SBR')
+          console.log('[greenhouse] SBR CAPTCHA solve returned false — trying CapSolver fallback')
         }
       } catch (captchaErr) {
-        console.warn('[greenhouse] CAPTCHA solving failed:', captchaErr instanceof Error ? captchaErr.message : captchaErr)
+        console.warn('[greenhouse] SBR CAPTCHA failed:', captchaErr instanceof Error ? captchaErr.message : captchaErr)
+      }
+
+      // Step 9.6: CapSolver fallback for reCAPTCHA v2 (when SBR didn't solve it)
+      if (!captchaSolved) {
+        try {
+          const siteKey = await page.evaluate(() => {
+            const el = document.querySelector('.g-recaptcha[data-sitekey], [data-sitekey]')
+            return el?.getAttribute('data-sitekey') ?? null
+          })
+          if (siteKey) {
+            console.log(`[greenhouse] reCAPTCHA detected (siteKey: ${siteKey}) — solving via CapSolver`)
+            const token = await solveReCaptchaViaCapsolver(page.url(), siteKey)
+            if (token) {
+              await page.evaluate((t) => {
+                const textarea = document.querySelector('#g-recaptcha-response, textarea[name="g-recaptcha-response"]') as HTMLTextAreaElement | null
+                if (textarea) {
+                  textarea.style.display = 'block'
+                  textarea.value = t
+                  textarea.dispatchEvent(new Event('change', { bubbles: true }))
+                }
+                // Also try the callback approach
+                if (typeof (window as any).___grecaptcha_cfg !== 'undefined') {
+                  const clients = (window as any).___grecaptcha_cfg?.clients
+                  if (clients) {
+                    for (const client of Object.values(clients) as any[]) {
+                      for (const val of Object.values(client) as any[]) {
+                        if (val?.callback && typeof val.callback === 'function') {
+                          val.callback(t)
+                        }
+                      }
+                    }
+                  }
+                }
+              }, token)
+              captchaSolved = true
+              console.log('[greenhouse] ✅ reCAPTCHA solved via CapSolver')
+              await humanDelay(1000, 2000)
+            }
+          }
+        } catch (capsolverErr) {
+          console.warn('[greenhouse] CapSolver reCAPTCHA fallback failed:', capsolverErr instanceof Error ? capsolverErr.message : capsolverErr)
+        }
       }
 
       // Step 10: Submit
