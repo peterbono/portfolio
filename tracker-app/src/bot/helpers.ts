@@ -1062,44 +1062,133 @@ export async function extractRoleTitle(page: Page): Promise<string> {
 
 /**
  * Check if a confirmation/success message appeared after submission.
+ *
+ * Uses a multi-signal approach to prevent false positives:
+ *  - Negative signals (visible form, submit button, errors) → instant false
+ *  - Requires at least 2 of 3 positive signals: text match, URL change, no form visible
+ *  - Single text match alone is NOT enough (prevents Greenhouse/Lever false positives)
+ *
+ * @param page - Playwright page
+ * @param originalUrl - The job URL before submission (used to detect URL change)
  */
-export async function checkForConfirmation(page: Page): Promise<boolean> {
+export async function checkForConfirmation(page: Page, originalUrl?: string): Promise<boolean> {
   // Wait a moment for any post-submit redirect/render
   await new Promise(r => setTimeout(r, 2000))
 
-  // ── Strategy: text-based patterns are reliable, CSS class patterns are NOT ──
-  // Removed `[class*="success"]` and `[class*="confirmation"]` — these are WAY
-  // too broad and match CSS utility classes (e.g. `btn-success`, `form-success`)
-  // that have nothing to do with application confirmation.  This was causing
-  // false-positive "applied" claims with no email confirmation.
+  // ══════════════════════════════════════════════════════════════════════════
+  // PHASE 1: NEGATIVE SIGNALS — if any are present, return false immediately
+  // ══════════════════════════════════════════════════════════════════════════
 
+  // 1a. Submit button still visible → form was NOT submitted
+  const submitButtonSelectors = [
+    'button:has-text("Submit Application")',
+    'button:has-text("Submit application")',
+    'button:has-text("Submit your application")',
+    'input[type="submit"][value*="Submit"]',
+    'button[type="submit"]:has-text("Submit")',
+    'button:has-text("Apply for this job")',
+    'button:has-text("Send Application")',
+    'button:has-text("Send application")',
+  ]
+  for (const sel of submitButtonSelectors) {
+    try {
+      const visible = await page.locator(sel).first().isVisible({ timeout: 1000 })
+      if (visible) {
+        console.log(`[checkForConfirmation] ❌ Negative signal: submit button still visible → "${sel}"`)
+        return false
+      }
+    } catch {
+      // Not found — good
+    }
+  }
+
+  // 1b. Validation errors visible → form has errors, not submitted
+  const errorSelectors = [
+    '.field--error',
+    '.field-error',
+    '[class*="validation-error"]',
+    '[class*="form-error"]',
+    '[aria-invalid="true"]',
+    '.error-message',
+  ]
+  for (const sel of errorSelectors) {
+    try {
+      const visible = await page.locator(sel).first().isVisible({ timeout: 1000 })
+      if (visible) {
+        console.log(`[checkForConfirmation] ❌ Negative signal: validation error visible → "${sel}"`)
+        return false
+      }
+    } catch {
+      // Not found — good
+    }
+  }
+
+  // 1c. Security code input visible → still on verification screen
+  try {
+    const securityCodeVisible = await page.locator(
+      'input[name*="security_code"], input[name*="securityCode"], input[placeholder*="security code" i], input[placeholder*="enter code" i]'
+    ).first().isVisible({ timeout: 1000 })
+    if (securityCodeVisible) {
+      console.log('[checkForConfirmation] ❌ Negative signal: security code input still visible')
+      return false
+    }
+  } catch {
+    // Not found — good
+  }
+
+  // 1d. Required fields still unfilled → form not submitted
+  try {
+    const emptyRequiredCount = await page.evaluate(() => {
+      const required = document.querySelectorAll('input[required], select[required], textarea[required]')
+      let emptyCount = 0
+      required.forEach((el) => {
+        const input = el as HTMLInputElement
+        if (input.offsetParent !== null && !input.value) emptyCount++
+      })
+      return emptyCount
+    })
+    if (emptyRequiredCount >= 2) {
+      console.log(`[checkForConfirmation] ❌ Negative signal: ${emptyRequiredCount} unfilled required fields`)
+      return false
+    }
+  } catch {
+    // Can't evaluate — continue
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // PHASE 2: POSITIVE SIGNALS — collect signals, require at least 2 of 3
+  // ══════════════════════════════════════════════════════════════════════════
+
+  let textSignal = false
+  let urlSignal = false
+  let noFormSignal = false
+
+  let matchedPattern = ''
+
+  // ── Signal 1: Text-based confirmation patterns ──
+  // Only high-confidence patterns that explicitly reference a COMPLETED application.
+  // Removed overly broad patterns like "has been received", "We appreciate your interest"
   const successPatterns = [
-    // ---------- Text patterns (high confidence) ----------
+    // ---------- Explicit submission confirmation ----------
     'text=Application submitted',
     'text=application has been received',
     'text=successfully submitted',
     'text=Thanks for applying',
     'text=thanks for applying',
     'text=Thank you for applying',
-    'text=Thank you for your interest',
     'text=Thank you for your application',
     'text=We have received your application',
     'text=Your application has been submitted',
     'text=Your application was submitted successfully',
     'text=You have successfully applied',
     'text=Application successfully submitted',
-    'text=Application received',
-    'text=application received',
     'text=We got your application',
     'text=received your submission',
-    'text=We appreciate your interest',
-    'text=has been received',
-    // Lever-specific
+    // Lever-specific (confirmed real confirmation pages)
     'text=Thanks for your interest',
-    'text=Your application to',
     'text=Application has been submitted',
     'text=we are delighted that you would consider',
-    // Greenhouse-specific
+    // Greenhouse-specific (confirmed real confirmation pages)
     'text=Your application has been received',
     'text=we will review it right away',
     // Generic ATS
@@ -1114,7 +1203,6 @@ export async function checkForConfirmation(page: Page): Promise<boolean> {
     '.msg-success',
     '.application-complete',
     '[data-test="confirmation"]',
-    '.confirmation',
   ]
 
   for (const pattern of successPatterns) {
@@ -1122,47 +1210,107 @@ export async function checkForConfirmation(page: Page): Promise<boolean> {
       const element = page.locator(pattern).first()
       const visible = await element.isVisible({ timeout: 2000 })
       if (visible) {
-        console.log(`[checkForConfirmation] ✅ Match found: ${pattern}`)
-        return true
+        textSignal = true
+        matchedPattern = pattern
+        console.log(`[checkForConfirmation] 📝 Text signal: "${pattern}"`)
+        break
       }
     } catch {
       // Continue checking
     }
   }
 
-  // ---------- "Thank you" text check — ONLY in the main content area ----------
-  // Avoid matching header/footer "Thank you for visiting" type text.
-  // Require "thank you" near application-related words.
-  try {
-    const bodyText = await page.locator('main, #content, .content, [role="main"], body').first()
-      .textContent({ timeout: 2000 }).catch(() => '')
-    if (bodyText) {
-      const lower = bodyText.toLowerCase()
-      const hasThankYou = lower.includes('thank you') || lower.includes('merci')
-      const hasApplicationContext = lower.includes('application') || lower.includes('apply') ||
-        lower.includes('candidature') || lower.includes('submitted') || lower.includes('received')
-      if (hasThankYou && hasApplicationContext) {
-        console.log('[checkForConfirmation] ✅ "Thank you" + application context found in body text')
-        return true
+  // "Thank you" text check — ONLY in the main content area, with application context
+  if (!textSignal) {
+    try {
+      const bodyText = await page.locator('main, #content, .content, [role="main"], body').first()
+        .textContent({ timeout: 2000 }).catch(() => '')
+      if (bodyText) {
+        const lower = bodyText.toLowerCase()
+        const hasThankYou = lower.includes('thank you') || lower.includes('merci')
+        const hasApplicationContext = lower.includes('application') || lower.includes('apply') ||
+          lower.includes('candidature') || lower.includes('submitted') || lower.includes('received')
+        if (hasThankYou && hasApplicationContext) {
+          textSignal = true
+          matchedPattern = 'body text: "thank you" + application context'
+          console.log('[checkForConfirmation] 📝 Text signal: "Thank you" + application context in body')
+        }
       }
+    } catch {
+      // Continue
     }
-  } catch {
-    // Continue
   }
 
-  // ---------- URL-based detection ----------
-  // Only match confirmation-specific URL paths (not just "success" anywhere)
-  const url = page.url().toLowerCase()
-  if (
-    url.includes('/thank') ||
-    url.includes('/confirmation') ||
-    url.includes('/application-submitted') ||
-    url.includes('/applied') ||
-    url.includes('/success') ||
-    url.includes('/complete')
-  ) {
-    console.log(`[checkForConfirmation] ✅ Confirmation URL detected: ${url}`)
+  // ── Signal 2: URL changed from original job URL ──
+  // A real submission typically redirects to a /thank-you, /confirmation, or different page
+  const currentUrl = page.url().toLowerCase()
+  const normalizedOriginal = originalUrl?.toLowerCase()?.split('?')[0]?.split('#')[0] ?? ''
+  const normalizedCurrent = currentUrl.split('?')[0].split('#')[0]
+
+  if (normalizedOriginal && normalizedCurrent !== normalizedOriginal) {
+    urlSignal = true
+    console.log(`[checkForConfirmation] 📝 URL signal: changed from "${normalizedOriginal}" to "${normalizedCurrent}"`)
+  }
+
+  // Bonus: URL contains confirmation-specific path segments (strong signal)
+  const confirmationUrlPaths = [
+    '/thank',
+    '/confirmation',
+    '/application-submitted',
+    '/applied',
+  ]
+  // NOTE: /success and /complete removed — too broad (match generic SPA routes)
+  const hasConfirmationPath = confirmationUrlPaths.some(p => currentUrl.includes(p))
+  if (hasConfirmationPath) {
+    urlSignal = true
+    console.log(`[checkForConfirmation] 📝 URL signal: confirmation path detected in "${currentUrl}"`)
+  }
+
+  // ── Signal 3: No application form visible ──
+  // If the form is gone, it was likely submitted successfully
+  try {
+    const formVisible = await page.evaluate(() => {
+      // Check for visible form elements that would indicate the form is still present
+      const forms = document.querySelectorAll('form')
+      for (const form of forms) {
+        if (form.offsetParent === null) continue // hidden form
+        const inputs = form.querySelectorAll('input:not([type="hidden"]), select, textarea')
+        // Only count forms with multiple inputs (actual application forms, not search bars)
+        if (inputs.length >= 3) return true
+      }
+      return false
+    })
+    if (!formVisible) {
+      noFormSignal = true
+      console.log('[checkForConfirmation] 📝 No-form signal: application form no longer visible')
+    }
+  } catch {
+    // Can't evaluate — don't count this signal
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // PHASE 3: DECISION — require at least 2 of 3 signals
+  // ══════════════════════════════════════════════════════════════════════════
+
+  const signalCount = [textSignal, urlSignal, noFormSignal].filter(Boolean).length
+  const signals = [
+    textSignal ? `text("${matchedPattern}")` : null,
+    urlSignal ? 'url_changed' : null,
+    noFormSignal ? 'no_form' : null,
+  ].filter(Boolean).join(' + ')
+
+  console.log(`[checkForConfirmation] Signals: ${signalCount}/3 — ${signals || 'none'}`)
+
+  if (signalCount >= 2) {
+    console.log(`[checkForConfirmation] ✅ Confirmed (${signalCount} signals: ${signals})`)
     return true
+  }
+
+  // Special case: if text match is from a VERY high-confidence pattern AND url also has
+  // a confirmation path, that's already 2 signals counted above. But if we only have 1
+  // signal, log it for debugging and return false.
+  if (signalCount === 1) {
+    console.log(`[checkForConfirmation] ⚠️ Only 1 signal (${signals}) — NOT confirming (need 2+)`)
   }
 
   return false

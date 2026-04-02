@@ -113,7 +113,7 @@ export const generic: ATSAdapter = {
 
       // Step 9: Check for confirmation
       await humanDelay(2000, 4000)
-      const confirmed = await checkForConfirmation(page)
+      const confirmed = await checkForConfirmation(page, jobUrl)
 
       if (confirmed) {
         return {

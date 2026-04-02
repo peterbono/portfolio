@@ -166,7 +166,7 @@ export const lever: ATSAdapter = {
 
       // Step 14: Check confirmation (SBR might have been enough)
       await humanDelay(2000, 4000)
-      let confirmed = await checkForConfirmation(page)
+      let confirmed = await checkForConfirmation(page, jobUrl)
 
       if (confirmed) {
         return {
@@ -218,7 +218,7 @@ export const lever: ATSAdapter = {
             }
 
             // Check confirmation again
-            confirmed = await checkForConfirmation(page)
+            confirmed = await checkForConfirmation(page, jobUrl)
             if (confirmed) {
               return {
                 success: true,

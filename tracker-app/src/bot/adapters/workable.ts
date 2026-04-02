@@ -134,7 +134,7 @@ export const workable: ATSAdapter = {
 
       // Step 13: Wait and check for confirmation
       await humanDelay(3000, 5000)
-      const confirmed = await checkForConfirmation(page)
+      const confirmed = await checkForConfirmation(page, jobUrl)
 
       if (confirmed) {
         console.log('[workable] Application confirmed!')

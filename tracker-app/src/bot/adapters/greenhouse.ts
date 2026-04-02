@@ -205,7 +205,7 @@ export const greenhouse: ATSAdapter = {
 
       // Step 11: Wait for page to settle after submission (Greenhouse may redirect to code page)
       await humanDelay(4000, 7000)
-      const confirmed = await checkForConfirmation(page)
+      const confirmed = await checkForConfirmation(page, jobUrl)
 
       if (confirmed) {
         return {
@@ -346,12 +346,12 @@ export const greenhouse: ATSAdapter = {
             debugLog.push(`title=${pageTitle.substring(0, 50)}`)
             debugLog.push(`h1=${(h1Text || '?').substring(0, 50)}`)
 
-            let confirmedAfterCode = await checkForConfirmation(page)
+            let confirmedAfterCode = await checkForConfirmation(page, jobUrl)
             debugLog.push(`confirmed1=${confirmedAfterCode}`)
             if (!confirmedAfterCode) {
               console.log('[greenhouse] No confirmation yet after security code — waiting 5s and retrying...')
               await humanDelay(5000, 7000)
-              confirmedAfterCode = await checkForConfirmation(page)
+              confirmedAfterCode = await checkForConfirmation(page, jobUrl)
               debugLog.push(`confirmed2=${confirmedAfterCode}`)
             }
             if (confirmedAfterCode) {
@@ -456,7 +456,7 @@ export const greenhouse: ATSAdapter = {
             await humanDelay(1000, 2000)
             await submitForm(page)
             await humanDelay(3000, 5000)
-            const confirmedLate = await checkForConfirmation(page)
+            const confirmedLate = await checkForConfirmation(page, jobUrl)
             return {
               success: confirmedLate,
               status: confirmedLate ? 'applied' : 'needs_manual',
