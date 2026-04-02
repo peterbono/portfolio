@@ -179,14 +179,11 @@ export const lever: ATSAdapter = {
         }
       }
 
-      // Step 14.5: CapSolver fallback — try if SBR did not solve the CAPTCHA
-      // Check for hCaptcha presence on the page (visible iframe or error message)
-      if (!captchaSolvedViaSBR) {
-        const hcaptchaDetected = await page.locator(
-          'iframe[src*="hcaptcha.com"], [class*="h-captcha"], .error:has-text("verif"), .error:has-text("captcha")',
-        ).first().isVisible({ timeout: 3000 }).catch(() => false)
-
-        if (hcaptchaDetected || !confirmed) {
+      // Step 14.5: CapSolver fallback — try if submission didn't confirm
+      // Lever uses INVISIBLE hCaptcha that blocks submit silently — no visible iframe.
+      // Always attempt CapSolver if: no SBR solve AND no confirmation detected.
+      if (!captchaSolvedViaSBR && !confirmed) {
+        {
           console.log('[lever] Attempting CapSolver hCaptcha fallback...')
 
           // Extract hCaptcha site key from the page, or use the known Lever default
