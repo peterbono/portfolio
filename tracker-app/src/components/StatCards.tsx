@@ -30,6 +30,7 @@ const CARD_ORDER: Array<{ key: StatusFilterValue; label?: string; icon?: string;
   { key: 'rejected' },
   { key: 'skipped' },
   { key: 'ghosted' },
+  { key: 'expired' },
   { key: 'withdrawn' },
 ]
 

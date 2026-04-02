@@ -11,6 +11,7 @@ export type JobStatus =
   | 'negotiation'
   | 'withdrawn'
   | 'ghosted'
+  | 'expired'
 
 export type EventType =
   | 'email'
@@ -70,8 +71,9 @@ export const STATUS_CONFIG: Record<JobStatus, { label: string; color: string; bg
   negotiation:  { label: 'Negotiation',  color: '#f59e0b', bg: '#2a1a05', border: '#78350f', icon: '💰' },
   withdrawn:    { label: 'Withdrawn',    color: '#52525b', bg: '#131316', border: '#1e1e24', icon: '🚪' },
   ghosted:      { label: 'Ghosted',      color: '#3f3f46', bg: '#131316', border: '#1e1e24', icon: '👻' },
+  expired:      { label: 'Expired',      color: '#71717a', bg: '#18181b', border: '#27272a', icon: '⏰' },
 }
 
 export const ACTIVE_STATUSES: JobStatus[] = ['submitted', 'screening', 'interviewing', 'challenge', 'offer', 'negotiation']
-export const INACTIVE_STATUSES: JobStatus[] = ['rejected', 'withdrawn', 'ghosted', 'skipped']
+export const INACTIVE_STATUSES: JobStatus[] = ['rejected', 'withdrawn', 'ghosted', 'skipped', 'expired']
 export const PENDING_STATUSES: JobStatus[] = ['manual', 'saved']

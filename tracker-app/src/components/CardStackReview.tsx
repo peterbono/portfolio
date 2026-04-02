@@ -14,7 +14,7 @@ interface ReviewQueueItem {
   cvName: string
   coverLetterSnippet: string
   coverLetterVariant?: string
-  status: 'pending' | 'approved' | 'skipped' | 'submitting' | 'submitted' | 'failed' | 'expired' | 'needs_manual'
+  status: 'pending' | 'approved' | 'skipped' | 'submitting' | 'submitted' | 'failed' | 'expired' | 'needs_manual' | 'unmatched'
   editedCoverLetter?: string
   editedAnswers?: Record<string, string>
   jobUrl?: string

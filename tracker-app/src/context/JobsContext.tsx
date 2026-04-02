@@ -20,6 +20,7 @@ import {
   getTimeThreshold,
   computeMarkSubmitted,
   computeMarkRejected,
+  computeAutoExpiration,
   type Overrides,
 } from './jobs-logic'
 
@@ -160,11 +161,34 @@ export function JobsProvider({ children }: { children: ReactNode }) {
     saveOverrides(overrides)
   }, [overrides])
 
+  // ─── Auto-expiration: run on mount and every 6 hours ───
+  useEffect(() => {
+    function runAutoExpiration() {
+      setOverrides((prev) => {
+        const result = computeAutoExpiration(prev, allJobs)
+        return result ?? prev // return same ref if no changes (avoids re-render)
+      })
+    }
+    // Run once on mount (slight delay to let allJobs settle)
+    const initialTimer = setTimeout(runAutoExpiration, 500)
+    // Run every 6 hours
+    const interval = setInterval(runAutoExpiration, 6 * 60 * 60 * 1000)
+    return () => {
+      clearTimeout(initialTimer)
+      clearInterval(interval)
+    }
+  }, [allJobs])
+
   const updateJobStatus = useCallback((id: string, status: JobStatus) => {
-    setOverrides((prev) => ({
-      ...prev,
-      [id]: { ...prev[id], status },
-    }))
+    setOverrides((prev) => {
+      const existing = prev[id] ?? {}
+      // Clear _autoExpired flag — this is a manual user action
+      const { _autoExpired: _, ...rest } = existing as Record<string, unknown>
+      return {
+        ...prev,
+        [id]: { ...rest, status } as Partial<Job>,
+      }
+    })
   }, [])
 
   const updateJobField = useCallback((id: string, field: string, value: string) => {
@@ -224,7 +248,7 @@ export function JobsProvider({ children }: { children: ReactNode }) {
     const allStatuses: JobStatus[] = [
       'submitted', 'manual', 'skipped', 'saved',
       'rejected', 'screening', 'interviewing', 'challenge',
-      'offer', 'negotiation', 'withdrawn', 'ghosted',
+      'offer', 'negotiation', 'withdrawn', 'ghosted', 'expired',
     ]
     for (const s of allStatuses) c[s] = 0
     for (const job of jobs) {

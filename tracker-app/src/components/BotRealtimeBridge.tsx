@@ -118,8 +118,9 @@ export function BotRealtimeBridge() {
           )
           if (exists) return
 
-          // Fetch the linked application to get the status
+          // Fetch the linked application to get the status and applied_at date
           let status: JobStatus = 'submitted'
+          let appliedAt: string | null = null
           try {
             const { data: appData } = await supabase
               .from('applications')
@@ -130,6 +131,7 @@ export function BotRealtimeBridge() {
 
             if (appData) {
               status = toJobStatus(appData.status)
+              appliedAt = appData.applied_at
             }
           } catch {
             // Application might not be inserted yet (race condition).
@@ -139,12 +141,13 @@ export function BotRealtimeBridge() {
           if (!mounted) return
 
           // Build the Job object and add to context
+          // Prefer applied_at (actual submission date) over created_at (listing discovery date)
           const job: Job = {
             id: `bot-${listingId}`,
             company,
             role,
             status,
-            date: ((row.created_at as string) ?? new Date().toISOString()).split('T')[0],
+            date: (appliedAt ?? (row.created_at as string) ?? new Date().toISOString()).split('T')[0],
             location: (row.location as string) ?? '',
             salary: (row.salary as string) ?? '',
             ats: (row.ats as string) ?? '',

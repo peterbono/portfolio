@@ -168,7 +168,7 @@ function EditableStatusCell({ job }: { job: Job }) {
 
   const allStatuses: JobStatus[] = [
     'submitted', 'manual', 'screening', 'interviewing', 'challenge',
-    'offer', 'negotiation', 'rejected', 'withdrawn', 'ghosted', 'skipped',
+    'offer', 'negotiation', 'rejected', 'withdrawn', 'ghosted', 'expired', 'skipped',
   ]
 
   return (
@@ -675,7 +675,7 @@ function BulkStatusDropdown({ onSelect, onClose }: { onSelect: (status: JobStatu
   const ref = useRef<HTMLDivElement>(null)
   const allStatuses: JobStatus[] = [
     'submitted', 'manual', 'screening', 'interviewing', 'challenge',
-    'offer', 'negotiation', 'rejected', 'withdrawn', 'ghosted', 'skipped',
+    'offer', 'negotiation', 'rejected', 'withdrawn', 'ghosted', 'expired', 'skipped',
   ]
 
   useEffect(() => {

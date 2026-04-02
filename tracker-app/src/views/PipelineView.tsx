@@ -727,7 +727,7 @@ function TouchStatusDropdown({ job, onStatusChange, onClose }: {
   const ref = useRef<HTMLDivElement>(null)
   const statuses: JobStatus[] = [
     'manual', 'submitted', 'screening', 'interviewing', 'challenge',
-    'offer', 'negotiation', 'rejected', 'withdrawn',
+    'offer', 'negotiation', 'rejected', 'withdrawn', 'expired',
   ]
 
   useEffect(() => {

@@ -7,7 +7,7 @@ import type { Job, JobStatus, JobEvent, EventType } from '../types/job'
 /* ── Types ─────────────────────────────────────────────────────────── */
 
 export interface Overrides {
-  [jobId: string]: Partial<Job> & { _deleted?: boolean }
+  [jobId: string]: Partial<Job> & { _deleted?: boolean; _autoExpired?: boolean }
 }
 
 export type TimeRange = 'all' | 'today' | 'week' | 'month' | '3months'
@@ -245,6 +245,96 @@ export function computeMarkRejected(
   }
 
   return next
+}
+
+/* ── Auto-expiration heuristics ───────────────────────────────────── */
+
+/** Statuses that should never be auto-expired (active pipeline stages) */
+const PROTECTED_STATUSES: Set<JobStatus> = new Set([
+  'screening', 'interviewing', 'challenge', 'offer', 'negotiation',
+  'rejected', 'withdrawn', 'ghosted', 'expired', 'skipped',
+])
+
+/** Days after which a 'manual' (to-submit) job is considered expired */
+const MANUAL_EXPIRE_DAYS = 30
+/** Days after which a 'submitted' job with no activity is considered ghosted */
+const SUBMITTED_GHOST_DAYS = 45
+
+/**
+ * Returns the latest activity date for a job: max of job.date,
+ * job.lastContactDate, and all event dates.
+ */
+function getLatestActivityDate(job: Job): string {
+  const candidates = [job.date]
+  if (job.lastContactDate) candidates.push(job.lastContactDate.split('T')[0])
+  if (job.events && job.events.length > 0) {
+    for (const ev of job.events) {
+      if (ev.date) candidates.push(ev.date.split('T')[0])
+    }
+  }
+  return candidates.reduce((a, b) => (a > b ? a : b))
+}
+
+/**
+ * Pure function: computes override patches for auto-expiration.
+ * - 'manual'/'saved' jobs older than 30 days -> 'expired'
+ * - 'submitted' jobs older than 45 days with no activity -> 'ghosted'
+ * Only applies to jobs where the user has NOT manually set a status override.
+ *
+ * The `_autoExpired` flag is stored alongside each auto-transition so we
+ * can distinguish bot-set statuses from user-set ones. If the user later
+ * manually changes the status, their override.status will differ from the
+ * auto-set value, and we will not re-override it.
+ */
+export function computeAutoExpiration(
+  prev: Overrides,
+  allJobs: Job[],
+): Overrides | null {
+  const now = new Date()
+  let changed = false
+  const next = { ...prev }
+
+  for (const job of allJobs) {
+    const override = prev[job.id]
+    const effectiveStatus = (override?.status ?? job.status) as JobStatus
+
+    // Never touch protected statuses
+    if (PROTECTED_STATUSES.has(effectiveStatus)) continue
+
+    // If the user explicitly set a status via override (and it wasn't set by
+    // auto-expiration), respect it — do not override.
+    if (override?.status && !(override as Record<string, unknown>)._autoExpired) continue
+
+    const latestActivity = getLatestActivityDate(job)
+    const activityDate = new Date(latestActivity + 'T00:00:00')
+    const daysSinceActivity = Math.floor(
+      (now.getTime() - activityDate.getTime()) / (1000 * 60 * 60 * 24)
+    )
+
+    if (
+      (effectiveStatus === 'manual' || effectiveStatus === 'saved') &&
+      daysSinceActivity >= MANUAL_EXPIRE_DAYS
+    ) {
+      next[job.id] = {
+        ...next[job.id],
+        status: 'expired' as JobStatus,
+        _autoExpired: true,
+      } as Partial<Job> & { _autoExpired?: boolean }
+      changed = true
+    } else if (
+      effectiveStatus === 'submitted' &&
+      daysSinceActivity >= SUBMITTED_GHOST_DAYS
+    ) {
+      next[job.id] = {
+        ...next[job.id],
+        status: 'ghosted' as JobStatus,
+        _autoExpired: true,
+      } as Partial<Job> & { _autoExpired?: boolean }
+      changed = true
+    }
+  }
+
+  return changed ? next : null
 }
 
 /* ── Area detection helpers ────────────────────────────────────────── */

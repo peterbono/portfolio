@@ -47,7 +47,7 @@ function getRejectionDate(job: { lastContactDate?: string; date: string; events?
 // Only statuses that appear in the pipeline — no Easy Apply, no saved
 const ALLOWED_STATUSES: JobStatus[] = [
   'manual', 'submitted', 'screening', 'interviewing', 'challenge',
-  'offer', 'negotiation', 'rejected', 'withdrawn', 'ghosted', 'skipped',
+  'offer', 'negotiation', 'rejected', 'withdrawn', 'ghosted', 'expired', 'skipped',
 ]
 
 export function DetailDrawer() {

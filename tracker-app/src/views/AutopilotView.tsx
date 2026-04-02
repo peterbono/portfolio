@@ -335,7 +335,7 @@ interface ReviewQueueItem {
   cvName: string
   coverLetterSnippet: string
   coverLetterVariant?: string
-  status: 'pending' | 'approved' | 'skipped' | 'submitting' | 'submitted' | 'failed' | 'expired' | 'needs_manual'
+  status: 'pending' | 'approved' | 'skipped' | 'submitting' | 'submitted' | 'failed' | 'expired' | 'needs_manual' | 'unmatched'
   submittingStartedAt?: number
   editedCoverLetter?: string
   editedAnswers?: Record<string, string>
@@ -521,6 +521,41 @@ function formatActivityTime(iso: string): string {
   } catch {
     return '--:--'
   }
+}
+
+/** Normalize a URL for comparison: lowercase, strip protocol, www, trailing slash, query params, hash */
+function normalizeUrlForMatch(url: string): string {
+  try {
+    let s = url.trim().toLowerCase()
+    // Remove protocol
+    s = s.replace(/^https?:\/\//, '')
+    // Remove www.
+    s = s.replace(/^www\./, '')
+    // Remove query params and hash
+    s = s.split('?')[0].split('#')[0]
+    // Remove trailing slash
+    s = s.replace(/\/+$/, '')
+    return s
+  } catch {
+    return url.trim().toLowerCase()
+  }
+}
+
+/** Fuzzy company name match: normalize whitespace, case, punctuation, and allow substring */
+function fuzzyCompanyMatch(a: string | undefined, b: string): boolean {
+  if (!a) return false
+  const normalize = (s: string) => s.toLowerCase().trim()
+    .replace(/[.,\-_()&]/g, ' ')  // replace punctuation with space
+    .replace(/\s+/g, ' ')          // collapse whitespace
+    .trim()
+  const na = normalize(a)
+  const nb = normalize(b)
+  if (na === nb) return true
+  // Substring match: one contains the other (handles "Acme Inc" vs "Acme" or "Acme Inc.")
+  if (na.length >= 3 && nb.length >= 3) {
+    if (na.includes(nb) || nb.includes(na)) return true
+  }
+  return false
 }
 
 function formatActivityText(item: BotActivityItem): string {
@@ -1967,6 +2002,21 @@ function ApplicationReviewCard({
           <div style={reviewStyles.statusLabel}>
             <AlertTriangle size={12} color="#f59e0b" />
             <span style={{ color: '#f59e0b', fontSize: 12, fontWeight: 600 }}>Needs Manual</span>
+          </div>
+          <button
+            style={reviewStyles.btnUndo}
+            onClick={() => onUndo(item.id)}
+            title="Retry — move back to approved"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+      {item.status === 'unmatched' && (
+        <div style={reviewStyles.cardActions}>
+          <div style={reviewStyles.statusLabel}>
+            <AlertTriangle size={12} color="#8b5cf6" />
+            <span style={{ color: '#8b5cf6', fontSize: 12, fontWeight: 600 }}>Unmatched</span>
           </div>
           <button
             style={reviewStyles.btnUndo}
@@ -4140,23 +4190,24 @@ export function AutopilotView() {
     setReviewQueue(prev => prev.map(item => {
       if (item.status !== 'submitting') return item
 
-      // Primary: match by URL (most reliable, handles same company with different roles)
-      let matchingResult = item.jobUrl
-        ? results.find(r => r.url && r.url === item.jobUrl)
+      // Primary: match by normalized URL (handles http/https, www, trailing slash, query params)
+      const itemUrlNorm = item.jobUrl ? normalizeUrlForMatch(item.jobUrl) : ''
+      let matchingResult = itemUrlNorm
+        ? results.find(r => r.url && normalizeUrlForMatch(r.url) === itemUrlNorm)
         : undefined
 
-      // Fallback: match by company + role (for results that don't include URL)
+      // Fallback: match by fuzzy company + case-insensitive role
       if (!matchingResult) {
         matchingResult = results.find(r =>
-          r.company?.toLowerCase().trim() === item.company.toLowerCase().trim() &&
+          fuzzyCompanyMatch(r.company, item.company) &&
           r.role?.toLowerCase().trim() === item.role.toLowerCase().trim()
         )
       }
 
-      // Last resort: match by company name only (legacy results without URL/role)
+      // Last resort: match by fuzzy company name only (legacy results without URL/role)
       if (!matchingResult) {
         matchingResult = results.find(r =>
-          r.company?.toLowerCase().trim() === item.company.toLowerCase().trim()
+          fuzzyCompanyMatch(r.company, item.company)
         )
       }
 
@@ -4168,16 +4219,24 @@ export function AutopilotView() {
         if (s === 'expired' || s === 'already_applied') {
           return { ...item, status: 'expired' as const, submittingStartedAt: undefined }
         }
-        // needs_manual → distinct status so user can distinguish from hard failures
         if (s === 'needs_manual') {
           return { ...item, status: 'needs_manual' as const, submittingStartedAt: undefined }
         }
-        // error, timeout, failed, skipped → mark as failed
+        // Map 'skipped' bot result to 'skipped' queue status (not 'failed')
+        if (s === 'skipped') {
+          return { ...item, status: 'skipped' as const, submittingStartedAt: undefined }
+        }
+        // error, timeout, failed → mark as failed
         return { ...item, status: 'failed' as const, submittingStartedAt: undefined }
       }
 
-      // No matching result found — if run COMPLETED, mark failed (job was lost/unprocessed)
-      // If run FAILED/CRASHED, also mark failed
+      // No matching result found
+      if (polledRunStatus === 'COMPLETED') {
+        // Run completed but bot didn't return a result for this item — mark as 'unmatched'
+        // so user can distinguish from actual failures and retry manually
+        return { ...item, status: 'unmatched' as const, submittingStartedAt: undefined }
+      }
+      // Run FAILED/CRASHED/TIMED_OUT — mark as failed (run itself broke)
       return { ...item, status: 'failed' as const, submittingStartedAt: undefined }
     }))
 
@@ -4231,12 +4290,10 @@ export function AutopilotView() {
       setReviewQueue(prev => prev.map(item => {
         if (item.status !== 'submitting') return item
 
-        // Match by URL (primary) or company+role (fallback)
-        const urlMatch = url && item.jobUrl && (
-          url === item.jobUrl ||
-          url.split('?')[0] === item.jobUrl.split('?')[0]
-        )
-        const nameMatch = company?.toLowerCase().trim() === item.company.toLowerCase().trim() &&
+        // Match by normalized URL (primary) or fuzzy company+role (fallback)
+        const urlMatch = url && item.jobUrl &&
+          normalizeUrlForMatch(url) === normalizeUrlForMatch(item.jobUrl)
+        const nameMatch = fuzzyCompanyMatch(company, item.company) &&
           role?.toLowerCase().trim() === item.role.toLowerCase().trim()
 
         if (!urlMatch && !nameMatch) return item
@@ -4249,6 +4306,10 @@ export function AutopilotView() {
         }
         if (status === 'needs_manual' || status === 'auth_wall') {
           return { ...item, status: 'needs_manual' as const, submittingStartedAt: undefined }
+        }
+        // Map 'skipped' to 'skipped' (not 'failed')
+        if (status === 'skipped') {
+          return { ...item, status: 'skipped' as const, submittingStartedAt: undefined }
         }
         return { ...item, status: 'failed' as const, submittingStartedAt: undefined }
       }))
@@ -5207,8 +5268,8 @@ export function AutopilotView() {
                 else if (isFailed) progressPct = 0
                 else if (activeRunType === 'apply') {
                   // Apply run: progress based on submitted/total items
-                  const totalApply = reviewQueue.filter(i => i.status === 'submitting' || i.status === 'submitted' || i.status === 'failed' || i.status === 'needs_manual').length
-                  const doneApply = reviewQueue.filter(i => i.status === 'submitted' || i.status === 'failed' || i.status === 'needs_manual').length
+                  const totalApply = reviewQueue.filter(i => i.status === 'submitting' || i.status === 'submitted' || i.status === 'failed' || i.status === 'needs_manual' || i.status === 'unmatched').length
+                  const doneApply = reviewQueue.filter(i => i.status === 'submitted' || i.status === 'failed' || i.status === 'needs_manual' || i.status === 'unmatched').length
                   if (metaPhase === 'done') progressPct = 100
                   else if (metaProcessed > 0 && metaTotal > 0) progressPct = Math.round((metaProcessed / metaTotal) * 90) + 5
                   else if (totalApply > 0) progressPct = Math.round((doneApply / totalApply) * 90) + 5
@@ -5240,6 +5301,7 @@ export function AutopilotView() {
                 const appliedTotal = (polledRunOutput?.applied as number | undefined) ?? 0
                 const needsManualTotal = reviewQueue.filter(i => i.status === 'needs_manual').length
                 const failedTotal = reviewQueue.filter(i => i.status === 'failed').length
+                const unmatchedTotal = reviewQueue.filter(i => i.status === 'unmatched').length
                 const applyAllFailed = isComplete && isApplyRun && appliedTotal === 0
                 const statusText = isApplyRun
                   ? (isFailed ? 'Application failed'
@@ -5394,6 +5456,9 @@ export function AutopilotView() {
                               )}
                               {failedTotal > 0 && (
                                 <> &middot; <span style={{ color: '#f43f5e' }}>{failedTotal} failed</span></>
+                              )}
+                              {unmatchedTotal > 0 && (
+                                <> &middot; <span style={{ color: '#8b5cf6' }}>{unmatchedTotal} unmatched</span></>
                               )}
                             </>
                           ) : (
