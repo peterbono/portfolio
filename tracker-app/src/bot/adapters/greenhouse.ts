@@ -232,8 +232,12 @@ export const greenhouse: ATSAdapter = {
           const code = await pollForSecurityCode(company, profile.gmailAccessToken || 'proxy-only', 45_000)
           if (code) {
             console.log(`[greenhouse] Got security code: ${code.substring(0, 3)}***`)
+            const debugLog: string[] = []
+            debugLog.push(`code=${code.substring(0, 3)}***`)
             await enterSecurityCode(page, code)
+            debugLog.push('code_entered')
             await humanDelay(1000, 2000)
+            debugLog.push(`url_after_code=${page.url().substring(0, 80)}`)
 
             // reCAPTCHA resets after security code — must solve again before re-submit
             try {
@@ -271,19 +275,30 @@ export const greenhouse: ATSAdapter = {
             }
 
             const resubmitted = await submitForm(page)
+            debugLog.push(`resubmit=${resubmitted}`)
+            debugLog.push(`url_after_resubmit=${page.url().substring(0, 80)}`)
             if (!resubmitted) {
               console.warn('[greenhouse] Could not find submit/verify button after security code — trying Enter key')
               await page.keyboard.press('Enter')
+              debugLog.push('enter_key_pressed')
               await humanDelay(2000, 3000)
             }
             await humanDelay(3000, 5000)
+            debugLog.push(`url_final=${page.url().substring(0, 80)}`)
+
+            // Check page title/heading for clues
+            const pageTitle = await page.title().catch(() => '?')
+            const h1Text = await page.locator('h1, h2').first().textContent({ timeout: 2000 }).catch(() => '?')
+            debugLog.push(`title=${pageTitle.substring(0, 50)}`)
+            debugLog.push(`h1=${(h1Text || '?').substring(0, 50)}`)
 
             let confirmedAfterCode = await checkForConfirmation(page)
+            debugLog.push(`confirmed1=${confirmedAfterCode}`)
             if (!confirmedAfterCode) {
-              // Retry with longer wait — Greenhouse can be slow to render confirmation
               console.log('[greenhouse] No confirmation yet after security code — waiting 5s and retrying...')
               await humanDelay(5000, 7000)
               confirmedAfterCode = await checkForConfirmation(page)
+              debugLog.push(`confirmed2=${confirmedAfterCode}`)
             }
             if (confirmedAfterCode) {
               return {
@@ -292,7 +307,7 @@ export const greenhouse: ATSAdapter = {
                 company,
                 role,
                 ats: 'Greenhouse',
-                reason: 'Applied after security code verification',
+                reason: `Applied after security code [${debugLog.join('|')}]`,
                 duration: Date.now() - start,
               }
             }
@@ -322,7 +337,7 @@ export const greenhouse: ATSAdapter = {
               company,
               role,
               ats: 'Greenhouse',
-              reason: 'Submitted after security code but no confirmation — verify manually',
+              reason: `Submitted after security code but no confirmation [${debugLog.join('|')}]`,
               screenshotUrl: noConfirmScreenshot2,
               duration: Date.now() - start,
             }
