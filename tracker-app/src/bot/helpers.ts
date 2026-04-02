@@ -1047,18 +1047,28 @@ export async function checkForConfirmation(page: Page): Promise<boolean> {
     'text=successfully submitted',
     'text=Thanks for applying',
     'text=thanks for applying',
+    'text=Thank you for applying',
+    'text=Thank you for your interest',
+    'text=Thank you for your application',
     'text=We have received your application',
     'text=Your application has been submitted',
+    'text=Your application was submitted successfully',
+    'text=You have successfully applied',
+    'text=Application successfully submitted',
     'text=Application received',
     'text=application received',
     'text=We got your application',
     'text=received your submission',
+    'text=We appreciate your interest',
+    'text=has been received',
     // Lever-specific
     'text=Thanks for your interest',
     'text=Your application to',
     'text=Application has been submitted',
+    'text=we are delighted that you would consider',
     // Greenhouse-specific
     'text=Your application has been received',
+    'text=we will review it right away',
     // Generic ATS
     'text=You\'re all set',
     'text=Application complete',
@@ -1068,11 +1078,10 @@ export async function checkForConfirmation(page: Page): Promise<boolean> {
     '.confirmation-message',
     '.flash-success',
     '#application_confirmation',
-    // Lever confirmation page has a specific class
     '.msg-success',
     '.application-complete',
-    // Greenhouse confirmation page
-    '#application_confirmation',
+    '[data-test="confirmation"]',
+    '.confirmation',
   ]
 
   for (const pattern of successPatterns) {
@@ -1115,7 +1124,9 @@ export async function checkForConfirmation(page: Page): Promise<boolean> {
     url.includes('/thank') ||
     url.includes('/confirmation') ||
     url.includes('/application-submitted') ||
-    url.includes('/applied')
+    url.includes('/applied') ||
+    url.includes('/success') ||
+    url.includes('/complete')
   ) {
     console.log(`[checkForConfirmation] ✅ Confirmation URL detected: ${url}`)
     return true

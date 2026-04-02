@@ -1219,12 +1219,43 @@ export async function scoutWWR(
   console.log(`[scout:wwr] Fetching RSS feed: ${rssUrl}`)
 
   try {
-    const response = await fetch(rssUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; JobScout/1.0)',
-        'Accept': 'application/rss+xml, application/xml, text/xml',
-      },
-    })
+    // Use Bright Data residential proxy if available (WWR blocks datacenter IPs)
+    const proxyAuth = (typeof process !== 'undefined' && process.env?.BRIGHTDATA_RESIDENTIAL_AUTH) || ''
+    let response: Response
+
+    if (proxyAuth) {
+      console.log('[scout:wwr] Using Bright Data residential proxy')
+      const proxyUrl = `http://${proxyAuth}@brd.superproxy.io:22225`
+      // Use HTTP CONNECT via proxy — fetch through undici ProxyAgent if available,
+      // otherwise fall back to direct fetch with proxy headers
+      try {
+        const { ProxyAgent } = await import('undici')
+        const agent = new ProxyAgent(proxyUrl)
+        response = await fetch(rssUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'application/rss+xml, application/xml, text/xml',
+          },
+          // @ts-expect-error -- undici dispatcher works with Node fetch
+          dispatcher: agent,
+        })
+      } catch {
+        console.warn('[scout:wwr] ProxyAgent failed, trying direct fetch')
+        response = await fetch(rssUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'application/rss+xml, application/xml, text/xml',
+          },
+        })
+      }
+    } else {
+      response = await fetch(rssUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'application/rss+xml, application/xml, text/xml',
+        },
+      })
+    }
 
     if (!response.ok) {
       console.warn(`[scout:wwr] HTTP ${response.status}`)

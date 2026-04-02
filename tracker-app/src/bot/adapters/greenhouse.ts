@@ -120,25 +120,36 @@ export const greenhouse: ATSAdapter = {
             const token = await solveReCaptchaViaCapsolver(page.url(), siteKey)
             if (token) {
               await page.evaluate((t) => {
-                const textarea = document.querySelector('#g-recaptcha-response, textarea[name="g-recaptcha-response"]') as HTMLTextAreaElement | null
-                if (textarea) {
-                  textarea.style.display = 'block'
-                  textarea.value = t
-                  textarea.dispatchEvent(new Event('change', { bubbles: true }))
+                // Inject token into all g-recaptcha-response textareas
+                const textareas = document.querySelectorAll('#g-recaptcha-response, textarea[name="g-recaptcha-response"]')
+                for (const ta of textareas) {
+                  const el = ta as HTMLTextAreaElement
+                  el.style.display = 'block'
+                  el.value = t
+                  el.dispatchEvent(new Event('change', { bubbles: true }))
                 }
-                // Also try the callback approach
+
+                // Deep-walk ___grecaptcha_cfg to find and invoke callbacks (nested 3-6 levels deep)
                 if (typeof (window as any).___grecaptcha_cfg !== 'undefined') {
-                  const clients = (window as any).___grecaptcha_cfg?.clients
-                  if (clients) {
-                    for (const client of Object.values(clients) as any[]) {
-                      for (const val of Object.values(client) as any[]) {
-                        if (val?.callback && typeof val.callback === 'function') {
-                          val.callback(t)
-                        }
+                  const findAndInvokeCallbacks = (obj: any, depth = 0): void => {
+                    if (!obj || depth > 8 || typeof obj !== 'object') return
+                    for (const val of Object.values(obj)) {
+                      if (typeof val === 'function') {
+                        try { (val as Function)(t) } catch {}
+                      } else if (typeof val === 'object') {
+                        findAndInvokeCallbacks(val, depth + 1)
                       }
                     }
                   }
+                  findAndInvokeCallbacks((window as any).___grecaptcha_cfg.clients)
                 }
+
+                // Also try grecaptcha.enterprise.execute if available
+                try {
+                  const gr = (window as any).grecaptcha
+                  if (gr?.enterprise?.execute) gr.enterprise.execute()
+                  else if (gr?.execute) gr.execute()
+                } catch {}
               }, token)
               captchaSolved = true
               console.log('[greenhouse] ✅ reCAPTCHA solved via CapSolver')

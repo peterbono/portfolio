@@ -187,22 +187,35 @@ export const applyJobsTask = task({
       console.warn("[apply-jobs] Could not create bot run in DB:", err)
     }
 
-    // ---------- Separate LinkedIn vs ATS jobs ----------
-    const linkedInJobs = jobsToApply.filter((j) => /linkedin\.com\/jobs/i.test(j.url))
-    const atsJobs = jobsToApply.filter((j) => !/linkedin\.com\/jobs/i.test(j.url))
-
-    console.log(`[apply-jobs] ${atsJobs.length} ATS jobs, ${linkedInJobs.length} LinkedIn jobs`)
-
-    // ---------- Launch browsers ----------
-    // ATS jobs: use Bright Data Scraping Browser (or local fallback)
-    // LinkedIn Easy Apply: always local Chromium + cookie injection
-    const SBR_AUTH = (process.env.BRIGHTDATA_SBR_AUTH || '').trim() || undefined
-
     const results: ApplyJobResult[] = []
     let applied = 0
     let skipped = 0
     let failed = 0
     let needsManual = 0
+
+    // ---------- Pre-filter Ashby jobs (CSP blocks headless — always skipped) ----------
+    const ashbyJobs = jobsToApply.filter((j) => /ashbyhq\.com/i.test(j.url))
+    const nonAshbyJobs = jobsToApply.filter((j) => !/ashbyhq\.com/i.test(j.url))
+    if (ashbyJobs.length > 0) {
+      console.log(`[apply-jobs] Pre-filtered ${ashbyJobs.length} Ashby jobs (CSP blocks headless)`)
+      for (const aj of ashbyJobs) {
+        results.push({
+          url: aj.url, company: aj.company, role: aj.role, ats: 'Ashby',
+          status: 'skipped', reason: 'Ashby blocks headless browsers — filtered before apply',
+          durationMs: 0,
+        })
+        skipped++
+      }
+    }
+
+    // ---------- Separate LinkedIn vs ATS jobs ----------
+    const linkedInJobs = nonAshbyJobs.filter((j) => /linkedin\.com\/jobs/i.test(j.url))
+    const atsJobs = nonAshbyJobs.filter((j) => !/linkedin\.com\/jobs/i.test(j.url))
+
+    console.log(`[apply-jobs] ${atsJobs.length} ATS jobs, ${linkedInJobs.length} LinkedIn jobs, ${ashbyJobs.length} Ashby (pre-filtered)`)
+
+    // ---------- Launch browsers ----------
+    const SBR_AUTH = (process.env.BRIGHTDATA_SBR_AUTH || '').trim() || undefined
 
     // ---------- Wrap entire job processing in try/finally ----------
     // Ensures updateBotRun ALWAYS executes even if browsers crash or unhandled errors occur.
