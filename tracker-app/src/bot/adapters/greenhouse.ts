@@ -92,7 +92,12 @@ export const greenhouse: ATSAdapter = {
       await fillBasicFields(page, profile)
 
       // Step 4: Upload CV
-      await uploadCV(page, profile)
+      try {
+        await uploadCV(page, profile)
+        console.log('[greenhouse] ✅ CV upload step completed')
+      } catch (cvErr) {
+        console.warn('[greenhouse] ⚠️ CV upload failed:', cvErr instanceof Error ? cvErr.message : cvErr)
+      }
 
       // Step 5: Fill LinkedIn URL
       await fillLinkedIn(page, profile)
@@ -547,7 +552,19 @@ async function fillBasicFields(page: Page, profile: ApplicantProfile): Promise<v
 
 async function uploadCV(page: Page, profile: ApplicantProfile): Promise<void> {
   try {
-    const cvBuffer = await downloadCV(page, profile.cvUrl)
+    console.log(`[greenhouse:uploadCV] Downloading CV from: ${profile.cvUrl}`)
+    let cvBuffer: Buffer
+    try {
+      cvBuffer = await downloadCV(page, profile.cvUrl)
+      console.log(`[greenhouse:uploadCV] CV downloaded: ${cvBuffer.length} bytes`)
+    } catch (dlErr) {
+      // Fallback: try native fetch if browser context fails
+      console.warn(`[greenhouse:uploadCV] Browser download failed: ${dlErr instanceof Error ? dlErr.message : dlErr} — trying native fetch`)
+      const res = await fetch(profile.cvUrl)
+      if (!res.ok) throw new Error(`Native fetch failed: ${res.status}`)
+      cvBuffer = Buffer.from(await res.arrayBuffer())
+      console.log(`[greenhouse:uploadCV] CV downloaded via native fetch: ${cvBuffer.length} bytes`)
+    }
 
     // Greenhouse resume upload selectors
     const fileInputSelectors = [
@@ -564,10 +581,12 @@ async function uploadCV(page: Page, profile: ApplicantProfile): Promise<void> {
         const exists = await page.locator(sel).first().count()
         if (exists > 0) {
           await uploadFile(page, sel, cvBuffer, 'Florian_Gouloubi_CV.pdf')
+          console.log(`[greenhouse:uploadCV] ✅ CV uploaded via: ${sel}`)
           await humanDelay(1000, 2000)
           return
         }
-      } catch {
+      } catch (uploadErr) {
+        console.warn(`[greenhouse:uploadCV] Upload failed with ${sel}:`, uploadErr instanceof Error ? uploadErr.message : uploadErr)
         continue
       }
     }
