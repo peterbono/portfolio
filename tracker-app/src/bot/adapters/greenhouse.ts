@@ -1131,6 +1131,7 @@ async function enterSecurityCode(page: Page, code: string): Promise<void> {
     'input[type="text"]',
   ]
 
+  let codeEntered = false
   for (const sel of codeInputSelectors) {
     try {
       const input = page.locator(sel).first()
@@ -1140,6 +1141,40 @@ async function enterSecurityCode(page: Page, code: string): Promise<void> {
         await humanDelay(200, 400)
         await input.fill(code)
         console.log(`[greenhouse] Entered security code in ${sel}`)
+        codeEntered = true
+        break
+      }
+    } catch {
+      continue
+    }
+  }
+
+  if (!codeEntered) {
+    console.warn('[greenhouse] Could not find security code input field')
+    return
+  }
+
+  // Click the submit/verify button on the security code screen
+  await humanDelay(500, 1000)
+  const codeSubmitSelectors = [
+    'button[type="submit"]',
+    'input[type="submit"]',
+    'button:has-text("Submit")',
+    'button:has-text("Verify")',
+    'button:has-text("Confirm")',
+    'button:has-text("Continue")',
+    'input[value="Submit"]',
+    'input[value="Verify"]',
+  ]
+
+  for (const sel of codeSubmitSelectors) {
+    try {
+      const btn = page.locator(sel).first()
+      const visible = await btn.isVisible({ timeout: 2000 })
+      if (visible) {
+        await btn.click()
+        console.log(`[greenhouse] Clicked security code submit button: ${sel}`)
+        await humanDelay(3000, 5000)
         return
       }
     } catch {
@@ -1147,5 +1182,8 @@ async function enterSecurityCode(page: Page, code: string): Promise<void> {
     }
   }
 
-  console.warn('[greenhouse] Could not find security code input field')
+  // Fallback: press Enter
+  console.warn('[greenhouse] No security code submit button found — pressing Enter')
+  await page.keyboard.press('Enter')
+  await humanDelay(3000, 5000)
 }
