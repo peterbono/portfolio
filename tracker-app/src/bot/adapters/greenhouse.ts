@@ -108,16 +108,20 @@ export const greenhouse: ATSAdapter = {
         console.warn('[greenhouse] SBR CAPTCHA failed:', captchaErr instanceof Error ? captchaErr.message : captchaErr)
       }
 
-      // Step 9.6: CapSolver fallback for reCAPTCHA v2 (when SBR didn't solve it)
+      // Step 9.6: CapSolver fallback for reCAPTCHA v2 / v2 Enterprise (when SBR didn't solve it)
       if (!captchaSolved) {
         try {
-          const siteKey = await page.evaluate(() => {
+          const { siteKey, isEnterprise } = await page.evaluate(() => {
             const el = document.querySelector('.g-recaptcha[data-sitekey], [data-sitekey]')
-            return el?.getAttribute('data-sitekey') ?? null
+            const key = el?.getAttribute('data-sitekey') ?? null
+            // Detect Enterprise: grecaptcha.enterprise namespace or enterprise script src
+            const hasEnterpriseApi = typeof (window as any).grecaptcha?.enterprise?.execute === 'function'
+            const hasEnterpriseScript = !!document.querySelector('script[src*="enterprise.js"], script[src*="enterprise"]')
+            return { siteKey: key, isEnterprise: hasEnterpriseApi || hasEnterpriseScript }
           })
           if (siteKey) {
-            console.log(`[greenhouse] reCAPTCHA detected (siteKey: ${siteKey}) — solving via CapSolver`)
-            const token = await solveReCaptchaViaCapsolver(page.url(), siteKey)
+            console.log(`[greenhouse] reCAPTCHA detected (siteKey: ${siteKey}, enterprise: ${isEnterprise}) — solving via CapSolver`)
+            const token = await solveReCaptchaViaCapsolver(page.url(), siteKey, isEnterprise)
             if (token) {
               await page.evaluate((t) => {
                 // Inject token into all g-recaptcha-response textareas

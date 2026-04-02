@@ -192,6 +192,7 @@ export async function solveHCaptchaViaCapsolver(
 export async function solveReCaptchaViaCapsolver(
   websiteUrl: string,
   websiteKey: string,
+  isEnterprise = false,
 ): Promise<string | null> {
   const apiKey = process.env.CAPSOLVER_API_KEY
   if (!apiKey) {
@@ -199,7 +200,8 @@ export async function solveReCaptchaViaCapsolver(
     return null
   }
 
-  console.log(`[capsolver] Creating ReCaptchaV2TaskProxyless for ${websiteUrl} (siteKey: ${websiteKey})`)
+  const taskType = isEnterprise ? 'ReCaptchaV2EnterpriseTaskProxyless' : 'ReCaptchaV2TaskProxyless'
+  console.log(`[capsolver] Creating ${taskType} for ${websiteUrl} (siteKey: ${websiteKey})`)
 
   try {
     const createResponse = await fetch(CAPSOLVER_CREATE_URL, {
@@ -208,7 +210,7 @@ export async function solveReCaptchaViaCapsolver(
       body: JSON.stringify({
         clientKey: apiKey,
         task: {
-          type: 'ReCaptchaV2TaskProxyless',
+          type: taskType,
           websiteURL: websiteUrl,
           websiteKey,
         },
@@ -313,21 +315,52 @@ export async function injectHCaptchaToken(page: Page, token: string): Promise<vo
       }
     }
 
-    // Trigger any registered callback (Lever registers one via hCaptcha render config)
+    // Trigger the registered callback.
+    // hCaptcha stores the callback in its internal state when render() is called.
+    // Strategy: 1) try hcaptcha.getRespKey to invoke the success callback properly,
+    //           2) walk the internal _hcaptcha object for callback functions,
+    //           3) fall back to well-known global names.
+    let callbackInvoked = false
     try {
       const hcaptchaApi = (window as any).hcaptcha
+
+      // Method 1: Deep-walk hcaptcha internals for registered callbacks
       if (hcaptchaApi) {
-        // Some integrations store the callback ref; try to invoke it
-        const callbacks = (window as any).hcaptchaCallback || (window as any).onHCaptchaSuccess
-        if (typeof callbacks === 'function') {
-          callbacks(tok)
+        const walkForCallbacks = (obj: any, depth = 0): boolean => {
+          if (!obj || depth > 6 || typeof obj !== 'object') return false
+          for (const [key, val] of Object.entries(obj)) {
+            if (typeof val === 'function' && /callback|success|onPass/i.test(key)) {
+              try { (val as Function)(tok); return true } catch { /* continue */ }
+            }
+            if (typeof val === 'object' && walkForCallbacks(val, depth + 1)) return true
+          }
+          return false
         }
+        // Walk internal state (varies by hCaptcha version)
+        callbackInvoked = walkForCallbacks(hcaptchaApi._hcaptcha) || walkForCallbacks(hcaptchaApi)
+      }
+
+      // Method 2: Well-known global callback names
+      if (!callbackInvoked) {
+        for (const name of ['hcaptchaCallback', 'onHCaptchaSuccess', 'hcaptchaSuccessCallback', 'onCaptchaSuccess']) {
+          const fn = (window as any)[name]
+          if (typeof fn === 'function') {
+            fn(tok)
+            callbackInvoked = true
+            break
+          }
+        }
+      }
+
+      // Method 3: Dispatch a custom event that some Lever forms listen for
+      if (!callbackInvoked) {
+        document.dispatchEvent(new CustomEvent('hcaptchaSuccess', { detail: { token: tok } }))
       }
     } catch {
       // Callback invocation is best-effort
     }
 
-    console.log(`[injectHCaptchaToken] Injected token into ${textareas.length} textarea(s)`)
+    console.log(`[injectHCaptchaToken] Injected token into ${textareas.length} textarea(s), callback invoked: ${callbackInvoked}`)
   }, token)
 }
 

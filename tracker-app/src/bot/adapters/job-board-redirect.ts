@@ -44,6 +44,23 @@ function isTrackingDomain(url: string): boolean {
   }
 }
 
+/** Quick Ashby check — returns a skip result if the URL is Ashby, null otherwise */
+function ashbySkipResult(url: string, company: string, role: string, start: number): ApplyResult | null {
+  if (/ashbyhq\.com/i.test(url)) {
+    console.log(`[job-board-redirect] Ashby detected in "${url}" — skipping (CSP blocks headless)`)
+    return {
+      success: false,
+      status: 'skipped',
+      company,
+      role,
+      ats: 'Ashby',
+      reason: 'Ashby blocks headless browsers — filtered after redirect resolution',
+      duration: Date.now() - start,
+    }
+  }
+  return null
+}
+
 export const jobBoardRedirect: ATSAdapter = {
   name: 'JobBoardRedirect',
 
@@ -70,6 +87,8 @@ export const jobBoardRedirect: ATSAdapter = {
         console.log(`[job-board-redirect] RemoteOK fast path: probing ATS for "${company}" — "${role}"`)
         const atsUrl = await probeCompanyAtsPages(company, role)
         if (atsUrl) {
+          const ashbySkip = ashbySkipResult(atsUrl, company, role, start)
+          if (ashbySkip) return ashbySkip
           console.log(`[job-board-redirect] Fast path found ATS URL: ${atsUrl}`)
           const { detectAdapter } = await import('./index')
           const realAdapter = detectAdapter(atsUrl)
@@ -103,6 +122,8 @@ export const jobBoardRedirect: ATSAdapter = {
           console.log(`[job-board-redirect] Page failed but have company "${company}", probing ATS...`)
           const atsUrl = await probeCompanyAtsPages(company, role)
           if (atsUrl) {
+            const ashbySkip = ashbySkipResult(atsUrl, company, role, start)
+            if (ashbySkip) return ashbySkip
             console.log(`[job-board-redirect] Post-failure probe found: ${atsUrl}`)
             const { detectAdapter } = await import('./index')
             const realAdapter = detectAdapter(atsUrl)
@@ -132,6 +153,8 @@ export const jobBoardRedirect: ATSAdapter = {
         if (company !== 'Unknown') {
           const probeUrl = await probeCompanyAtsPages(company, role)
           if (probeUrl) {
+            const ashbySkip = ashbySkipResult(probeUrl, company, role, start)
+            if (ashbySkip) return ashbySkip
             console.log(`[job-board-redirect] Post-resolve probe found: ${probeUrl}`)
             const { detectAdapter } = await import('./index')
             const realAdapter = detectAdapter(probeUrl)
@@ -205,6 +228,10 @@ export const jobBoardRedirect: ATSAdapter = {
       }
 
       console.log(`[job-board-redirect] Final URL after redirect chain: ${finalUrl}`)
+
+      // Step 3.5: Intercept Ashby URLs BEFORE wasting time on navigation.
+      const ashbySkip = ashbySkipResult(finalUrl, company, role, start)
+      if (ashbySkip) return ashbySkip
 
       // Step 4: Re-detect the correct adapter for the actual career page
       const { detectAdapter } = await import('./index')
