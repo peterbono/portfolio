@@ -424,7 +424,6 @@ export const greenhouse: ATSAdapter = {
             duration: Date.now() - start,
           }
         }
-      }
 
       // Check for validation errors (NOT the security code screen)
       const hasErrors = await page.locator('.field--error, .error, [class*="error"]').first().isVisible({ timeout: 3000 }).catch(() => false)
