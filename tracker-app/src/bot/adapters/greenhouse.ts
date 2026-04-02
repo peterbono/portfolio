@@ -229,6 +229,42 @@ export const greenhouse: ATSAdapter = {
             console.log(`[greenhouse] Got security code: ${code.substring(0, 3)}***`)
             await enterSecurityCode(page, code)
             await humanDelay(1000, 2000)
+
+            // reCAPTCHA resets after security code — must solve again before re-submit
+            try {
+              const { siteKey: reKey, isEnterprise: reEnterprise } = await page.evaluate(() => {
+                const el = document.querySelector('.g-recaptcha[data-sitekey], [data-sitekey]')
+                const key = el?.getAttribute('data-sitekey') ?? null
+                const hasEnt = typeof (window as any).grecaptcha?.enterprise?.execute === 'function' ||
+                  !!document.querySelector('script[src*="enterprise"]')
+                return { siteKey: key, isEnterprise: hasEnt }
+              })
+              if (reKey) {
+                console.log(`[greenhouse] reCAPTCHA detected post-security-code (siteKey: ${reKey}) — solving via CapSolver`)
+                const reToken = await solveReCaptchaViaCapsolver(page.url(), reKey, reEnterprise)
+                if (reToken) {
+                  await page.evaluate((t) => {
+                    const ta = document.querySelector('#g-recaptcha-response, textarea[name="g-recaptcha-response"]') as HTMLTextAreaElement | null
+                    if (ta) { ta.style.display = 'block'; ta.value = t; ta.dispatchEvent(new Event('change', { bubbles: true })) }
+                    if (typeof (window as any).___grecaptcha_cfg !== 'undefined') {
+                      const walk = (obj: any, d = 0): void => {
+                        if (!obj || d > 8 || typeof obj !== 'object') return
+                        for (const v of Object.values(obj)) {
+                          if (typeof v === 'function') { try { (v as Function)(t) } catch {} }
+                          else if (typeof v === 'object') walk(v, d + 1)
+                        }
+                      }
+                      walk((window as any).___grecaptcha_cfg.clients)
+                    }
+                  }, reToken)
+                  console.log('[greenhouse] ✅ reCAPTCHA solved post-security-code via CapSolver')
+                  await humanDelay(1000, 2000)
+                }
+              }
+            } catch (reCapErr) {
+              console.warn('[greenhouse] Post-security-code reCAPTCHA solve failed:', reCapErr instanceof Error ? reCapErr.message : reCapErr)
+            }
+
             await submitForm(page)
             await humanDelay(3000, 5000)
 
