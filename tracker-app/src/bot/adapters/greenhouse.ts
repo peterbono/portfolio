@@ -265,10 +265,21 @@ export const greenhouse: ATSAdapter = {
               console.warn('[greenhouse] Post-security-code reCAPTCHA solve failed:', reCapErr instanceof Error ? reCapErr.message : reCapErr)
             }
 
-            await submitForm(page)
+            const resubmitted = await submitForm(page)
+            if (!resubmitted) {
+              console.warn('[greenhouse] Could not find submit/verify button after security code — trying Enter key')
+              await page.keyboard.press('Enter')
+              await humanDelay(2000, 3000)
+            }
             await humanDelay(3000, 5000)
 
-            const confirmedAfterCode = await checkForConfirmation(page)
+            let confirmedAfterCode = await checkForConfirmation(page)
+            if (!confirmedAfterCode) {
+              // Retry with longer wait — Greenhouse can be slow to render confirmation
+              console.log('[greenhouse] No confirmation yet after security code — waiting 5s and retrying...')
+              await humanDelay(5000, 7000)
+              confirmedAfterCode = await checkForConfirmation(page)
+            }
             if (confirmedAfterCode) {
               return {
                 success: true,
@@ -924,6 +935,14 @@ async function submitForm(page: Page): Promise<boolean> {
     'input[value="Submit Application"]',
     'input[value="Submit"]',
     'a:has-text("Submit Application")',
+    // Post-security-code buttons (Greenhouse changes button label after code entry)
+    'button:has-text("Verify Code")',
+    'button:has-text("Verify")',
+    'button:has-text("Continue")',
+    'button:has-text("Confirm")',
+    'input[value="Verify"]',
+    'input[value="Verify Code"]',
+    'input[value="Continue"]',
   ]
 
   for (const sel of submitSelectors) {
@@ -934,6 +953,7 @@ async function submitForm(page: Page): Promise<boolean> {
         await scrollToElement(page, sel)
         await humanDelay(500, 1000)
         await button.click()
+        console.log(`[greenhouse:submitForm] Clicked: ${sel}`)
         return true
       }
     } catch {
@@ -941,6 +961,7 @@ async function submitForm(page: Page): Promise<boolean> {
     }
   }
 
+  console.warn('[greenhouse:submitForm] No submit button found with any selector')
   return false
 }
 
