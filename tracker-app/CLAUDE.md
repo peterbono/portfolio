@@ -19,6 +19,25 @@ The correct workflow is:
 4. Re-run the bot and verify the fix works
 5. Repeat until the pipeline succeeds autonomously
 
+## Bug fixing protocol: /product-team-debug
+
+When any bug or issue is found, invoke the skill `/product-team-debug`. This spawns parallel specialist agents:
+
+| Domain | Agent | Scope |
+|--------|-------|-------|
+| **FE** | Frontend Engineer | React views, components, state, localStorage |
+| **BE** | Backend Engineer | Trigger.dev tasks, bot adapters, API routes |
+| **EXT** | Extension Specialist | Chrome extension, content scripts, service worker |
+| **QA** | QA Engineer | E2E flow verification, edge cases, regression |
+| **PERF** | Performance Engineer | Timing, parallelism, race conditions, cleanup |
+| **UX** | UX Engineer | Status indicators, error messages, loading states |
+
+**How to invoke:**
+- User says: "invoque l'equipe", "product team", "debug avec les agents", "lance les agents"
+- Or: any bug/issue that needs investigation → auto-invoke
+- Agents run in PARALLEL, each reads code first, writes actual fixes, returns root cause + fix + files changed
+- After all agents return: review for conflicts, build, push, verify on prod
+
 ## Project structure
 
 - Frontend: React + Vite + TypeScript
