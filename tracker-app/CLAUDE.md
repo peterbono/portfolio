@@ -19,24 +19,40 @@ The correct workflow is:
 4. Re-run the bot and verify the fix works
 5. Repeat until the pipeline succeeds autonomously
 
-## Bug fixing protocol: /product-team-debug
+## Product team: /product-team-debug (22 agents, 6 departments)
 
-When any bug or issue is found, invoke the skill `/product-team-debug`. This spawns parallel specialist agents:
+Invoke `/product-team-debug` for ANY bug, feature, or improvement. It spawns parallel specialist agents.
 
-| Domain | Agent | Scope |
-|--------|-------|-------|
-| **FE** | Frontend Engineer | React views, components, state, localStorage |
-| **BE** | Backend Engineer | Trigger.dev tasks, bot adapters, API routes |
-| **EXT** | Extension Specialist | Chrome extension, content scripts, service worker |
-| **QA** | QA Engineer | E2E flow verification, edge cases, regression |
-| **PERF** | Performance Engineer | Timing, parallelism, race conditions, cleanup |
-| **UX** | UX Engineer | Status indicators, error messages, loading states |
+### Agent Roster
 
-**How to invoke:**
+| Dept | Agents |
+|------|--------|
+| **Strategy** | CEO/Visionary, Growth Strategist, Revenue Analyst, Market Research, Customer Success |
+| **Product** | Product Strategist, UX Designer, UI Designer, UX Writer |
+| **Engineering** | Tech Architect, Frontend, Backend, Extension Specialist, Infra/DevOps, Performance |
+| **Quality** | QA/Test, Security, Accessibility |
+| **Data** | AI/ML Engineer, Data Engineer, Analytics Engineer |
+| **Operations** | Code Reviewer, Documentation Writer |
+
+### When to spawn
+
+| Scenario | Minimum Agents |
+|----------|---------------|
+| New feature | CEO + Product + UX + Frontend + Backend + Test |
+| Bug fix | Frontend/Backend + Test + Code Review |
+| UI polish | UI Designer + Frontend + Accessibility |
+| Pipeline failure | Backend + Frontend + QA + Performance |
+| Extension bug | Extension + Frontend + QA |
+| Prompt tuning | AI/ML + Test |
+| Pricing | CEO + Growth + Revenue + Frontend |
+
+**ALWAYS spawn MORE agents than the minimum if it helps quality.**
+
+### Triggers
 - User says: "invoque l'equipe", "product team", "debug avec les agents", "lance les agents"
-- Or: any bug/issue that needs investigation → auto-invoke
-- Agents run in PARALLEL, each reads code first, writes actual fixes, returns root cause + fix + files changed
-- After all agents return: review for conflicts, build, push, verify on prod
+- Or: any bug/issue/feature → auto-invoke
+- Agents run in PARALLEL, write actual code fixes, return root cause + fix + files changed
+- After all agents return: review conflicts → build → `git push` → verify on prod
 
 ## Project structure
 
