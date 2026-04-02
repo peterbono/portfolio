@@ -378,8 +378,9 @@ export const applyJobsTask = task({
               profile.coverLetterSnippet = job.coverLetterSnippet || undefined
               profile.jobMeta = { company: job.company, role: job.role }
 
-              // Per-job timeout: 3 minutes max to prevent hanging on stuck adapters
-              const JOB_TIMEOUT_MS = 180_000
+              // Per-job timeout: Greenhouse needs longer (security code polling + reCAPTCHA solve)
+              const isGreenhouse = /greenhouse/i.test(job.url) || job.ats === 'greenhouse'
+              const JOB_TIMEOUT_MS = isGreenhouse ? 300_000 : 180_000
               applyResult = await Promise.race([
                 adapter.apply(page, job.url, profile),
                 new Promise<ApplyResult>((_, reject) =>
