@@ -274,13 +274,30 @@ export const greenhouse: ATSAdapter = {
               console.warn('[greenhouse] Post-security-code reCAPTCHA solve failed:', reCapErr instanceof Error ? reCapErr.message : reCapErr)
             }
 
+            // Wait for the form to fully reload after security code redirect
+            console.log('[greenhouse] Waiting for form to reload after security code...')
+            await page.waitForSelector('#application_form, form, #submit_app, button[type="submit"]', { timeout: 10_000 }).catch(() => {
+              console.warn('[greenhouse] Form not found after security code redirect')
+            })
+            await humanDelay(2000, 3000)
+            debugLog.push(`url_pre_resubmit=${page.url().substring(0, 80)}`)
+
+            // Try scrolling to bottom where submit button is
+            await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
+            await humanDelay(1000, 2000)
+
             const resubmitted = await submitForm(page)
             debugLog.push(`resubmit=${resubmitted}`)
             debugLog.push(`url_after_resubmit=${page.url().substring(0, 80)}`)
             if (!resubmitted) {
-              console.warn('[greenhouse] Could not find submit/verify button after security code — trying Enter key')
-              await page.keyboard.press('Enter')
-              debugLog.push('enter_key_pressed')
+              // Try clicking any visible button at the bottom of the form
+              console.warn('[greenhouse] submitForm failed — trying direct button click')
+              const clicked = await page.locator('#submit_app').click({ timeout: 5000 }).then(() => true).catch(() => false)
+              debugLog.push(`direct_click=${clicked}`)
+              if (!clicked) {
+                await page.keyboard.press('Enter')
+                debugLog.push('enter_key_pressed')
+              }
               await humanDelay(2000, 3000)
             }
             await humanDelay(3000, 5000)
