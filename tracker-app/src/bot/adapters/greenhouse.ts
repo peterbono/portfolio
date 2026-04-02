@@ -276,11 +276,18 @@ export const greenhouse: ATSAdapter = {
 
             // Wait for the form to fully reload after security code redirect
             console.log('[greenhouse] Waiting for form to reload after security code...')
-            await page.waitForSelector('#application_form, form, #submit_app, button[type="submit"]', { timeout: 10_000 }).catch(() => {
+            await page.waitForSelector('form, button[type="submit"], input[type="submit"], #submit_app', { timeout: 10_000 }).catch(() => {
               console.warn('[greenhouse] Form not found after security code redirect')
             })
             await humanDelay(2000, 3000)
             debugLog.push(`url_pre_resubmit=${page.url().substring(0, 80)}`)
+
+            // Dump all visible buttons for debugging
+            const allButtons = await page.evaluate(() => {
+              const btns = Array.from(document.querySelectorAll('button, input[type="submit"], a[class*="btn"]'))
+              return btns.map(b => `${b.tagName}#${b.id}[${b.getAttribute('type')||''}]="${(b.textContent||'').trim().substring(0,30)}"`).join(' | ')
+            }).catch(() => '?')
+            debugLog.push(`buttons=${allButtons.substring(0, 200)}`)
 
             // Try scrolling to bottom where submit button is
             await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
@@ -288,17 +295,25 @@ export const greenhouse: ATSAdapter = {
 
             const resubmitted = await submitForm(page)
             debugLog.push(`resubmit=${resubmitted}`)
-            debugLog.push(`url_after_resubmit=${page.url().substring(0, 80)}`)
             if (!resubmitted) {
-              // Try clicking any visible button at the bottom of the form
-              console.warn('[greenhouse] submitForm failed — trying direct button click')
-              const clicked = await page.locator('#submit_app').click({ timeout: 5000 }).then(() => true).catch(() => false)
-              debugLog.push(`direct_click=${clicked}`)
+              // Try ANY visible button or input submit on the page
+              console.warn('[greenhouse] submitForm failed — trying any submit-like element')
+              const clicked = await page.locator('button[type="submit"], input[type="submit"]').first().click({ timeout: 5000 }).then(() => true).catch(() => false)
+              debugLog.push(`any_submit_click=${clicked}`)
               if (!clicked) {
-                await page.keyboard.press('Enter')
-                debugLog.push('enter_key_pressed')
+                // Last resort: JS form submit
+                const jsSubmit = await page.evaluate(() => {
+                  const form = document.querySelector('form')
+                  if (form) { form.submit(); return true }
+                  return false
+                }).catch(() => false)
+                debugLog.push(`js_submit=${jsSubmit}`)
+                if (!jsSubmit) {
+                  await page.keyboard.press('Enter')
+                  debugLog.push('enter_key_pressed')
+                }
               }
-              await humanDelay(2000, 3000)
+              await humanDelay(3000, 5000)
             }
             await humanDelay(3000, 5000)
             debugLog.push(`url_final=${page.url().substring(0, 80)}`)
