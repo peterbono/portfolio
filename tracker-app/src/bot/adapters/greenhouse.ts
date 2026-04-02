@@ -289,31 +289,55 @@ export const greenhouse: ATSAdapter = {
             }).catch(() => '?')
             debugLog.push(`buttons=${allButtons.substring(0, 200)}`)
 
-            // Try scrolling to bottom where submit button is
+            // Scroll to bottom where submit button is
             await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
             await humanDelay(1000, 2000)
 
-            const resubmitted = await submitForm(page)
-            debugLog.push(`resubmit=${resubmitted}`)
-            if (!resubmitted) {
-              // Try ANY visible button or input submit on the page
-              console.warn('[greenhouse] submitForm failed — trying any submit-like element')
-              const clicked = await page.locator('button[type="submit"], input[type="submit"]').first().click({ timeout: 5000 }).then(() => true).catch(() => false)
-              debugLog.push(`any_submit_click=${clicked}`)
-              if (!clicked) {
-                // Last resort: JS form submit
-                const jsSubmit = await page.evaluate(() => {
-                  const form = document.querySelector('form')
-                  if (form) { form.submit(); return true }
-                  return false
-                }).catch(() => false)
-                debugLog.push(`js_submit=${jsSubmit}`)
-                if (!jsSubmit) {
-                  await page.keyboard.press('Enter')
-                  debugLog.push('enter_key_pressed')
-                }
+            // Wait for a submit-like button to appear (Remix SPA may still be re-rendering)
+            console.log('[greenhouse] Looking for submit button after security code (waitForFunction)...')
+            const submitHandle = await page.waitForFunction(() => {
+              const btns = Array.from(document.querySelectorAll('button, input[type="submit"]'))
+              const match = btns.find(b => {
+                const text = ((b.textContent || '') + ' ' + ((b as HTMLInputElement).value || '')).toLowerCase()
+                return /submit|apply|verify|continue|confirm/.test(text) && (b as HTMLElement).offsetHeight > 0
+              })
+              return match || null
+            }, { timeout: 10_000 }).catch(() => null)
+
+            let resubmitted = false
+            if (submitHandle) {
+              try {
+                await submitHandle.asElement()?.click()
+                resubmitted = true
+                debugLog.push('waitForFunction_btn_clicked')
+                console.log('[greenhouse] ✅ Clicked submit button via waitForFunction')
+              } catch {
+                debugLog.push('waitForFunction_click_failed')
               }
-              await humanDelay(3000, 5000)
+            }
+
+            if (!resubmitted) {
+              // Try submitForm() as fallback (legacy boards.greenhouse.io)
+              resubmitted = await submitForm(page)
+              debugLog.push(`submitForm=${resubmitted}`)
+            }
+
+            if (!resubmitted) {
+              // JS form.submit() fallback
+              const jsSubmit = await page.evaluate(() => {
+                const form = document.querySelector('form')
+                if (form) { form.submit(); return true }
+                return false
+              }).catch(() => false)
+              debugLog.push(`js_submit=${jsSubmit}`)
+              if (!jsSubmit) {
+                await page.keyboard.press('Enter')
+                debugLog.push('enter_fallback')
+              }
+            }
+
+            // Wait longer for Remix SPA processing
+            await humanDelay(5000, 8000)
             }
             await humanDelay(3000, 5000)
             debugLog.push(`url_final=${page.url().substring(0, 80)}`)
@@ -1214,6 +1238,7 @@ async function enterSecurityCode(page: Page, code: string): Promise<void> {
     'input[value="Verify"]',
   ]
 
+  let codeSubmitted = false
   for (const sel of codeSubmitSelectors) {
     try {
       const btn = page.locator(sel).first()
@@ -1221,16 +1246,33 @@ async function enterSecurityCode(page: Page, code: string): Promise<void> {
       if (visible) {
         await btn.click()
         console.log(`[greenhouse] Clicked security code submit button: ${sel}`)
-        await humanDelay(3000, 5000)
-        return
+        codeSubmitted = true
+        break
       }
     } catch {
       continue
     }
   }
 
-  // Fallback: press Enter
-  console.warn('[greenhouse] No security code submit button found — pressing Enter')
-  await page.keyboard.press('Enter')
+  if (!codeSubmitted) {
+    console.warn('[greenhouse] No security code submit button found — pressing Enter')
+    await page.keyboard.press('Enter')
+  }
+
+  // Wait for Remix SPA re-render after code submission
+  // job-boards.greenhouse.io uses Remix — no page navigation, just client-side re-render
+  console.log('[greenhouse] Waiting for page state change after security code...')
+  await page.waitForFunction(() => {
+    // Check if security code input disappeared (code accepted)
+    const codeInputs = document.querySelectorAll('input[name*="code"], input[placeholder*="code" i]')
+    const allHidden = Array.from(codeInputs).every(el => (el as HTMLElement).offsetHeight === 0)
+    // Or check if a submit/apply button appeared
+    const btns = Array.from(document.querySelectorAll('button, input[type="submit"]'))
+    const hasSubmit = btns.some(b => /submit|apply/i.test((b.textContent || '') + ' ' + ((b as HTMLInputElement).value || '')))
+    return (codeInputs.length > 0 && allHidden) || hasSubmit
+  }, { timeout: 10_000 }).catch(() => {
+    console.warn('[greenhouse] Timed out waiting for page state change after security code')
+  })
+  await humanDelay(3000, 5000)
   await humanDelay(3000, 5000)
 }
