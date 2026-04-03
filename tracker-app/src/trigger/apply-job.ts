@@ -171,10 +171,21 @@ export const applyJobTask = task({
             return (b.score ?? 0) - (a.score ?? 0)
           })
 
-          // Trigger apply-jobs as a child task
+          // Filter out LinkedIn Easy Apply jobs — they MUST run locally via the Chrome
+          // extension (LinkedIn blocks cloud IPs). They'll be included in the pipeline
+          // result so the dashboard can route them through the extension.
+          const atsOnlyJobs = qualifiedJobs.filter(j =>
+            !/linkedin\.com\/jobs/i.test(j.url)
+          )
+          const skippedLinkedIn = qualifiedJobs.length - atsOnlyJobs.length
+          if (skippedLinkedIn > 0) {
+            console.log(`[apply-job-pipeline] Excluded ${skippedLinkedIn} LinkedIn Easy Apply jobs from cloud apply — they require local Chrome extension`)
+          }
+
+          // Trigger apply-jobs as a child task (ATS jobs only)
           const applyJobsPayload = {
             userId: payload.userId,
-            jobs: qualifiedJobs.slice(0, payload.maxApplications ?? 20).map(j => ({
+            jobs: atsOnlyJobs.slice(0, payload.maxApplications ?? 20).map(j => ({
               url: j.url,
               company: j.company,
               role: j.title,
@@ -187,13 +198,15 @@ export const applyJobTask = task({
             gmailAccessToken: payload.gmailAccessToken,
           }
 
-          // Use tasks.triggerAndWait to run apply-jobs as child task
-          const handle = await tasks.trigger("apply-jobs", applyJobsPayload)
-          console.log(`[apply-job-pipeline] Triggered apply-jobs: ${handle.id}`)
-
-          // Don't wait — let it run asynchronously. The pipeline returns immediately
-          // with qualified jobs. Apply results will be tracked separately in Supabase.
-          applyResult = { applied: -1, failed: -1, needsManual: -1 } // -1 = in progress
+          // Only trigger cloud apply if there are ATS jobs to process
+          if (atsOnlyJobs.length > 0) {
+            const handle = await tasks.trigger("apply-jobs", applyJobsPayload)
+            console.log(`[apply-job-pipeline] Triggered apply-jobs: ${handle.id} (${atsOnlyJobs.length} ATS jobs)`)
+            applyResult = { applied: -1, failed: -1, needsManual: -1 } // -1 = in progress
+          } else {
+            console.log(`[apply-job-pipeline] No ATS jobs to apply — all ${qualifiedJobs.length} are LinkedIn Easy Apply (requires local extension)`)
+            applyResult = { applied: 0, failed: 0, needsManual: 0 }
+          }
         } catch (applyErr) {
           console.warn(`[apply-job-pipeline] Auto-apply trigger failed:`, (applyErr as Error).message)
         }
