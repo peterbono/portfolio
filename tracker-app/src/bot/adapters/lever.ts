@@ -152,12 +152,16 @@ export const lever: ATSAdapter = {
         if (captchaSolvedViaSBR) {
           console.log('[lever] CAPTCHA solved via SBR after submit')
           await humanDelay(2000, 3000)
-          // After CAPTCHA is solved, try submitting again in case form needs re-click
-          const resubmitted = await submitForm(page)
-          if (resubmitted) {
-            console.log('[lever] Re-submitted form after SBR CAPTCHA solve')
-            await humanDelay(3000, 5000)
+          // After CAPTCHA is solved, click the hidden hCaptcha submit button
+          const hcaptchaBtn = page.locator('#hcaptchaSubmitBtn')
+          if (await hcaptchaBtn.count().catch(() => 0) > 0) {
+            await hcaptchaBtn.dispatchEvent('click')
+            console.log('[lever] Clicked #hcaptchaSubmitBtn after SBR solve')
+          } else {
+            const resubmitted = await submitForm(page)
+            if (resubmitted) console.log('[lever] Re-submitted form after SBR CAPTCHA solve')
           }
+          await humanDelay(3000, 5000)
         } else {
           console.log('[lever] SBR did not solve CAPTCHA — will try CapSolver fallback')
         }
@@ -211,11 +215,23 @@ export const lever: ATSAdapter = {
             await injectHCaptchaToken(page, capsolverToken)
             await humanDelay(1000, 2000)
 
-            // Re-submit the form after injecting the token
-            const resubmitted = await submitForm(page)
-            if (resubmitted) {
-              console.log('[lever] Re-submitted form after CapSolver hCaptcha injection')
+            // After token injection, click the HIDDEN hCaptcha submit button (#hcaptchaSubmitBtn).
+            // Lever's hCaptcha flow: visible #btn-submit triggers hCaptcha challenge,
+            // then hCaptcha calls #hcaptchaSubmitBtn (type="submit", class="hidden") on success.
+            // Since we injected the token programmatically, we must click this hidden button directly.
+            const hcaptchaSubmit = page.locator('#hcaptchaSubmitBtn')
+            const hasHcaptchaSubmit = await hcaptchaSubmit.count().catch(() => 0)
+            if (hasHcaptchaSubmit > 0) {
+              await hcaptchaSubmit.dispatchEvent('click')
+              console.log('[lever] Clicked #hcaptchaSubmitBtn after token injection')
               await humanDelay(3000, 5000)
+            } else {
+              // Fallback: try the visible submit button
+              const resubmitted = await submitForm(page)
+              if (resubmitted) {
+                console.log('[lever] Re-submitted form via visible button after token injection')
+                await humanDelay(3000, 5000)
+              }
             }
 
             // Check confirmation again
