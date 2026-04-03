@@ -314,7 +314,7 @@ async function applyLinkedInJobsViaExtension(jobs: ApprovedJobInput[]): Promise<
       const result = await applyOneViaExtension(job)
       console.log(`[bot-api] [${i + 1}/${total}] Result: ${result.status} — ${result.reason || 'OK'}`)
 
-      if (result.success || result.status === 'applied') {
+      if (result.success || result.status === 'applied' || result.status === 'applied_external') {
         applied++
       } else {
         failed++

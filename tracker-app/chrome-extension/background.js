@@ -1,6 +1,11 @@
 /**
- * JobTracker LinkedIn Connect — Background Service Worker v2.8.0
+ * JobTracker LinkedIn Connect — Background Service Worker v2.9.0
  *
+ * v2.9.0 fixes:
+ * - pending_external: when linkedin-apply.js clicks external Apply, it now reports
+ *   'pending_external' (not 'applied_external'). The polling loop skips this interim
+ *   status and waits for ats-apply.js to overwrite lastApplyResult with the real
+ *   status (applied_external, needs_manual, or failed). Secondary 60s timeout for ATS phase.
  * v2.8.0 fixes:
  * - Auto re-inject content scripts after extension reload (onInstalled)
  * - onMessageExternal for direct web-page-to-service-worker communication
@@ -445,7 +450,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
       // Poll for result (linkedin-apply.js stores it in chrome.storage.local.lastApplyResult)
       let attempts = 0
-      const maxAttempts = 90 // 90 seconds max — typeahead retries + multi-step forms need time
+      let pendingExternalSince = null // Timestamp when pending_external was first detected
+      const maxAttempts = 150 // 150 seconds max — includes up to 60s for ATS form fill after external redirect
       // Extract LinkedIn job ID for robust matching (e.g., "4392382389" from the URL)
       const jobIdMatch = url.match(/\/jobs\/view\/[^/]*?(\d{6,})/)
       const jobId = jobIdMatch ? jobIdMatch[1] : null
@@ -512,8 +518,47 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           const matchesLinkedinUrl = resultLinkedinUrl === url || resultLinkedinUrl.split('?')[0] === url.split('?')[0]
           const matchesCompany = data.lastApplyResult.company === job.company
           const isExternalResult = data.lastApplyResult.status === 'applied_external' || data.lastApplyResult.atsType
+          const isPendingExternal = data.lastApplyResult.status === 'pending_external'
 
-          if (matchesJobId || matchesUrl || matchesLinkedinUrl || (isExternalResult && matchesCompany)) {
+          if (matchesJobId || matchesUrl || matchesLinkedinUrl || (isExternalResult && matchesCompany) || (isPendingExternal && matchesCompany)) {
+            // ─── FIX: pending_external is NOT a final result ───
+            // linkedin-apply.js reports this when the external Apply button was clicked
+            // but ats-apply.js hasn't filled/submitted the form yet. We must keep polling
+            // until ats-apply.js overwrites lastApplyResult with the real status.
+            if (isPendingExternal) {
+              if (!pendingExternalSince) {
+                pendingExternalSince = Date.now()
+                console.log('[JobTracker] [DIAG] pending_external detected at attempt', attempts, '— waiting for ats-apply.js to report real result')
+                // Clear the interim result so the next poll waits for ats-apply.js to write
+                await chrome.storage.local.remove('lastApplyResult')
+              } else {
+                const atsElapsed = ((Date.now() - pendingExternalSince) / 1000).toFixed(1)
+                if (attempts % 10 === 0) {
+                  console.log('[JobTracker] [DIAG] Still waiting for ATS result (' + atsElapsed + 's since pending_external)')
+                }
+                // Secondary timeout: if ats-apply.js doesn't produce a result within 60s
+                // after we got pending_external, report needs_manual so the user can check
+                if (Date.now() - pendingExternalSince > 60000) {
+                  console.warn('[JobTracker] ATS apply timeout — 60s since pending_external, no final result from ats-apply.js')
+                  await chrome.storage.local.remove('lastApplyResult')
+                  await chrome.storage.local.remove('pendingExternalApply')
+                  await cleanupTab()
+                  await cleanupAtsTabs()
+                  return {
+                    success: false,
+                    status: 'needs_manual',
+                    reason: 'External ATS form opened but ats-apply.js did not report a result within 60s — check the ATS tab manually',
+                    company: job.company,
+                    role: job.role || '',
+                    requestId,
+                  }
+                }
+              }
+              // Keep polling — don't return pending_external as a final result
+              attempts++
+              continue
+            }
+
             const totalTime = ((Date.now() - tabCreatedAt) / 1000).toFixed(1)
             console.log('[JobTracker] [DIAG] Result matched at attempt', attempts, '(' + totalTime + 's total) — matched by:', matchesJobId ? 'jobId' : matchesUrl ? 'url' : matchesLinkedinUrl ? 'linkedinUrl' : 'company', '— status:', data.lastApplyResult.status)
             const result = { ...data.lastApplyResult, requestId }

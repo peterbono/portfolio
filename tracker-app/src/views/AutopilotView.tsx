@@ -4218,6 +4218,10 @@ export function AutopilotView() {
         if (s === 'applied' || s === 'applied_external' || s === 'confirmed') {
           return { ...item, status: 'submitted' as const, submittingStartedAt: undefined }
         }
+        if (s === 'pending_external') {
+          // ATS form fill in progress — keep showing as submitting (don't mark as final)
+          return item
+        }
         if (s === 'expired' || s === 'already_applied') {
           return { ...item, status: 'expired' as const, submittingStartedAt: undefined }
         }
@@ -4302,6 +4306,10 @@ export function AutopilotView() {
 
         if (status === 'applied' || status === 'applied_external' || status === 'confirmed' || success) {
           return { ...item, status: 'submitted' as const, submittingStartedAt: undefined }
+        }
+        if (status === 'pending_external') {
+          // ATS form fill in progress — keep showing as submitting (don't mark as final)
+          return item
         }
         if (status === 'expired' || status === 'already_applied') {
           return { ...item, status: 'expired' as const, submittingStartedAt: undefined }

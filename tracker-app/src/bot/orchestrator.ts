@@ -905,8 +905,9 @@ export async function runPipeline(config: PipelineConfig & { onProgress?: (p: Pi
       ),
     ])
   } catch (e) {
-    // Generate local run ID so pipeline can continue without Supabase
-    runId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    // Generate local run ID as a valid UUID v4 so downstream Supabase inserts
+    // (logBotActivity, updateBotRun) don't fail with "invalid input syntax for type uuid".
+    runId = crypto.randomUUID()
     console.warn(`[pipeline] createBotRun failed: ${(e as Error).message} — using local runId: ${runId}`)
   }
 

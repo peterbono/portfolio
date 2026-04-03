@@ -17,6 +17,8 @@
  * v4.0.0: LinkedIn DOM redesign — Easy Apply is now <a> tag (not <button>),
  *         job title is <p> (not <h1>), SDUI apply flow via href navigation.
  *         Also searches <a> tags for Easy Apply and external Apply detection.
+ * v3.2.1: handleExternalApply() now calls setResult('pending_external') — final status
+ *         comes from ats-apply.js after it actually fills and submits the form.
  * v3.2.0: handleExternalApply() now calls setResult('applied_external') immediately.
  * v3.1.0: Safety-net timeout guarantees setResult is always called.
  * v3.0.0: Multi-step form loop — fills every page, clicks Next/Review until Submit.
@@ -28,7 +30,7 @@ if (window._jobTrackerApplyRan) {
 } else {
 window._jobTrackerApplyRan = true;
 
-console.log('[JobTracker] linkedin-apply.js v6.1.0 loaded on:', window.location.href);
+console.log('[JobTracker] linkedin-apply.js v6.2.0 loaded on:', window.location.href);
 
 // ─── Safety-net: guarantee setResult is called within 20s ───
 // If the main logic silently fails (async callback error, unexpected DOM state),
@@ -2076,7 +2078,7 @@ function setResult(result) {
   // ─── ULTIMATE FIX: Before reporting any failure, check if the application actually submitted ───
   // The form flow sometimes reports "stuck" or "needs_review" even when the submit went through.
   // This final guard prevents false negatives by checking the page text one last time.
-  if (!result.success && result.status !== 'already_applied' && result.status !== 'expired' && result.status !== 'auth_wall') {
+  if (!result.success && result.status !== 'already_applied' && result.status !== 'expired' && result.status !== 'auth_wall' && result.status !== 'pending_external') {
     try {
       var finalBodyText = (document.body.innerText || '').toLowerCase();
       var actuallySubmitted = finalBodyText.indexOf('application was sent') >= 0 ||
@@ -2159,13 +2161,14 @@ function handleExternalApply(company, role) {
         }, function() {
           console.log('[JobTracker] pendingExternalApply set — clicking external apply');
           externalApplyBtn.click();
-          console.log('[JobTracker] Redirecting to external ATS — setting applied_external result');
-          // Immediately set the result so background.js gets the correct status
-          // instead of waiting for the 20s safety-net timeout to fire with wrong status
+          console.log('[JobTracker] Redirecting to external ATS — setting pending_external result');
+          // Set pending_external so background.js knows we're waiting for ats-apply.js
+          // to fill the form and report the real result (applied_external, needs_manual, or failed).
+          // Do NOT report applied_external here — that would be a false positive.
           setResult({
-            success: true,
-            status: 'applied_external',
-            reason: 'External ATS apply button clicked — redirected to employer site',
+            success: false,
+            status: 'pending_external',
+            reason: 'External ATS apply button clicked — waiting for ats-apply.js to fill and submit the form',
             company: company,
             role: role,
           });
@@ -2181,9 +2184,9 @@ function handleExternalApply(company, role) {
       });
       externalApplyBtn.click();
       setResult({
-        success: true,
-        status: 'applied_external',
-        reason: 'External ATS apply button clicked (fallback path)',
+        success: false,
+        status: 'pending_external',
+        reason: 'External ATS apply button clicked (fallback path) — waiting for ats-apply.js',
         company: company,
         role: role,
       });

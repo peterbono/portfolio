@@ -190,6 +190,142 @@ function randomDelay(min: number, max: number): Promise<void> {
 }
 
 /**
+ * Resolve a RemoteOK apply URL by following its /l/{id} redirect chain
+ * server-side. RemoteOK's /l/{id} links redirect through obfuscated JS
+ * and eventually land on `/sign-up?redirect_url=<ACTUAL_ATS_URL>`.
+ *
+ * This function uses server-side fetch with `redirect: 'manual'` to follow
+ * 3xx redirects and extract the `redirect_url` query parameter from the
+ * sign-up wall URL, or detect direct redirects to an external ATS domain.
+ *
+ * Returns the resolved ATS URL, or null if resolution fails.
+ */
+async function resolveRemoteOKApplyUrl(jobSlugOrId: string): Promise<string | null> {
+  // Try both /l/{slug} and /l/{id} patterns
+  const candidates = [
+    `https://remoteok.com/l/${jobSlugOrId}`,
+  ]
+
+  // Also extract numeric ID from slug if present (e.g. "remote-ux-designer-123456" → "123456")
+  const numericMatch = jobSlugOrId.match(/(\d+)$/)
+  if (numericMatch && numericMatch[1] !== jobSlugOrId) {
+    candidates.push(`https://remoteok.com/l/${numericMatch[1]}`)
+  }
+
+  for (const redirectUrl of candidates) {
+    try {
+      let currentUrl = redirectUrl
+      let hops = 0
+      const maxHops = 8
+
+      while (hops < maxHops) {
+        const response = await fetch(currentUrl, {
+          method: 'GET',
+          redirect: 'manual',
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          },
+          signal: AbortSignal.timeout(8_000),
+        })
+
+        // Follow 3xx redirects
+        if (response.status >= 300 && response.status < 400) {
+          const location = response.headers.get('location')
+          if (!location) break
+          currentUrl = new URL(location, currentUrl).href
+          hops++
+
+          // Check if we've left remoteok.com (direct redirect to ATS)
+          const hostname = new URL(currentUrl).hostname
+          if (!hostname.includes('remoteok.com') && !hostname.includes('aiok.co')) {
+            console.log(`[scout:remoteok] Resolved apply URL via redirect chain: ${currentUrl}`)
+            return currentUrl
+          }
+
+          // Check if we hit the sign-up wall with redirect_url param
+          const urlObj = new URL(currentUrl)
+          const actualUrl = urlObj.searchParams.get('redirect_url')
+            || urlObj.searchParams.get('redirect')
+            || urlObj.searchParams.get('return_url')
+            || urlObj.searchParams.get('url')
+          if (actualUrl) {
+            try {
+              const decoded = decodeURIComponent(actualUrl)
+              const parsed = new URL(decoded)
+              if (!parsed.hostname.includes('remoteok.com')) {
+                console.log(`[scout:remoteok] Extracted ATS URL from sign-up redirect_url: ${decoded}`)
+                return decoded
+              }
+            } catch { /* invalid URL in param */ }
+          }
+
+          continue
+        }
+
+        // 2xx — we landed somewhere. Check if it's a sign-up page with redirect_url
+        if (response.status >= 200 && response.status < 300) {
+          const finalUrlObj = new URL(currentUrl)
+          const actualUrl = finalUrlObj.searchParams.get('redirect_url')
+            || finalUrlObj.searchParams.get('redirect')
+            || finalUrlObj.searchParams.get('return_url')
+            || finalUrlObj.searchParams.get('url')
+          if (actualUrl) {
+            try {
+              const decoded = decodeURIComponent(actualUrl)
+              const parsed = new URL(decoded)
+              if (!parsed.hostname.includes('remoteok.com')) {
+                console.log(`[scout:remoteok] Extracted ATS URL from sign-up page params: ${decoded}`)
+                return decoded
+              }
+            } catch { /* invalid URL in param */ }
+          }
+
+          // Also try parsing response body for meta-refresh or JS redirects
+          // (RemoteOK /l/ pages use obfuscated JS that builds a redirect URL)
+          try {
+            const body = await response.text()
+
+            // Check for meta refresh: <meta http-equiv="refresh" content="0;url=...">
+            const metaMatch = body.match(/content=["'][^"']*url=(https?:\/\/[^"'\s]+)/i)
+            if (metaMatch) {
+              const url = metaMatch[1]
+              if (!url.includes('remoteok.com') && !url.includes('aiok.co')) {
+                console.log(`[scout:remoteok] Found ATS URL in meta refresh: ${url}`)
+                return url
+              }
+            }
+
+            // Check for window.location redirects
+            const jsMatch = body.match(/window\.location(?:\.href)?\s*=\s*["'](https?:\/\/[^"']+)["']/)
+            if (jsMatch) {
+              const url = jsMatch[1]
+              if (!url.includes('remoteok.com') && !url.includes('aiok.co')) {
+                console.log(`[scout:remoteok] Found ATS URL in JS redirect: ${url}`)
+                return url
+              }
+            }
+
+            // Check for ATS URLs anywhere in the response body
+            const atsUrl = extractAtsUrlFromHtml(body)
+            if (atsUrl) {
+              console.log(`[scout:remoteok] Found ATS URL in /l/ page body: ${atsUrl}`)
+              return atsUrl
+            }
+          } catch { /* body read failed — non-critical */ }
+        }
+
+        break
+      }
+    } catch (err) {
+      console.log(`[scout:remoteok] Apply URL resolution failed for ${redirectUrl}: ${(err as Error).message}`)
+    }
+  }
+
+  return null
+}
+
+/**
  * Extract a direct ATS URL from job description HTML.
  * RemoteOK descriptions often contain "Apply" links pointing directly
  * to Greenhouse, Lever, Workable, etc. — bypassing their broken
@@ -364,22 +500,45 @@ export async function scoutRemoteOK(
         const titleLower = title.toLowerCase()
         if (titleLower.includes('poker') || titleLower.includes('gambling')) continue
 
-        // Build URL — extract direct ATS link from description HTML if available,
-        // otherwise use the RemoteOK listing page.
-        // RemoteOK's apply_url always equals the listing URL (useless).
-        // Their /l/{id} redirect goes through aiok.co (dead domain).
-        // Best strategy: parse description HTML for Greenhouse/Lever/etc. links.
+        // Build URL — extract direct ATS link from description HTML if available.
+        // If not found, try to resolve the real ATS URL from RemoteOK's /l/{id}
+        // redirect chain (which goes through sign-up wall with redirect_url param).
+        // Only fall back to the listing page URL as a last resort.
         const descHtml = job.description ?? ''
         const atsUrlFromDesc = extractAtsUrlFromHtml(descHtml)
 
-        const jobUrl = atsUrlFromDesc
-          || (job.url
+        let jobUrl = atsUrlFromDesc ?? ''
+
+        // If description didn't contain a direct ATS link, try resolving via /l/{id}
+        // redirect chain (RemoteOK /l/ → sign-up?redirect_url=<ATS_URL>)
+        if (!jobUrl) {
+          const slugOrId = job.slug || job.id || ''
+          if (slugOrId) {
+            try {
+              const resolvedUrl = await resolveRemoteOKApplyUrl(slugOrId)
+              if (resolvedUrl) {
+                jobUrl = resolvedUrl
+                console.log(`[scout:remoteok] "${company}" — resolved ATS URL: ${resolvedUrl}`)
+              }
+              // Small delay between resolve calls to avoid rate-limiting
+              await randomDelay(200, 600)
+            } catch (resolveErr) {
+              console.log(`[scout:remoteok] "${company}" — resolve failed: ${(resolveErr as Error).message}`)
+            }
+          }
+        }
+
+        // Final fallback: use the RemoteOK listing page URL
+        // (the job-board-redirect adapter will try to resolve at apply time)
+        if (!jobUrl) {
+          jobUrl = job.url
             ? job.url
             : job.slug
               ? `https://remoteok.com/remote-jobs/${job.slug}`
               : job.id
                 ? `https://remoteok.com/remote-jobs/${job.id}`
-                : '')
+                : ''
+        }
 
         if (!jobUrl) continue
 
@@ -408,7 +567,7 @@ export async function scoutRemoteOK(
           postedDate: job.date ?? new Date().toISOString(),
           source: 'remoteok',
           description: plainDesc || undefined,
-          ats: classifyAtsFromUrl(atsUrlFromDesc ?? '') ?? classifyAtsFromUrl(jobUrl) ?? undefined,
+          ats: classifyAtsFromUrl(jobUrl) ?? undefined,
         })
       }
 

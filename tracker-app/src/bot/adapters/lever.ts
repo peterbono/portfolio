@@ -152,18 +152,32 @@ export const lever: ATSAdapter = {
         if (captchaSolvedViaSBR) {
           console.log('[lever] CAPTCHA solved via SBR after submit')
           await humanDelay(2000, 3000)
-          // After CAPTCHA is solved, click the hidden hCaptcha submit button
+          // After CAPTCHA is solved, trigger the full form submission
           const hcaptchaBtn = page.locator('#hcaptchaSubmitBtn')
           if (await hcaptchaBtn.count().catch(() => 0) > 0) {
-            await hcaptchaBtn.dispatchEvent('click')
-            console.log('[lever] Clicked #hcaptchaSubmitBtn after SBR solve')
+            // Use form.submit() for reliability (same pattern as 2Captcha path)
+            const sbrFormResult = await page.evaluate(() => {
+              const btn = document.querySelector('#hcaptchaSubmitBtn') as HTMLButtonElement
+              if (!btn) return 'button_not_found'
+              const form = btn.closest('form')
+              if (form) {
+                const evt = new Event('submit', { bubbles: true, cancelable: true })
+                const prevented = !form.dispatchEvent(evt)
+                if (!prevented) form.submit()
+                return prevented ? 'submit_event_prevented' : 'form.submit()_called'
+              }
+              btn.click()
+              return 'btn.click()_called'
+            }).catch((e) => `error: ${e}`)
+            console.log(`[lever] [SBR] #hcaptchaSubmitBtn form submission: ${sbrFormResult}`)
+            await hcaptchaBtn.dispatchEvent('click').catch(() => {})
           } else {
             const resubmitted = await submitForm(page)
-            if (resubmitted) console.log('[lever] Re-submitted form after SBR CAPTCHA solve')
+            if (resubmitted) console.log('[lever] [SBR] Re-submitted form after CAPTCHA solve')
           }
           await humanDelay(3000, 5000)
         } else {
-          console.log('[lever] SBR did not solve CAPTCHA — will try CapSolver fallback')
+          console.log('[lever] SBR did not solve CAPTCHA — will try 2Captcha/CapSolver fallback')
         }
       } catch (captchaErr) {
         console.warn('[lever] SBR CAPTCHA solving failed:', captchaErr instanceof Error ? captchaErr.message : captchaErr)
@@ -184,57 +198,147 @@ export const lever: ATSAdapter = {
         }
       }
 
-      // Step 14.5: CapSolver fallback — try if submission didn't confirm
+      // Step 14.5: 2Captcha/CapSolver fallback — try if submission didn't confirm
       // Lever uses INVISIBLE hCaptcha that blocks submit silently — no visible iframe.
-      // Always attempt CapSolver if: no SBR solve AND no confirmation detected.
+      // Always attempt solver if: no SBR solve AND no confirmation detected.
       if (!captchaSolvedViaSBR && !confirmed) {
-        {
-          console.log('[lever] Attempting CapSolver hCaptcha fallback...')
+        console.log('[lever] Attempting 2Captcha/CapSolver hCaptcha fallback...')
 
-          // Extract hCaptcha site key from the page, or use the known Lever default
-          const LEVER_HCAPTCHA_SITEKEY = 'e33f87f8-88ec-4e1a-9a13-df9bbb1d8120'
-          const extractedSiteKey = await page.evaluate(() => {
-            const hcaptchaDiv = document.querySelector('[data-sitekey]')
-            if (hcaptchaDiv) return hcaptchaDiv.getAttribute('data-sitekey')
-            const iframe = document.querySelector('iframe[src*="hcaptcha.com"]')
-            if (iframe) {
-              const src = iframe.getAttribute('src') || ''
-              const match = src.match(/sitekey=([a-f0-9-]+)/)
-              return match ? match[1] : null
-            }
-            return null
-          }).catch(() => null)
+        // Extract hCaptcha site key from the page, or use the known Lever default
+        const LEVER_HCAPTCHA_SITEKEY = 'e33f87f8-88ec-4e1a-9a13-df9bbb1d8120'
+        const extractedSiteKey = await page.evaluate(() => {
+          const hcaptchaDiv = document.querySelector('[data-sitekey]')
+          if (hcaptchaDiv) return hcaptchaDiv.getAttribute('data-sitekey')
+          const iframe = document.querySelector('iframe[src*="hcaptcha.com"]')
+          if (iframe) {
+            const src = iframe.getAttribute('src') || ''
+            const match = src.match(/sitekey=([a-f0-9-]+)/)
+            return match ? match[1] : null
+          }
+          return null
+        }).catch(() => null)
 
-          const siteKey = extractedSiteKey || LEVER_HCAPTCHA_SITEKEY
-          console.log(`[lever] hCaptcha site key: ${siteKey}`)
+        const siteKey = extractedSiteKey || LEVER_HCAPTCHA_SITEKEY
+        console.log(`[lever] hCaptcha site key: ${siteKey}`)
 
-          const capsolverToken = await solveHCaptchaViaCapsolver(page.url(), siteKey)
+        const capsolverToken = await solveHCaptchaViaCapsolver(page.url(), siteKey)
 
-          if (capsolverToken) {
-            console.log('[lever] CapSolver returned a token — injecting into page...')
-            await injectHCaptchaToken(page, capsolverToken)
-            await humanDelay(1000, 2000)
+        if (capsolverToken) {
+          console.log('[lever] 2Captcha/CapSolver returned token — injecting into page...')
 
-            // After token injection, click the HIDDEN hCaptcha submit button (#hcaptchaSubmitBtn).
-            // Lever's hCaptcha flow: visible #btn-submit triggers hCaptcha challenge,
-            // then hCaptcha calls #hcaptchaSubmitBtn (type="submit", class="hidden") on success.
-            // Since we injected the token programmatically, we must click this hidden button directly.
-            const hcaptchaSubmit = page.locator('#hcaptchaSubmitBtn')
-            const hasHcaptchaSubmit = await hcaptchaSubmit.count().catch(() => 0)
-            if (hasHcaptchaSubmit > 0) {
-              await hcaptchaSubmit.dispatchEvent('click')
-              console.log('[lever] Clicked #hcaptchaSubmitBtn after token injection')
-              await humanDelay(3000, 5000)
-            } else {
-              // Fallback: try the visible submit button
-              const resubmitted = await submitForm(page)
-              if (resubmitted) {
-                console.log('[lever] Re-submitted form via visible button after token injection')
-                await humanDelay(3000, 5000)
+          // ── Step A: Inject token into textarea fields ──
+          await injectHCaptchaToken(page, capsolverToken)
+          console.log('[lever] [post-captcha] Token injected into textarea(s) and callback attempted')
+          await humanDelay(500, 1000)
+
+          // ── Step B: Try hcaptcha.execute() to trigger the normal post-solve flow ──
+          const executeResult = await page.evaluate((tok) => {
+            const results: string[] = []
+            const hcaptchaApi = (window as any).hcaptcha
+
+            // Method 1: hcaptcha.execute() — triggers the widget's onPass callback
+            if (hcaptchaApi && typeof hcaptchaApi.execute === 'function') {
+              try {
+                hcaptchaApi.execute()
+                results.push('hcaptcha.execute() called')
+              } catch (e) {
+                results.push(`hcaptcha.execute() failed: ${e}`)
               }
             }
 
-            // Check confirmation again
+            // Method 2: Directly set the response AND call getResponse to confirm
+            if (hcaptchaApi && typeof hcaptchaApi.setResponse === 'function') {
+              try {
+                hcaptchaApi.setResponse(tok)
+                results.push('hcaptcha.setResponse() called')
+              } catch (e) {
+                results.push(`hcaptcha.setResponse() failed: ${e}`)
+              }
+            }
+
+            // Method 3: Find and invoke the data-callback function from the hCaptcha div
+            const hcaptchaDiv = document.querySelector('.h-captcha, [data-sitekey]')
+            if (hcaptchaDiv) {
+              const cbName = hcaptchaDiv.getAttribute('data-callback')
+              if (cbName && typeof (window as any)[cbName] === 'function') {
+                try {
+                  (window as any)[cbName](tok)
+                  results.push(`data-callback "${cbName}" invoked`)
+                } catch (e) {
+                  results.push(`data-callback "${cbName}" failed: ${e}`)
+                }
+              }
+            }
+
+            return results
+          }, capsolverToken).catch(() => [] as string[])
+
+          for (const r of executeResult) {
+            console.log(`[lever] [post-captcha] ${r}`)
+          }
+          await humanDelay(1000, 2000)
+
+          // ── Step C: Click #hcaptchaSubmitBtn (hidden submit that Lever's JS triggers on success) ──
+          const hcaptchaSubmit = page.locator('#hcaptchaSubmitBtn')
+          const hasHcaptchaSubmit = await hcaptchaSubmit.count().catch(() => 0)
+          if (hasHcaptchaSubmit > 0) {
+            // Use JS form.submit() as primary, dispatchEvent as fallback.
+            // dispatchEvent('click') on a hidden button may not trigger the native submit.
+            const formSubmitted = await page.evaluate(() => {
+              const btn = document.querySelector('#hcaptchaSubmitBtn') as HTMLButtonElement
+              if (!btn) return 'button_not_found'
+              const form = btn.closest('form')
+              if (form) {
+                // Trigger the submit event (lets JS handlers run) then actually submit
+                const evt = new Event('submit', { bubbles: true, cancelable: true })
+                const prevented = !form.dispatchEvent(evt)
+                if (!prevented) {
+                  form.submit()
+                }
+                return prevented ? 'submit_event_prevented' : 'form.submit()_called'
+              }
+              // No parent form — click the button directly
+              btn.click()
+              return 'btn.click()_called'
+            }).catch((e) => `error: ${e}`)
+            console.log(`[lever] [post-captcha] #hcaptchaSubmitBtn form submission: ${formSubmitted}`)
+
+            // Also dispatch click as a fallback (some Lever forms attach click handlers)
+            await hcaptchaSubmit.dispatchEvent('click').catch(() => {})
+            console.log('[lever] [post-captcha] #hcaptchaSubmitBtn dispatchEvent click (fallback)')
+            await humanDelay(3000, 5000)
+          } else {
+            console.log('[lever] [post-captcha] #hcaptchaSubmitBtn not found — trying visible submit')
+            // Fallback: try the visible submit button
+            const resubmitted = await submitForm(page)
+            if (resubmitted) {
+              console.log('[lever] [post-captcha] Re-submitted form via visible button after token injection')
+              await humanDelay(3000, 5000)
+            }
+          }
+
+          // ── Step D: Wait longer for redirect, then check confirmation ──
+          // Lever forms can take a few seconds to redirect after submit
+          await humanDelay(2000, 3000)
+          confirmed = await checkForConfirmation(page, jobUrl)
+          if (confirmed) {
+            return {
+              success: true,
+              status: 'applied',
+              company,
+              role,
+              ats: 'Lever',
+              duration: Date.now() - start,
+            }
+          }
+
+          // ── Step E: Last resort — maybe the submit didn't fire, try #btn-submit again ──
+          // This re-clicks the visible button which triggers the hCaptcha flow again,
+          // but now with the token already in place it may pass through immediately.
+          console.log('[lever] [post-captcha] No confirmation yet — retrying #btn-submit with token in place')
+          const retriedSubmit = await submitForm(page)
+          if (retriedSubmit) {
+            await humanDelay(4000, 6000)
             confirmed = await checkForConfirmation(page, jobUrl)
             if (confirmed) {
               return {
@@ -246,19 +350,18 @@ export const lever: ATSAdapter = {
                 duration: Date.now() - start,
               }
             }
-
-            // Even if no confirmation page, check for errors — the token might have worked
-            // but the page just didn't redirect yet
-            const postCapsolverErrors = await page.locator('.error, [class*="error"], .invalid-feedback').first()
-              .isVisible({ timeout: 3000 }).catch(() => false)
-            if (!postCapsolverErrors) {
-              console.log('[lever] No errors after CapSolver injection — possible silent success, marking needs_manual for safety')
-            } else {
-              console.warn('[lever] Errors still present after CapSolver injection — CAPTCHA token may have been rejected')
-            }
-          } else {
-            console.warn('[lever] CapSolver did not return a token — falling through to needs_manual')
           }
+
+          // Check for errors after all attempts
+          const postCapsolverErrors = await page.locator('.error, [class*="error"], .invalid-feedback').first()
+            .isVisible({ timeout: 3000 }).catch(() => false)
+          if (!postCapsolverErrors) {
+            console.log('[lever] [post-captcha] No errors visible — possible silent success, marking needs_manual for safety')
+          } else {
+            console.warn('[lever] [post-captcha] Errors still present — CAPTCHA token may have been rejected')
+          }
+        } else {
+          console.warn('[lever] 2Captcha/CapSolver did not return a token — falling through to needs_manual')
         }
       }
 
@@ -663,24 +766,39 @@ async function handleScreeningQuestions(page: Page, profile: ApplicantProfile): 
 }
 
 async function handleConsent(page: Page): Promise<void> {
-  // EEOC and consent checkboxes
+  // ── Part 1: Named consent checkboxes (specific attribute matches) ──
   const consentSelectors = [
     'input[type="checkbox"][name*="consent" i]',
     'input[type="checkbox"][name*="privacy" i]',
     'input[type="checkbox"][name*="agree" i]',
+    'input[type="checkbox"][name*="acknowledge" i]',
+    'input[type="checkbox"][name*="compliance" i]',
+    'input[type="checkbox"][name*="terms" i]',
+    'input[type="checkbox"][name*="data" i]',
     'input[type="checkbox"][id*="consent" i]',
     'input[type="checkbox"][id*="gdpr" i]',
+    'input[type="checkbox"][id*="privacy" i]',
+    'input[type="checkbox"][id*="acknowledge" i]',
+    'input[type="checkbox"][id*="compliance" i]',
+    // Lever data-attribute patterns
+    'input[type="checkbox"][data-compliance]',
   ]
 
+  let checkedCount = 0
   for (const sel of consentSelectors) {
     try {
-      const checkbox = page.locator(sel).first()
-      const visible = await checkbox.isVisible({ timeout: 2000 })
-      if (visible) {
-        const checked = await checkbox.isChecked()
-        if (!checked) {
-          await checkbox.check()
-          await humanDelay(300, 600)
+      const checkboxes = page.locator(sel)
+      const count = await checkboxes.count()
+      for (let i = 0; i < count; i++) {
+        const checkbox = checkboxes.nth(i)
+        const visible = await checkbox.isVisible({ timeout: 1500 }).catch(() => false)
+        if (visible) {
+          const checked = await checkbox.isChecked().catch(() => true)
+          if (!checked) {
+            await checkbox.check()
+            checkedCount++
+            await humanDelay(200, 400)
+          }
         }
       }
     } catch {
@@ -688,13 +806,85 @@ async function handleConsent(page: Page): Promise<void> {
     }
   }
 
-  // Lever EEOC: handle select dropdowns for gender, race, veteran status
-  // Default to "Decline to self-identify" where available
+  // ── Part 2: Container-based consent checkboxes (Lever wraps them in sections) ──
+  // Some Lever forms put consent checkboxes inside .compliance-section, .consent-section,
+  // or near labels containing "consent", "acknowledge", "I agree", etc.
+  const containerSelectors = [
+    '.compliance-section',
+    '.consent-section',
+    '[class*="consent"]',
+    '[class*="compliance"]',
+    '[class*="diversity"]',
+    '[class*="eeo"]',
+    '[class*="eeoc"]',
+  ]
+
+  for (const containerSel of containerSelectors) {
+    try {
+      const containers = page.locator(containerSel)
+      const count = await containers.count()
+      for (let ci = 0; ci < count; ci++) {
+        const unchecked = containers.nth(ci).locator('input[type="checkbox"]:not(:checked)')
+        const uncheckedCount = await unchecked.count()
+        for (let i = 0; i < uncheckedCount; i++) {
+          const checkbox = unchecked.nth(i)
+          const visible = await checkbox.isVisible({ timeout: 1000 }).catch(() => false)
+          if (visible) {
+            await checkbox.check()
+            checkedCount++
+            await humanDelay(200, 400)
+          }
+        }
+      }
+    } catch {
+      continue
+    }
+  }
+
+  // ── Part 3: Label-based consent checkboxes ──
+  // Catch checkboxes whose associated label contains consent-related text
+  try {
+    const labelBasedChecked = await page.evaluate(() => {
+      let count = 0
+      const consentTerms = [
+        'consent', 'i agree', 'i acknowledge', 'privacy policy',
+        'terms and conditions', 'data processing', 'voluntary',
+        'i certify', 'i authorize', 'i understand',
+      ]
+      const labels = Array.from(document.querySelectorAll('label'))
+      for (const label of labels) {
+        const text = (label.textContent || '').toLowerCase()
+        if (!consentTerms.some(t => text.includes(t))) continue
+        // Find checkbox: either inside label, or via for= attribute
+        let checkbox = label.querySelector('input[type="checkbox"]') as HTMLInputElement | null
+        if (!checkbox && label.htmlFor) {
+          checkbox = document.getElementById(label.htmlFor) as HTMLInputElement | null
+        }
+        if (checkbox && !checkbox.checked && checkbox.offsetParent !== null) {
+          checkbox.click()
+          count++
+        }
+      }
+      return count
+    })
+    if (labelBasedChecked > 0) {
+      checkedCount += labelBasedChecked
+      await humanDelay(200, 400)
+    }
+  } catch {
+    // Best-effort
+  }
+
+  console.log(`[lever] handleConsent: checked ${checkedCount} consent checkbox(es)`)
+
+  // ── Part 4: EEOC dropdowns — "Decline to self-identify" ──
   const eeocSelectors = [
-    'select[name*="gender"]',
-    'select[name*="race"]',
-    'select[name*="veteran"]',
-    'select[name*="disability"]',
+    'select[name*="gender" i]',
+    'select[name*="race" i]',
+    'select[name*="veteran" i]',
+    'select[name*="disability" i]',
+    'select[name*="ethnicity" i]',
+    'select[name*="eeo" i]',
   ]
 
   for (const sel of eeocSelectors) {
@@ -702,7 +892,8 @@ async function handleConsent(page: Page): Promise<void> {
       const select = page.locator(sel).first()
       const visible = await select.isVisible({ timeout: 2000 })
       if (visible) {
-        // Try "Decline to self-identify" or similar
+        const currentValue = await select.evaluate((el) => (el as HTMLSelectElement).value).catch(() => '')
+        if (currentValue && currentValue !== '') continue // Already selected
         const options = await select.locator('option').allTextContents()
         const declineOption = options.find((o) =>
           o.toLowerCase().includes('decline') ||
@@ -713,6 +904,49 @@ async function handleConsent(page: Page): Promise<void> {
           await select.selectOption({ label: declineOption })
         }
         await humanDelay(300, 600)
+      }
+    } catch {
+      continue
+    }
+  }
+
+  // ── Part 5: EEOC radio buttons (some Lever forms use radios, not selects) ──
+  const eeocRadioContainers = [
+    '[class*="eeo"] fieldset',
+    '[class*="diversity"] fieldset',
+    '[class*="demographic"] fieldset',
+  ]
+
+  for (const containerSel of eeocRadioContainers) {
+    try {
+      const containers = page.locator(containerSel)
+      const count = await containers.count()
+      for (let ci = 0; ci < count; ci++) {
+        const container = containers.nth(ci)
+        // Look for a "Decline" radio
+        const declineRadio = container.locator(
+          'input[type="radio"][value*="decline" i], input[type="radio"][value*="prefer not" i]',
+        ).first()
+        const radioVisible = await declineRadio.isVisible({ timeout: 1500 }).catch(() => false)
+        if (radioVisible) {
+          await declineRadio.check()
+          await humanDelay(200, 400)
+        } else {
+          // Fall back to label-text matching for "Decline to self-identify"
+          const labels = container.locator('label')
+          const labelCount = await labels.count()
+          for (let li = 0; li < labelCount; li++) {
+            const labelText = await labels.nth(li).textContent().catch(() => '')
+            if (labelText && /decline|prefer not|choose not/i.test(labelText)) {
+              const radio = labels.nth(li).locator('input[type="radio"]').first()
+              if (await radio.count() > 0) {
+                await radio.check()
+                await humanDelay(200, 400)
+              }
+              break
+            }
+          }
+        }
       }
     } catch {
       continue

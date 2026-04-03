@@ -970,5 +970,27 @@ async function resolveRedirectChain(url: string, maxHops = 10): Promise<string |
     console.log(`[job-board-redirect] Redirect chain exceeded ${maxHops} hops, stopping at: ${currentUrl}`)
   }
 
+  // Post-processing: if we landed on a sign-up/login wall with a redirect_url
+  // param pointing to the real employer URL, extract it instead of returning
+  // the sign-up page. This commonly happens with RemoteOK (/sign-up?redirect_url=...).
+  try {
+    const finalUrlObj = new URL(currentUrl)
+    if (finalUrlObj.pathname.includes('sign-up') || finalUrlObj.pathname.includes('login')) {
+      const actualUrl = finalUrlObj.searchParams.get('redirect_url')
+        || finalUrlObj.searchParams.get('redirect')
+        || finalUrlObj.searchParams.get('return_url')
+        || finalUrlObj.searchParams.get('next')
+        || finalUrlObj.searchParams.get('url')
+      if (actualUrl) {
+        const decoded = decodeURIComponent(actualUrl)
+        const parsed = new URL(decoded)
+        if (parsed.hostname !== finalUrlObj.hostname) {
+          console.log(`[job-board-redirect] Extracted real URL from sign-up wall: ${decoded}`)
+          return decoded
+        }
+      }
+    }
+  } catch { /* URL parsing failed — return as-is */ }
+
   return currentUrl
 }

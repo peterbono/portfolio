@@ -1165,6 +1165,10 @@ export async function checkForConfirmation(page: Page, originalUrl?: string): Pr
   // ══════════════════════════════════════════════════════════════════════════
 
   // 1a. Submit button still visible → form was NOT submitted
+  // NOTE: Lever's #btn-submit is type="button" (not submit) — it's a JS trigger for hCaptcha.
+  // It may remain visible during post-captcha processing, so we exclude it from negative signals.
+  // We only flag actual submit-type buttons as negative signals.
+  const isLever = page.url().includes('lever.co') || page.url().includes('jobs.lever')
   const submitButtonSelectors = [
     'button:has-text("Submit Application")',
     'button:has-text("Submit application")',
@@ -1177,8 +1181,18 @@ export async function checkForConfirmation(page: Page, originalUrl?: string): Pr
   ]
   for (const sel of submitButtonSelectors) {
     try {
-      const visible = await page.locator(sel).first().isVisible({ timeout: 1000 })
+      const button = page.locator(sel).first()
+      const visible = await button.isVisible({ timeout: 1000 })
       if (visible) {
+        // On Lever: skip #btn-submit (type="button") — it's a JS hCaptcha trigger, not a real submit
+        if (isLever) {
+          const btnId = await button.evaluate((el) => el.id).catch(() => '')
+          const btnType = await button.evaluate((el) => (el as HTMLButtonElement).type).catch(() => '')
+          if (btnId === 'btn-submit' || btnType === 'button') {
+            console.log(`[checkForConfirmation] ⏭️ Skipping Lever JS trigger button "${sel}" (id=${btnId}, type=${btnType})`)
+            continue
+          }
+        }
         console.log(`[checkForConfirmation] ❌ Negative signal: submit button still visible → "${sel}"`)
         return false
       }
