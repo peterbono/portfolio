@@ -1,4 +1,4 @@
-import { task } from "@trigger.dev/sdk/v3"
+import { task, metadata } from "@trigger.dev/sdk/v3"
 
 /**
  * Phase 3 — Apply Jobs Task
@@ -73,6 +73,7 @@ async function sendServerNotification(
         'x-service-role-key': serviceRoleKey,
       },
       body: JSON.stringify({ userId, type, data }),
+      signal: AbortSignal.timeout(10_000), // 10s timeout — notification is best-effort
     })
     const result = await res.json()
     if (res.ok && result.sent) {
@@ -152,6 +153,7 @@ export const applyJobsTask = task({
               client_id: clientId,
               client_secret: clientSecret,
             }),
+            signal: AbortSignal.timeout(10_000), // 10s timeout — prevent hang on Google OAuth
           })
           if (tokenRes.ok) {
             const tokenData = await tokenRes.json() as { access_token: string }
@@ -180,6 +182,19 @@ export const applyJobsTask = task({
     console.log(
       `[apply-jobs] Processing ${jobsToApply.length}/${payload.jobs.length} jobs (cap: ${MAX_APPLICATIONS_PER_RUN})`,
     )
+
+    // ---- Set initial metadata for dashboard progress ----
+    metadata.set("progress", {
+      phase: "initializing",
+      totalJobs: jobsToApply.length,
+      processed: 0,
+      applied: 0,
+      failed: 0,
+      skipped: 0,
+      needsManual: 0,
+      currentJob: null,
+      startedAt: new Date().toISOString(),
+    })
 
     // ---------- Create bot run in Supabase ----------
     let runId: string | undefined
@@ -233,6 +248,19 @@ export const applyJobsTask = task({
     if (resolvedCount > 0) {
       console.log(`[apply-jobs] Pre-resolved ${resolvedCount}/${jobsToApply.length} in ${((Date.now() - preResolveStart) / 1000).toFixed(1)}s`)
     }
+
+    metadata.set("progress", {
+      phase: "pre-resolve-done",
+      totalJobs: jobsToApply.length,
+      resolvedCount,
+      processed: 0,
+      applied: 0,
+      failed: 0,
+      skipped: 0,
+      needsManual: 0,
+      currentJob: null,
+      startedAt: new Date().toISOString(),
+    })
 
     // ---------- Pre-filter Ashby jobs (CSP blocks headless — mark needs_manual) ----------
     // NOTE: runs AFTER pre-resolve so that job board URLs resolved to ashbyhq.com are caught
@@ -338,8 +366,13 @@ export const applyJobsTask = task({
             console.warn(`[apply-jobs] SBR connect failed: ${(sbrErr as Error).message} — falling back to local Chromium`)
           }
         }
-        // Local Chromium fallback
-        const localBrowser = await chromium.launch({ headless: true, args: LOCAL_ARGS }) as unknown as Awaited<ReturnType<typeof chromium.connectOverCDP>>
+        // Local Chromium fallback — with 20s timeout to prevent hang on OOM/corrupt binary
+        const localBrowser = await Promise.race([
+          chromium.launch({ headless: true, args: LOCAL_ARGS }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Local Chromium launch timeout (20s)')), 20_000)
+          ),
+        ]) as unknown as Awaited<ReturnType<typeof chromium.connectOverCDP>>
         const ctx = await localBrowser.newContext({
           viewport: { width: 1280, height: 900 },
           userAgent:
@@ -367,6 +400,19 @@ export const applyJobsTask = task({
           console.log(
             `[apply-jobs] [${i + 1}/${atsJobs.length}] ATS: ${job.company} — ${job.role}`,
           )
+
+          // Update metadata for dashboard live progress
+          metadata.set("progress", {
+            phase: "applying",
+            totalJobs: jobsToApply.length,
+            processed: results.length,
+            applied,
+            failed,
+            skipped,
+            needsManual,
+            currentJob: { company: job.company, role: job.role, index: i + 1, total: atsJobs.length, type: 'ATS' },
+            startedAt: new Date().toISOString(),
+          })
 
           // ── Proactive SBR session recycling every N jobs ──
           // This prevents hitting the domain limit before it occurs.
@@ -399,7 +445,12 @@ export const applyJobsTask = task({
             if (attempt > MAX_SBR_RETRIES && ats.usingSBR) {
               console.log(`[apply-jobs]   SBR failed ${MAX_SBR_RETRIES} times, falling back to local Chromium`)
               try {
-                localBrowser = await chromium.launch({ headless: true, args: LOCAL_ARGS })
+                localBrowser = await Promise.race([
+                  chromium.launch({ headless: true, args: LOCAL_ARGS }),
+                  new Promise<never>((_, reject) =>
+                    setTimeout(() => reject(new Error('Local Chromium fallback launch timeout (20s)')), 20_000)
+                  ),
+                ]) as Awaited<ReturnType<typeof chromium.launch>>
                 pageContext = await localBrowser.newContext({
                   viewport: { width: 1280, height: 900 },
                   userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -657,17 +708,22 @@ export const applyJobsTask = task({
         // tunnel fails from Trigger.dev cloud. Direct connection works but
         // LinkedIn may block cloud IPs. When auth fails → needs_manual.
         console.log('[apply-jobs] Launching local Chromium for LinkedIn Easy Apply')
-        const linkedInBrowser = await chromium.launch({
-          headless: true,
-          args: [
-            "--no-sandbox", "--disable-setuid-sandbox",
-            "--disable-blink-features=AutomationControlled",
-            "--disable-dev-shm-usage", "--disable-gpu", "--single-process",
-            "--disable-extensions", "--disable-background-networking",
-            "--disable-default-apps", "--disable-sync", "--no-first-run",
-            "--js-flags=--max-old-space-size=256",
-          ],
-        })
+        const linkedInBrowser = await Promise.race([
+          chromium.launch({
+            headless: true,
+            args: [
+              "--no-sandbox", "--disable-setuid-sandbox",
+              "--disable-blink-features=AutomationControlled",
+              "--disable-dev-shm-usage", "--disable-gpu", "--single-process",
+              "--disable-extensions", "--disable-background-networking",
+              "--disable-default-apps", "--disable-sync", "--no-first-run",
+              "--js-flags=--max-old-space-size=256",
+            ],
+          }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('LinkedIn Chromium launch timeout (20s)')), 20_000)
+          ),
+        ])
 
         try {
           const linkedInContext = await linkedInBrowser.newContext({
@@ -712,6 +768,19 @@ export const applyJobsTask = task({
               `[apply-jobs] [${i + 1}/${linkedInJobs.length}] LinkedIn: ${job.company} — ${job.role}`,
             )
 
+            // Update metadata for dashboard live progress
+            metadata.set("progress", {
+              phase: "applying",
+              totalJobs: jobsToApply.length,
+              processed: results.length,
+              applied,
+              failed,
+              skipped,
+              needsManual,
+              currentJob: { company: job.company, role: job.role, index: i + 1, total: linkedInJobs.length, type: 'LinkedIn' },
+              startedAt: new Date().toISOString(),
+            })
+
             const page = await linkedInContext.newPage()
 
             try {
@@ -722,7 +791,14 @@ export const applyJobsTask = task({
               profile.coverLetterSnippet = job.coverLetterSnippet || undefined
               profile.jobMeta = { company: job.company, role: job.role }
 
-              const applyResult = await adapter.apply(page, job.url, profile)
+              // Per-job timeout: LinkedIn Easy Apply should not hang indefinitely (120s max)
+              const LINKEDIN_JOB_TIMEOUT_MS = 120_000
+              const applyResult = await Promise.race([
+                adapter.apply(page, job.url, profile),
+                new Promise<import("../bot/types").ApplyResult>((_, reject) =>
+                  setTimeout(() => reject(new Error(`LinkedIn job timeout: adapter did not complete within ${LINKEDIN_JOB_TIMEOUT_MS / 1000}s`)), LINKEDIN_JOB_TIMEOUT_MS)
+                ),
+              ])
 
               const result: ApplyJobResult = {
                 url: job.url,
@@ -835,6 +911,20 @@ export const applyJobsTask = task({
       fatalError = err instanceof Error ? err : new Error(String(err))
       console.error(`[apply-jobs] FATAL ERROR during job processing: ${fatalError.message}`)
     } finally {
+      // ---------- Update metadata with final state ----------
+      metadata.set("progress", {
+        phase: fatalError ? "crashed" : "completed",
+        totalJobs: jobsToApply.length,
+        processed: results.length,
+        applied,
+        failed,
+        skipped,
+        needsManual,
+        currentJob: null,
+        completedAt: new Date().toISOString(),
+        ...(fatalError && { error: fatalError.message }),
+      })
+
       // ---------- Update bot run in Supabase (ALWAYS runs) ----------
       const totalDuration = Date.now() - runStart
       const runStatus = fatalError ? 'failed' : 'completed'

@@ -752,8 +752,18 @@ async function probeCompanyAtsPages(companyName: string, roleTitle?: string): Pr
   // Track career pages found (fallback if no specific job match)
   let bestCareerPage: string | null = null
 
+  // Total time budget for ATS probing — prevents runaway sequential fetches
+  // (up to ~72 slug/template combos + 4 domain variants, each with 5s timeout)
+  const PROBE_TOTAL_TIMEOUT_MS = 30_000 // 30s max for all probes combined
+  const probeStart = Date.now()
+
   for (const slug of slugs) {
+    if (Date.now() - probeStart > PROBE_TOTAL_TIMEOUT_MS) {
+      console.warn(`[job-board-redirect] ATS probe total timeout (${PROBE_TOTAL_TIMEOUT_MS / 1000}s) — stopping`)
+      break
+    }
     for (const template of ATS_TEMPLATES) {
+      if (Date.now() - probeStart > PROBE_TOTAL_TIMEOUT_MS) break
       const url = template.replace('{slug}', slug)
       try {
         const response = await fetch(url, {
@@ -789,7 +799,7 @@ async function probeCompanyAtsPages(companyName: string, roleTitle?: string): Pr
     }
   }
 
-  console.log(`[job-board-redirect] ATS template probing done, trying company domains...`)
+  console.log(`[job-board-redirect] ATS template probing done in ${((Date.now() - probeStart) / 1000).toFixed(1)}s, trying company domains...`)
 
   // Also try the company's own domain /careers page
   const domainVariants = [
@@ -800,6 +810,10 @@ async function probeCompanyAtsPages(companyName: string, roleTitle?: string): Pr
   ]
 
   for (const url of domainVariants) {
+    if (Date.now() - probeStart > PROBE_TOTAL_TIMEOUT_MS) {
+      console.warn(`[job-board-redirect] Domain probe skipped — total probe timeout reached`)
+      break
+    }
     try {
       const response = await fetch(url, {
         method: 'HEAD',
@@ -924,8 +938,14 @@ async function resolveRedirectChain(url: string, maxHops = 10): Promise<string |
   let currentUrl = url
   let hops = 0
   let reachable = false
+  const chainStart = Date.now()
+  const CHAIN_TOTAL_TIMEOUT_MS = 30_000 // 30s max for entire redirect chain
 
   while (hops < maxHops) {
+    if (Date.now() - chainStart > CHAIN_TOTAL_TIMEOUT_MS) {
+      console.warn(`[job-board-redirect] Redirect chain total timeout (${CHAIN_TOTAL_TIMEOUT_MS / 1000}s) at hop ${hops}`)
+      break
+    }
     try {
       const response = await fetch(currentUrl, {
         method: 'HEAD',
