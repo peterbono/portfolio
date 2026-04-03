@@ -199,15 +199,27 @@ export const applyJobsTask = task({
     // ---------- Pre-resolve job board URLs to ATS URLs (server-side, no Playwright) ----------
     // Safety net: if scouts didn't resolve a job board URL (Dribbble, Jobicy, RemoteOK, etc.)
     // to a direct ATS URL, attempt lightweight server-side resolution here before adapter detection.
-    // This is a no-op for URLs already pointing to ATS domains.
+    // CRITICAL: each resolve has a 10s timeout, total phase capped at 60s to prevent task hangs.
     let resolvedCount = 0
+    const preResolveStart = Date.now()
+    const PRE_RESOLVE_TIMEOUT_PER_JOB = 10_000 // 10s per job
+    const PRE_RESOLVE_TIMEOUT_TOTAL = 60_000   // 60s total cap
     for (const job of jobsToApply) {
+      if (Date.now() - preResolveStart > PRE_RESOLVE_TIMEOUT_TOTAL) {
+        console.warn(`[apply-jobs] Pre-resolve total timeout (60s) — skipping remaining ${jobsToApply.length - resolvedCount} jobs`)
+        break
+      }
       if (isJobBoardUrl(job.url)) {
         try {
-          const resolved = await resolveJobBoardUrlServerSide(job.url, {
-            company: job.company,
-            role: job.role,
-          })
+          const resolved = await Promise.race([
+            resolveJobBoardUrlServerSide(job.url, {
+              company: job.company,
+              role: job.role,
+            }),
+            new Promise<string>((_, reject) =>
+              setTimeout(() => reject(new Error('Pre-resolve timeout (10s)')), PRE_RESOLVE_TIMEOUT_PER_JOB)
+            ),
+          ])
           if (resolved !== job.url) {
             console.log(`[apply-jobs] Pre-resolved: ${job.url} -> ${resolved}`)
             job.url = resolved
@@ -215,12 +227,11 @@ export const applyJobsTask = task({
           }
         } catch (err) {
           console.warn(`[apply-jobs] Pre-resolve failed for ${job.url}: ${err instanceof Error ? err.message : err}`)
-          // Keep original URL — the jobBoardRedirect adapter will handle it with Playwright
         }
       }
     }
     if (resolvedCount > 0) {
-      console.log(`[apply-jobs] Pre-resolved ${resolvedCount}/${jobsToApply.length} job board URLs to ATS URLs`)
+      console.log(`[apply-jobs] Pre-resolved ${resolvedCount}/${jobsToApply.length} in ${((Date.now() - preResolveStart) / 1000).toFixed(1)}s`)
     }
 
     // ---------- Pre-filter Ashby jobs (CSP blocks headless — mark needs_manual) ----------
