@@ -663,13 +663,13 @@ const MAX_QUALIFY_PER_RUN = 50 // Cap to control Haiku API costs (~$0.003/job, ~
 
 /**
  * Qualify multiple job descriptions in parallel with a concurrency limit.
- * Default concurrency: 5 (to respect Anthropic rate limits).
+ * Default concurrency: 10 (Haiku handles high throughput well).
  */
 export async function qualifyJobsBatch(
   jobs: Array<{ jobDescription: string; url: string }>,
   searchProfile: SearchProfile,
   applicantProfile: ApplicantProfile,
-  concurrency: number = 5,
+  concurrency: number = 10,
 ): Promise<Map<string, QualificationResult>> {
   const results = new Map<string, QualificationResult>()
   // Cap the number of jobs to qualify per run
@@ -687,8 +687,8 @@ export async function qualifyJobsBatch(
       const result = await qualifyJob(job.jobDescription, searchProfile, applicantProfile)
       results.set(job.url, result)
 
-      // Small breathing room between API calls
-      await new Promise(r => setTimeout(r, 200 + Math.random() * 300))
+      // Small breathing room between API calls (reduced from 200-500ms to 50-150ms)
+      await new Promise(r => setTimeout(r, 50 + Math.random() * 100))
     }
   }
 

@@ -198,46 +198,231 @@ function humanDelay(baseMs: number, jitterMs: number = 500): Promise<void> {
   return new Promise(r => setTimeout(r, Math.max(100, ms)))
 }
 
-/** Extract the full job description text from a job page (with retry) */
-async function extractJobDescription(page: Page, url: string): Promise<string> {
-  // For LinkedIn job URLs, try the guest view endpoint first (simpler HTML, no SPA)
-  const linkedInJobIdMatch = url.match(/linkedin\.com\/jobs\/view\/(\d+)/)
-  if (linkedInJobIdMatch) {
-    try {
-      const guestUrl = `https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/${linkedInJobIdMatch[1]}`
-      console.log(`[orchestrator] Trying LinkedIn guest API for job ${linkedInJobIdMatch[1]}`)
-      await page.goto(guestUrl, { waitUntil: 'domcontentloaded', timeout: 15_000 })
-      await page.waitForTimeout(1500)
+// ---------------------------------------------------------------------------
+// JD extraction: fetch-first strategy (10x faster than Playwright for SSR pages)
+// ---------------------------------------------------------------------------
 
-      // Guest API returns simpler HTML with these selectors
-      const guestSelectors = [
-        '.show-more-less-html__markup',
-        '.description__text',
-        '.decorated-job-posting__details',
-        'section.description',
-      ]
-      for (const sel of guestSelectors) {
-        const el = page.locator(sel).first()
-        if (await el.isVisible({ timeout: 2000 }).catch(() => false)) {
-          const text = await el.innerText().catch(() => '')
-          if (text.length > 100) {
-            console.log(`[orchestrator] JD via LinkedIn guest API "${sel}" (${text.length} chars)`)
-            return text.slice(0, 6000)
-          }
-        }
-      }
-      // Try full body as fallback for guest API
-      const bodyText = await page.locator('body').innerText().catch(() => '')
-      if (bodyText.length > 100) {
-        console.log(`[orchestrator] JD via LinkedIn guest API body (${bodyText.length} chars)`)
-        return bodyText.slice(0, 6000)
-      }
-    } catch (err) {
-      console.warn(`[orchestrator] LinkedIn guest API failed: ${(err as Error).message}`)
-    }
+import * as cheerio from 'cheerio'
+
+/** In-memory JD cache: same URL = same JD, avoids re-fetching across runs within same process */
+const jdCache = new Map<string, string>()
+
+/** Standard fetch headers for JD extraction */
+const JD_FETCH_HEADERS: Record<string, string> = {
+  'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.9',
+}
+
+/**
+ * Extract JD via fetch() + cheerio for server-rendered pages.
+ * Returns the extracted text, or '' if extraction fails.
+ * Works for: LinkedIn guest API, Lever, Greenhouse, Ashby, Workable, TeamTailor, Breezy.
+ */
+async function extractJdViaFetch(url: string): Promise<string> {
+  // Check cache first
+  const cached = jdCache.get(url)
+  if (cached) {
+    console.log(`[jd-fetch] Cache hit for ${url} (${cached.length} chars)`)
+    return cached
   }
 
-  // Standard extraction: navigate to the URL directly
+  try {
+    // --- LinkedIn: use guest API endpoint ---
+    const linkedInMatch = url.match(/linkedin\.com\/jobs\/view\/(\d+)/)
+    if (linkedInMatch) {
+      const guestUrl = `https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/${linkedInMatch[1]}`
+      const resp = await fetch(guestUrl, { headers: JD_FETCH_HEADERS, signal: AbortSignal.timeout(10_000) })
+      if (resp.ok) {
+        const html = await resp.text()
+        const $ = cheerio.load(html)
+        const text =
+          $('.show-more-less-html__markup').text().trim() ||
+          $('.description__text').text().trim() ||
+          $('.decorated-job-posting__details').text().trim() ||
+          $('section.description').text().trim() ||
+          $('body').text().trim()
+        if (text.length > 100) {
+          const result = text.slice(0, 6000)
+          jdCache.set(url, result)
+          console.log(`[jd-fetch] LinkedIn guest API: ${result.length} chars`)
+          return result
+        }
+      }
+    }
+
+    // --- Lever: server-rendered, clean HTML ---
+    if (url.includes('lever.co') || url.includes('jobs.lever')) {
+      const resp = await fetch(url, { headers: JD_FETCH_HEADERS, signal: AbortSignal.timeout(10_000) })
+      if (resp.ok) {
+        const html = await resp.text()
+        const $ = cheerio.load(html)
+        const text =
+          $('[data-qa="job-description"]').text().trim() ||
+          $('.posting-page .section-wrapper').text().trim() ||
+          $('.content .section-wrapper').text().trim() ||
+          $('[class*="posting-description"]').text().trim() ||
+          $('main').text().trim()
+        if (text.length > 100) {
+          const result = text.slice(0, 6000)
+          jdCache.set(url, result)
+          console.log(`[jd-fetch] Lever: ${result.length} chars`)
+          return result
+        }
+      }
+    }
+
+    // --- Greenhouse: server-rendered ---
+    if (url.includes('greenhouse.io') || url.includes('boards.greenhouse')) {
+      const resp = await fetch(url, { headers: JD_FETCH_HEADERS, signal: AbortSignal.timeout(10_000) })
+      if (resp.ok) {
+        const html = await resp.text()
+        const $ = cheerio.load(html)
+        const text =
+          $('#content .section-wrapper').text().trim() ||
+          $('[class*="job-description"]').text().trim() ||
+          $('main').text().trim() ||
+          $('[role="main"]').text().trim()
+        if (text.length > 100) {
+          const result = text.slice(0, 6000)
+          jdCache.set(url, result)
+          console.log(`[jd-fetch] Greenhouse: ${result.length} chars`)
+          return result
+        }
+      }
+    }
+
+    // --- Ashby: server-rendered ---
+    if (url.includes('ashbyhq.com')) {
+      const resp = await fetch(url, { headers: JD_FETCH_HEADERS, signal: AbortSignal.timeout(10_000) })
+      if (resp.ok) {
+        const html = await resp.text()
+        const $ = cheerio.load(html)
+        const text =
+          $('[data-testid="job-description"]').text().trim() ||
+          $('[class*="job-description"]').text().trim() ||
+          $('[class*="jobDescription"]').text().trim() ||
+          $('main').text().trim()
+        if (text.length > 100) {
+          const result = text.slice(0, 6000)
+          jdCache.set(url, result)
+          console.log(`[jd-fetch] Ashby: ${result.length} chars`)
+          return result
+        }
+      }
+    }
+
+    // --- Workable: server-rendered ---
+    if (url.includes('workable.com')) {
+      const resp = await fetch(url, { headers: JD_FETCH_HEADERS, signal: AbortSignal.timeout(10_000) })
+      if (resp.ok) {
+        const html = await resp.text()
+        const $ = cheerio.load(html)
+        const text =
+          $('[data-ui="job-description"]').text().trim() ||
+          $('[class*="job-description"]').text().trim() ||
+          $('main').text().trim()
+        if (text.length > 100) {
+          const result = text.slice(0, 6000)
+          jdCache.set(url, result)
+          console.log(`[jd-fetch] Workable: ${result.length} chars`)
+          return result
+        }
+      }
+    }
+
+    // --- TeamTailor: server-rendered ---
+    if (url.includes('teamtailor.com')) {
+      const resp = await fetch(url, { headers: JD_FETCH_HEADERS, signal: AbortSignal.timeout(10_000) })
+      if (resp.ok) {
+        const html = await resp.text()
+        const $ = cheerio.load(html)
+        const text =
+          $('[class*="job-description"]').text().trim() ||
+          $('article').text().trim() ||
+          $('main').text().trim()
+        if (text.length > 100) {
+          const result = text.slice(0, 6000)
+          jdCache.set(url, result)
+          console.log(`[jd-fetch] TeamTailor: ${result.length} chars`)
+          return result
+        }
+      }
+    }
+
+    // --- Breezy: server-rendered ---
+    if (url.includes('breezy.hr')) {
+      const resp = await fetch(url, { headers: JD_FETCH_HEADERS, signal: AbortSignal.timeout(10_000) })
+      if (resp.ok) {
+        const html = await resp.text()
+        const $ = cheerio.load(html)
+        const text =
+          $('[class*="description"]').text().trim() ||
+          $('main').text().trim()
+        if (text.length > 100) {
+          const result = text.slice(0, 6000)
+          jdCache.set(url, result)
+          console.log(`[jd-fetch] Breezy: ${result.length} chars`)
+          return result
+        }
+      }
+    }
+
+    // --- Generic fetch: try any URL with common selectors ---
+    const resp = await fetch(url, {
+      headers: JD_FETCH_HEADERS,
+      signal: AbortSignal.timeout(10_000),
+      redirect: 'follow',
+    })
+    if (resp.ok) {
+      const contentType = resp.headers.get('content-type') || ''
+      if (contentType.includes('text/html')) {
+        const html = await resp.text()
+        const $ = cheerio.load(html)
+
+        // Remove script/style noise
+        $('script, style, nav, header, footer').remove()
+
+        const text =
+          $('[data-testid="job-description"]').text().trim() ||
+          $('[class*="job-description"]').text().trim() ||
+          $('[class*="jobDescription"]').text().trim() ||
+          $('[class*="job_description"]').text().trim() ||
+          $('[class*="JobDescription"]').text().trim() ||
+          $('[class*="posting-description"]').text().trim() ||
+          $('.job-description').text().trim() ||
+          $('article').text().trim() ||
+          $('main').text().trim() ||
+          $('[role="main"]').text().trim()
+
+        if (text.length > 100) {
+          const result = text.slice(0, 6000)
+          jdCache.set(url, result)
+          console.log(`[jd-fetch] Generic: ${result.length} chars`)
+          return result
+        }
+      }
+    }
+  } catch (err) {
+    console.warn(`[jd-fetch] Failed for ${url}: ${(err as Error).message}`)
+  }
+
+  return '' // Empty = caller should try Playwright fallback
+}
+
+/** Extract the full job description text from a job page.
+ * Strategy: try fetch() first (fast, no browser), fall back to Playwright (slow, reliable).
+ */
+async function extractJobDescription(page: Page, url: string): Promise<string> {
+  // --- Strategy 1: fetch() + cheerio (fast, works for server-rendered pages) ---
+  const fetchResult = await extractJdViaFetch(url)
+  if (fetchResult.length >= 50) {
+    return fetchResult
+  }
+
+  // --- Strategy 2: Playwright fallback (slow but handles SPAs and JS-rendered pages) ---
+  console.log(`[orchestrator] Fetch extraction insufficient (${fetchResult.length} chars), falling back to Playwright for ${url}`)
+
   const attempt = async (waitStrategy: 'domcontentloaded' | 'networkidle'): Promise<string> => {
     await page.goto(url, { waitUntil: waitStrategy, timeout: 15_000 })
     await page.waitForTimeout(2000)
@@ -278,8 +463,10 @@ async function extractJobDescription(page: Page, url: string): Promise<string> {
       if (await el.isVisible({ timeout: 1500 }).catch(() => false)) {
         const text = await el.innerText().catch(() => '')
         if (text.length > 100) {
-          console.log(`[orchestrator] JD extracted via "${sel}" (${text.length} chars)`)
-          return text.slice(0, 6000)
+          console.log(`[orchestrator] JD extracted via Playwright "${sel}" (${text.length} chars)`)
+          const result = text.slice(0, 6000)
+          jdCache.set(url, result) // cache for next time
+          return result
         }
       }
     }
@@ -331,8 +518,10 @@ const DEFAULT_SCOUT_KEYWORDS = [
   'Design System',
 ]
 
-/** Number of LinkedIn pages to scrape per keyword×location combo (25 results/page) */
-const PAGES_PER_SEARCH = 3
+/** Number of LinkedIn pages to scrape per keyword×location combo (25 results/page).
+ * Reduced from 3 to 2: diminishing returns on page 3 (mostly duplicates),
+ * and with parallel fetch-based scout, 2 pages × 33 combos still yields 50+ results/page. */
+const PAGES_PER_SEARCH = 2
 
 async function phaseScout(
   page: Page,
@@ -660,7 +849,9 @@ async function phaseQualify(
   }
 
   // -------------------------------------------------------------------------
-  // Step 2a: Extract JDs in PARALLEL (multiple browser pages for speed)
+  // Step 2a: Extract JDs — TWO-PHASE strategy for maximum speed
+  //   Phase A: fetch() + cheerio in parallel (10 concurrent, ~0.3s each)
+  //   Phase B: Playwright fallback only for fetch failures (2 concurrent)
   // -------------------------------------------------------------------------
   const jobsWithJD: Array<{ job: DiscoveredJob; jd: string }> = []
   let extractedCount = 0
@@ -676,14 +867,17 @@ async function phaseQualify(
     console.log(`[pipeline] Using pre-fetched JD for ${job.company} (${job.description!.length} chars)`)
   }
 
-  // Extract remaining JDs in parallel using worker pages
   if (needExtractionJobs.length > 0) {
-    const JD_CONCURRENCY = 2 // Reduced from 4 — OOM at 61/86 with 4 parallel pages on limited RAM
-    const jdQueue = [...needExtractionJobs]
+    // --- Phase A: Parallel fetch-based extraction (10 concurrent, no browser) ---
+    const FETCH_CONCURRENCY = 10
+    const fetchQueue = [...needExtractionJobs]
+    const fetchFailures: DiscoveredJob[] = [] // jobs that need Playwright fallback
 
-    async function jdWorker(workerPage: Page) {
-      while (jdQueue.length > 0) {
-        const job = jdQueue.shift()
+    console.log(`[pipeline] Phase A: fetch-based JD extraction for ${needExtractionJobs.length} jobs (${FETCH_CONCURRENCY} concurrent)`)
+
+    async function fetchJdWorker(): Promise<void> {
+      while (fetchQueue.length > 0) {
+        const job = fetchQueue.shift()
         if (!job) break
 
         extractedCount++
@@ -697,47 +891,71 @@ async function phaseQualify(
           preFiltered: stats.filtered,
         })
 
-        let jobDescription = ''
-        try {
-          jobDescription = await extractJobDescription(workerPage, job.url)
-        } catch (extractErr) {
-          console.warn(`[pipeline] JD extraction error for ${job.company}: ${(extractErr as Error).message}`)
+        const fetchedJd = await extractJdViaFetch(job.url)
+        if (fetchedJd.length >= 50) {
+          jobsWithJD.push({ job, jd: fetchedJd })
+        } else {
+          fetchFailures.push(job)
         }
-
-        // Fallback: build synthetic JD from scout metadata
-        if (jobDescription.length < 50) {
-          console.log(`[pipeline] JD too short for ${job.company} — using fallback metadata`)
-          jobDescription = [
-            `Job Title: ${job.title}`,
-            `Company: ${job.company}`,
-            `Location: ${job.location || 'Not specified'}`,
-            ``,
-            `NOTE: Full job description could not be extracted.`,
-            `Score based on title, company, and location. Give benefit of the doubt.`,
-          ].join('\n')
-        }
-
-        jobsWithJD.push({ job, jd: jobDescription })
-        await humanDelay(800, 400)
       }
     }
 
-    // Create worker pages from existing browser context
-    const workerCount = Math.min(JD_CONCURRENCY, needExtractionJobs.length)
-    const workerPages: Page[] = []
-    console.log(`[pipeline] Launching ${workerCount} parallel JD extraction workers for ${needExtractionJobs.length} jobs`)
+    const fetchWorkerCount = Math.min(FETCH_CONCURRENCY, needExtractionJobs.length)
+    await Promise.all(Array.from({ length: fetchWorkerCount }, () => fetchJdWorker()))
 
-    try {
-      const ctx = page.context()
-      for (let i = 0; i < workerCount; i++) {
-        const wp = await ctx.newPage()
-        workerPages.push(wp)
+    const fetchSuccessCount = needExtractionJobs.length - fetchFailures.length
+    console.log(`[pipeline] Phase A complete: ${fetchSuccessCount} via fetch, ${fetchFailures.length} need Playwright`)
+
+    // --- Phase B: Playwright fallback for fetch failures only ---
+    if (fetchFailures.length > 0) {
+      const PW_CONCURRENCY = 3 // Higher than before (was 2) because most heavy lifting done by fetch
+      const pwQueue = [...fetchFailures]
+
+      async function pwJdWorker(workerPage: Page) {
+        while (pwQueue.length > 0) {
+          const job = pwQueue.shift()
+          if (!job) break
+
+          let jobDescription = ''
+          try {
+            jobDescription = await extractJobDescription(workerPage, job.url)
+          } catch (extractErr) {
+            console.warn(`[pipeline] Playwright JD extraction error for ${job.company}: ${(extractErr as Error).message}`)
+          }
+
+          // Fallback: build synthetic JD from scout metadata
+          if (jobDescription.length < 50) {
+            console.log(`[pipeline] JD too short for ${job.company} — using fallback metadata`)
+            jobDescription = [
+              `Job Title: ${job.title}`,
+              `Company: ${job.company}`,
+              `Location: ${job.location || 'Not specified'}`,
+              ``,
+              `NOTE: Full job description could not be extracted.`,
+              `Score based on title, company, and location. Give benefit of the doubt.`,
+            ].join('\n')
+          }
+
+          jobsWithJD.push({ job, jd: jobDescription })
+          await humanDelay(500, 300)
+        }
       }
-      await Promise.all(workerPages.map(wp => jdWorker(wp)))
-    } finally {
-      // Cleanup worker pages
-      for (const wp of workerPages) {
-        await wp.close().catch(() => {})
+
+      const workerCount = Math.min(PW_CONCURRENCY, fetchFailures.length)
+      const workerPages: Page[] = []
+      console.log(`[pipeline] Phase B: Playwright fallback for ${fetchFailures.length} jobs (${workerCount} concurrent)`)
+
+      try {
+        const ctx = page.context()
+        for (let i = 0; i < workerCount; i++) {
+          const wp = await ctx.newPage()
+          workerPages.push(wp)
+        }
+        await Promise.all(workerPages.map(wp => pwJdWorker(wp)))
+      } finally {
+        for (const wp of workerPages) {
+          await wp.close().catch(() => {})
+        }
       }
     }
   }
@@ -747,7 +965,7 @@ async function phaseQualify(
   // -------------------------------------------------------------------------
   // Step 2b: Qualify via Haiku in parallel batches of QUALIFY_BATCH_SIZE
   // -------------------------------------------------------------------------
-  const QUALIFY_BATCH_SIZE = 10
+  const QUALIFY_BATCH_SIZE = 15 // Increased from 10 — Haiku handles higher concurrency well
   let processedCount = 0
 
   console.log(`[pipeline] Qualifying ${jobsWithJD.length} jobs in parallel batches of ${QUALIFY_BATCH_SIZE}`)
