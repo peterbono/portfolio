@@ -678,7 +678,7 @@ async function phaseQualify(
 
   // Extract remaining JDs in parallel using worker pages
   if (needExtractionJobs.length > 0) {
-    const JD_CONCURRENCY = 4
+    const JD_CONCURRENCY = 2 // Reduced from 4 — OOM at 61/86 with 4 parallel pages on limited RAM
     const jdQueue = [...needExtractionJobs]
 
     async function jdWorker(workerPage: Page) {

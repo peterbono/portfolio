@@ -2,6 +2,7 @@ import { task, metadata, tasks } from "@trigger.dev/sdk/v3"
 
 export const applyJobTask = task({
   id: "apply-job-pipeline",
+  machine: "large-1x", // 4 vCPU, 8 GB RAM — needed for 86+ JD extractions with local Chromium
   maxDuration: 1800, // 30 minutes — multi-source scout + qualify + SBR reconnect overhead
   run: async (payload: {
     userId: string
