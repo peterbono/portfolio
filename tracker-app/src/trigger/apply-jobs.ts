@@ -223,19 +223,21 @@ export const applyJobsTask = task({
       console.log(`[apply-jobs] Pre-resolved ${resolvedCount}/${jobsToApply.length} job board URLs to ATS URLs`)
     }
 
-    // ---------- Pre-filter Ashby jobs (CSP blocks headless — always skipped) ----------
+    // ---------- Pre-filter Ashby jobs (CSP blocks headless — mark needs_manual) ----------
     // NOTE: runs AFTER pre-resolve so that job board URLs resolved to ashbyhq.com are caught
+    // Ashby jobs are valid qualified matches — they just can't be auto-applied via headless.
+    // Mark as needs_manual so they appear in the user's kanban for manual apply.
     const ashbyJobs = jobsToApply.filter((j) => /ashbyhq\.com/i.test(j.url))
     const nonAshbyJobs = jobsToApply.filter((j) => !/ashbyhq\.com/i.test(j.url))
     if (ashbyJobs.length > 0) {
-      console.log(`[apply-jobs] Pre-filtered ${ashbyJobs.length} Ashby jobs (CSP blocks headless)`)
+      console.log(`[apply-jobs] ${ashbyJobs.length} Ashby jobs → needs_manual (CSP blocks headless, user can apply manually)`)
       for (const aj of ashbyJobs) {
         results.push({
           url: aj.url, company: aj.company, role: aj.role, ats: 'Ashby',
-          status: 'skipped', reason: 'Ashby blocks headless browsers — filtered before apply',
+          status: 'needs_manual', reason: `Ashby blocks headless browsers — apply manually at: ${aj.url}`,
           durationMs: 0,
         })
-        skipped++
+        needsManual++
       }
     }
 
