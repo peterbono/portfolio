@@ -107,6 +107,7 @@ export const applyJobsTask = task({
     // Dynamic imports — these are only available in the Trigger.dev worker
     const { chromium } = await import("playwright")
     const { detectAdapter } = await import("../bot/adapters")
+    const { isJobBoardUrl, resolveJobBoardUrlServerSide } = await import("../bot/adapters/job-board-redirect")
     const { APPLICANT } = await import("../bot/types")
     type ApplyResult = import("../bot/types").ApplyResult
     const { takeScreenshot, humanDelay, blockUnnecessaryResources } = await import("../bot/helpers")
@@ -195,7 +196,35 @@ export const applyJobsTask = task({
     let failed = 0
     let needsManual = 0
 
+    // ---------- Pre-resolve job board URLs to ATS URLs (server-side, no Playwright) ----------
+    // Safety net: if scouts didn't resolve a job board URL (Dribbble, Jobicy, RemoteOK, etc.)
+    // to a direct ATS URL, attempt lightweight server-side resolution here before adapter detection.
+    // This is a no-op for URLs already pointing to ATS domains.
+    let resolvedCount = 0
+    for (const job of jobsToApply) {
+      if (isJobBoardUrl(job.url)) {
+        try {
+          const resolved = await resolveJobBoardUrlServerSide(job.url, {
+            company: job.company,
+            role: job.role,
+          })
+          if (resolved !== job.url) {
+            console.log(`[apply-jobs] Pre-resolved: ${job.url} -> ${resolved}`)
+            job.url = resolved
+            resolvedCount++
+          }
+        } catch (err) {
+          console.warn(`[apply-jobs] Pre-resolve failed for ${job.url}: ${err instanceof Error ? err.message : err}`)
+          // Keep original URL — the jobBoardRedirect adapter will handle it with Playwright
+        }
+      }
+    }
+    if (resolvedCount > 0) {
+      console.log(`[apply-jobs] Pre-resolved ${resolvedCount}/${jobsToApply.length} job board URLs to ATS URLs`)
+    }
+
     // ---------- Pre-filter Ashby jobs (CSP blocks headless — always skipped) ----------
+    // NOTE: runs AFTER pre-resolve so that job board URLs resolved to ashbyhq.com are caught
     const ashbyJobs = jobsToApply.filter((j) => /ashbyhq\.com/i.test(j.url))
     const nonAshbyJobs = jobsToApply.filter((j) => !/ashbyhq\.com/i.test(j.url))
     if (ashbyJobs.length > 0) {

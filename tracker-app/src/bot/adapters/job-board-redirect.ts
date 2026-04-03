@@ -22,12 +22,22 @@ import { humanDelay, takeScreenshot, extractCompanyName, extractRoleTitle } from
  *   5. Re-dispatch to the correct ATS adapter (Greenhouse, Lever, etc.)
  */
 
-const JOB_BOARD_PATTERNS = [
+/**
+ * Known job board domains that don't host ATS forms directly.
+ * When a URL matches one of these, the redirect adapter resolves the
+ * real employer ATS URL before dispatching to the correct adapter.
+ *
+ * Keep this list in sync with scout sources in scout-boards.ts.
+ * Easy to extend: just add a new regex.
+ */
+export const JOB_BOARD_PATTERNS = [
   /remoteok\.com/i,
   /himalayas\.app/i,
   /wellfound\.com/i,
   /weworkremotely\.com/i,
   /remotive\.com/i,
+  /dribbble\.com/i,
+  /jobicy\.com/i,
 ]
 
 // Known tracking/redirect domains that don't host ATS forms.
@@ -316,8 +326,14 @@ async function clickApplyAndFollow(page: Page, listingDomain: string): Promise<s
     'a.button.action-apply[href]', // RemoteOK
     'a[data-job-id][href]',        // RemoteOK
     'a[data-testid="apply-button"]', // Himalayas
+    'a[data-testid="apply-link"]',   // Himalayas variant
+    'a.apply-button[href]',          // Dribbble
+    'a[class*="apply" i][href]',     // Dribbble / generic job boards
+    'a[class*="Apply" i][href]',     // Jobicy / generic
     'a:has-text("Apply Now")',
+    'a:has-text("Apply for this position")',
     'a:has-text("Apply for this job")',
+    'a:has-text("Apply on company site")',
     'a:has-text("Apply")',
   ]
 
@@ -993,4 +1009,172 @@ async function resolveRedirectChain(url: string, maxHops = 10): Promise<string |
   } catch { /* URL parsing failed — return as-is */ }
 
   return currentUrl
+}
+
+// ─── Exported utilities for pre-processing in apply-jobs.ts ─────────
+
+/**
+ * Check whether a URL belongs to a known job board (not a direct ATS).
+ * Used as a lightweight guard before attempting resolution.
+ */
+export function isJobBoardUrl(url: string): boolean {
+  return JOB_BOARD_PATTERNS.some(p => p.test(url))
+}
+
+/**
+ * Lightweight server-side URL resolver for job board listing pages.
+ *
+ * Attempts to resolve a job board URL to the real ATS URL WITHOUT launching
+ * Playwright. Uses only HTTP fetch + redirect chain following + ATS probing.
+ *
+ * This is a FALLBACK safety net called in apply-jobs.ts before adapter detection.
+ * If scouts already resolved the URL to an ATS domain, this is a no-op.
+ *
+ * Returns the resolved ATS URL, or the original URL if resolution fails
+ * (the jobBoardRedirect adapter will still handle it as a full fallback).
+ */
+export async function resolveJobBoardUrlServerSide(
+  url: string,
+  meta?: { company?: string; role?: string },
+): Promise<string> {
+  // Skip if URL is already a known ATS domain (no resolution needed)
+  const knownATS = [
+    'greenhouse.io', 'lever.co', 'workable.com', 'breezy.hr',
+    'ashbyhq.com', 'recruitee.com', 'smartrecruiters.com',
+    'bamboohr.com', 'myworkdayjobs.com', 'icims.com',
+    'jobvite.com', 'teamtailor.com', 'linkedin.com',
+  ]
+  try {
+    const hostname = new URL(url).hostname
+    if (knownATS.some(ats => hostname.includes(ats))) return url
+  } catch {
+    return url
+  }
+
+  // Only attempt resolution for known job board URLs
+  if (!isJobBoardUrl(url)) return url
+
+  console.log(`[url-resolver] Attempting server-side resolution for job board URL: ${url}`)
+
+  // Strategy 1: For Jobicy, fetch the listing page HTML and scan for ATS URLs.
+  // Jobicy embeds employer links directly in the listing HTML.
+  if (/jobicy\.com/i.test(url)) {
+    try {
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          'Accept': 'text/html',
+        },
+        signal: AbortSignal.timeout(10_000),
+      })
+      if (response.ok) {
+        const html = await response.text()
+        const atsUrl = extractAtsUrlFromHtml(html)
+        if (atsUrl) {
+          console.log(`[url-resolver] Jobicy: resolved ATS URL from HTML: ${atsUrl}`)
+          return atsUrl
+        }
+      }
+    } catch (err) {
+      console.log(`[url-resolver] Jobicy HTML fetch failed: ${err instanceof Error ? err.message : err}`)
+    }
+  }
+
+  // Strategy 2: For Dribbble, fetch the job page HTML and look for ATS links.
+  if (/dribbble\.com/i.test(url)) {
+    try {
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          'Accept': 'text/html',
+        },
+        signal: AbortSignal.timeout(10_000),
+      })
+      if (response.ok) {
+        const html = await response.text()
+        const atsUrl = extractAtsUrlFromHtml(html)
+        if (atsUrl) {
+          console.log(`[url-resolver] Dribbble: resolved ATS URL from HTML: ${atsUrl}`)
+          return atsUrl
+        }
+      }
+    } catch (err) {
+      console.log(`[url-resolver] Dribbble HTML fetch failed: ${err instanceof Error ? err.message : err}`)
+    }
+  }
+
+  // Strategy 3: For any job board, follow HTTP redirect chain from the listing URL.
+  // Some boards (Remotive, WWR) use simple 302 redirects to ATS pages.
+  try {
+    const resolved = await resolveRedirectChain(url)
+    if (resolved && resolved !== url && !isJobBoardUrl(resolved)) {
+      console.log(`[url-resolver] Redirect chain resolved: ${url} -> ${resolved}`)
+      return resolved
+    }
+  } catch (err) {
+    console.log(`[url-resolver] Redirect chain failed: ${err instanceof Error ? err.message : err}`)
+  }
+
+  // Strategy 4: ATS probing with company name (if available).
+  if (meta?.company && meta.company !== 'Unknown') {
+    console.log(`[url-resolver] Probing ATS platforms for "${meta.company}" — "${meta.role}"`)
+    const probed = await probeCompanyAtsPages(meta.company, meta.role)
+    if (probed) {
+      console.log(`[url-resolver] ATS probe found: ${probed}`)
+      return probed
+    }
+  }
+
+  // Resolution failed — return original URL.
+  // The jobBoardRedirect adapter will handle it with full Playwright resolution.
+  console.log(`[url-resolver] Server-side resolution failed for ${url}, deferring to adapter`)
+  return url
+}
+
+/**
+ * Extract ATS URLs from raw HTML string (no Playwright needed).
+ * Scans for known ATS domain patterns in href attributes and raw text.
+ */
+function extractAtsUrlFromHtml(html: string): string | null {
+  // Pattern: <a href="https://boards.greenhouse.io/..."> etc.
+  const hrefRegex = /href=["'](https?:\/\/[^"']+)["']/gi
+  const knownATS = [
+    'greenhouse.io', 'lever.co', 'workable.com', 'breezy.hr',
+    'ashbyhq.com', 'recruitee.com', 'smartrecruiters.com',
+    'bamboohr.com', 'myworkdayjobs.com', 'icims.com',
+    'jobvite.com', 'teamtailor.com',
+  ]
+
+  let match: RegExpExecArray | null
+  while ((match = hrefRegex.exec(html)) !== null) {
+    const href = match[1]
+    try {
+      const hostname = new URL(href).hostname
+      if (knownATS.some(ats => hostname.includes(ats))) {
+        return href.replace(/[&;'"<>)}\]]+$/, '') // trim trailing junk
+      }
+    } catch { /* skip invalid URLs */ }
+  }
+
+  // Fallback: regex scan raw HTML for ATS URL patterns
+  const patterns = [
+    /https?:\/\/[a-z0-9-]+\.greenhouse\.io\/[^\s"'<]+/i,
+    /https?:\/\/boards\.greenhouse\.io\/[^\s"'<]+/i,
+    /https?:\/\/[a-z0-9-]+\.lever\.co\/[^\s"'<]+/i,
+    /https?:\/\/jobs\.lever\.co\/[^\s"'<]+/i,
+    /https?:\/\/[a-z0-9-]+\.workable\.com\/[^\s"'<]+/i,
+    /https?:\/\/[a-z0-9-]+\.breezy\.hr\/[^\s"'<]+/i,
+    /https?:\/\/[a-z0-9-]+\.ashbyhq\.com\/[^\s"'<]+/i,
+    /https?:\/\/[a-z0-9-]+\.recruitee\.com\/[^\s"'<]+/i,
+    /https?:\/\/[a-z0-9-]+\.smartrecruiters\.com\/[^\s"'<]+/i,
+    /https?:\/\/[a-z0-9-]+\.myworkdayjobs\.com\/[^\s"'<]+/i,
+    /https?:\/\/[a-z0-9-]+\.jobvite\.com\/[^\s"'<]+/i,
+    /https?:\/\/[a-z0-9-]+\.teamtailor\.com\/[^\s"'<]+/i,
+  ]
+  for (const p of patterns) {
+    const m = html.match(p)
+    if (m) return m[0].replace(/[&;'"<>)}\]]+$/, '')
+  }
+
+  return null
 }

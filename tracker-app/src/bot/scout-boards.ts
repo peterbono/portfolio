@@ -189,6 +189,98 @@ function randomDelay(min: number, max: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
+// ---------------------------------------------------------------------------
+// Generic ATS URL extraction from listing pages (used by Remotive & WWR)
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract an ATS/apply URL from any HTML page by looking for known ATS domains
+ * in links, or common apply-button patterns. Reuses the same ATS patterns as
+ * `extractAtsUrlFromHtml` but also checks anchor hrefs with apply-related text.
+ *
+ * Works for Remotive listing pages, WWR listing pages, and Himalayas pages.
+ */
+function extractApplyUrlFromPage(html: string, sourceDomain: string): string | null {
+  // 1) Check known ATS URL patterns anywhere in the page (highest confidence)
+  const atsUrl = extractAtsUrlFromHtml(html)
+  if (atsUrl) return atsUrl
+
+  // 2) Look for anchor tags with "apply" text or class pointing to external URLs
+  const applyLinkRegex = /<a[^>]+href=["'](https?:\/\/[^"']+)["'][^>]*>(?:[\s\S]*?(?:apply|postuler|candidater)[\s\S]*?)<\/a>/gi
+  let match: RegExpExecArray | null
+  while ((match = applyLinkRegex.exec(html)) !== null) {
+    const url = match[1].replace(/&amp;/g, '&')
+    if (!url.includes(sourceDomain)) {
+      return url
+    }
+  }
+
+  // 3) Look for href containing /apply, /jobs/, /career on external domains
+  const hrefRegex = /href=["'](https?:\/\/[^"']+)["']/gi
+  while ((match = hrefRegex.exec(html)) !== null) {
+    const url = match[1].replace(/&amp;/g, '&')
+    if (url.includes(sourceDomain)) continue
+    try {
+      const hostname = new URL(url).hostname
+      if (
+        hostname.includes('greenhouse.io') || hostname.includes('lever.co') ||
+        hostname.includes('workable.com') || hostname.includes('breezy.hr') ||
+        hostname.includes('ashbyhq.com') || hostname.includes('recruitee.com') ||
+        hostname.includes('smartrecruiters.com') || hostname.includes('bamboohr.com') ||
+        hostname.includes('myworkdayjobs.com') || hostname.includes('jobvite.com')
+      ) {
+        return url
+      }
+    } catch { /* invalid URL */ }
+  }
+
+  return null
+}
+
+/**
+ * Resolve the real apply URL for a Remotive listing page.
+ * Fetches the HTML and extracts external ATS/apply links.
+ */
+async function resolveRemotiveApplyUrl(listingUrl: string): Promise<string | null> {
+  try {
+    const response = await fetch(listingUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+      signal: AbortSignal.timeout(8_000),
+    })
+    if (!response.ok) return null
+    const html = await response.text()
+    return extractApplyUrlFromPage(html, 'remotive.com')
+  } catch (err) {
+    console.log(`[scout:remotive] Apply URL resolution failed for ${listingUrl}: ${(err as Error).message}`)
+    return null
+  }
+}
+
+/**
+ * Resolve the real apply URL for a WWR listing page.
+ * Fetches the HTML and extracts the external apply link.
+ */
+async function resolveWWRApplyUrl(listingUrl: string): Promise<string | null> {
+  try {
+    const response = await fetch(listingUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+      signal: AbortSignal.timeout(8_000),
+    })
+    if (!response.ok) return null
+    const html = await response.text()
+    return extractApplyUrlFromPage(html, 'weworkremotely.com')
+  } catch (err) {
+    console.log(`[scout:wwr] Apply URL resolution failed for ${listingUrl}: ${(err as Error).message}`)
+    return null
+  }
+}
+
 /**
  * Resolve a RemoteOK apply URL by following its /l/{id} redirect chain
  * server-side. RemoteOK's /l/{id} links redirect through obfuscated JS
@@ -1165,8 +1257,25 @@ export async function scoutHimalayas(
             companyLower.includes('poker') || companyLower.includes('gambling')
           ) continue
 
-          // Build URL — prefer applicationLink, fallback to guid
-          const jobUrl = job.applicationLink || job.guid || ''
+          // Build URL — prefer applicationLink (real ATS URL), then try
+          // extracting an ATS URL from the description HTML, then fallback
+          // to guid (himalayas.app listing page) tagged as 'unknown'.
+          let jobUrl = job.applicationLink || ''
+
+          // If no applicationLink, try to extract ATS URL from description
+          if (!jobUrl && job.description) {
+            const descAts = extractAtsUrlFromHtml(job.description)
+            if (descAts) {
+              jobUrl = descAts
+              console.log(`[scout:himalayas] "${company}" — extracted ATS URL from description: ${descAts}`)
+            }
+          }
+
+          // Final fallback: himalayas listing page (guid)
+          const usedFallback = !jobUrl
+          if (!jobUrl) {
+            jobUrl = job.guid || ''
+          }
           if (!jobUrl) continue
 
           // Dedup by URL
@@ -1195,6 +1304,15 @@ export async function scoutHimalayas(
             ? new Date(job.pubDate * 1000).toISOString()
             : new Date().toISOString()
 
+          // Classify ATS — if we fell back to himalayas listing URL, tag 'unknown'
+          const atsType = usedFallback
+            ? 'unknown'
+            : (classifyAtsFromUrl(jobUrl) ?? undefined)
+
+          if (usedFallback) {
+            console.log(`[scout:himalayas] "${company}" — no applicationLink, falling back to listing URL (ats: unknown)`)
+          }
+
           allJobs.push({
             title,
             company,
@@ -1204,7 +1322,7 @@ export async function scoutHimalayas(
             postedDate,
             source: 'himalayas',
             description: plainDesc || undefined,
-            ats: classifyAtsFromUrl(jobUrl) ?? undefined,
+            ats: atsType,
           })
         }
 
@@ -1330,9 +1448,45 @@ export async function scoutRemotive(
         const titleLower = title.toLowerCase()
         if (titleLower.includes('poker') || titleLower.includes('gambling')) continue
 
-        // Build URL
-        const jobUrl = job.url ?? ''
-        if (!jobUrl) continue
+        // Build URL — Remotive API `url` is always a remotive.com listing page.
+        // Try to resolve the real ATS/company apply URL in order of priority:
+        // 1) Extract from description HTML (cheapest — no extra fetch)
+        // 2) Fetch the listing page and extract apply link
+        // 3) Fallback to Remotive listing URL tagged as 'unknown'
+        const listingUrl = job.url ?? ''
+        if (!listingUrl) continue
+
+        const descHtml = job.description ?? ''
+        let jobUrl = ''
+        let usedFallback = false
+
+        // Step 1: Try extracting ATS URL from description HTML
+        const descAts = extractAtsUrlFromHtml(descHtml)
+        if (descAts) {
+          jobUrl = descAts
+          console.log(`[scout:remotive] "${company}" — extracted ATS URL from description: ${descAts}`)
+        }
+
+        // Step 2: Try resolving from the listing page (lightweight fetch)
+        if (!jobUrl && listingUrl) {
+          try {
+            const resolved = await resolveRemotiveApplyUrl(listingUrl)
+            if (resolved) {
+              jobUrl = resolved
+              console.log(`[scout:remotive] "${company}" — resolved ATS URL from listing page: ${resolved}`)
+            }
+            await randomDelay(200, 600)
+          } catch (resolveErr) {
+            console.log(`[scout:remotive] "${company}" — resolve failed: ${(resolveErr as Error).message}`)
+          }
+        }
+
+        // Step 3: Fallback to Remotive listing URL
+        if (!jobUrl) {
+          jobUrl = listingUrl
+          usedFallback = true
+          console.log(`[scout:remotive] "${company}" — no ATS URL found, falling back to listing URL (ats: unknown)`)
+        }
 
         // Dedup by URL
         if (seenUrls.has(jobUrl)) continue
@@ -1344,11 +1498,16 @@ export async function scoutRemotive(
         seenCompanyTitle.add(companyTitleKey)
 
         // Strip HTML from description
-        const plainDesc = (job.description ?? '')
+        const plainDesc = descHtml
           .replace(/<[^>]+>/g, ' ')
           .replace(/\s+/g, ' ')
           .trim()
           .slice(0, 6000)
+
+        // Classify ATS — if we fell back to listing URL, tag 'unknown'
+        const atsType = usedFallback
+          ? 'unknown'
+          : (classifyAtsFromUrl(jobUrl) ?? undefined)
 
         allJobs.push({
           title,
@@ -1359,7 +1518,7 @@ export async function scoutRemotive(
           postedDate: job.publication_date ?? new Date().toISOString(),
           source: 'remotive',
           description: plainDesc || undefined,
-          ats: classifyAtsFromUrl(jobUrl) ?? undefined,
+          ats: atsType,
         })
       }
 
@@ -1509,9 +1668,45 @@ export async function scoutWWR(
       const titleLower = title.toLowerCase()
       if (titleLower.includes('poker') || titleLower.includes('gambling')) continue
 
+      // Build URL — WWR RSS <link> is always a weworkremotely.com listing page.
+      // Try to resolve the real ATS/company apply URL in order of priority:
+      // 1) Extract from RSS description HTML (cheapest — no extra fetch)
+      // 2) Fetch the listing page and extract apply link
+      // 3) Fallback to WWR listing URL tagged as 'unknown'
+      let jobUrl = ''
+      let usedFallback = false
+
+      // Step 1: Try extracting ATS URL from RSS description HTML
+      const descAts = extractAtsUrlFromHtml(rawDescription)
+      if (descAts) {
+        jobUrl = descAts
+        console.log(`[scout:wwr] "${company}" — extracted ATS URL from RSS description: ${descAts}`)
+      }
+
+      // Step 2: Try resolving from the listing page (lightweight fetch)
+      if (!jobUrl && link) {
+        try {
+          const resolved = await resolveWWRApplyUrl(link)
+          if (resolved) {
+            jobUrl = resolved
+            console.log(`[scout:wwr] "${company}" — resolved ATS URL from listing page: ${resolved}`)
+          }
+          await randomDelay(200, 600)
+        } catch (resolveErr) {
+          console.log(`[scout:wwr] "${company}" — resolve failed: ${(resolveErr as Error).message}`)
+        }
+      }
+
+      // Step 3: Fallback to WWR listing URL
+      if (!jobUrl) {
+        jobUrl = link
+        usedFallback = true
+        console.log(`[scout:wwr] "${company}" — no ATS URL found, falling back to listing URL (ats: unknown)`)
+      }
+
       // Dedup by URL
-      if (seenUrls.has(link)) continue
-      seenUrls.add(link)
+      if (seenUrls.has(jobUrl)) continue
+      seenUrls.add(jobUrl)
 
       // Dedup by company+title
       if (company) {
@@ -1520,19 +1715,28 @@ export async function scoutWWR(
         seenCompanyTitle.add(companyTitleKey)
       }
 
-      // Truncate description for qualifier
+      // Strip HTML from description for qualifier
+      const descPlain = rawDescription
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
       const description = descPlain.slice(0, 6000) || undefined
+
+      // Classify ATS — if we fell back to listing URL, tag 'unknown'
+      const atsType = usedFallback
+        ? 'unknown'
+        : (classifyAtsFromUrl(jobUrl) ?? undefined)
 
       allJobs.push({
         title,
         company: company || 'Unknown Company',
         location: 'Remote',
-        url: link,
+        url: jobUrl,
         isEasyApply: false,
         postedDate: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString(),
         source: 'wwr',
         description,
-        ats: classifyAtsFromUrl(link) ?? undefined,
+        ats: atsType,
       })
     }
   } catch (err) {
@@ -1662,6 +1866,8 @@ export async function scoutDribbble(
 
       console.log(`[scout:dribbble] Term "${term}": extracted ${cards.length} cards from DOM`)
 
+      // First pass: filter candidates before resolving apply URLs (avoid unnecessary page loads)
+      const filteredCards: typeof cards = []
       for (const card of cards) {
         const { title, company, location } = card
         let { url } = card
@@ -1716,6 +1922,49 @@ export async function scoutDribbble(
           seenCompanyTitle.add(companyTitleKey)
         }
 
+        filteredCards.push({ ...card, url })
+      }
+
+      console.log(`[scout:dribbble] Term "${term}": ${filteredCards.length} candidates after filtering, resolving apply URLs…`)
+
+      // Second pass: navigate to each Dribbble job page to extract the real apply URL
+      for (const card of filteredCards) {
+        const { title, location } = card
+        let { company, url } = card
+        const dribbbleUrl = url // Keep the Dribbble URL as fallback reference
+
+        const locationLower = location.toLowerCase()
+        const isAnywhere = locationLower === 'anywhere' || locationLower === 'remote' || locationLower === 'worldwide'
+
+        // Resolve the actual apply/ATS URL from the Dribbble job detail page
+        try {
+          const resolved = await resolveDribbbleApplyUrl(page, dribbbleUrl)
+
+          if (resolved.applyUrl) {
+            url = resolved.applyUrl
+            console.log(`[scout:dribbble] "${title}" — resolved ATS URL: ${url}`)
+          } else {
+            console.log(`[scout:dribbble] "${title}" — no apply URL found, keeping Dribbble URL`)
+          }
+
+          // Use resolved company name if the listing didn't have one
+          if ((!company || company === '') && resolved.company) {
+            company = resolved.company
+            console.log(`[scout:dribbble] "${title}" — resolved company: ${company}`)
+          }
+
+          // Polite delay between page loads to avoid rate-limiting
+          await randomDelay(1000, 2500)
+        } catch (err) {
+          console.warn(`[scout:dribbble] "${title}" — resolve error: ${(err as Error).message}`)
+        }
+
+        // Determine ATS classification from the (possibly resolved) URL
+        const atsType = classifyAtsFromUrl(url)
+        // If URL still points to Dribbble (resolution failed), mark as 'unknown'
+        // so the apply phase can handle it gracefully
+        const isDribbbleUrl = url.includes('dribbble.com')
+
         allJobs.push({
           title,
           company: company || 'Unknown Company',
@@ -1724,7 +1973,7 @@ export async function scoutDribbble(
           isEasyApply: false,
           postedDate: new Date().toISOString(),
           source: 'dribbble',
-          ats: classifyAtsFromUrl(url) ?? undefined,
+          ats: atsType ?? (isDribbbleUrl ? 'unknown' : undefined),
         })
       }
 
@@ -1739,6 +1988,124 @@ export async function scoutDribbble(
 }
 
 // ---------------------------------------------------------------------------
+// Dribbble: resolve apply URL from job detail page
+// ---------------------------------------------------------------------------
+
+/**
+ * Navigate to a Dribbble job page and extract the actual external apply URL
+ * from the "Apply" button/link. Also extracts the company name if available.
+ *
+ * Dribbble job pages have an "Apply" CTA that links to the employer's ATS
+ * (Greenhouse, Lever, Workable, company career page, etc.).
+ *
+ * Returns { applyUrl, company } or null if resolution fails.
+ */
+async function resolveDribbbleApplyUrl(
+  page: Page,
+  dribbbleJobUrl: string,
+): Promise<{ applyUrl: string | null; company: string | null }> {
+  try {
+    await page.goto(dribbbleJobUrl, { waitUntil: 'domcontentloaded', timeout: 20_000 })
+    await randomDelay(1000, 2000)
+
+    const result = await page.evaluate(() => {
+      let applyUrl: string | null = null
+      let company: string | null = null
+
+      // --- Extract apply URL ---
+      // Strategy 1: Look for <a> with text containing "Apply" (case-insensitive)
+      const allLinks = Array.from(document.querySelectorAll('a'))
+      for (const link of allLinks) {
+        const text = link.textContent?.trim().toLowerCase() ?? ''
+        if (
+          (text.includes('apply') && !text.includes('not applicable')) ||
+          text === 'apply now' ||
+          text === 'apply for this job' ||
+          text === 'apply on company site'
+        ) {
+          const href = link.href
+          // Must be an external URL (not a Dribbble link or anchor)
+          if (href && !href.includes('dribbble.com') && href.startsWith('http')) {
+            applyUrl = href
+            break
+          }
+        }
+      }
+
+      // Strategy 2: Look for apply buttons/links by common CSS patterns
+      if (!applyUrl) {
+        const applySelectors = [
+          'a[class*="apply" i]',
+          'a[class*="Apply"]',
+          'a[data-testid*="apply" i]',
+          'a[href*="lever.co"]',
+          'a[href*="greenhouse.io"]',
+          'a[href*="boards.greenhouse"]',
+          'a[href*="ashbyhq.com"]',
+          'a[href*="workable.com"]',
+          'a[href*="breezy.hr"]',
+          'a[href*="teamtailor.com"]',
+          'a[href*="jobs.lever"]',
+          'a[href*="smartrecruiters"]',
+          'a[href*="myworkdayjobs"]',
+          'a[href*="bamboohr.com"]',
+          'a[href*="recruitee.com"]',
+          'a[href*="jazz.co"]',
+          'a[href*="pinpointhq.com"]',
+          'a[href*="welcometothejungle"]',
+          'a[href*="apply"]',
+        ]
+        for (const selector of applySelectors) {
+          const el = document.querySelector<HTMLAnchorElement>(selector)
+          if (el?.href && !el.href.includes('dribbble.com') && el.href.startsWith('http')) {
+            applyUrl = el.href
+            break
+          }
+        }
+      }
+
+      // --- Extract company name ---
+      // Dribbble job pages show the company name in various places
+      const companySelectors = [
+        '[class*="company-name" i]',
+        '[class*="CompanyName"]',
+        '[class*="company" i] a',
+        '[class*="company" i] span',
+        '[class*="employer" i]',
+        '[data-testid*="company" i]',
+        // Dribbble often shows company as a link in the job header area
+        'a[href*="/company/"]',
+        'a[href*="/teams/"]',
+      ]
+      for (const selector of companySelectors) {
+        const el = document.querySelector(selector)
+        const text = el?.textContent?.trim()
+        if (text && text.length > 1 && text.length < 100) {
+          company = text
+          break
+        }
+      }
+
+      // Fallback: try meta tags
+      if (!company) {
+        const ogSiteName = document.querySelector('meta[property="og:site_name"]')?.getAttribute('content')
+        // og:site_name is usually "Dribbble" itself, skip it
+        if (ogSiteName && ogSiteName.toLowerCase() !== 'dribbble') {
+          company = ogSiteName
+        }
+      }
+
+      return { applyUrl, company }
+    })
+
+    return result
+  } catch (err) {
+    console.warn(`[scout:dribbble] Failed to resolve apply URL for ${dribbbleJobUrl}: ${(err as Error).message}`)
+    return { applyUrl: null, company: null }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Jobicy scraper (JSON API — no Playwright needed)
 // ---------------------------------------------------------------------------
 
@@ -1748,6 +2115,7 @@ export async function scoutDribbble(
 interface JobicyJob {
   id?: number
   url?: string
+  jobSlug?: string
   jobTitle?: string
   companyName?: string
   jobIndustry?: string
@@ -1755,6 +2123,7 @@ interface JobicyJob {
   jobGeo?: string
   jobLevel?: string
   jobExcerpt?: string
+  jobDescription?: string
   pubDate?: string
 }
 
@@ -1763,6 +2132,149 @@ interface JobicyJob {
  */
 interface JobicyApiResponse {
   jobs: JobicyJob[]
+}
+
+// ---------------------------------------------------------------------------
+// Jobicy: resolve the real apply/ATS URL from a Jobicy job listing
+// ---------------------------------------------------------------------------
+
+/**
+ * Cached nonce + action extracted from the first Jobicy page we fetch.
+ * The Jobicy signals endpoint uses a WordPress-style nonce that rotates
+ * every ~12-24 h, but stays the same across all job pages in one session.
+ */
+let _jobicySignalsCache: { action: string; nonce: string } | null = null
+
+/**
+ * Fetch a single Jobicy job page and extract the `requestData` params
+ * (action + nonce) used by the "Apply" button's AJAX call.
+ */
+async function fetchJobicySignalsParams(
+  jobPageUrl: string,
+): Promise<{ action: string; nonce: string } | null> {
+  if (_jobicySignalsCache) return _jobicySignalsCache
+
+  try {
+    const res = await fetch(jobPageUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'text/html',
+      },
+      signal: AbortSignal.timeout(10_000),
+    })
+
+    if (!res.ok) return null
+
+    const html = await res.text()
+
+    // Extract: requestData={'action':'<action>','nonce':'<nonce>','post_id':...}
+    const match = html.match(
+      /requestData\s*=\s*\{\s*'action'\s*:\s*'([^']+)'\s*,\s*'nonce'\s*:\s*'([^']+)'/,
+    )
+    if (match) {
+      _jobicySignalsCache = { action: match[1], nonce: match[2] }
+      console.log(`[scout:jobicy] Extracted signals params — action=${match[1]}, nonce=${match[2]}`)
+      return _jobicySignalsCache
+    }
+  } catch (err) {
+    console.warn(`[scout:jobicy] Failed to fetch signals params from ${jobPageUrl}: ${(err as Error).message}`)
+  }
+
+  return null
+}
+
+/**
+ * Resolve the real employer ATS / apply URL for a Jobicy job.
+ *
+ * Strategy (ordered by reliability):
+ * 1. POST to /signals.php with the page's action + nonce + job ID
+ *    → returns { url: "<actual ATS URL>" }
+ * 2. Scan the jobDescription HTML from the API for known ATS domain links
+ *    (Greenhouse, Lever, Ashby, Workable, etc.)
+ * 3. Return null → caller falls back to the Jobicy listing URL
+ *
+ * Uses fetch() only (no Playwright).
+ */
+async function resolveJobicyApplyUrl(
+  jobId: number,
+  jobPageUrl: string,
+  jobDescriptionHtml?: string,
+): Promise<string | null> {
+  // --- Strategy 1: signals.php AJAX endpoint ---
+  const params = await fetchJobicySignalsParams(jobPageUrl)
+  if (params) {
+    try {
+      const res = await fetch('https://jobicy.com/signals.php', {
+        method: 'POST',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Referer': jobPageUrl,
+        },
+        body: new URLSearchParams({
+          action: params.action,
+          nonce: params.nonce,
+          post_id: String(jobId),
+          increment_clicks: 'false', // Don't inflate the employer's click stats
+        }).toString(),
+        signal: AbortSignal.timeout(8_000),
+      })
+
+      if (res.ok) {
+        const data = await res.json() as { url?: string }
+        if (data.url && !data.url.includes('jobicy.com')) {
+          console.log(`[scout:jobicy] Resolved via signals.php (job ${jobId}): ${data.url}`)
+          return data.url
+        }
+      }
+    } catch (err) {
+      console.warn(`[scout:jobicy] signals.php failed for job ${jobId}: ${(err as Error).message}`)
+    }
+  }
+
+  // --- Strategy 2: extract ATS URLs from the description HTML ---
+  if (jobDescriptionHtml) {
+    const KNOWN_ATS_PATTERNS = [
+      /https?:\/\/[a-z0-9-]+\.greenhouse\.io\/[^\s"'<]+/gi,
+      /https?:\/\/boards\.greenhouse\.io\/[^\s"'<]+/gi,
+      /https?:\/\/job-boards\.greenhouse\.io\/[^\s"'<]+/gi,
+      /https?:\/\/[a-z0-9-]+\.lever\.co\/[^\s"'<]+/gi,
+      /https?:\/\/jobs\.lever\.co\/[^\s"'<]+/gi,
+      /https?:\/\/[a-z0-9-]+\.workable\.com\/[^\s"'<]+/gi,
+      /https?:\/\/[a-z0-9-]+\.breezy\.hr\/[^\s"'<]+/gi,
+      /https?:\/\/[a-z0-9-]+\.ashbyhq\.com\/[^\s"'<]+/gi,
+      /https?:\/\/jobs\.ashbyhq\.com\/[^\s"'<]+/gi,
+      /https?:\/\/[a-z0-9-]+\.recruitee\.com\/[^\s"'<]+/gi,
+      /https?:\/\/[a-z0-9-]+\.smartrecruiters\.com\/[^\s"'<]+/gi,
+      /https?:\/\/[a-z0-9-]+\.bamboohr\.com\/[^\s"'<]+/gi,
+      /https?:\/\/[a-z0-9-]+\.myworkdayjobs\.com\/[^\s"'<]+/gi,
+      /https?:\/\/[a-z0-9-]+\.jobvite\.com\/[^\s"'<]+/gi,
+      /https?:\/\/[a-z0-9-]+\.talentlyft\.com\/[^\s"'<]+/gi,
+    ]
+
+    for (const pattern of KNOWN_ATS_PATTERNS) {
+      const match = jobDescriptionHtml.match(pattern)
+      if (match) {
+        const clean = match[0].replace(/[&;'"<>)}\]]+$/, '')
+        console.log(`[scout:jobicy] Extracted ATS URL from description (job ${jobId}): ${clean}`)
+        return clean
+      }
+    }
+
+    // Fallback: look for href containing /apply or /jobs/ or /career
+    const hrefMatch = jobDescriptionHtml.match(
+      /href=["'](https?:\/\/[^"']+(?:\/apply|\/jobs\/|\/career)[^"']*?)["']/i,
+    )
+    if (hrefMatch) {
+      const url = hrefMatch[1]
+      if (!url.includes('jobicy.com')) {
+        console.log(`[scout:jobicy] Extracted apply href from description (job ${jobId}): ${url}`)
+        return url
+      }
+    }
+  }
+
+  return null
 }
 
 /**
@@ -1843,18 +2355,41 @@ export async function scoutJobicy(
           companyLower.includes('poker') || companyLower.includes('gambling')
         ) continue
 
-        // Build URL
-        const jobUrl = job.url ?? ''
-        if (!jobUrl) continue
+        // Build URL — try to resolve the real ATS/apply URL first
+        const jobicyUrl = job.url ?? ''
+        if (!jobicyUrl) continue
 
-        // Dedup by URL
-        if (seenUrls.has(jobUrl)) continue
-        seenUrls.add(jobUrl)
-
-        // Dedup by company+title
+        // Dedup by company+title (early, before expensive URL resolution)
         const companyTitleKey = `${normalizeForDedup(company)}|${normalizeForDedup(title)}`
         if (seenCompanyTitle.has(companyTitleKey)) continue
         seenCompanyTitle.add(companyTitleKey)
+
+        // Resolve the actual employer ATS URL (signals.php → description scan → fallback)
+        let jobUrl = jobicyUrl
+        const jobId = job.id
+        if (jobId) {
+          try {
+            const resolvedUrl = await resolveJobicyApplyUrl(
+              jobId,
+              jobicyUrl,
+              job.jobDescription,
+            )
+            if (resolvedUrl) {
+              jobUrl = resolvedUrl
+              console.log(`[scout:jobicy] "${company}" — resolved ATS URL: ${resolvedUrl}`)
+            } else {
+              console.log(`[scout:jobicy] "${company}" — no apply URL found, keeping Jobicy URL`)
+            }
+            // Small delay between resolve calls to avoid rate-limiting
+            await randomDelay(200, 600)
+          } catch (resolveErr) {
+            console.log(`[scout:jobicy] "${company}" — resolve failed: ${(resolveErr as Error).message}`)
+          }
+        }
+
+        // Dedup by URL (after resolution, so we dedup on the real ATS URL)
+        if (seenUrls.has(jobUrl)) continue
+        seenUrls.add(jobUrl)
 
         // Strip HTML from jobExcerpt
         const plainDesc = (job.jobExcerpt ?? '')
