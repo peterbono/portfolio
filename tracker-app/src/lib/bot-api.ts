@@ -4,6 +4,62 @@
  */
 
 const PROXY_TASK_URL = '/api/trigger-task'
+const RESOLVE_URL_ENDPOINT = '/api/resolve-url'
+
+// Known job board patterns (mirrors JOB_BOARD_PATTERNS from job-board-redirect.ts)
+const JOB_BOARD_PATTERNS = [
+  /remoteok\.com/i,
+  /himalayas\.app/i,
+  /wellfound\.com/i,
+  /weworkremotely\.com/i,
+  /remotive\.com/i,
+  /dribbble\.com/i,
+  /jobicy\.com/i,
+]
+
+/**
+ * Check if a URL belongs to a known job board (not a direct ATS).
+ */
+function isJobBoardUrl(url: string): boolean {
+  return JOB_BOARD_PATTERNS.some(p => p.test(url))
+}
+
+/**
+ * Resolve a job board URL to its actual ATS URL via the server-side API route.
+ * If the URL is not a job board or resolution fails, returns the original URL.
+ */
+async function resolveJobBoardUrl(job: ApprovedJobInput): Promise<string> {
+  if (!isJobBoardUrl(job.url)) return job.url
+
+  try {
+    console.log(`[bot-api] Resolving job board URL: ${job.url}`)
+    const response = await fetch(RESOLVE_URL_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url: job.url,
+        company: job.company,
+        role: job.role,
+      }),
+    })
+
+    if (!response.ok) {
+      console.warn(`[bot-api] URL resolution API returned ${response.status}, using original URL`)
+      return job.url
+    }
+
+    const data = await response.json()
+    if (data.wasResolved && data.resolvedUrl) {
+      console.log(`[bot-api] Resolved: ${job.url} -> ${data.resolvedUrl}`)
+      return data.resolvedUrl
+    }
+
+    return job.url
+  } catch (err) {
+    console.warn(`[bot-api] URL resolution failed for ${job.url}:`, err)
+    return job.url
+  }
+}
 
 async function getCurrentUserId(): Promise<string> {
   const { supabase } = await import('./supabase')
@@ -620,10 +676,17 @@ export async function triggerApplyJobs(
       await applyLinkedInJobsViaExtension(linkedInJobs)
     }
 
-    // Step 3: ATS batch second (sequential — 10s inter-job delay)
+    // Step 3: ATS batch — pre-resolve job board URLs, then apply sequentially
     if (atsJobs.length > 0) {
-      console.log(`[bot-api] Extension path: applying ${atsJobs.length} ATS jobs`)
-      await applyAtsJobsViaExtension(atsJobs)
+      console.log(`[bot-api] Extension path: pre-resolving ${atsJobs.length} ATS job URLs`)
+      const resolvedAtsJobs = await Promise.all(
+        atsJobs.map(async (job) => {
+          const resolvedUrl = await resolveJobBoardUrl(job)
+          return resolvedUrl !== job.url ? { ...job, url: resolvedUrl } : job
+        }),
+      )
+      console.log(`[bot-api] Extension path: applying ${resolvedAtsJobs.length} ATS jobs (URLs pre-resolved)`)
+      await applyAtsJobsViaExtension(resolvedAtsJobs)
     }
 
     // All jobs routed to extension — return synthetic runId

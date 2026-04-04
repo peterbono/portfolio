@@ -3067,13 +3067,26 @@ const ATS_HANDLERS = {
 
 ;(async () => {
   // Guard against double injection (manifest content_script + background.js programmatic)
-  if (window._jobTrackerAtsRan) {
-    log('ats-apply.js already ran — skipping duplicate')
-    return
+  // Uses chrome.storage.local instead of window.* to work across isolated/main worlds.
+  const currentUrl = window.location.href
+  try {
+    const guardData = await chrome.storage.local.get(['atsApplyRunning', 'atsApplyForceRerun'])
+    if (guardData.atsApplyRunning === currentUrl && !guardData.atsApplyForceRerun) {
+      log('ats-apply.js already running for this URL — skipping duplicate')
+      return
+    }
+    // Clear the force-rerun flag if it was set (we're honoring it now)
+    if (guardData.atsApplyForceRerun) {
+      log('ats-apply.js force-rerun flag detected — re-running')
+      await chrome.storage.local.remove('atsApplyForceRerun')
+    }
+    // Set the guard for this URL
+    await chrome.storage.local.set({ atsApplyRunning: currentUrl })
+  } catch (guardErr) {
+    warn('Guard check failed, proceeding anyway:', guardErr.message)
   }
-  window._jobTrackerAtsRan = true
 
-  log('ats-apply.js v2.5.0 loaded on:', window.location.href)
+  log('ats-apply.js v2.5.1 loaded on:', currentUrl)
 
   // Load user profile from storage (overrides hardcoded defaults)
   await loadProfile()
@@ -3192,4 +3205,6 @@ const ATS_HANDLERS = {
     await chrome.storage.local.remove('atsApplyContext')
     await chrome.storage.local.remove('pendingExternalApply')
   }
+  // Clear the execution guard so future navigations can re-run
+  try { await chrome.storage.local.remove('atsApplyRunning') } catch {}
 })()

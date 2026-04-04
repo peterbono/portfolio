@@ -341,6 +341,8 @@ interface ReviewQueueItem {
   editedCoverLetter?: string
   editedAnswers?: Record<string, string>
   jobUrl?: string
+  /** Reason for failure/skip/needs_manual — stored from extension or cloud apply results */
+  failReason?: string
 }
 
 interface DiscoveredJob {
@@ -1985,9 +1987,14 @@ function ApplicationReviewCard({
       )}
       {item.status === 'failed' && (
         <div style={reviewStyles.cardActions}>
-          <div style={reviewStyles.statusLabel}>
-            <XCircle size={12} color="#ef4444" />
-            <span style={{ color: '#ef4444', fontSize: 12, fontWeight: 600 }}>Failed</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
+            <div style={reviewStyles.statusLabel}>
+              <XCircle size={12} color="#ef4444" />
+              <span style={{ color: '#ef4444', fontSize: 12, fontWeight: 600 }}>Failed</span>
+            </div>
+            {item.failReason && (
+              <span style={{ color: '#9ca3af', fontSize: 11, lineHeight: 1.3 }}>{item.failReason}</span>
+            )}
           </div>
           <button
             style={reviewStyles.btnUndo}
@@ -2000,9 +2007,14 @@ function ApplicationReviewCard({
       )}
       {item.status === 'needs_manual' && (
         <div style={reviewStyles.cardActions}>
-          <div style={reviewStyles.statusLabel}>
-            <AlertTriangle size={12} color="#f59e0b" />
-            <span style={{ color: '#f59e0b', fontSize: 12, fontWeight: 600 }}>Needs Manual</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
+            <div style={reviewStyles.statusLabel}>
+              <AlertTriangle size={12} color="#f59e0b" />
+              <span style={{ color: '#f59e0b', fontSize: 12, fontWeight: 600 }}>Needs Manual</span>
+            </div>
+            {item.failReason && (
+              <span style={{ color: '#9ca3af', fontSize: 11, lineHeight: 1.3 }}>{item.failReason}</span>
+            )}
           </div>
           <button
             style={reviewStyles.btnUndo}
@@ -4215,6 +4227,7 @@ export function AutopilotView() {
 
       if (matchingResult) {
         const s = matchingResult.status
+        const r = matchingResult.reason
         if (s === 'applied' || s === 'applied_external' || s === 'confirmed') {
           return { ...item, status: 'submitted' as const, submittingStartedAt: undefined }
         }
@@ -4223,17 +4236,17 @@ export function AutopilotView() {
           return item
         }
         if (s === 'expired' || s === 'already_applied') {
-          return { ...item, status: 'expired' as const, submittingStartedAt: undefined }
+          return { ...item, status: 'expired' as const, submittingStartedAt: undefined, failReason: r || s }
         }
         if (s === 'needs_manual') {
-          return { ...item, status: 'needs_manual' as const, submittingStartedAt: undefined }
+          return { ...item, status: 'needs_manual' as const, submittingStartedAt: undefined, failReason: r || 'Needs manual application' }
         }
         // Map 'skipped' bot result to 'skipped' queue status (not 'failed')
         if (s === 'skipped') {
-          return { ...item, status: 'skipped' as const, submittingStartedAt: undefined }
+          return { ...item, status: 'skipped' as const, submittingStartedAt: undefined, failReason: r || 'Skipped' }
         }
         // error, timeout, failed → mark as failed
-        return { ...item, status: 'failed' as const, submittingStartedAt: undefined }
+        return { ...item, status: 'failed' as const, submittingStartedAt: undefined, failReason: r || 'Apply failed (no details from bot)' }
       }
 
       // No matching result found
@@ -4289,8 +4302,8 @@ export function AutopilotView() {
       const detail = (event as CustomEvent).detail
       if (!detail) return
 
-      const { company, role, status, url, success } = detail
-      console.log(`[AutopilotView] Extension result: ${company} — ${status}`)
+      const { company, role, status, url, success, reason } = detail
+      console.log(`[AutopilotView] Extension result: ${company} — ${status}${reason ? ` — ${reason}` : ''}`)
 
       // Update the matching item in the review queue
       setReviewQueue(prev => prev.map(item => {
@@ -4312,16 +4325,16 @@ export function AutopilotView() {
           return item
         }
         if (status === 'expired' || status === 'already_applied') {
-          return { ...item, status: 'expired' as const, submittingStartedAt: undefined }
+          return { ...item, status: 'expired' as const, submittingStartedAt: undefined, failReason: reason || status }
         }
         if (status === 'needs_manual' || status === 'auth_wall') {
-          return { ...item, status: 'needs_manual' as const, submittingStartedAt: undefined }
+          return { ...item, status: 'needs_manual' as const, submittingStartedAt: undefined, failReason: reason || 'Needs manual application' }
         }
         // Map 'skipped' to 'skipped' (not 'failed')
         if (status === 'skipped') {
-          return { ...item, status: 'skipped' as const, submittingStartedAt: undefined }
+          return { ...item, status: 'skipped' as const, submittingStartedAt: undefined, failReason: reason || 'Skipped' }
         }
-        return { ...item, status: 'failed' as const, submittingStartedAt: undefined }
+        return { ...item, status: 'failed' as const, submittingStartedAt: undefined, failReason: reason || 'Apply failed (no details from extension)' }
       }))
     }
 

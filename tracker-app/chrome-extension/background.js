@@ -622,6 +622,21 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         await chrome.storage.local.remove('lastApplyResult')
       }
 
+      // Set atsApplyContext BEFORE opening the tab so the manifest-injected
+      // copy of ats-apply.js can find it immediately (avoids standalone fallback)
+      await chrome.storage.local.set({
+        atsApplyContext: {
+          company: job.company || 'Unknown',
+          role: job.role || 'Unknown',
+          url: job.url || '',
+          linkedinUrl: job.linkedinUrl || '',
+          atsType: atsType,
+          atsUrl: atsUrl,
+        }
+      })
+      // Clear any stale execution guard from a previous run
+      await chrome.storage.local.remove('atsApplyRunning')
+
       // Open ATS URL in a new focused window (same pattern as applyViaExtension)
       let tab
       let windowId = null
@@ -641,6 +656,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         try {
           tab = await chrome.tabs.create({ url: atsUrl, active: false })
         } catch (tabErr) {
+          await chrome.storage.local.remove('atsApplyContext')
           return { success: false, status: 'error', error: 'Failed to open ATS URL: ' + (winErr.message || tabErr.message), requestId }
         }
       }
@@ -698,7 +714,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       // Detect ATS type from the final URL (may differ after redirects)
       const finalAtsType = detectAtsType(tabLoadResult.finalUrl || atsUrl) || atsType
 
-      // Set atsApplyContext so ats-apply.js can read it
+      // Update atsApplyContext with final URL info and tabId (post-redirect)
       await chrome.storage.local.set({
         atsApplyContext: {
           company: job.company || 'Unknown',
@@ -711,12 +727,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         }
       })
 
-      // Clear the guard flag and inject ats-apply.js programmatically
+      // Force re-run: set the flag so ats-apply.js re-executes even if the
+      // manifest-injected copy already ran (and set the atsApplyRunning guard).
+      // Then clear the guard and inject programmatically.
       try {
-        await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          func: () => { window._jobTrackerAtsRan = false; },
-        })
+        await chrome.storage.local.set({ atsApplyForceRerun: true })
+        await chrome.storage.local.remove('atsApplyRunning')
         await chrome.scripting.executeScript({
           target: { tabId: tab.id },
           files: ['ats-apply.js'],
@@ -724,6 +740,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         console.log('[JobTracker] ats-apply.js injected for direct ATS apply on', finalAtsType)
       } catch (injectErr) {
         console.warn('[JobTracker] ats-apply.js injection failed:', injectErr.message)
+        await chrome.storage.local.remove('atsApplyForceRerun')
         await cleanupAtsTab()
         return { success: false, status: 'failed', error: 'Failed to inject ats-apply.js: ' + injectErr.message, requestId }
       }
@@ -752,6 +769,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
             const result = { ...data.lastApplyResult, requestId }
             await chrome.storage.local.remove('lastApplyResult')
             await chrome.storage.local.remove('atsApplyContext')
+            await chrome.storage.local.remove('atsApplyRunning')
+            await chrome.storage.local.remove('atsApplyForceRerun')
 
             console.log('[JobTracker] Direct ATS result for', job.company, ':', result.status, '-', result.reason)
             await cleanupAtsTab()
@@ -767,6 +786,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       await cleanupAtsTab()
       await chrome.storage.local.remove('atsApplyContext')
       await chrome.storage.local.remove('lastApplyResult')
+      await chrome.storage.local.remove('atsApplyRunning')
+      await chrome.storage.local.remove('atsApplyForceRerun')
       return { success: false, status: 'timeout', error: 'ATS apply timed out after ' + timeoutElapsed + ' seconds', requestId }
     }
 
