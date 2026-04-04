@@ -2039,14 +2039,6 @@ function ApplicationReviewCard({
                     </>
                   )}
                 </div>
-                {isDirectApply && (
-                  <span style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 4,
-                    padding: '2px 8px', borderRadius: 9999,
-                    background: 'rgba(59, 130, 246, 0.12)', color: '#3b82f6',
-                    fontSize: 10, fontWeight: 700, letterSpacing: 0.3,
-                  }}>Candidature directe</span>
-                )}
               </div>
               {isDirectApply && directUrl ? (
                 <a
@@ -2069,7 +2061,7 @@ function ApplicationReviewCard({
                   title="Marquer comme postul\u00e9"
                 >
                   <Check size={12} />
-                  <span>Postul\u00e9</span>
+                  <span>Postulé</span>
                 </button>
               )}
               <button
