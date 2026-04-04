@@ -449,46 +449,23 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       // hydration, then refocus the original window. The LinkedIn window stays behind
       // but renders fully because it was visible during load.
       let tab
-      let windowId = null
-      const senderTabId = _sender?.tab?.id || null
-      let originalWindowId = null
       try {
-        // Remember the original window to refocus later
-        if (senderTabId) {
-          const senderTab = await chrome.tabs.get(senderTabId)
-          originalWindowId = senderTab.windowId
-        }
-        // Create new window — will be focused, LinkedIn SPA renders
-        // FIX: 800x600 was too small — Easy Apply modal buttons get cut off.
-        // 1400x900 gives enough room for multi-step forms + review page Submit button.
-        const win = await chrome.windows.create({
-          url,
-          width: 1400,
-          height: 900,
-          focused: true,
-          type: 'normal',
-        })
-        tab = win.tabs[0]
-        windowId = win.id
-        console.log('[JobTracker] Separate window created:', win.id, 'tab:', tab.id)
-      } catch (winErr) {
-        // Fallback: background tab
-        try {
-          tab = await chrome.tabs.create({ url, active: false })
-        } catch (tabErr) {
-          return { success: false, status: 'error', error: 'Failed to open: ' + (winErr.message || tabErr.message), requestId }
-        }
+        // FIX: Use tab in CURRENT window instead of chrome.windows.create().
+        // New windows create a fresh browser context without Cloudflare cookies,
+        // causing CF challenges. Tabs in the same window share the cookie jar.
+        // active: true so user can see the LinkedIn Easy Apply flow happening.
+        tab = await chrome.tabs.create({ url, active: true })
+        console.log('[JobTracker] LinkedIn tab created:', tab.id)
+      } catch (tabErr) {
+        return { success: false, status: 'error', error: 'Failed to open: ' + tabErr.message, requestId }
       }
 
       const tabCreatedAt = Date.now()
-      console.log('[JobTracker] [DIAG] Tab created:', tab.id, 'for', job.company, '(window:', windowId, ') at', new Date(tabCreatedAt).toISOString())
+      console.log('[JobTracker] [DIAG] Tab created:', tab.id, 'for', job.company, 'at', new Date(tabCreatedAt).toISOString())
 
-      // Helper: close the tab + window (best effort)
+      // Helper: close the tab (best effort)
       async function cleanupTab() {
         try { await chrome.tabs.remove(tab.id) } catch {}
-        if (windowId) {
-          try { await chrome.windows.remove(windowId) } catch {}
-        }
       }
 
       // Helper: close any ATS tabs that were opened AFTER we started
@@ -771,35 +748,21 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         await chrome.storage.local.remove('atsApplyRunning')
         await chrome.storage.local.remove('atsApplyForceRerun')
 
-        // Step 1: Open job board page in a new window
+        // Step 1: Open job board page in a tab in the CURRENT window
+        // FIX: Use tab instead of chrome.windows.create() to share Cloudflare cookies.
+        // active: false so it doesn't steal focus from the user.
         let boardTab
-        let boardWindowId = null
         try {
-          const win = await chrome.windows.create({
-            url: atsUrl,
-            width: 1400,
-            height: 900,
-            focused: true,
-            type: 'normal',
-          })
-          boardTab = win.tabs[0]
-          boardWindowId = win.id
-          console.log('[JobTracker] [JobBoard] Window created:', win.id, 'tab:', boardTab.id)
-        } catch (winErr) {
-          try {
-            boardTab = await chrome.tabs.create({ url: atsUrl, active: false })
-          } catch (tabErr) {
-            return { success: false, status: 'error', error: 'Failed to open job board: ' + (winErr.message || tabErr.message), requestId }
-          }
+          boardTab = await chrome.tabs.create({ url: atsUrl, active: false })
+          console.log('[JobTracker] [JobBoard] Tab created:', boardTab.id)
+        } catch (tabErr) {
+          return { success: false, status: 'error', error: 'Failed to open job board: ' + tabErr.message, requestId }
         }
 
         const boardTabCreatedAt = Date.now()
 
         async function cleanupBoardTab() {
           try { await chrome.tabs.remove(boardTab.id) } catch {}
-          if (boardWindowId) {
-            try { await chrome.windows.remove(boardWindowId) } catch {}
-          }
         }
 
         // Step 2: Wait for job board page to load
@@ -1228,38 +1191,23 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       // Clear any stale execution guard from a previous run
       await chrome.storage.local.remove('atsApplyRunning')
 
-      // Open ATS URL in a new focused window (same pattern as applyViaExtension)
+      // Open ATS URL in a tab in the CURRENT window
+      // FIX: Use tab instead of chrome.windows.create() to share Cloudflare cookies.
+      // active: false so it doesn't steal focus from the user.
       let tab
-      let windowId = null
       try {
-        const win = await chrome.windows.create({
-          url: atsUrl,
-          width: 1400,
-          height: 900,
-          focused: true,
-          type: 'normal',
-        })
-        tab = win.tabs[0]
-        windowId = win.id
-        console.log('[JobTracker] ATS window created:', win.id, 'tab:', tab.id)
-      } catch (winErr) {
-        // Fallback: background tab
-        try {
-          tab = await chrome.tabs.create({ url: atsUrl, active: false })
-        } catch (tabErr) {
-          await chrome.storage.local.remove('atsApplyContext')
-          return { success: false, status: 'error', error: 'Failed to open ATS URL: ' + (winErr.message || tabErr.message), requestId }
-        }
+        tab = await chrome.tabs.create({ url: atsUrl, active: false })
+        console.log('[JobTracker] ATS tab created:', tab.id)
+      } catch (tabErr) {
+        await chrome.storage.local.remove('atsApplyContext')
+        return { success: false, status: 'error', error: 'Failed to open ATS URL: ' + tabErr.message, requestId }
       }
 
       const tabCreatedAt = Date.now()
 
-      // Helper: close the tab + window (best effort)
+      // Helper: close the tab (best effort)
       async function cleanupAtsTab() {
         try { await chrome.tabs.remove(tab.id) } catch {}
-        if (windowId) {
-          try { await chrome.windows.remove(windowId) } catch {}
-        }
       }
 
       // Wait for page load (event-driven with 20s timeout, same as applyViaExtension)
