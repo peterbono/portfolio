@@ -818,7 +818,61 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           const isCfChallenge = CF_TITLE_PATTERNS.test(tabTitle) || /[?&]__cf_chl_/.test(tabUrl)
 
           if (isCfChallenge) {
-            console.log('[JobTracker] [JobBoard] Cloudflare challenge detected — title:', JSON.stringify(tabTitle), '| Waiting up to', CF_MAX_WAIT / 1000 + 's for resolution...')
+            console.log('[JobTracker] [JobBoard] Cloudflare challenge detected — title:', JSON.stringify(tabTitle), '| Attempting auto-click + waiting up to', CF_MAX_WAIT / 1000 + 's for resolution...')
+
+            // Helper: inject a script that clicks the CF Turnstile checkbox/iframe
+            const clickCfCheckbox = async () => {
+              try {
+                const clickResults = await chrome.scripting.executeScript({
+                  target: { tabId: boardTab.id, allFrames: true },
+                  func: () => {
+                    // Strategy 1: We're inside the CF iframe — click the checkbox directly
+                    const checkbox = document.querySelector('input[type="checkbox"]')
+                    if (checkbox && !checkbox.checked) {
+                      checkbox.click()
+                      return 'clicked-checkbox-in-iframe'
+                    }
+                    const label = document.querySelector('.cb-lb, .ctp-checkbox-label, label')
+                    if (label) {
+                      label.click()
+                      return 'clicked-label-in-iframe'
+                    }
+                    // Strategy 2: We're in the main frame — click the CF iframe element itself
+                    const iframe = document.querySelector(
+                      'iframe[src*="challenges.cloudflare.com"], iframe[src*="turnstile"], iframe[title*="challenge" i]'
+                    )
+                    if (iframe) {
+                      iframe.click()
+                      // Also try clicking the wrapper div (Turnstile renders a clickable container)
+                      const wrapper = iframe.parentElement
+                      if (wrapper) wrapper.click()
+                      return 'clicked-cf-iframe'
+                    }
+                    // Strategy 3: Click known CF widget wrappers
+                    const widget = document.querySelector(
+                      '.cf-turnstile, [id*="turnstile"], [id*="challenge-stage"], #challenge-stage'
+                    )
+                    if (widget) {
+                      widget.click()
+                      return 'clicked-cf-widget'
+                    }
+                    return null
+                  },
+                })
+                const hits = (clickResults || []).filter(r => r.result).map(r => r.result)
+                if (hits.length) {
+                  console.log('[JobTracker] [JobBoard] CF auto-click results:', hits.join(', '))
+                }
+                return hits.length > 0
+              } catch (clickErr) {
+                console.warn('[JobTracker] [JobBoard] CF auto-click failed (non-fatal):', clickErr.message)
+                return false
+              }
+            }
+
+            // First attempt — wait a beat for the iframe to render, then click
+            await new Promise(r => setTimeout(r, 1000))
+            await clickCfCheckbox()
 
             const cfResolved = await new Promise((resolve) => {
               const cfStart = Date.now()
@@ -836,10 +890,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
                     // Give the real page a moment to fully render after CF clears
                     await new Promise(r => setTimeout(r, 2000))
                     resolve(true)
-                  } else if (Date.now() - cfStart >= CF_MAX_WAIT) {
-                    clearInterval(pollTimer)
-                    console.warn('[JobTracker] [JobBoard] Cloudflare challenge did not resolve within', CF_MAX_WAIT / 1000 + 's')
-                    resolve(false)
+                  } else {
+                    // Retry clicking on each poll — the iframe may appear late
+                    await clickCfCheckbox()
+                    if (Date.now() - cfStart >= CF_MAX_WAIT) {
+                      clearInterval(pollTimer)
+                      console.warn('[JobTracker] [JobBoard] Cloudflare challenge did not resolve within', CF_MAX_WAIT / 1000 + 's')
+                      resolve(false)
+                    }
                   }
                 } catch (pollErr) {
                   clearInterval(pollTimer)
