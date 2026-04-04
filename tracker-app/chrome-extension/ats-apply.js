@@ -4730,6 +4730,30 @@ async function navigateMultiStepForm() {
       if (postSubmitErrors.length === 0 || !stillOnForm) {
         return 'submitted' // Likely succeeded — no errors visible
       } else {
+        // Last resort: if the only remaining error is the CV "100MB" bug,
+        // clear the file input and retry submit WITHOUT the CV.
+        // Better to submit without CV than not submit at all.
+        const onlyCvError = postSubmitErrors.every(e =>
+          e.toLowerCase().includes('file') || e.toLowerCase().includes('upload') || e.toLowerCase().includes('100mb') || e.toLowerCase().includes('size')
+        )
+        if (onlyCvError && postSubmitErrors.length > 0) {
+          log('Only CV upload error remains — clearing file input and retrying submit without CV')
+          const fileInputs = document.querySelectorAll('input[type="file"]')
+          for (const fi of fileInputs) {
+            try {
+              fi.value = ''
+              fi.files = new DataTransfer().files
+              fi.dispatchEvent(new Event('change', { bubbles: true }))
+            } catch {}
+          }
+          await sleep(1000)
+          const retrySubmit = await submitForm()
+          if (retrySubmit) {
+            await sleep(3000)
+            if (isApplicationConfirmed()) return 'confirmed'
+            return 'submitted' // Submitted without CV — user can add later
+          }
+        }
         log('Submit failed after retries — still has validation errors')
         return 'validation_errors'
       }
