@@ -263,9 +263,29 @@ if (typeof window !== 'undefined') {
 
 /**
  * Check if the JobTracker Chrome extension is installed and available.
+ * Uses active probe if passive detection hasn't fired yet (race condition
+ * where content.js sends INSTALLED before bot-api.ts bundle loads).
  */
-function isExtensionInstalled(): boolean {
-  return _extensionDetected
+async function isExtensionInstalled(): Promise<boolean> {
+  if (_extensionDetected) return true
+
+  // Active probe: send a cookie request and wait for response
+  // If extension is installed, content.js will relay and respond
+  return new Promise<boolean>((resolve) => {
+    const handler = (event: MessageEvent) => {
+      if (event.source === window && event.data?.type === 'JOBTRACKER_COOKIE_RESPONSE') {
+        window.removeEventListener('message', handler)
+        _extensionDetected = true
+        resolve(true)
+      }
+    }
+    window.addEventListener('message', handler)
+    window.postMessage({ type: 'JOBTRACKER_REQUEST_COOKIE' }, '*')
+    setTimeout(() => {
+      window.removeEventListener('message', handler)
+      resolve(false)
+    }, 2000)
+  })
 }
 
 /**
@@ -663,7 +683,7 @@ export async function triggerApplyJobs(
   // Split LinkedIn vs ATS jobs
   const linkedInJobs = jobs.filter(j => /linkedin\.com\/jobs/i.test(j.url))
   const atsJobs = jobs.filter(j => !/linkedin\.com\/jobs/i.test(j.url))
-  const extensionAvailable = isExtensionInstalled()
+  const extensionAvailable = await isExtensionInstalled()
 
   console.log(`[bot-api] Apply: ${linkedInJobs.length} LinkedIn, ${atsJobs.length} ATS, extension: ${extensionAvailable}`)
 
