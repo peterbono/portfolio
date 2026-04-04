@@ -3998,6 +3998,49 @@ const ATS_HANDLERS = {
 
   log('ats-apply.js v2.6.0 loaded on:', currentUrl)
 
+  // ─── Early confirmation page detection ──────────────────────────────
+  // If we landed on a /confirmation page (e.g. after Greenhouse submit navigated here),
+  // immediately write a success result WITHOUT attempting to fill any forms.
+  // This prevents the re-injected script from clobbering the original successful result.
+  const isConfirmationUrl = /\/(confirmation|thankyou|thank-you|success|applied)\b/i.test(currentUrl)
+  if (isConfirmationUrl || isApplicationConfirmed()) {
+    log('Confirmation page detected at startup — URL:', currentUrl)
+    log('isConfirmationUrl:', isConfirmationUrl, '| isApplicationConfirmed():', isApplicationConfirmed())
+
+    // Read context to populate result metadata (best effort)
+    let earlyContext = null
+    try {
+      const ctxData = await chrome.storage.local.get(['atsApplyContext'])
+      earlyContext = ctxData.atsApplyContext
+    } catch {}
+
+    // Only write the success result if there's an active apply context
+    // (avoids writing spurious results when user manually browses to a confirmation page)
+    if (earlyContext && !earlyContext.standalone) {
+      const confirmResult = {
+        success: true,
+        status: 'applied_external',
+        company: earlyContext.company || 'Unknown',
+        role: earlyContext.role || 'Unknown',
+        url: earlyContext.url || '',
+        linkedinUrl: earlyContext.linkedinUrl || '',
+        atsType: earlyContext.atsType || 'generic',
+        atsUrl: currentUrl,
+        atsTabId: earlyContext.tabId,
+        reason: `Application confirmed — landed on confirmation page (${earlyContext.atsType || 'generic'})`,
+        timestamp: new Date().toISOString(),
+      }
+      log('Early confirmation result:', confirmResult.status, confirmResult.reason)
+      await chrome.storage.local.set({ lastApplyResult: confirmResult })
+      await chrome.storage.local.remove('atsApplyContext')
+      await chrome.storage.local.remove('pendingExternalApply')
+      try { await chrome.storage.local.remove('atsApplyRunning') } catch {}
+      return // Exit early — do NOT attempt to fill forms on confirmation page
+    } else {
+      log('Confirmation page detected but no active apply context — continuing normally')
+    }
+  }
+
   // Load user profile from storage (overrides hardcoded defaults)
   await loadProfile()
 

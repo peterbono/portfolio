@@ -289,32 +289,130 @@ async function isExtensionInstalled(): Promise<boolean> {
 }
 
 /**
+ * Split a full name string into firstName / lastName.
+ * Handles "Florian Gouloubi" → ["Florian", "Gouloubi"]
+ * and single-word names like "Florian" → ["Florian", ""]
+ */
+function splitFullName(fullName: string): { firstName: string; lastName: string } {
+  const parts = fullName.trim().split(/\s+/)
+  if (parts.length === 0) return { firstName: '', lastName: '' }
+  if (parts.length === 1) return { firstName: parts[0], lastName: '' }
+  return { firstName: parts[0], lastName: parts.slice(1).join(' ') }
+}
+
+/**
+ * Resolve firstName and lastName from all available sources:
+ * 1. localStorage user profile (firstName/lastName fields)
+ * 2. localStorage user profile (name or displayName — split into first/last)
+ * 3. Enriched profile from localStorage
+ * 4. Supabase auth user_metadata (full_name from Google OAuth)
+ *
+ * If found via auth fallback, persists back to localStorage so future reads are instant.
+ */
+async function resolveFirstLastName(
+  userProfile: Record<string, unknown>,
+  enrichedProfile: Record<string, unknown>,
+): Promise<{ firstName: string; lastName: string }> {
+  // Source 1: explicit firstName/lastName in localStorage profile
+  if (userProfile.firstName && userProfile.lastName) {
+    return {
+      firstName: String(userProfile.firstName),
+      lastName: String(userProfile.lastName),
+    }
+  }
+
+  // Source 2: single "name" or "displayName" field in localStorage profile (from OnboardingWizard / SettingsView)
+  const localName = userProfile.name || userProfile.displayName
+  if (localName) {
+    const split = splitFullName(String(localName))
+    if (split.firstName) {
+      // Persist back so next call is instant
+      try {
+        const updated = { ...userProfile, firstName: split.firstName, lastName: split.lastName }
+        localStorage.setItem('tracker_v2_user_profile', JSON.stringify(updated))
+      } catch { /* ignore */ }
+      return split
+    }
+  }
+
+  // Source 3: enriched profile
+  if (enrichedProfile.firstName && enrichedProfile.lastName) {
+    return {
+      firstName: String(enrichedProfile.firstName),
+      lastName: String(enrichedProfile.lastName),
+    }
+  }
+
+  // Source 4: Supabase auth user_metadata (Google OAuth stores full_name here)
+  try {
+    const { supabase } = await import('./supabase')
+    const { data: { session } } = await supabase.auth.getSession()
+    const meta = session?.user?.user_metadata
+    if (meta) {
+      const fullName = meta.full_name || meta.name || ''
+      const email = session?.user?.email || ''
+      if (fullName) {
+        const split = splitFullName(String(fullName))
+        if (split.firstName) {
+          // Persist to localStorage so this roundtrip only happens once
+          try {
+            const updated = {
+              ...userProfile,
+              firstName: split.firstName,
+              lastName: split.lastName,
+              ...(email && !userProfile.email ? { email } : {}),
+            }
+            localStorage.setItem('tracker_v2_user_profile', JSON.stringify(updated))
+            console.log(`[bot-api] Resolved name from auth metadata: ${split.firstName} ${split.lastName}`)
+          } catch { /* ignore */ }
+          return split
+        }
+      }
+    }
+  } catch {
+    console.warn('[bot-api] Could not resolve name from Supabase auth metadata')
+  }
+
+  return { firstName: '', lastName: '' }
+}
+
+/**
  * Sync user profile to the Chrome extension before ATS applies.
  * Reads user profile + enriched profile from localStorage, merges into
  * the shape expected by ats-apply.js, and sends via postMessage.
+ *
+ * Falls back to Supabase auth user_metadata for firstName/lastName
+ * (Google OAuth stores the user's name there even when localStorage is incomplete).
  */
-function syncProfileToExtension(): void {
+async function syncProfileToExtension(): Promise<void> {
   const userProfile = getUserProfile() || {}
   const enrichedProfile = getEnrichedProfile() || {}
 
+  // Resolve firstName/lastName from all available sources (localStorage → auth metadata)
+  const { firstName, lastName } = await resolveFirstLastName(userProfile, enrichedProfile)
+
   const profileData = {
-    firstName: userProfile.firstName || enrichedProfile.firstName || '',
-    lastName: userProfile.lastName || enrichedProfile.lastName || '',
+    firstName,
+    lastName,
     email: userProfile.email || enrichedProfile.email || '',
     phone: userProfile.phone || enrichedProfile.phone || '',
-    linkedin: userProfile.linkedin || enrichedProfile.linkedin || '',
-    portfolio: userProfile.portfolio || enrichedProfile.portfolio || '',
+    linkedin: userProfile.linkedin || userProfile.linkedinUrl || enrichedProfile.linkedin || '',
+    portfolio: userProfile.portfolio || userProfile.portfolioUrl || enrichedProfile.portfolio || '',
     city: userProfile.city || enrichedProfile.city || '',
     country: userProfile.country || enrichedProfile.country || '',
-    yearsExperience: userProfile.yearsExperience || enrichedProfile.yearsExperience || '',
+    yearsExperience: userProfile.yearsExperience || userProfile.yearsOfExperience || enrichedProfile.yearsExperience || '',
     cvUrl: userProfile.cvUrl || enrichedProfile.cvUrl || '',
     salary: userProfile.salary || enrichedProfile.salary || '',
     coverLetter: userProfile.coverLetter || enrichedProfile.coverLetter || '',
-    github: userProfile.github || enrichedProfile.github || '',
-    website: userProfile.website || enrichedProfile.website || '',
+    github: userProfile.github || userProfile.githubUrl || enrichedProfile.github || '',
+    website: userProfile.website || userProfile.websiteUrl || enrichedProfile.website || '',
   }
 
-  console.log('[bot-api] Syncing profile to Chrome extension for ATS applies')
+  console.log('[bot-api] Syncing profile to Chrome extension for ATS applies', {
+    hasFirstName: !!profileData.firstName,
+    hasLastName: !!profileData.lastName,
+    hasEmail: !!profileData.email,
+  })
   window.postMessage({ type: 'JOBTRACKER_SYNC_PROFILE', profileData }, '*')
 }
 
@@ -690,7 +788,7 @@ export async function triggerApplyJobs(
   // ── Extension path: route ALL jobs through the Chrome extension ──────────
   if (extensionAvailable) {
     // Step 1: Sync profile to extension so ATS form-filler has field data
-    syncProfileToExtension()
+    await syncProfileToExtension()
 
     // Step 2: LinkedIn batch first (sequential — parallel sessions get flagged)
     if (linkedInJobs.length > 0) {

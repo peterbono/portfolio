@@ -1066,6 +1066,39 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         while (boardAttempts < boardMaxAttempts) {
           await new Promise(r => setTimeout(r, 1000))
 
+          // ─── Confirmation URL detection (job board flow) ──────────
+          // Same fix as direct ATS: detect /confirmation page navigation
+          try {
+            const currentBoardTab = await chrome.tabs.get(boardTab.id)
+            const boardTabUrl = currentBoardTab.url || ''
+            if (/\/(confirmation|thankyou|thank-you|success|applied)\b/i.test(boardTabUrl)) {
+              const totalTime = ((Date.now() - boardTabCreatedAt) / 1000).toFixed(1)
+              console.log('[JobTracker] [JobBoard] Tab navigated to confirmation URL at poll #' + boardAttempts + ' (' + totalTime + 's):', boardTabUrl)
+              const confirmResult = {
+                success: true,
+                status: 'applied_external',
+                company: job.company || 'Unknown',
+                role: job.role || 'Unknown',
+                url: job.url || '',
+                atsType: resolvedAtsType,
+                atsUrl: boardTabUrl,
+                reason: `Application confirmed — tab navigated to confirmation page (${resolvedAtsType})`,
+                timestamp: new Date().toISOString(),
+                requestId,
+                jobBoard,
+              }
+              await chrome.storage.local.remove('lastApplyResult')
+              await chrome.storage.local.remove('atsApplyContext')
+              await chrome.storage.local.remove('atsApplyRunning')
+              await chrome.storage.local.remove('atsApplyForceRerun')
+              console.log('[JobTracker] [JobBoard] Result for', job.company, ':', confirmResult.status, '-', confirmResult.reason)
+              await cleanupBoardTab()
+              return confirmResult
+            }
+          } catch (boardTabCheckErr) {
+            // Tab may have been closed — ignore
+          }
+
           const data = await chrome.storage.local.get(['lastApplyResult'])
           if (boardAttempts % 10 === 0 && boardAttempts > 0) {
             const elapsed = ((Date.now() - boardTabCreatedAt) / 1000).toFixed(1)
@@ -1248,6 +1281,40 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
       while (attempts < maxAttempts) {
         await new Promise(r => setTimeout(r, 1000))
+
+        // ─── Confirmation URL detection ─────────────────────────────
+        // If the tab navigated to a /confirmation page, the original ats-apply.js
+        // context was destroyed by page navigation. Treat this as success immediately
+        // rather than waiting for a result that may never come (or get clobbered).
+        try {
+          const currentTab = await chrome.tabs.get(tab.id)
+          const tabUrl = currentTab.url || ''
+          if (/\/(confirmation|thankyou|thank-you|success|applied)\b/i.test(tabUrl)) {
+            const totalTime = ((Date.now() - tabCreatedAt) / 1000).toFixed(1)
+            console.log('[JobTracker] Tab navigated to confirmation URL at poll #' + attempts + ' (' + totalTime + 's):', tabUrl)
+            const confirmResult = {
+              success: true,
+              status: 'applied_external',
+              company: job.company || 'Unknown',
+              role: job.role || 'Unknown',
+              url: job.url || '',
+              atsType: finalAtsType,
+              atsUrl: tabUrl,
+              reason: `Application confirmed — tab navigated to confirmation page (${finalAtsType})`,
+              timestamp: new Date().toISOString(),
+              requestId,
+            }
+            await chrome.storage.local.remove('lastApplyResult')
+            await chrome.storage.local.remove('atsApplyContext')
+            await chrome.storage.local.remove('atsApplyRunning')
+            await chrome.storage.local.remove('atsApplyForceRerun')
+            console.log('[JobTracker] Direct ATS result for', job.company, ':', confirmResult.status, '-', confirmResult.reason)
+            await cleanupAtsTab()
+            return confirmResult
+          }
+        } catch (tabCheckErr) {
+          // Tab may have been closed — ignore
+        }
 
         const data = await chrome.storage.local.get(['lastApplyResult'])
         if (attempts % 10 === 0 && attempts > 0) {
