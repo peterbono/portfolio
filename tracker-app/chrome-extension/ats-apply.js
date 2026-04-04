@@ -1221,7 +1221,8 @@ async function fillAllFormFields() {
         const containerLabel = questionContainer?.querySelector('label, legend, .field-label, [class*="label"], .custom-question-title, .question-label, h3, h4, [class*="title"]')?.textContent?.trim() || ''
         const enrichedLabel = (labelInfo + ' ' + containerLabel.toLowerCase()).trim()
         if (enrichedLabel.length > 5) {
-          matched = answerCustomQuestion(enrichedLabel)
+          const isTextarea = input.tagName === 'TEXTAREA'
+          matched = answerCustomQuestion(enrichedLabel, isTextarea ? 'textarea' : 'text')
           if (matched) {
             log(`[classify:text:customQ] [${enrichedLabel.substring(0, 50)}] -> ${matched.substring(0, 30)}...`)
           }
@@ -1280,7 +1281,8 @@ async function fillAllFormFields() {
       }
 
       // Generic select: try answerCustomQuestion
-      const answer = answerCustomQuestion(labelInfo)
+      const selectOpts = Array.from(input.options).map(o => ({ text: o.text, value: o.value, label: o.text }))
+      const answer = answerCustomQuestion(labelInfo, 'select', selectOpts)
       if (answer && _fillNativeSelect(input, answer)) {
         filledCount++
         log(`[classify:select] [${labelInfo.trim().substring(0, 50)}] -> ${answer.substring(0, 30)}`)
@@ -1460,11 +1462,46 @@ const CUSTOM_QUESTION_ANSWERS = {
   // Accommodations
   accommodations: 'No accommodations needed.',
   interviewAvailability: 'Available for interviews any weekday. Based in Bangkok (GMT+7), flexible with time zones for video calls.',
+
+  // ─── NEW: Tech / Tools / Stack ───────────────────────────────────────
+  excitingTech: 'Recently I have been exploring design token automation pipelines and AI-assisted design workflows — using tools like Figma Variables, Style Dictionary, and Claude for UX writing. The convergence of design systems and AI is exciting for scalable product design.',
+  techStack: 'Figma, Storybook, Zeroheight, Style Dictionary, Rive, Maze, Jira, Notion. For prototyping: Framer, ProtoPie. For design-to-dev: Figma Dev Mode, Storybook, and custom token pipelines.',
+  favoriteTool: 'Figma — it is the backbone of my design workflow. Combined with Storybook for component documentation and Zeroheight for design system governance, it enables me to maintain 143+ templates across 7 SaaS products efficiently.',
+
+  // ─── NEW: Motivation / Interest ──────────────────────────────────────
+  whyRole: 'I am drawn to roles where I can leverage my 7+ years of design systems expertise to solve complex product challenges. I thrive in environments that value systematic thinking, cross-functional collaboration, and design at scale.',
+  whyCompany: 'I am excited about companies that invest in design quality and scalable systems. My experience leading design across iGaming, B2B SaaS, and media platforms has shown me the impact of thoughtful design infrastructure on product velocity.',
+  whatExcites: 'Building design systems that genuinely accelerate product teams excites me most. Seeing a component library reduce development feedback cycles by 90% — as I achieved in my previous role — is deeply rewarding.',
+
+  // ─── NEW: Strengths / Differentiators ────────────────────────────────
+  greatestStrength: 'My ability to bridge design and engineering. I do not just create mockups — I build complete design systems with tokens, documentation, and governance processes that scale across products and teams.',
+  whatMakesUnique: 'The combination of deep design systems expertise (143+ templates, 7 SaaS products) with hands-on experience in design ops, accessibility audits, and cross-functional leadership. I think in systems, not just screens.',
+  whatSetsApart: 'I bring a rare blend of visual design craft and systematic architecture. My design systems have improved development feedback by 90% and I have led design across diverse industries from iGaming to B2B SaaS to media.',
+
+  // ─── NEW: Projects / Impact ──────────────────────────────────────────
+  proudestProject: 'Building a unified design system for 7 SaaS products from scratch — 143+ templates in Figma, full Storybook documentation, and a token pipeline that reduced design-to-dev handoff friction by 90%. It transformed how the entire product organization shipped.',
+  mostImpactfulWork: 'Leading the design system initiative that consolidated fragmented UI patterns across 7 products into one coherent system. It cut component development time in half and established a shared design language across teams.',
+
+  // ─── NEW: Challenges / Behavioral ────────────────────────────────────
+  biggestChallenge: 'Unifying design patterns across 7 independently built SaaS products was my biggest challenge. I audited every product, identified common patterns, negotiated with stakeholders, and built an incremental migration plan that avoided disrupting active development.',
+  describeTimeWhen: 'When I joined my previous company, each product team had its own UI patterns. I led an audit of all 7 products, mapped overlapping components, and proposed a unified system. Through cross-team workshops and iterative releases, I consolidated everything into 143+ shared templates — improving consistency and reducing dev cycles by 90%.',
+  howDoYouHandle: 'I approach challenges methodically: define the problem clearly, audit the current state, align stakeholders on priorities, then execute iteratively. For design systems specifically, I break large migrations into incremental phases so teams can adopt changes without disruption.',
+
+  // ─── NEW: Availability / Scheduling ──────────────────────────────────
+  whenAvailable: 'Available for interviews any weekday. Based in Bangkok (GMT+7), highly flexible with time zones for video calls. I am available immediately for the right opportunity.',
+  preferredTime: 'Flexible — I work across time zones regularly. I am comfortable with morning sessions (Asia time) or evening sessions to overlap with US/EU hours.',
+
+  // ─── NEW: AI / Design / Systems ──────────────────────────────────────
+  aiExperience: 'I integrate AI into my design workflow using Figma AI for auto-layout suggestions, Midjourney for concept exploration, Claude/ChatGPT for UX copy iteration, and Maze for AI-powered usability analysis. I also build design system automation pipelines.',
+  designPhilosophy: 'Design is a system, not a series of screens. I believe in building scalable, token-driven design foundations that empower teams to ship consistently and fast. Good design systems are invisible — they make the right thing the easy thing.',
+  systemsThinking: 'I approach every design challenge as a systems problem. Whether it is a component library, a token architecture, or a cross-product pattern audit, I think about scalability, governance, and how the pieces interconnect to serve the whole.',
 }
 
 // Match a custom question text to a smart answer
-// Covers 50+ common screening question patterns from Greenhouse, Lever, Workable, etc.
-function answerCustomQuestion(questionText) {
+// Covers 80+ common screening question patterns from Greenhouse, Lever, Workable, etc.
+// fieldType (optional): 'text' | 'textarea' | 'select' | 'radio' | 'checkbox' — used for smart fallback
+// options (optional): array of option texts for select/radio fields — used for smart fallback
+function answerCustomQuestion(questionText, fieldType, options) {
   const q = questionText.toLowerCase().trim()
 
   // ─── 1. VISA / SPONSORSHIP / WORK AUTHORIZATION ─────────────────────
@@ -1622,8 +1659,207 @@ function answerCustomQuestion(questionText) {
   // ─── 24. CONSENT / AGREEMENT (broad catch-all) ────────────────────
   if (q.includes('consent') || q.includes('agree') || q.includes('acknowledge') || q.includes('confirm') || q.includes('certify') || q.includes('attest') || q.includes('i understand')) return CUSTOM_QUESTION_ANSWERS.consent
 
-  // Generic fallback for any remaining text field
-  return null
+  // ─── 25. TECH / TOOLS / STACK (open-ended) ────────────────────────
+  if (q.includes('exciting tech') || q.includes('recently learned') || q.includes('new technology') || q.includes('latest tech') || q.includes('emerging tech')) return CUSTOM_QUESTION_ANSWERS.excitingTech
+  if (q.includes('tech stack') || q.includes('technologies you use') || q.includes('technical stack') || q.includes('tools you use') || q.includes('what tools')) return CUSTOM_QUESTION_ANSWERS.techStack
+  if (q.includes('favorite tool') || q.includes('favourite tool') || q.includes('preferred tool') || q.includes('go-to tool') || q.includes('go to tool')) return CUSTOM_QUESTION_ANSWERS.favoriteTool
+
+  // ─── 26. MOTIVATION / INTEREST (open-ended) ───────────────────────
+  if (q.includes('why this role') || q.includes('why are you applying') || q.includes('why do you want this') || q.includes('what draws you')) return CUSTOM_QUESTION_ANSWERS.whyRole
+  if (q.includes('why this company') || q.includes('why do you want to work') || q.includes('why us') || q.includes('what attracts you')) return CUSTOM_QUESTION_ANSWERS.whyCompany
+  if (q.includes('what excites you') || q.includes('what interests you') || q.includes('what are you passionate') || q.includes('what drives you') || q.includes('what motivates you')) return CUSTOM_QUESTION_ANSWERS.whatExcites
+
+  // ─── 27. STRENGTHS / DIFFERENTIATORS ──────────────────────────────
+  if (q.includes('greatest strength') || q.includes('biggest strength') || q.includes('key strength') || q.includes('top strength') || q.includes('main strength')) return CUSTOM_QUESTION_ANSWERS.greatestStrength
+  if (q.includes('what makes you unique') || q.includes('unique about you') || q.includes('stand out') || q.includes('differentiate yourself')) return CUSTOM_QUESTION_ANSWERS.whatMakesUnique
+  if (q.includes('what sets you apart') || q.includes('competitive advantage') || q.includes('why should we hire') || q.includes('why you')) return CUSTOM_QUESTION_ANSWERS.whatSetsApart
+
+  // ─── 28. PROJECTS / IMPACT ────────────────────────────────────────
+  if (q.includes('proudest project') || q.includes('favorite project') || q.includes('favourite project') || q.includes('best project') || q.includes('project you are most')) return CUSTOM_QUESTION_ANSWERS.proudestProject
+  if (q.includes('most impactful') || q.includes('biggest impact') || q.includes('greatest achievement') || q.includes('accomplishment') || q.includes('achievement')) return CUSTOM_QUESTION_ANSWERS.mostImpactfulWork
+  if (q.includes('tell us about a project') || q.includes('describe a project') || q.includes('recent project') || q.includes('side project')) return CUSTOM_QUESTION_ANSWERS.proudestProject
+
+  // ─── 29. CHALLENGES / BEHAVIORAL ──────────────────────────────────
+  if (q.includes('biggest challenge') || q.includes('greatest challenge') || q.includes('most difficult') || q.includes('toughest') || q.includes('hardest')) return CUSTOM_QUESTION_ANSWERS.biggestChallenge
+  if (q.includes('describe a time') || q.includes('tell me about a time') || q.includes('give an example') || q.includes('share an example') || q.includes('walk us through')) return CUSTOM_QUESTION_ANSWERS.describeTimeWhen
+  if (q.includes('how do you handle') || q.includes('how do you deal') || q.includes('how do you approach') || q.includes('how do you manage') || q.includes('how would you')) return CUSTOM_QUESTION_ANSWERS.howDoYouHandle
+
+  // ─── 30. AVAILABILITY / SCHEDULING (extended) ─────────────────────
+  if (q.includes('interview availability') || q.includes('when are you available') || q.includes('scheduling preference')) return CUSTOM_QUESTION_ANSWERS.whenAvailable
+  if (q.includes('preferred time') || q.includes('preferred schedule') || q.includes('best time') || q.includes('time preference')) return CUSTOM_QUESTION_ANSWERS.preferredTime
+
+  // ─── 31. AI / DESIGN PHILOSOPHY / SYSTEMS THINKING ────────────────
+  if (q.includes('artificial intelligence') || q.includes('machine learning') || q.includes('ai experience') || q.includes('generative ai')) return CUSTOM_QUESTION_ANSWERS.aiExperience
+  if (q.includes('design philosophy') || q.includes('design approach') || q.includes('design process') || q.includes('design thinking') || q.includes('how do you design')) return CUSTOM_QUESTION_ANSWERS.designPhilosophy
+  if (q.includes('systems thinking') || q.includes('scalab') || q.includes('design at scale') || q.includes('component library') || q.includes('token')) return CUSTOM_QUESTION_ANSWERS.systemsThinking
+  if (q.includes('accessibility') || q.includes('a11y') || q.includes('wcag') || q.includes('inclusive design')) return 'Strong commitment to accessibility — I conduct WCAG 2.1 AA audits on all design system components, build accessible color palettes with proper contrast ratios, and document accessibility guidelines within the system.'
+  if (q.includes('user research') || q.includes('usability test') || q.includes('user testing')) return 'I integrate research into the design process using Maze for unmoderated testing, conduct stakeholder interviews, and use analytics data to validate design decisions. My design systems include built-in patterns for common accessibility and usability patterns.'
+  if (q.includes('collaborat') || q.includes('cross-functional') || q.includes('work with engineers') || q.includes('work with developers')) return 'I excel at cross-functional collaboration. I run design-dev syncs, maintain Storybook documentation developers actually use, and build token pipelines that bridge the gap between design and code. My systems have reduced design-to-dev handoff friction by 90%.'
+  if (q.includes('leadership') || q.includes('lead') && q.includes('team') || q.includes('manage') && q.includes('team') || q.includes('mentor')) return 'I have led design across 7 SaaS products, mentored junior designers, and facilitated cross-team alignment on design system adoption. My leadership style focuses on building shared understanding and empowering teams through scalable systems and clear documentation.'
+
+  // ─── LAYER 2: Smart fallback — NEVER return null ──────────────────
+  // If we reach here, no keyword matched. Use generateFallbackAnswer.
+  const fallback = generateFallbackAnswer(questionText, fieldType, options)
+  if (fallback) {
+    logUnansweredQuestion(questionText, fallback)
+    return fallback
+  }
+
+  // Absolute last resort — should never reach here
+  logUnansweredQuestion(questionText, CUSTOM_QUESTION_ANSWERS.coverLetter)
+  return CUSTOM_QUESTION_ANSWERS.coverLetter
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// LAYER 2: Smart fallback answer generator
+// Detects question category via sentiment/keyword heuristics and returns
+// a contextual, professional answer. NEVER returns empty string.
+// ═══════════════════════════════════════════════════════════════════════
+function generateFallbackAnswer(questionText, fieldType, options) {
+  const q = (questionText || '').toLowerCase().trim()
+
+  // ── For radio/select with options: pick the most positive/affirmative option ──
+  if (fieldType === 'radio' || fieldType === 'select') {
+    if (options && options.length > 0) {
+      const optTexts = options.map(o => (typeof o === 'string' ? o : o.text || o.label || o.value || '').toLowerCase())
+
+      // Sensitive topics → prefer "Prefer not to say" / "Decline"
+      const sensitiveKeywords = ['gender', 'race', 'ethnic', 'veteran', 'disability', 'orientation', 'religion', 'marital']
+      const isSensitive = sensitiveKeywords.some(kw => q.includes(kw))
+      if (isSensitive) {
+        const declineOption = options.find((_, i) =>
+          optTexts[i].includes('prefer not') || optTexts[i].includes('decline') ||
+          optTexts[i].includes('choose not') || optTexts[i].includes('n/a')
+        )
+        if (declineOption) return typeof declineOption === 'string' ? declineOption : declineOption.text || declineOption.label || declineOption.value
+      }
+
+      // Affirmative: prefer "Yes" options
+      const yesOption = options.find((_, i) =>
+        optTexts[i] === 'yes' || optTexts[i].startsWith('yes')
+      )
+      if (yesOption) return typeof yesOption === 'string' ? yesOption : yesOption.text || yesOption.label || yesOption.value
+
+      // Pick first non-empty, non-placeholder option
+      const validOption = options.find((_, i) =>
+        optTexts[i] && optTexts[i] !== '' && optTexts[i] !== 'select' &&
+        optTexts[i] !== 'choose' && optTexts[i] !== '-- select --' &&
+        optTexts[i] !== 'please select' && optTexts[i] !== 'select one' &&
+        !optTexts[i].startsWith('--') && !optTexts[i].startsWith('select')
+      )
+      if (validOption) return typeof validOption === 'string' ? validOption : validOption.text || validOption.label || validOption.value
+    }
+    // If radio/select but no options provided, return Yes
+    return 'Yes'
+  }
+
+  // ── For checkboxes: return affirmative ──
+  if (fieldType === 'checkbox') {
+    return 'Yes'
+  }
+
+  // ── For text fields: detect category and return contextual answer ──
+  // Category detection via lightweight keyword groups
+  const categories = [
+    {
+      keywords: ['tech', 'tool', 'stack', 'software', 'framework', 'language', 'programming', 'code', 'engineering', 'api', 'platform'],
+      answer: CUSTOM_QUESTION_ANSWERS.excitingTech,
+    },
+    {
+      keywords: ['why', 'interest', 'motivat', 'excite', 'passion', 'attract', 'drawn', 'appeal', 'inspir'],
+      answer: CUSTOM_QUESTION_ANSWERS.whyRole,
+    },
+    {
+      keywords: ['strength', 'unique', 'apart', 'differentiat', 'advantage', 'best quality', 'superpower'],
+      answer: CUSTOM_QUESTION_ANSWERS.greatestStrength,
+    },
+    {
+      keywords: ['project', 'achievement', 'accomplish', 'impact', 'proud', 'built', 'created', 'delivered', 'shipped'],
+      answer: CUSTOM_QUESTION_ANSWERS.proudestProject,
+    },
+    {
+      keywords: ['challenge', 'difficult', 'obstacle', 'problem', 'conflict', 'failure', 'mistake', 'tough', 'hard'],
+      answer: CUSTOM_QUESTION_ANSWERS.biggestChallenge,
+    },
+    {
+      keywords: ['time when', 'example', 'situation', 'walk us', 'tell me about', 'describe a', 'share a'],
+      answer: CUSTOM_QUESTION_ANSWERS.describeTimeWhen,
+    },
+    {
+      keywords: ['handle', 'approach', 'manage', 'deal with', 'cope', 'respond to', 'react to', 'prioriti'],
+      answer: CUSTOM_QUESTION_ANSWERS.howDoYouHandle,
+    },
+    {
+      keywords: ['design', 'ux', 'ui', 'figma', 'prototype', 'wireframe', 'mockup', 'user experience', 'visual'],
+      answer: CUSTOM_QUESTION_ANSWERS.designPhilosophy,
+    },
+    {
+      keywords: ['ai', 'machine learning', 'automat', 'artificial', 'generat'],
+      answer: CUSTOM_QUESTION_ANSWERS.aiExperience,
+    },
+    {
+      keywords: ['team', 'collaborat', 'work with', 'cross-functional', 'stakeholder', 'communicat'],
+      answer: 'I thrive in cross-functional environments. With 7+ years leading design across multiple product teams, I have developed strong collaboration practices including design-dev syncs, shared documentation in Storybook and Zeroheight, and stakeholder alignment workshops.',
+    },
+    {
+      keywords: ['learn', 'grow', 'develop', 'improve', 'goal', 'aspir', 'career', 'future', 'ambition', 'plan'],
+      answer: 'I am focused on deepening my expertise in design systems architecture and AI-integrated design workflows. My goal is to lead design infrastructure at scale — building the systems, tools, and processes that enable product teams to ship better products faster.',
+    },
+    {
+      keywords: ['culture', 'values', 'environment', 'workplace', 'ideal', 'thrive', 'work style', 'preference'],
+      answer: 'I thrive in environments that value design quality, systematic thinking, and async-friendly collaboration. I am at my best when I can build scalable systems, document clearly, and see the direct impact of design infrastructure on product velocity.',
+    },
+  ]
+
+  for (const cat of categories) {
+    if (cat.keywords.some(kw => q.includes(kw))) {
+      return cat.answer
+    }
+  }
+
+  // ── No category matched: return a professional generic answer ──
+  // For short text inputs, return concise. For textarea/long, return detailed.
+  if (fieldType === 'textarea' || fieldType === 'long') {
+    return 'I am a Senior Product Designer with 7+ years of experience specializing in design systems, complex product architecture, and design ops. I have led design across iGaming, B2B SaaS, and media platforms, delivering scalable systems that improved development feedback by 90% and managed 143+ templates across 7 SaaS products. Portfolio: https://www.floriangouloubi.com/'
+  }
+
+  // Default short answer for any text input
+  return 'Senior Product Designer — 7+ years in design systems and product architecture. Portfolio: https://www.floriangouloubi.com/'
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// LAYER 3: Log unanswered questions for future improvement
+// Stores unmatched questions in chrome.storage.local so we can review
+// and add specific keyword patterns later.
+// ═══════════════════════════════════════════════════════════════════════
+function logUnansweredQuestion(questionText, fallbackUsed) {
+  const entry = {
+    question: questionText.substring(0, 200),
+    fallback: (fallbackUsed || '').substring(0, 100),
+    url: window.location.href,
+    timestamp: new Date().toISOString(),
+  }
+
+  log(`[FALLBACK] No keyword match for: "${questionText.substring(0, 80)}" — used fallback answer`)
+
+  // Async — fire and forget, do not block form filling
+  try {
+    chrome.storage.local.get(['unansweredQuestions'], (result) => {
+      const existing = result.unansweredQuestions || []
+      // Deduplicate: skip if same question already logged (case-insensitive)
+      const isDuplicate = existing.some(e =>
+        e.question.toLowerCase().trim() === entry.question.toLowerCase().trim()
+      )
+      if (!isDuplicate) {
+        // Keep last 200 entries max to avoid storage bloat
+        const updated = [...existing, entry].slice(-200)
+        chrome.storage.local.set({ unansweredQuestions: updated })
+      }
+    })
+  } catch (e) {
+    // Silently fail — logging should never break form filling
+    warn('[FALLBACK] Could not log unanswered question:', e.message)
+  }
 }
 
 // Detect validation errors on the form
@@ -2206,7 +2442,8 @@ async function fillGreenhouseCustomQuestions() {
         continue
       }
       if (textInput && (!textInput.value || textInput.value.trim() === '') && !processedInputs.has(textInput)) {
-        const answer = answerCustomQuestion(questionText) || matchFieldToValue(getLabelText(textInput))
+        const isTextarea = textInput.tagName === 'TEXTAREA'
+        const answer = answerCustomQuestion(questionText, isTextarea ? 'textarea' : 'text') || matchFieldToValue(getLabelText(textInput))
         if (answer) {
           const actualValue = answer === '___PHONE___' ? PROFILE.phone : answer
           _fillTextField(textInput, actualValue)
@@ -2219,7 +2456,9 @@ async function fillGreenhouseCustomQuestions() {
       // ── Native <select> dropdown ──
       const select = container.querySelector('select')
       if (select && (!select.value || select.selectedIndex <= 0) && !processedInputs.has(select)) {
-        const answer = answerCustomQuestion(questionText)
+        // Extract option texts for smart fallback
+        const selectOptions = Array.from(select.options).map(o => ({ text: o.text, value: o.value, label: o.text }))
+        const answer = answerCustomQuestion(questionText, 'select', selectOptions)
         if (answer) {
           if (_fillNativeSelect(select, answer)) {
             processedInputs.add(select)
@@ -2232,7 +2471,12 @@ async function fillGreenhouseCustomQuestions() {
       // ── Radio buttons ──
       const radios = container.querySelectorAll('input[type="radio"]')
       if (radios.length > 0 && !Array.from(radios).some(r => r.checked)) {
-        const answer = answerCustomQuestion(questionText)
+        // Extract radio label texts for smart fallback
+        const radioOptions = Array.from(radios).map(r => {
+          const lbl = r.labels?.[0]?.textContent?.trim() || r.closest('label')?.textContent?.trim() || r.value
+          return { text: lbl, value: r.value, label: lbl }
+        })
+        const answer = answerCustomQuestion(questionText, 'radio', radioOptions)
         if (answer) {
           const filled = await _fillRadioField(container, answer)
           if (filled) {
@@ -2244,7 +2488,7 @@ async function fillGreenhouseCustomQuestions() {
       // ── Checkboxes ──
       const cb = container.querySelector('input[type="checkbox"]')
       if (cb && !cb.checked) {
-        const answer = answerCustomQuestion(questionText)
+        const answer = answerCustomQuestion(questionText, 'checkbox')
         if (answer) {
           _fillCheckboxField(cb, answer)
           log(`Custom Q [classify:checkbox] [${questionText.substring(0, 50)}] -> ${answer.substring(0, 30)}`)
@@ -2268,13 +2512,12 @@ async function fillGreenhouseCustomQuestions() {
       ?.querySelector('label, legend, .field-label, [class*="label"]')?.textContent?.trim() || ''
     const combinedLabel = labelInfo + ' ' + containerLabel.toLowerCase()
 
-    let answer = answerCustomQuestion(combinedLabel)
+    let answer = answerCustomQuestion(combinedLabel, 'textarea')
+    // answerCustomQuestion now always returns a non-null answer via fallback
     if (!answer) {
-      const isRequired = ta.hasAttribute('required') || ta.closest('.required, .field--error, [class*="required"]')
-      if (isRequired) {
-        answer = CUSTOM_QUESTION_ANSWERS.coverLetter
-        log(`Catch-all: filling required empty textarea [${combinedLabel.substring(0, 60)}] with cover letter`)
-      }
+      // Defensive: should never happen, but just in case
+      answer = CUSTOM_QUESTION_ANSWERS.coverLetter
+      log(`Catch-all: filling required empty textarea [${combinedLabel.substring(0, 60)}] with cover letter`)
     }
     if (answer) {
       _fillTextField(ta, answer)
@@ -2328,7 +2571,8 @@ async function fillByLabelScan() {
     // Try answerCustomQuestion with the label text + aria-label
     const ariaLabel = input.getAttribute('aria-label') || ''
     const combinedText = labelText + ' ' + ariaLabel
-    const answer = answerCustomQuestion(combinedText) || matchFieldToValue(combinedText.toLowerCase())
+    const isTextarea = input.tagName === 'TEXTAREA'
+    const answer = answerCustomQuestion(combinedText, isTextarea ? 'textarea' : 'text') || matchFieldToValue(combinedText.toLowerCase())
     if (!answer) continue
 
     const actualValue = answer === '___PHONE___' ? PROFILE.phone : answer
@@ -2655,8 +2899,8 @@ async function fillReactSelectDropdowns() {
     if (questionText.length < 3 || processed.has(questionText)) continue
     processed.add(questionText)
 
-    // Get answer for this question
-    const answer = answerCustomQuestion(questionText)
+    // Get answer for this question (pass 'select' fieldType for smart fallback)
+    const answer = answerCustomQuestion(questionText, 'select')
     if (!answer) {
       log(`React-Select skip — no answer for: "${questionText.substring(0, 60)}"`)
       continue
@@ -3103,7 +3347,8 @@ async function fillReactSelectDropdowns() {
     const questionText = labelEl?.textContent?.trim() || ''
     if (!questionText || processed.has(questionText)) continue
 
-    const answer = answerCustomQuestion(questionText)
+    const selectOpts2 = Array.from(select.options).map(o => ({ text: o.text, value: o.value, label: o.text }))
+    const answer = answerCustomQuestion(questionText, 'select', selectOpts2)
     if (!answer) continue
     const ansLower = answer.toLowerCase().trim()
     const isYes = ansLower.startsWith('yes')
@@ -3397,20 +3642,17 @@ async function fillLeverCustomQuestions() {
     )
     if (!questionText || questionText.length < 3) continue
 
-    const answer = answerCustomQuestion(questionText)
-    if (!answer) {
-      log(`Lever custom Q: no answer for "${questionText.substring(0, 60)}"`)
-      continue
-    }
-
     // ── Text inputs ──
     const textInputs = container.querySelectorAll('input[type="text"], input[type="email"], input[type="tel"], input[type="url"], input[type="number"], input:not([type]), textarea')
     for (const input of textInputs) {
       if (processedInputs.has(input)) continue
-      const fieldType = classifyFormField(input)
-      if (fieldType !== 'text') continue
+      const fType = classifyFormField(input)
+      if (fType !== 'text') continue
       if (input.value && input.value.trim().length > 0) continue
 
+      const isTextarea = input.tagName === 'TEXTAREA'
+      const answer = answerCustomQuestion(questionText, isTextarea ? 'textarea' : 'text')
+      if (!answer) continue
       const actualValue = answer === '___PHONE___' ? PROFILE.phone : answer
       _fillTextField(input, actualValue)
       processedInputs.add(input)
@@ -3425,6 +3667,9 @@ async function fillLeverCustomQuestions() {
       if (processedInputs.has(select)) continue
       if (select.value && select.selectedIndex > 0) continue
 
+      const selectOptions = Array.from(select.options).map(o => ({ text: o.text, value: o.value, label: o.text }))
+      const answer = answerCustomQuestion(questionText, 'select', selectOptions)
+      if (!answer) continue
       if (_fillNativeSelect(select, answer)) {
         processedInputs.add(select)
         filledCount++
@@ -3436,10 +3681,17 @@ async function fillLeverCustomQuestions() {
     // ── Radio buttons ──
     const radios = container.querySelectorAll('input[type="radio"]')
     if (radios.length > 0 && !Array.from(radios).some(r => r.checked)) {
-      const filled = await _fillRadioField(container, answer)
-      if (filled) {
-        filledCount++
-        log(`Lever custom Q [radio] [${questionText.substring(0, 50)}] -> ${answer.substring(0, 30)}`)
+      const radioOptions = Array.from(radios).map(r => {
+        const lbl = r.labels?.[0]?.textContent?.trim() || r.closest('label')?.textContent?.trim() || r.value
+        return { text: lbl, value: r.value, label: lbl }
+      })
+      const answer = answerCustomQuestion(questionText, 'radio', radioOptions)
+      if (answer) {
+        const filled = await _fillRadioField(container, answer)
+        if (filled) {
+          filledCount++
+          log(`Lever custom Q [radio] [${questionText.substring(0, 50)}] -> ${answer.substring(0, 30)}`)
+        }
       }
     }
 
@@ -3447,9 +3699,12 @@ async function fillLeverCustomQuestions() {
     const checkboxes = container.querySelectorAll('input[type="checkbox"]')
     for (const cb of checkboxes) {
       if (cb.checked) continue
-      _fillCheckboxField(cb, answer)
-      filledCount++
-      log(`Lever custom Q [checkbox] [${questionText.substring(0, 50)}] -> ${answer.substring(0, 30)}`)
+      const cbAnswer = answerCustomQuestion(questionText, 'checkbox')
+      if (cbAnswer) {
+        _fillCheckboxField(cb, cbAnswer)
+        filledCount++
+        log(`Lever custom Q [checkbox] [${questionText.substring(0, 50)}] -> ${cbAnswer.substring(0, 30)}`)
+      }
     }
   }
 
@@ -3479,7 +3734,8 @@ async function fillLeverCustomQuestions() {
     }
 
     if (fieldType === 'text') {
-      const answer = answerCustomQuestion(enrichedLabel) || matchFieldToValue(enrichedLabel)
+      const isTextarea = input.tagName === 'TEXTAREA'
+      const answer = answerCustomQuestion(enrichedLabel, isTextarea ? 'textarea' : 'text') || matchFieldToValue(enrichedLabel)
       if (answer) {
         const actualValue = answer === '___PHONE___' ? PROFILE.phone : answer
         _fillTextField(input, actualValue)
@@ -3489,14 +3745,20 @@ async function fillLeverCustomQuestions() {
         await sleep(200)
       }
     } else if (fieldType === 'select') {
-      const answer = answerCustomQuestion(enrichedLabel)
+      const selectOptions = Array.from(input.options || []).map(o => ({ text: o.text, value: o.value, label: o.text }))
+      const answer = answerCustomQuestion(enrichedLabel, 'select', selectOptions)
       if (answer && _fillNativeSelect(input, answer)) {
         processedInputs.add(input)
         filledCount++
         log(`Lever cards[*] [select] [${enrichedLabel.substring(0, 50)}] -> ${answer.substring(0, 30)}`)
       }
     } else if (fieldType === 'radio') {
-      const answer = answerCustomQuestion(enrichedLabel)
+      const radioGroup = document.querySelectorAll(`input[name="${input.name}"]`)
+      const radioOptions = Array.from(radioGroup).map(r => {
+        const lbl = r.labels?.[0]?.textContent?.trim() || r.closest('label')?.textContent?.trim() || r.value
+        return { text: lbl, value: r.value, label: lbl }
+      })
+      const answer = answerCustomQuestion(enrichedLabel, 'radio', radioOptions)
       if (answer) {
         const radioContainer = input.closest('fieldset, [role="radiogroup"], [class*="radio-group"], [class*="question"], .custom-question, .application-question')
         if (radioContainer) {
@@ -3508,7 +3770,7 @@ async function fillLeverCustomQuestions() {
         }
       }
     } else if (fieldType === 'checkbox') {
-      const answer = answerCustomQuestion(enrichedLabel)
+      const answer = answerCustomQuestion(enrichedLabel, 'checkbox')
       if (answer) {
         _fillCheckboxField(input, answer)
         filledCount++
@@ -4436,7 +4698,8 @@ async function navigateMultiStepForm() {
         for (const ef of errorFields) {
           if (!ef.value || ef.value.trim() === '') {
             const label = getLabelText(ef)
-            const answer = answerCustomQuestion(label) || matchFieldToValue(label)
+            const isTA = ef.tagName === 'TEXTAREA'
+            const answer = answerCustomQuestion(label, isTA ? 'textarea' : 'text') || matchFieldToValue(label)
             if (answer) {
               setReactValue(ef, answer)
               ef.dispatchEvent(new Event('input', { bubbles: true }))
