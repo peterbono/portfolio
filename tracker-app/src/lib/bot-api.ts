@@ -849,16 +849,25 @@ export async function triggerApplyJobs(
   const linkedInCookie = getLinkedInCookie()
   const enrichedProfile = getEnrichedProfile()
 
-  // Get Gmail access token for Greenhouse security code verification
+  // Get Gmail access token for Greenhouse security code verification.
+  // Uses the token manager which can refresh from the persisted refresh token
+  // when the short-lived provider_token is unavailable (post-deploy).
   let gmailAccessToken: string | null = null
   try {
     const { createClient } = await import('@supabase/supabase-js')
+    const { getGoogleAccessToken } = await import('./google-token')
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
     const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
     if (supabaseUrl && supabaseAnonKey) {
       const sb = createClient(supabaseUrl, supabaseAnonKey)
       const { data: { session } } = await sb.auth.getSession()
-      gmailAccessToken = session?.provider_token ?? null
+      if (session?.user?.id) {
+        gmailAccessToken = await getGoogleAccessToken(
+          sb,
+          session.user.id,
+          session.provider_token ?? null,
+        )
+      }
     }
   } catch {
     console.warn('[bot-api] Could not retrieve Gmail access token')

@@ -1,6 +1,7 @@
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
 import type { SupabaseClient, Session, User } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
+import { saveGoogleRefreshToken, clearTokenCache } from '../lib/google-token'
 import type { Database } from '../types/database'
 
 type SyncStatus = 'idle' | 'syncing' | 'synced' | 'error'
@@ -60,12 +61,35 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     }
   }, [checkConnection])
 
+  // Track whether we've already persisted the refresh token this session
+  const refreshTokenSavedRef = useRef(false)
+
   // Listen for auth state changes
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event, newSession) => {
         setSession(newSession)
         setAuthLoading(false)
+
+        // Persist Google refresh token when it arrives from OAuth callback.
+        // Supabase only provides provider_refresh_token on the initial
+        // SIGNED_IN event after an OAuth redirect, not on subsequent
+        // session restores. Save it to DB so we can use it after deploys.
+        if (
+          newSession?.provider_refresh_token &&
+          newSession.user?.id &&
+          !refreshTokenSavedRef.current
+        ) {
+          refreshTokenSavedRef.current = true
+          saveGoogleRefreshToken(
+            supabase,
+            newSession.user.id,
+            newSession.provider_refresh_token,
+          ).catch(() => {
+            // Non-critical — will retry on next OAuth
+            refreshTokenSavedRef.current = false
+          })
+        }
       }
     )
 
@@ -98,6 +122,8 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const signOut = useCallback(async () => {
+    clearTokenCache()
+    refreshTokenSavedRef.current = false
     await supabase.auth.signOut()
   }, [])
 

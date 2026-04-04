@@ -21,6 +21,7 @@ CREATE TABLE public.profiles (
   stripe_subscription_id TEXT,
   notification_prefs JSONB DEFAULT '{"applicationsSubmitted":true,"rejectionsReceived":true,"interviewsScheduled":true,"weeklyDigest":true,"botErrors":true}'::jsonb,
   schedule_config JSONB DEFAULT '{"enabled":false,"frequency":"every_8h","lastRunAt":null,"lastRunStatus":null,"lastRunJobsFound":null}'::jsonb,
+  google_refresh_token TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

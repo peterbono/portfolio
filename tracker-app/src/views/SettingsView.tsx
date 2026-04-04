@@ -33,6 +33,7 @@ import { useSupabase } from '../context/SupabaseContext'
 import { usePlan } from '../hooks/usePlan'
 import { useUI } from '../context/UIContext'
 import { useAuthWall } from '../hooks/useAuthWall'
+import { clearGoogleRefreshToken } from '../lib/google-token'
 import { getPlanConfig, createPortalSession } from '../lib/billing'
 import { ProfileSetupModal, isProfileComplete } from '../components/ProfileSetupModal'
 import { triggerEnrichProfile } from '../lib/bot-api'
@@ -328,8 +329,12 @@ export function SettingsView() {
   }, [supabase.auth])
 
   const handleDisconnectGmail = useCallback(async () => {
+    // Clear persisted Google refresh token so Gmail doesn't auto-reconnect
+    if (user?.id) {
+      await clearGoogleRefreshToken(supabase, user.id)
+    }
     await supabase.auth.signOut()
-  }, [supabase.auth])
+  }, [supabase, user?.id])
 
   // ---------- Data Management handlers ----------
   const [importStatus, setImportStatus] = useState<string | null>(null)

@@ -40,6 +40,7 @@ export interface Database {
           stripe_subscription_id: string | null
           notification_prefs: NotificationPrefs | null
           schedule_config: ScheduleConfigJson | null
+          google_refresh_token: string | null
           created_at: string
           updated_at: string
         }
@@ -55,6 +56,7 @@ export interface Database {
           stripe_subscription_id?: string | null
           notification_prefs?: NotificationPrefs | null
           schedule_config?: ScheduleConfigJson | null
+          google_refresh_token?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -70,6 +72,7 @@ export interface Database {
           stripe_subscription_id?: string | null
           notification_prefs?: NotificationPrefs | null
           schedule_config?: ScheduleConfigJson | null
+          google_refresh_token?: string | null
           created_at?: string
           updated_at?: string
         }

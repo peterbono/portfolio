@@ -1,9 +1,12 @@
 /**
  * useGmailAPI — React hook for Gmail API integration via Supabase OAuth.
  *
- * Reads the `provider_token` (Google access token) from the Supabase session,
- * scans for job-related emails on mount and every 30 minutes,
- * and returns classified events.
+ * Uses `getGoogleAccessToken()` to obtain a valid access token:
+ *  1. Fresh `provider_token` from the Supabase session (available right after OAuth)
+ *  2. In-memory cached token (valid for ~1h)
+ *  3. Persisted refresh token from DB → exchanged for a new access token
+ *
+ * This ensures Gmail stays connected across Vercel deploys and page reloads.
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react'
@@ -13,6 +16,10 @@ import {
   GmailAuthError,
   type JobEvent,
 } from '../lib/gmail-scanner'
+import {
+  getGoogleAccessToken,
+  loadGoogleRefreshToken,
+} from '../lib/google-token'
 
 const SCAN_INTERVAL_MS = 30 * 60 * 1000 // 30 minutes
 const LAST_SCAN_KEY = 'tracker_v2_gmail_api_last_scan'
@@ -27,13 +34,13 @@ export interface UseGmailAPIReturn {
   lastScanAt: string | null
   /** Error message from the last scan attempt */
   error: string | null
-  /** Whether the user has a valid Gmail token */
+  /** Whether the user has a valid Gmail token (either fresh or refreshable) */
   isConnected: boolean
   /** The email address associated with the Google account */
   userEmail: string | null
   /** Trigger a manual scan */
   scanNow: () => Promise<void>
-  /** Whether a re-auth is needed (token expired) */
+  /** Whether a re-auth is needed (token expired AND refresh failed) */
   needsReauth: boolean
 }
 
@@ -66,19 +73,35 @@ export function useGmailAPI(
   })
   const [error, setError] = useState<string | null>(null)
   const [needsReauth, setNeedsReauth] = useState(false)
+  const [hasRefreshToken, setHasRefreshToken] = useState(false)
   const onNewEventsRef = useRef(options.onNewEvents)
   onNewEventsRef.current = options.onNewEvents
   const autoScan = options.autoScan !== false
 
   // Extract provider_token from session
   const providerToken = session?.provider_token ?? null
-  const providerRefreshToken = session?.provider_refresh_token ?? null
+  const userId = session?.user?.id ?? null
   const userEmail = session?.user?.email ?? null
-  const isConnected = !!providerToken
+
+  // Gmail is "connected" if we have a live token OR a persisted refresh token
+  const isConnected = !!providerToken || hasRefreshToken
+
+  // On mount / user change, check if a refresh token is persisted
+  useEffect(() => {
+    if (!userId) {
+      setHasRefreshToken(false)
+      return
+    }
+    loadGoogleRefreshToken(supabase, userId).then((rt) => {
+      setHasRefreshToken(!!rt)
+    }).catch(() => {
+      setHasRefreshToken(false)
+    })
+  }, [userId, supabase])
 
   const scanNow = useCallback(async () => {
-    if (!providerToken) {
-      setError('No Gmail token available. Please sign in with Google.')
+    if (!userId) {
+      setError('No user session. Please sign in.')
       return
     }
 
@@ -87,7 +110,17 @@ export function useGmailAPI(
     setNeedsReauth(false)
 
     try {
-      const newEvents = await scanForJobEvents(providerToken)
+      // Get a valid access token (fresh, cached, or refreshed from DB)
+      const accessToken = await getGoogleAccessToken(supabase, userId, providerToken)
+
+      if (!accessToken) {
+        setNeedsReauth(true)
+        setError('No Gmail token available. Please reconnect Gmail.')
+        setIsScanning(false)
+        return
+      }
+
+      const newEvents = await scanForJobEvents(accessToken)
       setEvents(newEvents)
       const now = new Date().toISOString()
       setLastScanAt(now)
@@ -105,27 +138,40 @@ export function useGmailAPI(
       }
     } catch (err) {
       if (err instanceof GmailAuthError) {
-        setNeedsReauth(true)
-        setError('Gmail access expired. Please sign in again to reconnect.')
-        // Attempt to refresh session (Supabase may have refresh token)
-        if (providerRefreshToken) {
-          try {
-            await supabase.auth.refreshSession()
-          } catch {
-            // Refresh failed, user must re-auth
+        // Access token expired mid-scan. Try once more with a forced refresh.
+        try {
+          const freshToken = await getGoogleAccessToken(supabase, userId, null)
+          if (freshToken) {
+            const retryEvents = await scanForJobEvents(freshToken)
+            setEvents(retryEvents)
+            const now = new Date().toISOString()
+            setLastScanAt(now)
+            try {
+              localStorage.setItem(LAST_SCAN_KEY, now)
+              localStorage.setItem(CACHED_EVENTS_KEY, JSON.stringify(retryEvents))
+            } catch { /* ignore */ }
+            if (retryEvents.length > 0 && onNewEventsRef.current) {
+              onNewEventsRef.current(retryEvents)
+            }
+            return // retry succeeded
           }
+        } catch {
+          // Retry also failed
         }
+        setNeedsReauth(true)
+        setHasRefreshToken(false)
+        setError('Gmail access expired. Please reconnect Gmail.')
       } else {
         setError(err instanceof Error ? err.message : 'Gmail scan failed')
       }
     } finally {
       setIsScanning(false)
     }
-  }, [providerToken, providerRefreshToken, supabase.auth])
+  }, [providerToken, userId, supabase])
 
   // Auto-scan on mount (with delay) and every 30 minutes
   useEffect(() => {
-    if (!providerToken || !autoScan) return
+    if (!userId || !isConnected || !autoScan) return
 
     // Check if we scanned recently (within the interval)
     const lastScan = localStorage.getItem(LAST_SCAN_KEY)
@@ -150,7 +196,7 @@ export function useGmailAPI(
       clearTimeout(initialTimer)
       clearInterval(interval)
     }
-  }, [providerToken, autoScan, scanNow])
+  }, [userId, isConnected, autoScan, scanNow])
 
   return {
     events,

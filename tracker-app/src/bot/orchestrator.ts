@@ -16,6 +16,7 @@ import {
   updateBotRun,
   logBotActivity,
   getExistingApplications,
+  getExistingApplicationsWithUrls,
   getActiveSearchProfile,
   cleanupZombieRuns,
   type ActivityLogEntry,
@@ -199,20 +200,140 @@ function humanDelay(baseMs: number, jitterMs: number = 500): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// JD extraction: fetch-first strategy (10x faster than Playwright for SSR pages)
+// Shared fetch headers (used by both expiration check and JD extraction)
 // ---------------------------------------------------------------------------
 
 import * as cheerio from 'cheerio'
 
-/** In-memory JD cache: same URL = same JD, avoids re-fetching across runs within same process */
-const jdCache = new Map<string, string>()
-
-/** Standard fetch headers for JD extraction */
+/** Standard fetch headers for job page requests */
 const JD_FETCH_HEADERS: Record<string, string> = {
   'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
   'Accept-Language': 'en-US,en;q=0.9',
 }
+
+// ---------------------------------------------------------------------------
+// Expiration check: lightweight HEAD/GET to detect dead job postings
+// ---------------------------------------------------------------------------
+
+/**
+ * Check if a job URL points to an expired/removed posting.
+ * Uses a HEAD request (2s timeout) to detect 404/410/301-to-homepage.
+ * For LinkedIn jobs, does a lightweight GET to check for "no longer available" text.
+ * Returns true if the job appears expired.
+ */
+async function isJobExpired(url: string): Promise<boolean> {
+  try {
+    const isLinkedIn = url.includes('linkedin.com/jobs/view/')
+
+    if (isLinkedIn) {
+      // LinkedIn guest API: GET to check for expiration text in the response
+      const linkedInMatch = url.match(/linkedin\.com\/jobs\/view\/(\d+)/)
+      if (linkedInMatch) {
+        const guestUrl = `https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/${linkedInMatch[1]}`
+        const resp = await fetch(guestUrl, {
+          headers: JD_FETCH_HEADERS,
+          signal: AbortSignal.timeout(2_000),
+        })
+        if (resp.status === 404 || resp.status === 410) return true
+        if (resp.ok) {
+          const html = await resp.text()
+          const lower = html.toLowerCase()
+          if (
+            lower.includes('no longer available') ||
+            lower.includes('job has been closed') ||
+            lower.includes('no longer accepting applications') ||
+            lower.includes('this job is no longer')
+          ) {
+            return true
+          }
+        }
+      }
+      return false
+    }
+
+    // Non-LinkedIn: lightweight HEAD request
+    const resp = await fetch(url, {
+      method: 'HEAD',
+      headers: JD_FETCH_HEADERS,
+      signal: AbortSignal.timeout(2_000),
+      redirect: 'manual', // don't follow redirects — we want to inspect the status
+    })
+
+    // 404/410 = page removed
+    if (resp.status === 404 || resp.status === 410) return true
+
+    // 301/302 redirect to homepage = job removed, redirected to careers page
+    if (resp.status === 301 || resp.status === 302) {
+      const location = resp.headers.get('location') ?? ''
+      // Check if redirect target is the homepage or a generic careers page
+      // (not another job posting URL)
+      try {
+        const redirectUrl = new URL(location, url)
+        const originalUrl = new URL(url)
+        // Redirect to root or /careers or /jobs (without a specific job ID) = expired
+        const path = redirectUrl.pathname.replace(/\/$/, '')
+        if (
+          path === '' ||
+          path === '/careers' ||
+          path === '/jobs' ||
+          path === '/job-openings' ||
+          path === '/open-positions' ||
+          (redirectUrl.hostname === originalUrl.hostname && path.split('/').length <= 2 && !path.match(/\d{4,}/))
+        ) {
+          return true
+        }
+      } catch {
+        // Invalid redirect URL — treat as not expired
+      }
+    }
+
+    return false
+  } catch {
+    // Network error / timeout — give benefit of the doubt, treat as not expired
+    return false
+  }
+}
+
+/**
+ * Filter out expired jobs from a batch using concurrent HEAD requests.
+ * Returns the surviving (non-expired) jobs.
+ */
+async function filterExpiredJobs(
+  jobs: DiscoveredJob[],
+  concurrency: number = 10,
+): Promise<{ alive: DiscoveredJob[]; expiredCount: number }> {
+  const alive: DiscoveredJob[] = []
+  let expiredCount = 0
+  const queue = [...jobs]
+
+  async function worker() {
+    while (queue.length > 0) {
+      const job = queue.shift()
+      if (!job) break
+
+      const expired = await isJobExpired(job.url)
+      if (expired) {
+        expiredCount++
+        console.log(`[pipeline] Expired job filtered: ${job.company} - "${job.title}" (${job.url})`)
+      } else {
+        alive.push(job)
+      }
+    }
+  }
+
+  const workerCount = Math.min(concurrency, jobs.length)
+  await Promise.all(Array.from({ length: workerCount }, () => worker()))
+
+  return { alive, expiredCount }
+}
+
+// ---------------------------------------------------------------------------
+// JD extraction: fetch-first strategy (10x faster than Playwright for SSR pages)
+// ---------------------------------------------------------------------------
+
+/** In-memory JD cache: same URL = same JD, avoids re-fetching across runs within same process */
+const jdCache = new Map<string, string>()
 
 /**
  * Extract JD via fetch() + cheerio for server-rendered pages.
@@ -821,10 +942,64 @@ async function phaseQualify(
 
   // Map surviving URLs back to DiscoveredJob objects
   const survivorUrls = new Set(survivors.map(s => s.url))
-  const survivingJobs = jobs.filter(j => survivorUrls.has(j.url))
+  let survivingJobs = jobs.filter(j => survivorUrls.has(j.url))
 
   if (survivingJobs.length === 0) {
     console.log('[pipeline] All jobs eliminated by pre-filter. No Haiku calls needed.')
+    return []
+  }
+
+  // -------------------------------------------------------------------------
+  // Pass 1b: URL-based dedup against existing applications in kanban
+  // -------------------------------------------------------------------------
+  try {
+    const { urls: existingAppUrls } = await getExistingApplicationsWithUrls(config.userId)
+    if (existingAppUrls.length > 0) {
+      const existingUrlSet = new Set(existingAppUrls)
+      const beforeCount = survivingJobs.length
+      survivingJobs = survivingJobs.filter(j => !existingUrlSet.has(j.url))
+      const urlDedupCount = beforeCount - survivingJobs.length
+      if (urlDedupCount > 0) {
+        console.log(`[pipeline] URL dedup: filtered ${urlDedupCount} jobs already in kanban (by URL match)`)
+        const urlDedupEntry: ActivityLogEntry = {
+          user_id: config.userId,
+          run_id: runId,
+          action: 'qualify_url_dedup',
+          reason: `Filtered ${urlDedupCount} jobs already applied (URL match)`,
+        }
+        fireLog(urlDedupEntry)
+        activities.push(urlDedupEntry)
+      }
+    }
+  } catch (e) {
+    console.warn(`[pipeline] URL dedup check failed (non-critical): ${(e as Error).message}`)
+  }
+
+  if (survivingJobs.length === 0) {
+    console.log('[pipeline] All jobs eliminated after URL dedup. No Haiku calls needed.')
+    return []
+  }
+
+  // -------------------------------------------------------------------------
+  // Pass 1c: Expiration check — filter out dead/expired job postings
+  // -------------------------------------------------------------------------
+  const { alive: aliveJobs, expiredCount } = await filterExpiredJobs(survivingJobs)
+  if (expiredCount > 0) {
+    console.log(`[pipeline] Filtered ${expiredCount} expired jobs before qualifying`)
+    const expiredEntry: ActivityLogEntry = {
+      user_id: config.userId,
+      run_id: runId,
+      action: 'qualify_expired_filter',
+      reason: `Filtered ${expiredCount} expired jobs before qualifying`,
+    }
+    fireLog(expiredEntry)
+    activities.push(expiredEntry)
+    onQualifyProgress?.({ action: 'found', reason: `Filtered ${expiredCount} expired job postings` })
+  }
+  survivingJobs = aliveJobs
+
+  if (survivingJobs.length === 0) {
+    console.log('[pipeline] All jobs expired or filtered. No Haiku calls needed.')
     return []
   }
 

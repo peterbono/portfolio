@@ -291,6 +291,40 @@ export async function getExistingApplications(
   })
 }
 
+/**
+ * Returns both "company|role" keys AND job URLs for all existing applications.
+ * Used by the orchestrator to dedup by URL in addition to company+title.
+ */
+export async function getExistingApplicationsWithUrls(
+  userId: string,
+): Promise<{ keys: string[]; urls: string[] }> {
+  const { data, error } = await supabaseServer
+    .from('applications')
+    .select('job_id, job_listings!inner(company, role, link)')
+    .eq('user_id', userId)
+    .neq('status', 'skipped')
+
+  if (error) {
+    console.error('[supabase] Failed to fetch existing applications with URLs:', error.message)
+    return { keys: [], urls: [] }
+  }
+
+  if (!data) return { keys: [], urls: [] }
+
+  const keys: string[] = []
+  const urls: string[] = []
+
+  for (const row of data as any[]) {
+    const company = (row.job_listings?.company ?? '').toLowerCase().trim()
+    const role = (row.job_listings?.role ?? '').toLowerCase().trim()
+    keys.push(`${company}|${role}`)
+    const link = (row.job_listings?.link ?? '').trim()
+    if (link) urls.push(link)
+  }
+
+  return { keys, urls }
+}
+
 // ---------------------------------------------------------------------------
 // Create application + job listing from bot discovery
 // ---------------------------------------------------------------------------

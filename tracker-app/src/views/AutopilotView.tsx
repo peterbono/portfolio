@@ -58,6 +58,7 @@ import {
   type FeedbackSignal,
 } from '../lib/feedback-signals'
 import { notifyBotError, notifyApplicationsSubmitted } from '../lib/notifications'
+import { getGmailAppliedCompanies } from '../lib/gmail-scanner'
 import { classifyJobUrl } from '../lib/classify-job-url'
 
 /* ------------------------------------------------------------------ */
@@ -4247,14 +4248,21 @@ export function AutopilotView() {
     const existingUrls = new Set(reviewQueue.map(i => i.jobUrl).filter(Boolean))
 
     // Dedup against user's already-applied/processed jobs from the main tracker
+    const appliedStatuses = ['submitted', 'screening', 'interviewing', 'offer', 'rejected', 'withdrawn', 'skipped', 'challenge', 'negotiation']
+    const appliedJobs = allJobs.filter(j => appliedStatuses.includes(j.status))
     const appliedJobKeys = new Set(
-      allJobs
-        .filter(j => ['submitted', 'screening', 'interviewing', 'offer', 'rejected', 'withdrawn', 'skipped', 'challenge', 'negotiation'].includes(j.status))
-        .map(j => `${j.company?.toLowerCase()?.trim()}|${j.role?.toLowerCase()?.trim()}`)
+      appliedJobs.map(j => `${j.company?.toLowerCase()?.trim()}|${j.role?.toLowerCase()?.trim()}`)
+    )
+    // Also dedup by URL (link field) against existing kanban jobs
+    const appliedJobUrls = new Set(
+      appliedJobs.map(j => j.link?.trim()).filter(Boolean)
     )
 
     // Dedup against previously skipped jobs stored in localStorage
     const skippedUrls = loadSkippedJobUrls()
+
+    // Dedup against Gmail confirmation emails (optional — empty set if Gmail not connected)
+    const gmailAppliedCompanies = getGmailAppliedCompanies()
 
     // Filter out already-seen jobs
     const newItems: ReviewQueueItem[] = jobs
@@ -4271,10 +4279,27 @@ export function AutopilotView() {
           console.log(`[AutopilotView] Skipping previously skipped job: ${job.url}`)
           return false
         }
+        // URL-based dedup against kanban jobs (catches cases where company/title differ slightly)
+        if (appliedJobUrls.has(job.url)) {
+          console.log(`[AutopilotView] Skipping already-applied job (URL match): ${job.url}`)
+          return false
+        }
         const key = `${job.company?.toLowerCase()?.trim()}|${job.title?.toLowerCase()?.trim()}`
         if (appliedJobKeys.has(key)) {
           console.log(`[AutopilotView] Skipping already-applied job: ${key}`)
           return false
+        }
+        // Gmail confirmation dedup: if we detected a confirmation email from this company,
+        // the user likely already applied (manual apply or previous run).
+        // Uses fuzzy matching: either side contains the other (handles "Deel" vs "Deel Inc").
+        const companyLower = job.company?.toLowerCase()?.trim() ?? ''
+        if (companyLower && gmailAppliedCompanies.size > 0) {
+          for (const gmailCompany of gmailAppliedCompanies) {
+            if (companyLower === gmailCompany || companyLower.includes(gmailCompany) || gmailCompany.includes(companyLower)) {
+              console.log(`[AutopilotView] Skipping job (Gmail confirmation found): ${job.company} — matched Gmail company "${gmailCompany}"`)
+              return false
+            }
+          }
         }
         return true
       })

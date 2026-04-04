@@ -418,3 +418,34 @@ export async function scanForJobEvents(
 
   return events
 }
+
+// ─── Cached Gmail dedup helper ─────────────────────────────────────────────
+
+const CACHED_EVENTS_KEY = 'tracker_v2_gmail_api_events'
+
+/**
+ * Read cached Gmail scan events from localStorage and return a Set of
+ * lowercased company names where a "confirmation" email was detected.
+ *
+ * This is used by the review queue to filter out jobs the user already
+ * applied to (detected via Gmail) even if no tracker entry exists yet.
+ *
+ * Returns an empty set if Gmail is not connected or cache is empty.
+ * Never throws — failures are silently ignored (non-blocking).
+ */
+export function getGmailAppliedCompanies(): Set<string> {
+  try {
+    const raw = localStorage.getItem(CACHED_EVENTS_KEY)
+    if (!raw) return new Set()
+    const events: JobEvent[] = JSON.parse(raw)
+    const companies = new Set<string>()
+    for (const evt of events) {
+      if (evt.type === 'confirmation') {
+        companies.add(evt.company.toLowerCase().trim())
+      }
+    }
+    return companies
+  } catch {
+    return new Set()
+  }
+}

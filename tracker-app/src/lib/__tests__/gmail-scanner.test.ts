@@ -1,7 +1,8 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
   classifyJobEmail,
   extractCompanyFromEmail,
+  getGmailAppliedCompanies,
 } from '../gmail-scanner'
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1215,5 +1216,75 @@ describe('extractCompanyFromEmail', () => {
         ),
       ).toBe('Deel')
     })
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════
+//  getGmailAppliedCompanies
+// ═══════════════════════════════════════════════════════════════════════
+
+describe('getGmailAppliedCompanies', () => {
+  const LS_KEY = 'tracker_v2_gmail_api_events'
+
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  afterEach(() => {
+    localStorage.clear()
+  })
+
+  it('returns empty set when localStorage has no cached events', () => {
+    const result = getGmailAppliedCompanies()
+    expect(result.size).toBe(0)
+  })
+
+  it('returns empty set when cached events is empty array', () => {
+    localStorage.setItem(LS_KEY, JSON.stringify([]))
+    const result = getGmailAppliedCompanies()
+    expect(result.size).toBe(0)
+  })
+
+  it('returns only companies from confirmation events', () => {
+    localStorage.setItem(LS_KEY, JSON.stringify([
+      { type: 'confirmation', company: 'Netflix', date: '2026-03-15', subject: 'Application received' },
+      { type: 'rejection', company: 'Stripe', date: '2026-03-16', subject: 'Unfortunately...' },
+      { type: 'confirmation', company: 'Deel', date: '2026-03-17', subject: 'Thank you for applying' },
+      { type: 'interview', company: 'Figma', date: '2026-03-18', subject: 'Interview scheduled' },
+    ]))
+
+    const result = getGmailAppliedCompanies()
+    expect(result.size).toBe(2)
+    expect(result.has('netflix')).toBe(true)
+    expect(result.has('deel')).toBe(true)
+    expect(result.has('stripe')).toBe(false)
+    expect(result.has('figma')).toBe(false)
+  })
+
+  it('returns lowercased company names', () => {
+    localStorage.setItem(LS_KEY, JSON.stringify([
+      { type: 'confirmation', company: 'Netflix', date: '2026-03-15', subject: 'test' },
+      { type: 'confirmation', company: 'CANVA', date: '2026-03-16', subject: 'test' },
+    ]))
+
+    const result = getGmailAppliedCompanies()
+    expect(result.has('netflix')).toBe(true)
+    expect(result.has('canva')).toBe(true)
+    expect(result.has('Netflix')).toBe(false)
+  })
+
+  it('returns empty set when localStorage contains invalid JSON', () => {
+    localStorage.setItem(LS_KEY, 'not-valid-json')
+    const result = getGmailAppliedCompanies()
+    expect(result.size).toBe(0)
+  })
+
+  it('trims company names', () => {
+    localStorage.setItem(LS_KEY, JSON.stringify([
+      { type: 'confirmation', company: '  Netflix  ', date: '2026-03-15', subject: 'test' },
+    ]))
+
+    const result = getGmailAppliedCompanies()
+    expect(result.has('netflix')).toBe(true)
   })
 })
