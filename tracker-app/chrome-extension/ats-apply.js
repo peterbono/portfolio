@@ -1,5 +1,5 @@
 /**
- * JobTracker — ATS Auto-Apply Content Script v2.5.2
+ * JobTracker — ATS Auto-Apply Content Script v2.6.0
  *
  * Injected on external career pages (Greenhouse, Lever, Workable, etc.)
  * after the user clicks "Apply on company website" from LinkedIn.
@@ -521,6 +521,473 @@ async function fetchAndUploadCV(fileInput) {
   }
 }
 
+// ─── Unified Form Field Classifier ───────────────────────────────────
+// Determines the ACTUAL type of any form element, preventing the recurring bug
+// where a select/radio/React-Select is treated as a text input (or vice versa).
+// Every form-filling function MUST call this before choosing a fill strategy.
+
+function classifyFormField(element) {
+  if (!element) return 'unknown'
+
+  const tag = element.tagName?.toUpperCase()
+  const type = (element.getAttribute('type') || '').toLowerCase()
+
+  // ── 1. Hidden fields — skip immediately ──
+  if (type === 'hidden') return 'hidden'
+  if (tag === 'INPUT' && element.offsetParent === null && !element.closest('[style*="display"]')) {
+    const style = window.getComputedStyle(element)
+    if (style.display === 'none' || style.visibility === 'hidden') return 'hidden'
+  }
+
+  // ── 2. File input ──
+  if (type === 'file') return 'file'
+
+  // ── 3. Checkbox ──
+  if (type === 'checkbox') return 'checkbox'
+
+  // ── 4. Radio button ──
+  if (type === 'radio') return 'radio'
+
+  // ── 5. Native <select> ──
+  if (tag === 'SELECT') return 'select'
+
+  // ── 6. React-Select detection ──
+  // React-Select renders as: div.select-shell > div.select__control > input[role="combobox"]
+  if (_isReactSelectElement(element)) return 'react-select'
+
+  // ── 7. Submit / button — not a fillable field ──
+  if (type === 'submit' || type === 'button' || tag === 'BUTTON') return 'button'
+
+  // ── 8. Textarea ──
+  if (tag === 'TEXTAREA') return 'text'
+
+  // ── 9. Standard text input ──
+  if (tag === 'INPUT') {
+    const textTypes = ['text', 'email', 'tel', 'url', 'number', 'search', 'password', '']
+    if (textTypes.includes(type)) return 'text'
+  }
+
+  return 'unknown'
+}
+
+// Internal helper: checks if an element is part of a React-Select component
+function _isReactSelectElement(element) {
+  // Direct checks on the element
+  if (element.getAttribute('role') === 'combobox' && (
+    element.classList.contains('select__input') ||
+    element.id?.includes('react-select') ||
+    element.closest('.select-shell, [class*="select-shell"], [class*="select__container"], [class*="select__control"]')
+  )) return true
+
+  // Check if element is inside a React-Select container
+  if (element.closest('.select-shell')) return true
+  if (element.closest('[class*="select__control"]')) return true
+  if (element.closest('[class*="select__container"]')) return true
+
+  // CSS module pattern: class contains "select" + "control" or "container"
+  const parent = element.closest('[class*="select-shell"], [class*="css-"][class*="control"]')
+  if (parent && parent.querySelector('input[role="combobox"]')) return true
+
+  // Check sibling/child indicators within the field container
+  const container = element.closest('.field, .form-field, [class*="field"]')
+  if (container) {
+    const hasControl = container.querySelector('[class*="select__control"]')
+    const hasShell = container.querySelector('.select-shell')
+    if (hasControl || hasShell) {
+      const shell = hasShell || hasControl?.closest('.select-shell, [class*="select__container"]')
+      if (shell && shell.contains(element)) return true
+    }
+  }
+
+  return false
+}
+
+// Classify a container/field-wrapper to determine what kind of input it holds.
+// Useful for functions that iterate containers (e.g., fillGreenhouseCustomQuestions).
+function classifyFieldContainer(container) {
+  if (!container) return 'unknown'
+
+  // ── React-Select: check for .select-shell or select__control INSIDE the container ──
+  if (container.querySelector('.select-shell, [class*="select-shell"], [class*="select__control"]')) {
+    return 'react-select'
+  }
+
+  // ── Radio group: container has multiple radio inputs ──
+  const radios = container.querySelectorAll('input[type="radio"]')
+  if (radios.length > 0) return 'radio'
+
+  // ── Checkbox ──
+  const checkboxes = container.querySelectorAll('input[type="checkbox"]')
+  if (checkboxes.length > 0) return 'checkbox'
+
+  // ── Native select ──
+  if (container.querySelector('select')) return 'select'
+
+  // ── File input ──
+  if (container.querySelector('input[type="file"]')) return 'file'
+
+  // ── Text input or textarea ──
+  const textInput = container.querySelector(
+    'input[type="text"], input[type="email"], input[type="tel"], input[type="url"], ' +
+    'input[type="number"], input:not([type]), textarea'
+  )
+  if (textInput) {
+    // Final guard: make sure this input isn't a React-Select combobox
+    if (textInput.getAttribute('role') === 'combobox') return 'react-select'
+    if (textInput.id?.includes('react-select')) return 'react-select'
+    return 'text'
+  }
+
+  return 'unknown'
+}
+
+// ─── Unified Field Fill Dispatcher ───────────────────────────────────
+// Given a classified field type, fills the element using the correct strategy.
+// NEVER types text into a select/radio/React-Select.
+// NEVER selects an option from a text input.
+
+async function fillClassifiedField(element, fieldType, answer, questionText) {
+  if (!element || !answer || fieldType === 'hidden' || fieldType === 'unknown' || fieldType === 'button') return false
+
+  const actualValue = answer === '___PHONE___' ? PROFILE.phone : answer
+
+  switch (fieldType) {
+    case 'text':
+      return _fillTextField(element, actualValue)
+
+    case 'select':
+      return _fillNativeSelect(element, actualValue)
+
+    case 'react-select':
+      return await _fillReactSelectField(element, actualValue, questionText)
+
+    case 'radio':
+      return await _fillRadioField(element, actualValue)
+
+    case 'checkbox':
+      return _fillCheckboxField(element, actualValue)
+
+    case 'file':
+      return false // File inputs handled by dedicated upload functions
+
+    default:
+      log(`fillClassifiedField: unhandled type "${fieldType}" for element`, element.tagName)
+      return false
+  }
+}
+
+// ── Text fill (input or textarea) ──
+function _fillTextField(element, value) {
+  const tag = element.tagName?.toUpperCase()
+  if (tag === 'TEXTAREA') {
+    const taSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set
+    if (taSetter) taSetter.call(element, value)
+    else element.value = value
+  } else {
+    const inpSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+    if (inpSetter) inpSetter.call(element, value)
+    else element.value = value
+  }
+  element.dispatchEvent(new Event('input', { bubbles: true }))
+  element.dispatchEvent(new Event('change', { bubbles: true }))
+  element.dispatchEvent(new Event('blur', { bubbles: true }))
+  return true
+}
+
+// ── Native <select> fill ──
+function _fillNativeSelect(selectEl, answer) {
+  const ansLower = answer.toLowerCase().trim()
+  const isYes = ansLower.startsWith('yes')
+  const isNo = ansLower === 'no' || ansLower.startsWith('no ') || ansLower.startsWith('no,') || ansLower.startsWith('no —')
+
+  const options = Array.from(selectEl.options)
+  const match = options.find(o => {
+    const t = o.text.toLowerCase().trim()
+    const v = o.value.toLowerCase().trim()
+    if (t === ansLower || v === ansLower) return true
+    if (isYes && (t === 'yes' || t.startsWith('yes,') || t.startsWith('yes '))) return true
+    if (isNo && (t === 'no' || t.startsWith('no,') || t.startsWith('no '))) return true
+    if (ansLower.length > 5 && (t.includes(ansLower) || ansLower.includes(t))) return true
+    if (ansLower.includes('linkedin') && t.includes('linkedin')) return true
+    if ((ansLower.includes('decline') || ansLower.includes('prefer not')) &&
+        (t.includes('decline') || t.includes('prefer not') || t.includes('not wish'))) return true
+    return false
+  })
+
+  if (match) {
+    selectEl.value = match.value
+    selectEl.dispatchEvent(new Event('change', { bubbles: true }))
+    return true
+  }
+  return false
+}
+
+// ── React-Select fill (robust, works WITHOUT CDP) ──
+// Strategy: focus control -> dispatch mousedown+click to open -> find combobox input ->
+// type answer -> wait for options to filter -> click matching option -> verify value
+async function _fillReactSelectField(element, answer, questionText) {
+  const shell = element.closest('.select-shell') ||
+                element.closest('[class*="select__container"]') ||
+                element.closest('[class*="select__control"]')?.parentElement ||
+                element
+
+  if (isPhoneCountryShell(shell)) {
+    log('_fillReactSelectField: skipping phone country shell')
+    return false
+  }
+
+  const existingValue = shell.querySelector('[class*="select__single-value"], [class*="singleValue"]')
+  if (existingValue && existingValue.textContent?.trim()) {
+    log(`_fillReactSelectField: already has value "${existingValue.textContent.trim()}"`)
+    return false
+  }
+
+  const control = shell.querySelector('[class*="select__control"]') || shell
+  let comboboxInput = shell.querySelector('input[role="combobox"]')
+    || shell.querySelector('input[class*="select__input"]')
+    || shell.querySelector('input:not([type="hidden"])')
+
+  log(`_fillReactSelectField: opening dropdown for "${(questionText || '').substring(0, 50)}" answer="${answer.substring(0, 30)}"`)
+
+  // ── Step 1: Clear any leftover text in combobox ──
+  if (comboboxInput && comboboxInput.value) {
+    const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+    if (nativeSetter) nativeSetter.call(comboboxInput, '')
+    else comboboxInput.value = ''
+    comboboxInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await sleep(100)
+  }
+
+  // ── Step 2: Scroll into view ──
+  control.scrollIntoView({ block: 'center', behavior: 'instant' })
+  await sleep(200)
+
+  // ── Step 3: Open the dropdown (multiple strategies) ──
+  let menu = null
+
+  // Method A: Focus combobox + mousedown on control
+  if (comboboxInput) {
+    comboboxInput.focus()
+    comboboxInput.dispatchEvent(new FocusEvent('focus', { bubbles: true }))
+    comboboxInput.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+    await sleep(150)
+  }
+  control.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }))
+  control.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }))
+  await sleep(500)
+  menu = shell.querySelector('[class*="select__menu"]')
+
+  // Method B: ArrowDown key to force open
+  if (!menu && comboboxInput) {
+    comboboxInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40, bubbles: true }))
+    await sleep(500)
+    menu = shell.querySelector('[class*="select__menu"]')
+  }
+
+  // Method C: React internal props
+  if (!menu) {
+    const controlProps = getReactProps(control)
+    if (controlProps?.onMouseDown) {
+      controlProps.onMouseDown({ preventDefault: () => {}, button: 0 })
+      await sleep(500)
+      menu = shell.querySelector('[class*="select__menu"]')
+    }
+    if (!menu && controlProps?.onClick) {
+      controlProps.onClick({ preventDefault: () => {} })
+      await sleep(500)
+      menu = shell.querySelector('[class*="select__menu"]')
+    }
+  }
+
+  // Method D: Click on the dropdown indicator arrow
+  if (!menu) {
+    const indicator = shell.querySelector('[class*="select__indicator"], [class*="select__dropdown-indicator"], [class*="indicatorContainer"]')
+    if (indicator) {
+      indicator.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }))
+      indicator.click()
+      await sleep(500)
+      menu = shell.querySelector('[class*="select__menu"]')
+    }
+  }
+
+  // Method E: Check for portal/global menu
+  if (!menu) {
+    const globalMenu = document.querySelector('[class*="select__menu"]')
+    if (globalMenu && !isPhoneCountryMenu(globalMenu)) {
+      menu = globalMenu
+    }
+  }
+
+  if (!menu) {
+    log(`_fillReactSelectField: could not open dropdown for "${(questionText || '').substring(0, 40)}"`)
+    document.body.click()
+    await sleep(200)
+    return false
+  }
+
+  // ── Step 4: Find matching option ──
+  const menuOptions = Array.from(menu.querySelectorAll('[class*="select__option"], [role="option"]'))
+    .filter(el => !el.closest('.iti, .intl-tel-input'))
+
+  if (menuOptions.length === 0) {
+    log('_fillReactSelectField: menu opened but no options')
+    document.body.click()
+    await sleep(200)
+    return false
+  }
+
+  let bestMatch = findBestOption(menuOptions, answer)
+
+  // ── Step 5: If no match, try typing to filter (searchable React-Selects) ──
+  if (!bestMatch && comboboxInput) {
+    const searchTerm = answer.split(/[\s,\u2014-]/)[0].substring(0, 15)
+    if (searchTerm.length >= 2) {
+      const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+      comboboxInput.focus()
+      for (const char of searchTerm) {
+        const newVal = comboboxInput.value + char
+        if (nativeSetter) nativeSetter.call(comboboxInput, newVal)
+        else comboboxInput.value = newVal
+        comboboxInput.dispatchEvent(new Event('input', { bubbles: true }))
+        comboboxInput.dispatchEvent(new InputEvent('input', { bubbles: true, data: char, inputType: 'insertText' }))
+        await sleep(60)
+      }
+      await sleep(600)
+
+      const filteredMenu = shell.querySelector('[class*="select__menu"]') || document.querySelector('[class*="select__menu"]')
+      if (filteredMenu) {
+        const filteredOptions = Array.from(filteredMenu.querySelectorAll('[class*="select__option"], [role="option"]'))
+        bestMatch = findBestOption(filteredOptions, answer)
+        if (!bestMatch && filteredOptions.length === 1) {
+          bestMatch = filteredOptions[0]
+        }
+      }
+
+      // Clear search text to prevent orphaned text
+      if (nativeSetter) nativeSetter.call(comboboxInput, '')
+      else comboboxInput.value = ''
+      comboboxInput.dispatchEvent(new Event('input', { bubbles: true }))
+      await sleep(200)
+    }
+  }
+
+  if (!bestMatch) {
+    log(`_fillReactSelectField: no matching option for "${(questionText || '').substring(0, 40)}" (answer: "${answer.substring(0, 30)}")`)
+    log(`  Available: ${menuOptions.slice(0, 5).map(o => o.textContent?.trim()).join(', ')}`)
+    if (comboboxInput) {
+      comboboxInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true }))
+    } else {
+      document.body.click()
+    }
+    await sleep(200)
+    return false
+  }
+
+  // ── Step 6: Click the matching option ──
+  let selectionConfirmed = false
+
+  // Method A: React props onClick
+  const optProps = getReactProps(bestMatch)
+  if (optProps?.onClick) {
+    optProps.onClick({ preventDefault: () => {}, stopPropagation: () => {} })
+    await sleep(400)
+    const selectedVal = shell.querySelector('[class*="select__single-value"], [class*="singleValue"]')
+    if (selectedVal && selectedVal.textContent?.trim()) {
+      selectionConfirmed = true
+    }
+  }
+
+  // Method B: Direct click
+  if (!selectionConfirmed) {
+    bestMatch.scrollIntoView({ block: 'nearest', behavior: 'instant' })
+    await sleep(100)
+    bestMatch.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }))
+    bestMatch.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, button: 0 }))
+    bestMatch.click()
+    await sleep(400)
+    const selectedVal2 = shell.querySelector('[class*="select__single-value"], [class*="singleValue"]')
+    if (selectedVal2 && selectedVal2.textContent?.trim()) {
+      selectionConfirmed = true
+    }
+  }
+
+  // Method C: Keyboard navigation (ArrowDown to target + Enter)
+  if (!selectionConfirmed) {
+    let reopenedMenu = shell.querySelector('[class*="select__menu"]')
+    if (!reopenedMenu) {
+      if (comboboxInput) comboboxInput.focus()
+      control.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }))
+      await sleep(500)
+      reopenedMenu = shell.querySelector('[class*="select__menu"]')
+    }
+    if (reopenedMenu) {
+      const reopenedOptions = Array.from(reopenedMenu.querySelectorAll('[class*="select__option"]'))
+      const targetOpt = findBestOption(reopenedOptions, answer)
+      if (targetOpt) {
+        const idx = reopenedOptions.indexOf(targetOpt)
+        const target = comboboxInput || control
+        for (let i = 0; i < idx; i++) {
+          target.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40, bubbles: true }))
+          await sleep(80)
+        }
+        target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }))
+        await sleep(400)
+      }
+    }
+  }
+
+  // ── Step 7: Verify the value was set ──
+  const finalValue = shell.querySelector('[class*="select__single-value"], [class*="singleValue"]')
+  if (finalValue && finalValue.textContent?.trim()) {
+    log(`_fillReactSelectField OK: "${finalValue.textContent.trim()}"`)
+    return true
+  }
+
+  log('_fillReactSelectField: selection attempted but value not confirmed')
+  return false
+}
+
+// ── Radio button fill ──
+async function _fillRadioField(element, answer) {
+  let radios
+  if (element.type === 'radio') {
+    const name = element.getAttribute('name')
+    const container = element.closest('fieldset, [role="radiogroup"], [class*="radio-group"], [class*="question"], .field')
+    radios = name
+      ? container?.querySelectorAll(`input[type="radio"][name="${name}"]`) || document.querySelectorAll(`input[type="radio"][name="${name}"]`)
+      : container?.querySelectorAll('input[type="radio"]') || [element]
+  } else {
+    radios = element.querySelectorAll('input[type="radio"]')
+  }
+
+  if (!radios || radios.length === 0) return false
+  if (Array.from(radios).some(r => r.checked)) return false
+
+  const ansLower = answer.toLowerCase().trim()
+  for (const radio of radios) {
+    const radioLabel = (radio.closest('label')?.textContent || radio.nextElementSibling?.textContent || radio.parentElement?.textContent || '').toLowerCase().trim()
+    if ((ansLower.includes('yes') && radioLabel.includes('yes')) ||
+        (ansLower === 'no' && radioLabel.includes('no') && !radioLabel.includes('not')) ||
+        radioLabel.includes(ansLower) || ansLower.includes(radioLabel)) {
+      radio.click()
+      await sleep(200)
+      return true
+    }
+  }
+  return false
+}
+
+// ── Checkbox fill ──
+function _fillCheckboxField(element, answer) {
+  if (element.checked) return false
+  const ansLower = answer.toLowerCase().trim()
+  if (ansLower.includes('yes') || ansLower.includes('agree') || ansLower.includes('consent') || ansLower.includes('accept') || ansLower === 'true') {
+    element.click()
+    return true
+  }
+  return false
+}
+
 // ─── Smart Field Matching ─────────────────────────────────────────────
 
 function matchFieldToValue(labelInfo) {
@@ -562,79 +1029,139 @@ function matchFieldToValue(labelInfo) {
 // ─── Generic Form Filler ──────────────────────────────────────────────
 
 async function fillAllFormFields() {
-  log('Starting generic form fill...')
+  log('Starting generic form fill (with classifyFormField)...')
   let filledCount = 0
 
-  // ── Text inputs and textareas ──
-  const inputs = document.querySelectorAll(
-    'input:not([type="hidden"]):not([type="file"]):not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]), textarea'
+  // ── Scan ALL visible form elements and classify each one ──
+  const allInputs = document.querySelectorAll(
+    'input, textarea, select'
   )
 
-  for (const input of inputs) {
+  for (const input of allInputs) {
+    // ── CLASSIFY FIRST — never guess ──
+    const fieldType = classifyFormField(input)
+
+    // Skip non-fillable types
+    if (fieldType === 'hidden' || fieldType === 'button' || fieldType === 'unknown') continue
+    // File inputs handled separately below
+    if (fieldType === 'file') continue
+    // React-Select combobox inputs are handled by fillReactSelectDropdowns (with CDP support)
+    // The classifier catches these; we skip them here to avoid double-handling
+    if (fieldType === 'react-select') continue
+
     // Skip if already filled
-    if (input.value && input.value.trim().length > 0) continue
+    if (fieldType === 'text' && input.value && input.value.trim().length > 0) continue
+    if (fieldType === 'select' && input.value && input.selectedIndex > 0) continue
+    if (fieldType === 'checkbox' && input.checked) continue
+    if (fieldType === 'radio') continue // Radio groups handled in the group scan below
+
     // Skip invisible inputs
     if (input.offsetParent === null && !input.closest('[style*="display"]')) continue
     // Skip intl-tel-input search inputs (handled separately by ATS-specific code)
-    if (input.id === 'country' || input.type === 'search' || input.closest('.iti__search-input, .iti')) continue
-    // Skip React-Select combobox inputs (handled by fillReactSelectDropdowns)
-    if (input.getAttribute('role') === 'combobox' || input.classList.contains('select__input') || input.closest('.select-shell, [class*="select-shell"], [class*="select__container"], [class*="select__control"]')) continue
-    // Also skip if input ID contains "react-select" (auto-generated by React-Select)
-    if (input.id?.includes('react-select')) continue
+    if (input.id === 'country' || input.closest('.iti__search-input, .iti')) continue
     // Skip EEO/demographic fields (select dropdowns rendered as text inputs by React)
     const eeoIds = ['gender', 'race', 'ethnicity', 'hispanic_ethnicity', 'veteran_status', 'disability_status']
     if (eeoIds.includes(input.id) || input.id?.startsWith('4014') || input.id?.startsWith('4015')) continue
 
     const labelInfo = getLabelText(input)
-    const matched = matchFieldToValue(labelInfo)
 
-    if (matched) {
-      // Use setReactValue for ALL fields (fast + React-compatible)
-      // humanType is only needed for fields with autocomplete (Google Places)
-      const actualValue = matched === '___PHONE___' ? PROFILE.phone : matched
-      log(`Filling field [${labelInfo.trim().substring(0, 50)}] with: ${actualValue.substring(0, 30)}...`)
-      if (input.tagName === 'TEXTAREA') {
-        const taSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set
-        if (taSetter) taSetter.call(input, actualValue)
-        else input.value = actualValue
-      } else {
-        const inpSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
-        if (inpSetter) inpSetter.call(input, actualValue)
-        else input.value = actualValue
-      }
-      input.dispatchEvent(new Event('input', { bubbles: true }))
-      input.dispatchEvent(new Event('change', { bubbles: true }))
-      input.dispatchEvent(new Event('blur', { bubbles: true }))
-      filledCount++
-      await sleep(150)
-    }
-  }
+    if (fieldType === 'text') {
+      // ── Text inputs and textareas — use matchFieldToValue or cover letter detection ──
+      let matched = matchFieldToValue(labelInfo)
 
-  // ── Cover letter / Additional info textareas ──
-  const textareas = document.querySelectorAll('textarea')
-  for (const ta of textareas) {
-    if (ta.value && ta.value.trim().length > 0) continue
-    const labelInfo = getLabelText(ta)
-    if (labelInfo.includes('cover') || labelInfo.includes('letter') || labelInfo.includes('motivation') ||
+      // Cover letter / Additional info textareas
+      if (!matched && input.tagName === 'TEXTAREA' && (
+        labelInfo.includes('cover') || labelInfo.includes('letter') || labelInfo.includes('motivation') ||
         labelInfo.includes('additional') || labelInfo.includes('message') || labelInfo.includes('why') ||
-        labelInfo.includes('about you') || labelInfo.includes('lettre') || labelInfo.includes('presentation')) {
-      const coverLetter = `I am a Senior Product Designer with 7+ years of experience specializing in design systems, complex product architecture, and design ops. I have led design across iGaming, B2B SaaS, and media platforms, delivering scalable systems that improved development feedback by 90% and managed 143+ templates. I am currently based in Bangkok and available to start immediately. Please find my portfolio at ${PROFILE.portfolio}`
-      setReactValue(ta, coverLetter)
-      filledCount++
+        labelInfo.includes('about you') || labelInfo.includes('lettre') || labelInfo.includes('presentation')
+      )) {
+        matched = `I am a Senior Product Designer with 7+ years of experience specializing in design systems, complex product architecture, and design ops. I have led design across iGaming, B2B SaaS, and media platforms, delivering scalable systems that improved development feedback by 90% and managed 143+ templates. I am currently based in Bangkok and available to start immediately. Please find my portfolio at ${PROFILE.portfolio}`
+      }
+
+      if (matched) {
+        const actualValue = matched === '___PHONE___' ? PROFILE.phone : matched
+        log(`[classify:text] [${labelInfo.trim().substring(0, 50)}] -> ${actualValue.substring(0, 30)}...`)
+        _fillTextField(input, actualValue)
+        filledCount++
+        await sleep(150)
+      }
+    } else if (fieldType === 'select') {
+      // ── Native <select> — use smart matching ──
+      // Try to match country
+      if (labelInfo.includes('country') || labelInfo.includes('pays')) {
+        const options = Array.from(input.options)
+        const match = options.find(o => o.text.toLowerCase().includes('thailand') || o.value.toLowerCase().includes('thailand') || o.value.toLowerCase().includes('th'))
+        if (match) {
+          input.value = match.value
+          input.dispatchEvent(new Event('change', { bubbles: true }))
+          filledCount++
+          log(`[classify:select] country -> Thailand`)
+          continue
+        }
+      }
+
+      // Gender / EEO — select "Prefer not to say" or "Decline"
+      if (labelInfo.includes('gender') || labelInfo.includes('race') || labelInfo.includes('veteran') || labelInfo.includes('disability') || labelInfo.includes('ethnicity')) {
+        const options = Array.from(input.options)
+        const match = options.find(o => {
+          const t = o.text.toLowerCase()
+          return t.includes('decline') || t.includes('prefer not') || t.includes('not wish') || t.includes('ne souhaite pas')
+        })
+        if (match) {
+          input.value = match.value
+          input.dispatchEvent(new Event('change', { bubbles: true }))
+          filledCount++
+          log(`[classify:select] EEO -> ${match.text}`)
+        }
+        continue
+      }
+
+      // How did you hear — select "LinkedIn" if available
+      if (labelInfo.includes('how did you') || labelInfo.includes('source') || labelInfo.includes('hear about')) {
+        const options = Array.from(input.options)
+        const match = options.find(o => o.text.toLowerCase().includes('linkedin'))
+        if (match) {
+          input.value = match.value
+          input.dispatchEvent(new Event('change', { bubbles: true }))
+          filledCount++
+          log(`[classify:select] source -> ${match.text}`)
+        }
+        continue
+      }
+
+      // Generic select: try answerCustomQuestion
+      const answer = answerCustomQuestion(labelInfo)
+      if (answer && _fillNativeSelect(input, answer)) {
+        filledCount++
+        log(`[classify:select] [${labelInfo.trim().substring(0, 50)}] -> ${answer.substring(0, 30)}`)
+      }
+    } else if (fieldType === 'checkbox') {
+      // ── Checkboxes (consent, terms) ──
+      if (labelInfo.includes('agree') || labelInfo.includes('consent') || labelInfo.includes('privacy') ||
+          labelInfo.includes('terms') || labelInfo.includes('acknowledge') || labelInfo.includes('accept') ||
+          labelInfo.includes('j\'accepte') || labelInfo.includes('conditions')) {
+        input.click()
+        filledCount++
+        log(`[classify:checkbox] checked consent`)
+        await randomDelay(100, 300)
+      }
     }
   }
 
-  // ── Radio buttons (Yes/No questions) ──
+  // ── Radio buttons (Yes/No questions) — scan by group containers ──
   const radioGroups = document.querySelectorAll('fieldset, [role="radiogroup"], [class*="radio-group"], [class*="question"]')
   for (const group of radioGroups) {
-    const groupText = (group.textContent || '').toLowerCase()
     const radios = group.querySelectorAll('input[type="radio"]')
     if (radios.length === 0) continue
 
-    // Check if already answered
-    const checked = Array.from(radios).some(r => r.checked)
-    if (checked) continue
+    // Verify this is actually a radio group (classifier confirms each child)
+    const firstRadioType = classifyFormField(radios[0])
+    if (firstRadioType !== 'radio') continue
 
+    // Check if already answered
+    if (Array.from(radios).some(r => r.checked)) continue
+
+    const groupText = (group.textContent || '').toLowerCase()
     let selectValue = null
     if (groupText.includes('sponsor') || groupText.includes('visa')) selectValue = 'no'
     else if (groupText.includes('authorized') || groupText.includes('eligible') || groupText.includes('right to work') || groupText.includes('legally')) selectValue = 'yes'
@@ -656,75 +1183,11 @@ async function fillAllFormFields() {
     }
 
     if (selectValue) {
-      for (const radio of radios) {
-        const radioLabel = (radio.closest('label')?.textContent || radio.nextElementSibling?.textContent || radio.parentElement?.textContent || '').toLowerCase().trim()
-        if (radioLabel.includes(selectValue)) {
-          radio.click()
-          filledCount++
-          await randomDelay(200, 500)
-          break
-        }
-      }
-    }
-  }
-
-  // ── Checkboxes (consent, terms) ──
-  const checkboxes = document.querySelectorAll('input[type="checkbox"]')
-  for (const cb of checkboxes) {
-    if (cb.checked) continue
-    const labelInfo = getLabelText(cb)
-    if (labelInfo.includes('agree') || labelInfo.includes('consent') || labelInfo.includes('privacy') ||
-        labelInfo.includes('terms') || labelInfo.includes('acknowledge') || labelInfo.includes('accept') ||
-        labelInfo.includes('j\'accepte') || labelInfo.includes('conditions')) {
-      cb.click()
-      filledCount++
-      await randomDelay(100, 300)
-    }
-  }
-
-  // ── Select dropdowns ──
-  const selects = document.querySelectorAll('select')
-  for (const select of selects) {
-    if (select.value && select.selectedIndex > 0) continue
-    const labelInfo = getLabelText(select)
-
-    // Try to match country
-    if (labelInfo.includes('country') || labelInfo.includes('pays')) {
-      const options = Array.from(select.options)
-      const match = options.find(o => o.text.toLowerCase().includes('thailand') || o.value.toLowerCase().includes('thailand') || o.value.toLowerCase().includes('th'))
-      if (match) {
-        select.value = match.value
-        select.dispatchEvent(new Event('change', { bubbles: true }))
+      const filled = await _fillRadioField(group, selectValue)
+      if (filled) {
         filledCount++
-        continue
+        log(`[classify:radio] [${groupText.substring(0, 50)}] -> ${selectValue}`)
       }
-    }
-
-    // Gender / EEO — select "Prefer not to say" or "Decline"
-    if (labelInfo.includes('gender') || labelInfo.includes('race') || labelInfo.includes('veteran') || labelInfo.includes('disability') || labelInfo.includes('ethnicity')) {
-      const options = Array.from(select.options)
-      const match = options.find(o => {
-        const t = o.text.toLowerCase()
-        return t.includes('decline') || t.includes('prefer not') || t.includes('not wish') || t.includes('ne souhaite pas')
-      })
-      if (match) {
-        select.value = match.value
-        select.dispatchEvent(new Event('change', { bubbles: true }))
-        filledCount++
-      }
-      continue
-    }
-
-    // How did you hear — select "LinkedIn" if available
-    if (labelInfo.includes('how did you') || labelInfo.includes('source') || labelInfo.includes('hear about')) {
-      const options = Array.from(select.options)
-      const match = options.find(o => o.text.toLowerCase().includes('linkedin'))
-      if (match) {
-        select.value = match.value
-        select.dispatchEvent(new Event('change', { bubbles: true }))
-        filledCount++
-      }
-      continue
     }
   }
 
@@ -732,6 +1195,7 @@ async function fillAllFormFields() {
   const fileInputs = document.querySelectorAll('input[type="file"]')
   let cvUploaded = false
   for (const fi of fileInputs) {
+    if (classifyFormField(fi) !== 'file') continue
     if (fi.files && fi.files.length > 0) continue // Already has a file
     const labelInfo = getLabelText(fi)
     const fiId = (fi.id || '').toLowerCase()
@@ -757,7 +1221,7 @@ async function fillAllFormFields() {
     }
   }
 
-  log(`Filled ${filledCount} fields`)
+  log(`Filled ${filledCount} fields (with classifier)`)
   return filledCount
 }
 
@@ -1547,7 +2011,7 @@ async function fillGreenhouseLocation() {
 }
 
 async function fillGreenhouseCustomQuestions() {
-  log('Scanning for custom questions...')
+  log('Scanning for custom questions (with classifyFieldContainer)...')
 
   // Greenhouse wraps custom questions in various containers — be aggressive
   const customContainers = document.querySelectorAll(
@@ -1570,99 +2034,74 @@ async function fillGreenhouseCustomQuestions() {
     )
     if (!questionText) continue
 
-    // Text inputs — skip React-Select comboboxes (handled by fillReactSelectDropdowns)
-    // IMPORTANT: Also skip if this container HAS a .select-shell (it's a dropdown, not a text field)
-    // Greenhouse Remix uses CSS modules (remix-css-XXXX-input) so class*="select__input" may not match
-    if (container.querySelector('.select-shell, [class*="select-shell"], [class*="select__control"]')) continue
     // Skip phone fieldsets (intl-tel-input + React-Select country code)
     if (container.matches('fieldset.phone-input, [class*="phone-input"], [class*="phone-field"]') || container.closest('fieldset.phone-input, [class*="phone-input"]')) continue
 
-    const textInput = container.querySelector('input[type="text"]:not([role="combobox"]):not([class*="select__input"]):not([type="hidden"]), input:not([type]):not([role="combobox"]):not([class*="select__input"]):not([type="hidden"]):not([type="file"]):not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"])')
-    // Final guard: skip if the input is inside a React-Select container (catches Remix CSS module classes)
-    if (textInput?.closest('.select-shell, [class*="select-shell"], [class*="select__container"], [class*="select__control"]')) {
-      log(`Custom Q skip React-Select input for: "${questionText.substring(0, 50)}"`)
+    // ── CLASSIFY THE CONTAINER to determine what kind of input it holds ──
+    const containerType = classifyFieldContainer(container)
+
+    if (containerType === 'react-select') {
+      // React-Select dropdowns are handled by fillReactSelectDropdowns (with CDP support)
+      // Do NOT try to fill them as text inputs here
+      log(`Custom Q [classify:react-select] skip: "${questionText.substring(0, 50)}" — handled by fillReactSelectDropdowns`)
       continue
     }
-    // Also skip if input ID contains "react-select" (auto-generated by React-Select)
-    if (textInput?.id?.includes('react-select')) {
-      log(`Custom Q skip react-select input ID for: "${questionText.substring(0, 50)}"`)
-      continue
-    }
-    if (textInput && (!textInput.value || textInput.value.trim() === '') && !processedInputs.has(textInput)) {
-      const answer = answerCustomQuestion(questionText) || matchFieldToValue(getLabelText(textInput))
-      if (answer) {
-        const actualValue = answer === '___PHONE___' ? PROFILE.phone : answer
-        setReactValue(textInput, actualValue)
-        textInput.dispatchEvent(new Event('input', { bubbles: true }))
-        textInput.dispatchEvent(new Event('change', { bubbles: true }))
-        processedInputs.add(textInput)
-        log(`Custom Q [${questionText.substring(0, 50)}] → ${actualValue.substring(0, 40)}...`)
-        await sleep(300)
-      }
-    }
 
-    // Textareas
-    const textarea = container.querySelector('textarea')
-    if (textarea && (!textarea.value || textarea.value.trim() === '') && !processedInputs.has(textarea)) {
-      const answer = answerCustomQuestion(questionText)
-      if (answer) {
-        // Use nativeTextAreaSetter for textareas
-        const taSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set
-        if (taSetter) taSetter.call(textarea, answer)
-        else textarea.value = answer
-        textarea.dispatchEvent(new Event('input', { bubbles: true }))
-        textarea.dispatchEvent(new Event('change', { bubbles: true }))
-        processedInputs.add(textarea)
-        log(`Custom Q textarea [${questionText.substring(0, 50)}] → filled`)
-        await sleep(300)
+    if (containerType === 'text') {
+      // ── Text inputs and textareas ──
+      const textInput = container.querySelector('input[type="text"], input[type="email"], input[type="tel"], input[type="url"], input[type="number"], input:not([type]), textarea')
+      // Double-check: classifier might miss edge cases
+      if (textInput && classifyFormField(textInput) !== 'text') {
+        log(`Custom Q [classify:mismatch] "${questionText.substring(0, 50)}" — element classified as ${classifyFormField(textInput)}, skipping text fill`)
+        continue
       }
-    }
-
-    // Select dropdowns
-    const select = container.querySelector('select')
-    if (select && (!select.value || select.selectedIndex <= 0) && !processedInputs.has(select)) {
-      const answer = answerCustomQuestion(questionText)
-      if (answer) {
-        // Try to find matching option
-        const options = Array.from(select.options)
-        const ansLower = answer.toLowerCase()
-        const matchedOption = options.find(o => {
-          const oText = o.text.toLowerCase()
-          const oVal = o.value.toLowerCase()
-          return oText.includes(ansLower) || ansLower.includes(oText) ||
-                 oVal.includes(ansLower) || (oText === 'yes' && ansLower.includes('yes')) ||
-                 (oText === 'no' && ansLower === 'no')
-        })
-        if (matchedOption) {
-          select.value = matchedOption.value
-          select.dispatchEvent(new Event('change', { bubbles: true }))
-          processedInputs.add(select)
-          log(`Custom Q select [${questionText.substring(0, 50)}] → ${matchedOption.text}`)
+      if (textInput && (!textInput.value || textInput.value.trim() === '') && !processedInputs.has(textInput)) {
+        const answer = answerCustomQuestion(questionText) || matchFieldToValue(getLabelText(textInput))
+        if (answer) {
+          const actualValue = answer === '___PHONE___' ? PROFILE.phone : answer
+          _fillTextField(textInput, actualValue)
+          processedInputs.add(textInput)
+          log(`Custom Q [classify:text] [${questionText.substring(0, 50)}] -> ${actualValue.substring(0, 40)}...`)
+          await sleep(300)
         }
       }
-      await sleep(300)
-    }
-
-    // Radio buttons within the container
-    const radios = container.querySelectorAll('input[type="radio"]')
-    if (radios.length > 0 && !Array.from(radios).some(r => r.checked)) {
-      const answer = answerCustomQuestion(questionText)
-      if (answer) {
-        const ansLower = answer.toLowerCase()
-        for (const radio of radios) {
-          const radioLabel = (radio.closest('label')?.textContent || radio.nextElementSibling?.textContent || radio.parentElement?.textContent || '').toLowerCase().trim()
-          // Match yes/no or the answer text
-          if ((ansLower.includes('yes') && radioLabel.includes('yes')) ||
-              (ansLower === 'no' && radioLabel.includes('no')) ||
-              radioLabel.includes(ansLower) || ansLower.includes(radioLabel)) {
-            radio.click()
-            log(`Custom Q radio [${questionText.substring(0, 50)}] → ${radioLabel}`)
-            await sleep(300)
-            break
+    } else if (containerType === 'select') {
+      // ── Native <select> dropdown ──
+      const select = container.querySelector('select')
+      if (select && (!select.value || select.selectedIndex <= 0) && !processedInputs.has(select)) {
+        const answer = answerCustomQuestion(questionText)
+        if (answer) {
+          if (_fillNativeSelect(select, answer)) {
+            processedInputs.add(select)
+            log(`Custom Q [classify:select] [${questionText.substring(0, 50)}] -> ${answer.substring(0, 30)}`)
+          }
+        }
+        await sleep(300)
+      }
+    } else if (containerType === 'radio') {
+      // ── Radio buttons ──
+      const radios = container.querySelectorAll('input[type="radio"]')
+      if (radios.length > 0 && !Array.from(radios).some(r => r.checked)) {
+        const answer = answerCustomQuestion(questionText)
+        if (answer) {
+          const filled = await _fillRadioField(container, answer)
+          if (filled) {
+            log(`Custom Q [classify:radio] [${questionText.substring(0, 50)}] -> ${answer.substring(0, 30)}`)
           }
         }
       }
+    } else if (containerType === 'checkbox') {
+      // ── Checkboxes ──
+      const cb = container.querySelector('input[type="checkbox"]')
+      if (cb && !cb.checked) {
+        const answer = answerCustomQuestion(questionText)
+        if (answer) {
+          _fillCheckboxField(cb, answer)
+          log(`Custom Q [classify:checkbox] [${questionText.substring(0, 50)}] -> ${answer.substring(0, 30)}`)
+        }
+      }
     }
+    // containerType === 'file' or 'unknown' — skip (handled elsewhere)
   }
 
   // ── Catch-all: fill any remaining empty textareas that weren't matched above ──
@@ -1670,18 +2109,17 @@ async function fillGreenhouseCustomQuestions() {
   for (const ta of allTextareas) {
     if (ta.value && ta.value.trim().length > 0) continue
     if (processedInputs.has(ta)) continue
-    // Skip if it's a resume_text paste field (already handled)
     if (ta.id === 'resume_text') continue
+    // Classify to be safe — skip if it's inside a React-Select
+    if (classifyFormField(ta) !== 'text') continue
 
     const labelInfo = getLabelText(ta)
     const containerLabel = ta.closest('.field, .form-field, fieldset, [class*="question"]')
       ?.querySelector('label, legend, .field-label, [class*="label"]')?.textContent?.trim() || ''
     const combinedLabel = labelInfo + ' ' + containerLabel.toLowerCase()
 
-    // Try answerCustomQuestion with the combined label
     let answer = answerCustomQuestion(combinedLabel)
     if (!answer) {
-      // Ultimate fallback: if it's a required textarea with no match, use cover letter
       const isRequired = ta.hasAttribute('required') || ta.closest('.required, .field--error, [class*="required"]')
       if (isRequired) {
         answer = CUSTOM_QUESTION_ANSWERS.coverLetter
@@ -1689,12 +2127,8 @@ async function fillGreenhouseCustomQuestions() {
       }
     }
     if (answer) {
-      const taSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set
-      if (taSetter) taSetter.call(ta, answer)
-      else ta.value = answer
-      ta.dispatchEvent(new Event('input', { bubbles: true }))
-      ta.dispatchEvent(new Event('change', { bubbles: true }))
-      log(`Catch-all textarea [${combinedLabel.substring(0, 50)}] → filled`)
+      _fillTextField(ta, answer)
+      log(`Catch-all textarea [classify:text] [${combinedLabel.substring(0, 50)}] -> filled`)
     }
   }
 }
@@ -1704,7 +2138,7 @@ async function fillGreenhouseCustomQuestions() {
 // and fills using answerCustomQuestion. Works on Greenhouse forms that don't use
 // .field container wrappers.
 async function fillByLabelScan() {
-  log('Running label-based direct scan...')
+  log('Running label-based direct scan (with classifyFormField)...')
   let filledCount = 0
 
   const allLabels = document.querySelectorAll('label')
@@ -1718,19 +2152,25 @@ async function fillByLabelScan() {
     const input = document.getElementById(forAttr)
     if (!input) continue
 
+    // ── CLASSIFY the input FIRST ──
+    const fieldType = classifyFormField(input)
+
+    // Only fill text fields here — selects/radios/checkboxes/react-selects
+    // are handled by their dedicated functions. This prevents the bug where
+    // label scan types text into a dropdown or radio group.
+    if (fieldType !== 'text') {
+      if (fieldType === 'react-select') {
+        log(`Label scan [classify:react-select] skip: "${labelText.substring(0, 50)}" — handled by fillReactSelectDropdowns`)
+      }
+      continue
+    }
+
     // Skip if already filled
     if (input.value && input.value.trim().length > 0) continue
-    // Skip hidden/file/checkbox/radio/submit
-    const type = (input.type || '').toLowerCase()
-    if (type === 'hidden' || type === 'file' || type === 'checkbox' || type === 'radio' || type === 'submit' || type === 'button') continue
     // Skip recaptcha
     if (input.name === 'g-recaptcha-response') continue
     // Skip country + candidate-location (handled by ATS-specific code)
     if (input.id === 'country' || input.id === 'candidate-location') continue
-    // Skip React-Select combobox inputs (handled by fillReactSelectDropdowns)
-    if (input.getAttribute('role') === 'combobox' || input.classList.contains('select__input') || input.closest('.select-shell, [class*="select-shell"], [class*="select__container"], [class*="select__control"]')) continue
-    // Also skip if input ID contains "react-select" (auto-generated by React-Select)
-    if (input.id?.includes('react-select')) continue
     // Skip EEO/demographic fields
     const eeoIds = ['gender', 'race', 'ethnicity', 'hispanic_ethnicity', 'veteran_status', 'disability_status']
     if (eeoIds.includes(input.id) || input.id?.startsWith('4014') || input.id?.startsWith('4015')) continue
@@ -1743,25 +2183,14 @@ async function fillByLabelScan() {
 
     const actualValue = answer === '___PHONE___' ? PROFILE.phone : answer
 
-    // Fill using the appropriate setter
-    if (input.tagName === 'TEXTAREA') {
-      const taSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set
-      if (taSetter) taSetter.call(input, actualValue)
-      else input.value = actualValue
-    } else {
-      const inpSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
-      if (inpSetter) inpSetter.call(input, actualValue)
-      else input.value = actualValue
-    }
-    input.dispatchEvent(new Event('input', { bubbles: true }))
-    input.dispatchEvent(new Event('change', { bubbles: true }))
-    input.dispatchEvent(new Event('blur', { bubbles: true }))
+    // Fill using the unified text fill helper
+    _fillTextField(input, actualValue)
     filledCount++
-    log(`Label scan [${labelText.substring(0, 55)}] → ${actualValue.substring(0, 40)}`)
+    log(`Label scan [classify:text] [${labelText.substring(0, 55)}] -> ${actualValue.substring(0, 40)}`)
     await sleep(200)
   }
 
-  log(`Label scan filled ${filledCount} fields`)
+  log(`Label scan filled ${filledCount} fields (with classifier)`)
   return filledCount
 }
 
@@ -1944,7 +2373,7 @@ function isPhoneCountryMenu(menu) {
 
 // ─── Dismiss all open React-Select menus before starting fresh ───
 async function dismissAllOpenMenus(useCDP) {
-  const openMenus = document.querySelectorAll('[class*="select__menu"]')
+  const openMenus = document.querySelectorAll('[class*="select__menu"], [role="listbox"]')
   const openItiLists = document.querySelectorAll('.iti__country-list:not(.iti__hide)')
   const totalOpen = openMenus.length + openItiLists.length
   if (totalOpen > 0) {
@@ -1954,11 +2383,15 @@ async function dismissAllOpenMenus(useCDP) {
       await sendTrustedEscape()
       await sleep(200)
       // Double-tap Escape for stubborn menus (intl-tel-input needs its own Escape)
-      if (document.querySelectorAll('[class*="select__menu"]').length > 0) {
+      if (document.querySelectorAll('[class*="select__menu"], [role="listbox"]').length > 0) {
         await sendTrustedEscape()
         await sleep(200)
       }
     } else {
+      // Dispatch Escape key event (more reliable than body.click for React-Select)
+      const escEvt = new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true })
+      ;(document.activeElement || document.body).dispatchEvent(escEvt)
+      await sleep(100)
       document.body.click()
       await sleep(200)
     }
@@ -1972,10 +2405,27 @@ async function dismissAllOpenMenus(useCDP) {
 }
 
 async function fillReactSelectDropdowns() {
-  log('Scanning for React-Select dropdowns (CDP trusted clicks v3)...')
+  log('Scanning for React-Select dropdowns (CDP trusted clicks v4 + DOM fallback)...')
   let filledCount = 0
   const processed = new Set()
   let debuggerActive = false
+
+  // ──── Helpers: ARIA + class-based selectors for Greenhouse Remix CSS modules ────
+  // Greenhouse Remix uses CSS modules (class="css-1a2b3c-control" instead of "select__control")
+  // so [class*="select__menu"] won't match. Use [role="listbox"] and [role="option"] as fallbacks.
+  function findMenu(root) {
+    return root.querySelector('[class*="select__menu"], [class*="-menu"][role="listbox"], [role="listbox"]')
+  }
+  function findMenuGlobal() {
+    return document.querySelector('[class*="select__menu"], [class*="-menu"][role="listbox"], [role="listbox"]')
+  }
+  function findOptions(menu) {
+    return Array.from(menu.querySelectorAll('[class*="select__option"], [role="option"]'))
+      .filter(el => !el.closest('.iti, .intl-tel-input'))
+  }
+  function findSelectedValue(root) {
+    return root.querySelector('[class*="select__single-value"], [class*="singleValue"], [class*="-singleValue"]')
+  }
 
   // Find all React-Select instances via .select-shell wrapper
   const allRoots = new Set()
@@ -1983,9 +2433,9 @@ async function fillReactSelectDropdowns() {
     if (isPhoneCountryShell(el)) { log('Skipping phone country shell:', el.className?.substring(0, 40)); return }
     allRoots.add(el)
   })
-  // Fallback: find by combobox inputs
-  document.querySelectorAll('input[role="combobox"][class*="select__input"]').forEach(cb => {
-    const shell = cb.closest('.select-shell')
+  // Fallback: find by combobox inputs (broad — catches Remix CSS module class names)
+  document.querySelectorAll('input[role="combobox"]').forEach(cb => {
+    const shell = cb.closest('.select-shell, [class*="select__container"], [class*="css-"][class*="container"], [class*="-container"]')
     if (!shell || isPhoneCountryShell(shell)) return
     allRoots.add(shell)
   })
@@ -1995,12 +2445,20 @@ async function fillReactSelectDropdowns() {
     if (!shell || isPhoneCountryShell(shell)) return
     allRoots.add(shell)
   })
+  // Greenhouse Remix: find by CSS module control classes (css-XXXX-control)
+  document.querySelectorAll('[class*="-control"]').forEach(ctrl => {
+    // Only match if it looks like a React-Select control (has a combobox input inside)
+    if (!ctrl.querySelector('input[role="combobox"]')) return
+    const shell = ctrl.closest('.select-shell, [class*="select__container"], [class*="css-"][class*="container"], [class*="-container"]') || ctrl.parentElement
+    if (!shell || isPhoneCountryShell(shell)) return
+    allRoots.add(shell)
+  })
 
   log(`Found ${allRoots.size} React-Select instances (after phone filtering)`)
 
   for (const shell of allRoots) {
     // Skip if already has a selected value
-    const hasValue = shell.querySelector('[class*="select__single-value"], [class*="singleValue"]')
+    const hasValue = findSelectedValue(shell)
     if (hasValue && hasValue.textContent?.trim()) {
       log(`React-Select skip — already has value: "${hasValue.textContent.trim().substring(0, 30)}"`)
       continue
@@ -2080,7 +2538,10 @@ async function fillReactSelectDropdowns() {
     }
 
     // ──── OPEN DROPDOWN: CDP click first (most reliable for cold React-Select) ────
-    const control = shell.querySelector('[class*="select__control"]') || shell
+    // Also match Greenhouse Remix CSS module classes (css-XXXX-control)
+    const control = shell.querySelector('[class*="select__control"]')
+      || shell.querySelector('[class*="-control"]:has(input[role="combobox"])')
+      || shell
     // Find combobox input — be very broad to catch Remix CSS module class names
     let comboboxInput = shell.querySelector('input[role="combobox"]')
     if (!comboboxInput) comboboxInput = shell.querySelector('input[class*="select__input"]')
@@ -2122,13 +2583,13 @@ async function fillReactSelectDropdowns() {
       log(`React-Select: CDP click on control at (${cx}, ${cy})`)
       await sendTrustedClick(cx, cy)
       await sleep(600)
-      menu = shell.querySelector('[class*="select__menu"]')
+      menu = findMenu(shell)
 
       // CDP click may have focused the control without opening — send ArrowDown
       if (!menu) {
         await sendArrowDown()
         await sleep(500)
-        menu = shell.querySelector('[class*="select__menu"]')
+        menu = findMenu(shell)
       }
     }
 
@@ -2141,45 +2602,89 @@ async function fillReactSelectDropdowns() {
       await sleep(200)
       await sendArrowDown()
       await sleep(500)
-      menu = shell.querySelector('[class*="select__menu"]')
+      menu = findMenu(shell)
     }
 
-    // Method 3: Synthetic mouseDown on control + focus + ArrowDown
+    // Method 3 (ENHANCED): Full synthetic event sequence on control — mimics real user click
+    // React-Select v5 listens for onMouseDown on the control div. We dispatch a complete
+    // mousedown → mouseup → click sequence with correct coordinates to trigger it.
     if (!menu) {
-      log('React-Select: trying mouseDown + focus + ArrowDown...')
-      control.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }))
-      await sleep(200)
+      log('React-Select: trying full synthetic mousedown/mouseup/click on control...')
+      const ctrlRect = control.getBoundingClientRect()
+      const evtInit = {
+        bubbles: true, cancelable: true, button: 0,
+        clientX: Math.round(ctrlRect.left + ctrlRect.width / 2),
+        clientY: Math.round(ctrlRect.top + ctrlRect.height / 2),
+        view: window,
+      }
+      control.dispatchEvent(new MouseEvent('mousedown', evtInit))
+      await sleep(50)
+      control.dispatchEvent(new MouseEvent('mouseup', evtInit))
+      await sleep(50)
+      control.dispatchEvent(new MouseEvent('click', evtInit))
+      await sleep(400)
       if (comboboxInput) { comboboxInput.focus(); await sleep(100) }
-      await sendArrowDown()
-      await sleep(500)
-      menu = shell.querySelector('[class*="select__menu"]')
+      menu = findMenu(shell)
+      // If control click didn't open, try ArrowDown with focus
+      if (!menu && comboboxInput) {
+        await sendArrowDown()
+        await sleep(500)
+        menu = findMenu(shell)
+      }
     }
 
     // Method 4: CDP click on dropdown indicator (the arrow icon)
     if (!menu && debuggerActive) {
-      const indicator = shell.querySelector('[class*="select__indicator"], [class*="select__dropdown-indicator"], [class*="indicatorContainer"]')
+      const indicator = shell.querySelector('[class*="select__indicator"], [class*="select__dropdown-indicator"], [class*="indicatorContainer"], [class*="-indicatorContainer"]')
       if (indicator) {
         log('React-Select: trying CDP click on dropdown indicator...')
         const indRect = indicator.getBoundingClientRect()
         await sendTrustedClick(Math.round(indRect.left + indRect.width / 2), Math.round(indRect.top + indRect.height / 2))
         await sleep(600)
-        menu = shell.querySelector('[class*="select__menu"]')
+        menu = findMenu(shell)
+      }
+    }
+
+    // Method 4b: Synthetic click on dropdown indicator (non-CDP fallback)
+    if (!menu) {
+      const indicator = shell.querySelector('[class*="select__indicator"], [class*="select__dropdown-indicator"], [class*="indicatorContainer"], [class*="-indicatorContainer"], svg')
+      if (indicator) {
+        log('React-Select: trying synthetic click on dropdown indicator...')
+        const indRect = indicator.getBoundingClientRect()
+        const indEvtInit = {
+          bubbles: true, cancelable: true, button: 0,
+          clientX: Math.round(indRect.left + indRect.width / 2),
+          clientY: Math.round(indRect.top + indRect.height / 2),
+          view: window,
+        }
+        indicator.dispatchEvent(new MouseEvent('mousedown', indEvtInit))
+        await sleep(50)
+        indicator.dispatchEvent(new MouseEvent('mouseup', indEvtInit))
+        await sleep(50)
+        indicator.dispatchEvent(new MouseEvent('click', indEvtInit))
+        await sleep(500)
+        menu = findMenu(shell)
       }
     }
 
     // Method 5: React internal props (works without CDP — calls React's own handlers)
     if (!menu) {
       log('React-Select: trying React internal props...')
-      const controlProps = getReactProps(control)
-      if (controlProps?.onMouseDown) {
-        controlProps.onMouseDown({ preventDefault: () => {}, button: 0 })
-        await sleep(500)
-        menu = shell.querySelector('[class*="select__menu"]')
-      }
-      if (!menu && controlProps?.onClick) {
-        controlProps.onClick({ preventDefault: () => {} })
-        await sleep(500)
-        menu = shell.querySelector('[class*="select__menu"]')
+      // Walk children to find the element with onMouseDown (may be a nested div in CSS modules)
+      const candidates = [control, ...control.querySelectorAll('div')]
+      for (const candidate of candidates) {
+        if (menu) break
+        const cProps = getReactProps(candidate)
+        if (cProps?.onMouseDown) {
+          cProps.onMouseDown({ preventDefault: () => {}, button: 0 })
+          await sleep(500)
+          menu = findMenu(shell)
+        }
+        if (!menu && cProps?.onClick) {
+          cProps.onClick({ preventDefault: () => {} })
+          await sleep(500)
+          menu = findMenu(shell)
+        }
       }
       // Try on the shell itself
       if (!menu) {
@@ -2187,14 +2692,14 @@ async function fillReactSelectDropdowns() {
         if (shellProps?.onMouseDown) {
           shellProps.onMouseDown({ preventDefault: () => {}, button: 0 })
           await sleep(500)
-          menu = shell.querySelector('[class*="select__menu"]')
+          menu = findMenu(shell)
         }
       }
     }
 
     // Check global menu (portal) but reject phone country menus
     if (!menu) {
-      const globalMenu = document.querySelector('[class*="select__menu"]')
+      const globalMenu = findMenuGlobal()
       if (globalMenu && !isPhoneCountryMenu(globalMenu)) {
         menu = globalMenu
       } else if (globalMenu) {
@@ -2220,8 +2725,7 @@ async function fillReactSelectDropdowns() {
     }
 
     // ──── FIND MATCHING OPTION ────
-    const menuOptions = Array.from(menu.querySelectorAll('[class*="select__option"]'))
-      .filter(el => !el.closest('.iti, .intl-tel-input'))
+    const menuOptions = findOptions(menu)
 
     if (menuOptions.length === 0) {
       log(`React-Select: menu opened but no options for "${questionText.substring(0, 40)}"`)
@@ -2253,59 +2757,184 @@ async function fillReactSelectDropdowns() {
         }
         await sendChromeMessage({ action: 'trustedKeypress', key: 'Enter', code: 'Enter', keyCode: 13 })
         await sleep(400)
-        const selectedVal = shell.querySelector('[class*="select__single-value"], [class*="singleValue"]')
+        const selectedVal = findSelectedValue(shell)
         if (selectedVal && selectedVal.textContent?.trim()) {
           selectionConfirmed = true
           log(`React-Select: keyboard selection verified — "${selectedVal.textContent.trim()}"`)
         }
       }
 
-      // Method B: React props onClick on the option element
+      // Method B: Synthetic click on the option element (full mousedown/mouseup/click)
       if (!selectionConfirmed) {
+        log('React-Select: trying synthetic click on option...')
+        bestMatch.scrollIntoView({ block: 'nearest', behavior: 'instant' })
+        await sleep(50)
+        const optRect = bestMatch.getBoundingClientRect()
+        const optEvt = {
+          bubbles: true, cancelable: true, button: 0,
+          clientX: Math.round(optRect.left + optRect.width / 2),
+          clientY: Math.round(optRect.top + optRect.height / 2),
+          view: window,
+        }
+        bestMatch.dispatchEvent(new MouseEvent('mousedown', optEvt))
+        await sleep(30)
+        bestMatch.dispatchEvent(new MouseEvent('mouseup', optEvt))
+        await sleep(30)
+        bestMatch.dispatchEvent(new MouseEvent('click', optEvt))
+        await sleep(400)
+        const selectedVal1b = findSelectedValue(shell)
+        if (selectedVal1b && selectedVal1b.textContent?.trim()) {
+          selectionConfirmed = true
+          log(`React-Select: synthetic click on option verified — "${selectedVal1b.textContent.trim()}"`)
+        }
+      }
+
+      // Method C: React props onClick on the option element
+      if (!selectionConfirmed) {
+        log('React-Select: trying React props onClick on option...')
         const optProps = getReactProps(bestMatch)
         if (optProps?.onClick) {
           optProps.onClick({ preventDefault: () => {}, stopPropagation: () => {} })
           await sleep(400)
-          const selectedVal2 = shell.querySelector('[class*="select__single-value"], [class*="singleValue"]')
+          const selectedVal2 = findSelectedValue(shell)
           if (selectedVal2 && selectedVal2.textContent?.trim()) {
             selectionConfirmed = true
             log(`React-Select: React props onClick verified — "${selectedVal2.textContent.trim()}"`)
           }
         }
+        // Also try onMouseDown on option (React-Select v5 uses this for selection)
+        if (!selectionConfirmed && optProps?.onMouseDown) {
+          optProps.onMouseDown({ preventDefault: () => {}, stopPropagation: () => {}, button: 0 })
+          await sleep(400)
+          const selectedVal2b = findSelectedValue(shell)
+          if (selectedVal2b && selectedVal2b.textContent?.trim()) {
+            selectionConfirmed = true
+            log(`React-Select: React props onMouseDown verified — "${selectedVal2b.textContent.trim()}"`)
+          }
+        }
       }
 
-      // Method C: CDP click on the option (coordinate-based)
+      // Method D: Re-open menu + CDP or synthetic click on option (coordinate-based)
       if (!selectionConfirmed) {
+        log('React-Select: trying re-open + coordinate click on option...')
         // Re-open menu if it closed
-        let reopenedMenu = shell.querySelector('[class*="select__menu"]')
+        let reopenedMenu = findMenu(shell)
         if (!reopenedMenu) {
           if (debuggerActive) {
             const controlRect2 = control.getBoundingClientRect()
             await sendTrustedClick(Math.round(controlRect2.left + controlRect2.width / 2), Math.round(controlRect2.top + controlRect2.height / 2))
           } else {
-            control.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }))
-            if (comboboxInput) { comboboxInput.focus(); await sleep(100) }
+            const ctrlRect2 = control.getBoundingClientRect()
+            const evtInit2 = {
+              bubbles: true, cancelable: true, button: 0,
+              clientX: Math.round(ctrlRect2.left + ctrlRect2.width / 2),
+              clientY: Math.round(ctrlRect2.top + ctrlRect2.height / 2),
+              view: window,
+            }
+            control.dispatchEvent(new MouseEvent('mousedown', evtInit2))
+            await sleep(50)
+            control.dispatchEvent(new MouseEvent('mouseup', evtInit2))
+            await sleep(50)
+            control.dispatchEvent(new MouseEvent('click', evtInit2))
+            if (comboboxInput) { await sleep(100); comboboxInput.focus(); await sleep(100) }
             await sendArrowDown()
           }
           await sleep(500)
-          reopenedMenu = shell.querySelector('[class*="select__menu"]')
+          reopenedMenu = findMenu(shell)
         }
-        const targetOpt = reopenedMenu ? findBestOption(Array.from(reopenedMenu.querySelectorAll('[class*="select__option"]')), answer) : bestMatch
+        const targetOpt = reopenedMenu ? findBestOption(findOptions(reopenedMenu), answer) : bestMatch
         if (targetOpt) {
           targetOpt.scrollIntoView({ block: 'nearest', behavior: 'instant' })
           await sleep(100)
           if (debuggerActive) {
-            const optRect = targetOpt.getBoundingClientRect()
-            await sendTrustedClick(Math.round(optRect.left + optRect.width / 2), Math.round(optRect.top + optRect.height / 2))
+            const optRect2 = targetOpt.getBoundingClientRect()
+            await sendTrustedClick(Math.round(optRect2.left + optRect2.width / 2), Math.round(optRect2.top + optRect2.height / 2))
           } else {
-            targetOpt.click()
+            // Full synthetic click with coordinates
+            const optRect2 = targetOpt.getBoundingClientRect()
+            const optEvt2 = {
+              bubbles: true, cancelable: true, button: 0,
+              clientX: Math.round(optRect2.left + optRect2.width / 2),
+              clientY: Math.round(optRect2.top + optRect2.height / 2),
+              view: window,
+            }
+            targetOpt.dispatchEvent(new MouseEvent('mousedown', optEvt2))
+            await sleep(30)
+            targetOpt.dispatchEvent(new MouseEvent('mouseup', optEvt2))
+            await sleep(30)
+            targetOpt.dispatchEvent(new MouseEvent('click', optEvt2))
           }
-          await sleep(300)
+          await sleep(400)
+          const selectedVal3 = findSelectedValue(shell)
+          if (selectedVal3 && selectedVal3.textContent?.trim()) {
+            selectionConfirmed = true
+            log(`React-Select: coordinate click verified — "${selectedVal3.textContent.trim()}"`)
+          }
         }
       }
-      filledCount++
-      log(`React-Select ✓ [${questionText.substring(0, 50)}] → "${bestMatch.textContent?.trim()}"`)
-      await sleep(500)
+
+      // Method E (LAST RESORT): Set hidden input value directly + trigger React change
+      // React-Select creates a hidden <input name="..."> for form submission.
+      if (!selectionConfirmed) {
+        log('React-Select: all click methods failed — trying hidden input fallback...')
+        const hiddenInput = shell.querySelector('input[type="hidden"][name]')
+        if (hiddenInput) {
+          // The value for React-Select options is typically the option text or a data-value
+          const optValue = bestMatch.getAttribute('data-value') || bestMatch.textContent?.trim() || answer
+          const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+          if (nativeSetter) nativeSetter.call(hiddenInput, optValue)
+          else hiddenInput.value = optValue
+          hiddenInput.dispatchEvent(new Event('input', { bubbles: true }))
+          hiddenInput.dispatchEvent(new Event('change', { bubbles: true }))
+          // Also try React's onChange on the hidden input
+          const hiddenProps = getReactProps(hiddenInput)
+          if (hiddenProps?.onChange) hiddenProps.onChange({ target: hiddenInput })
+          log(`React-Select: hidden input set to "${optValue}" (name="${hiddenInput.name}")`)
+          // Try to also update the React-Select internal state via the container's React fiber
+          const containerEl = shell.querySelector('[class*="select__container"], [class*="-container"]') || shell
+          const fiberKey = Object.keys(containerEl).find(k => k.startsWith('__reactFiber') || k.startsWith('__reactInternalInstance'))
+          if (fiberKey) {
+            try {
+              let fiber = containerEl[fiberKey]
+              // Walk up fiber tree to find the Select component's state setter
+              for (let i = 0; i < 20 && fiber; i++) {
+                if (fiber.memoizedState && fiber.stateNode?.setState) {
+                  // Found a class component — try to set value
+                  log('React-Select: found class component fiber — attempting setState')
+                  break
+                }
+                // For hooks-based React-Select v5, look for the state with selectValue
+                if (fiber.memoizedState?.memoizedState?.selectValue !== undefined) {
+                  log('React-Select: found hooks fiber with selectValue')
+                  break
+                }
+                fiber = fiber.return
+              }
+            } catch (fiberErr) {
+              warn('React-Select: fiber walk error:', fiberErr.message)
+            }
+          }
+          selectionConfirmed = true // Mark as confirmed — best effort
+        }
+      }
+
+      if (selectionConfirmed) {
+        filledCount++
+        log(`React-Select OK [${questionText.substring(0, 50)}] -> "${bestMatch.textContent?.trim()}"`)
+      } else {
+        warn(`React-Select FAILED to confirm selection for [${questionText.substring(0, 50)}] -> "${bestMatch.textContent?.trim()}"`)
+      }
+      // Dismiss any leftover open menu
+      const leftoverMenu = findMenu(shell)
+      if (leftoverMenu) {
+        if (debuggerActive) await sendTrustedEscape()
+        else {
+          const escEvt = new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true })
+          ;(document.activeElement || document.body).dispatchEvent(escEvt)
+        }
+        await sleep(200)
+      }
+      await sleep(300)
     } else {
       log(`React-Select: no matching option for "${questionText.substring(0, 50)}" (answer: "${answer.substring(0, 30)}")`)
       log(`  Available: ${menuOptions.map(o => o.textContent?.trim()).join(', ')}`)
@@ -3367,7 +3996,7 @@ const ATS_HANDLERS = {
     warn('Guard check failed, proceeding anyway:', guardErr.message)
   }
 
-  log('ats-apply.js v2.5.2 loaded on:', currentUrl)
+  log('ats-apply.js v2.6.0 loaded on:', currentUrl)
 
   // Load user profile from storage (overrides hardcoded defaults)
   await loadProfile()
