@@ -798,14 +798,15 @@ export async function triggerApplyJobs(
 
     // Step 3: ATS batch — pre-resolve job board URLs, then apply sequentially
     if (atsJobs.length > 0) {
-      console.log(`[bot-api] Extension path: pre-resolving ${atsJobs.length} ATS job URLs`)
-      const resolvedAtsJobs = await Promise.all(
-        atsJobs.map(async (job) => {
-          const resolvedUrl = await resolveJobBoardUrl(job)
-          return resolvedUrl !== job.url ? { ...job, url: resolvedUrl } : job
-        }),
-      )
-      console.log(`[bot-api] Extension path: applying ${resolvedAtsJobs.length} ATS jobs (URLs pre-resolved)`)
+      console.log(`[bot-api] Step 3: pre-resolving ${atsJobs.length} ATS jobs. URLs: ${atsJobs.map(j => j.url).join(', ')}`)
+      const resolvedAtsJobs: typeof atsJobs = []
+      for (const job of atsJobs) {
+        console.log(`[bot-api] Pre-resolve: ${job.company} | isJobBoard=${isJobBoardUrl(job.url)} | ${job.url}`)
+        const resolvedUrl = await resolveJobBoardUrl(job)
+        console.log(`[bot-api] Pre-resolve result: ${job.company} | ${resolvedUrl === job.url ? 'UNCHANGED' : 'RESOLVED → ' + resolvedUrl}`)
+        resolvedAtsJobs.push(resolvedUrl !== job.url ? { ...job, url: resolvedUrl } : job)
+      }
+      console.log(`[bot-api] Step 3 done: applying ${resolvedAtsJobs.length} ATS jobs. Final URLs: ${resolvedAtsJobs.map(j => j.url).join(', ')}`)
       await applyAtsJobsViaExtension(resolvedAtsJobs)
     }
 
