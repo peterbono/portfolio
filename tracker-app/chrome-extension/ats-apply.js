@@ -401,6 +401,10 @@ function findAndClickButton(texts) {
   let bestScore = -1
 
   for (const el of allClickables) {
+    // Skip Claude MCP / browser extension injected buttons
+    if (el.id && (el.id.includes('claude') || el.id.includes('mcp'))) continue
+    if (el.closest('[id*="claude"], [id*="mcp"], [class*="claude"]')) continue
+
     const text = (el.textContent || el.value || '').trim().toLowerCase()
     const ariaLabel = (el.getAttribute('aria-label') || '').toLowerCase()
     for (let i = 0; i < texts.length; i++) {
@@ -414,7 +418,7 @@ function findAndClickButton(texts) {
       let score = (texts.length - i) * 10
       if (text === t) score += 50                    // Exact match bonus
       if (el.type === 'submit') score += 30          // type="submit" bonus
-      if (el.closest('form')) score += 20            // Inside a form bonus
+      if (el.closest('form:not([id*="claude"])')) score += 20  // Inside a real form bonus
       if (el.closest('.application--submit, [class*="submit"], [class*="actions"]')) score += 15 // Submit area bonus
 
       if (score > bestScore) {
@@ -2799,9 +2803,14 @@ async function submitForm() {
   ]
 
   for (const sel of specificSelectors) {
-    const btn = document.querySelector(sel)
-    if (isClickable(btn)) {
-      return await scrollAndClick(btn, 'selector: ' + sel)
+    const candidates = document.querySelectorAll(sel)
+    for (const btn of candidates) {
+      // Skip Claude MCP / browser extension injected buttons
+      if (btn.id && (btn.id.includes('claude') || btn.id.includes('mcp'))) continue
+      if (btn.closest('[id*="claude"], [id*="mcp"]')) continue
+      if (isClickable(btn)) {
+        return await scrollAndClick(btn, 'selector: ' + sel)
+      }
     }
   }
 
