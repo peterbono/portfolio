@@ -3823,6 +3823,27 @@ async function handleLever() {
     }
   }
 
+  // Check ALL required consent/confirmation checkboxes
+  // Lever forms often have required checkboxes like "Yes, I read it", "I agree", "I confirm"
+  const allCheckboxes = document.querySelectorAll('input[type="checkbox"]')
+  let consentChecked = 0
+  for (const cb of allCheckboxes) {
+    if (cb.checked) continue
+    const container = cb.closest('.custom-question, .application-question, .field, div') || cb.parentElement
+    const labelText = (container?.textContent || '').trim().toLowerCase()
+    // Check if it's a consent/confirmation checkbox (yes, agree, confirm, read, acknowledge)
+    if (labelText.includes('yes') || labelText.includes('i read') || labelText.includes('agree') ||
+        labelText.includes('confirm') || labelText.includes('acknowledge') || labelText.includes('consent') ||
+        labelText.includes('accept') || labelText.includes('i understand') ||
+        cb.required || cb.closest('[class*="required"]')) {
+      cb.checked = true
+      cb.dispatchEvent(new Event('change', { bubbles: true }))
+      cb.dispatchEvent(new Event('input', { bubbles: true }))
+      consentChecked++
+    }
+  }
+  if (consentChecked > 0) log(`Checked ${consentChecked} consent/required checkbox(es)`)
+
   // Fill Lever-specific cards[*] custom questions (screening questions)
   try { await fillLeverCustomQuestions() } catch(e) { warn('fillLeverCustomQuestions error:', e.message) }
 
@@ -4606,6 +4627,14 @@ async function navigateMultiStepForm() {
     // Fill current step
     let filledCount = 0
     try { filledCount = (await fillAllFormFields()) || 0 } catch(e) { warn('navigateMultiStep fillAll error:', e.message) }
+
+    // Check unchecked required/consent checkboxes on every step
+    for (const cb of document.querySelectorAll('input[type="checkbox"]:not(:checked)')) {
+      const lbl = (cb.closest('.custom-question, .field, div')?.textContent || '').toLowerCase()
+      if (cb.required || lbl.includes('yes') || lbl.includes('agree') || lbl.includes('confirm') || lbl.includes('i read') || lbl.includes('consent') || lbl.includes('acknowledge')) {
+        cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true }))
+      }
+    }
 
     // Upload CV if file input appeared on this step
     const fileInput = document.querySelector('input[type="file"]')
