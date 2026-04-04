@@ -253,10 +253,12 @@ if (typeof window !== 'undefined') {
       console.log(`[bot-api] Chrome extension detected (v${event.data.version})`)
     }
   })
-  // Also check if extension has synced a cookie recently (fallback detection)
-  if (localStorage.getItem('tracker_v2_linkedin_cookie')) {
-    _extensionDetected = true
-  }
+  // NOTE: We no longer use localStorage cookie presence as a proxy for extension detection.
+  // The cookie persists after extension uninstall, causing false positives that route all
+  // applies through a non-existent extension (3-min timeout per job). Extension detection
+  // now relies solely on the JOBTRACKER_EXTENSION_INSTALLED postMessage from content.js.
+  // The content.js script sends this message on page load and also after 1s and 3s delays,
+  // so by the time the user triggers an apply, detection should be accurate.
 }
 
 /**

@@ -14,21 +14,25 @@
 
 // ─── Profile Data (defaults, overridden by stored userProfile) ───────
 
+// IMPORTANT: These defaults are overridden by the profile synced from the dashboard
+// via chrome.storage.local (see loadProfile below). They serve as last-resort fallbacks
+// only when no profile has been synced. Avoid putting real PII here — use the dashboard
+// profile sync instead.
 const PROFILE_DEFAULTS = {
-  firstName: 'Florian',
-  lastName: 'Gouloubi',
-  fullName: 'Florian Gouloubi',
-  email: 'florian.gouloubi@gmail.com',
-  phone: '+66 618156481',
-  portfolio: 'https://www.floriangouloubi.com/',
-  linkedin: 'https://www.linkedin.com/in/floriangouloubi/',
-  city: 'Bangkok',
-  country: 'Thailand',
-  yearsExperience: '7',
-  salary: '80000',
-  currentTitle: 'Senior Product Designer',
-  cvUrl: 'https://raw.githubusercontent.com/peterbono/portfolio/main/cvflo.pdf',
-  cvFilename: 'Florian_Gouloubi_CV.pdf',
+  firstName: '',
+  lastName: '',
+  fullName: '',
+  email: '',
+  phone: '',
+  portfolio: '',
+  linkedin: '',
+  city: '',
+  country: '',
+  yearsExperience: '',
+  salary: '',
+  currentTitle: '',
+  cvUrl: '',
+  cvFilename: 'CV.pdf',
 }
 
 let PROFILE = { ...PROFILE_DEFAULTS }

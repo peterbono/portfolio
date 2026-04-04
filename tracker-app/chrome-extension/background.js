@@ -321,7 +321,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     }
 
     if (message.action === 'disconnect') {
-      await chrome.storage.local.clear()
+      // Only remove connection-related keys — preserve userProfile and any in-progress apply state
+      await chrome.storage.local.remove(['connected', 'linkedInName', 'lastSync', 'cookieValue'])
       return { success: true, connected: false }
     }
 
@@ -542,7 +543,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       while (attempts < maxAttempts) {
         await new Promise(r => setTimeout(r, 1000))
 
-        // ─── FIX: Mid-flight diagnostic + re-injection at 25s ───
+        // ─── FIX: Mid-flight diagnostic + re-injection at 60s ───
         if (attempts === 60) {
           try {
             const midTab = await chrome.tabs.get(tab.id)
@@ -573,9 +574,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
                 target: { tabId: tab.id },
                 files: ['linkedin-apply.js'],
               })
-              console.log('[JobTracker] Force re-inject at 25s succeeded')
+              console.log('[JobTracker] Force re-inject at 60s succeeded')
             } catch (reInjectErr) {
-              console.warn('[JobTracker] Force re-inject at 25s failed:', reInjectErr.message)
+              console.warn('[JobTracker] Force re-inject at 60s failed:', reInjectErr.message)
             }
           } catch (tabErr) {
             console.warn('[JobTracker] Mid-flight tab check failed:', tabErr.message)

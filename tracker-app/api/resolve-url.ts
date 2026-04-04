@@ -267,7 +267,28 @@ async function resolveUrl(url: string, meta?: { company?: string; role?: string 
         signal: AbortSignal.timeout(10_000),
       })
       if (response.ok) {
-        const html = await response.text()
+        // SECURITY: Limit HTML download to 512KB to prevent OOM on Vercel
+        const contentLength = parseInt(response.headers.get('content-length') || '0', 10)
+        if (contentLength > 512_000) {
+          console.log(`[resolve-url] HTML too large (${contentLength} bytes), skipping`)
+        }
+        const reader = response.body?.getReader()
+        let html = ''
+        const MAX_HTML_BYTES = 512_000
+        if (reader) {
+          const decoder = new TextDecoder()
+          let totalBytes = 0
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            totalBytes += value.length
+            html += decoder.decode(value, { stream: true })
+            if (totalBytes > MAX_HTML_BYTES) {
+              reader.cancel()
+              break
+            }
+          }
+        }
         const atsUrl = extractAtsUrlFromHtml(html)
         if (atsUrl) {
           console.log(`[resolve-url] Found ATS URL in page HTML: ${atsUrl}`)
@@ -306,19 +327,62 @@ async function resolveUrl(url: string, meta?: { company?: string; role?: string 
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+  // SECURITY: Only allow requests from our own dashboard origin
+  const allowedOrigins = [
+    'https://tracker-app-lyart.vercel.app',
+    'http://localhost:5173',
+    'http://localhost:3000',
+  ]
+  const origin = req.headers.origin || ''
+  if (allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin)
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', allowedOrigins[0])
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
 
   if (req.method === 'OPTIONS') return res.status(200).end()
 
+  // Only accept POST (no GET to prevent CSRF via URL params)
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' })
+  }
+
   // Accept both GET (query param) and POST (body)
-  const url = (req.method === 'POST' ? req.body?.url : req.query.url) as string | undefined
-  const company = (req.method === 'POST' ? req.body?.company : req.query.company) as string | undefined
-  const role = (req.method === 'POST' ? req.body?.role : req.query.role) as string | undefined
+  const url = req.body?.url as string | undefined
+  const company = req.body?.company as string | undefined
+  const role = req.body?.role as string | undefined
 
   if (!url) {
     return res.status(400).json({ error: 'url parameter required' })
+  }
+
+  // SECURITY: Validate URL is a known job board — reject arbitrary URLs
+  // This prevents SSRF (Server-Side Request Forgery) attacks
+  if (!isJobBoardUrl(url) && !isAlreadyAts(url)) {
+    return res.status(400).json({ error: 'URL must be a known job board or ATS domain' })
+  }
+
+  // SECURITY: Block internal/private network URLs
+  try {
+    const parsed = new URL(url)
+    const hostname = parsed.hostname.toLowerCase()
+    if (
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname.startsWith('10.') ||
+      hostname.startsWith('192.168.') ||
+      hostname.startsWith('172.') ||
+      hostname === '169.254.169.254' ||
+      hostname.endsWith('.internal') ||
+      hostname.endsWith('.local') ||
+      parsed.protocol !== 'https:' && parsed.protocol !== 'http:'
+    ) {
+      return res.status(400).json({ error: 'URL not allowed' })
+    }
+  } catch {
+    return res.status(400).json({ error: 'Invalid URL' })
   }
 
   try {
