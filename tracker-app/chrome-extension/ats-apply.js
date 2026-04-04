@@ -97,14 +97,15 @@ async function humanType(input, text) {
 
 // Set value using React-compatible setter (for React-based ATS like Lever, Ashby)
 function setReactValue(input, value) {
-  const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-    window.HTMLInputElement.prototype, 'value'
-  )?.set || Object.getOwnPropertyDescriptor(
-    window.HTMLTextAreaElement.prototype, 'value'
-  )?.set
+  // Pick the setter that matches the element type — calling the wrong one
+  // (e.g. HTMLInputElement setter on a <textarea>) throws "Illegal invocation".
+  const proto = input.tagName === 'TEXTAREA'
+    ? window.HTMLTextAreaElement.prototype
+    : window.HTMLInputElement.prototype
+  const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set
 
-  if (nativeInputValueSetter) {
-    nativeInputValueSetter.call(input, value)
+  if (nativeSetter) {
+    nativeSetter.call(input, value)
   } else {
     input.value = value
   }
