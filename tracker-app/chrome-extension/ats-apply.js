@@ -3760,7 +3760,7 @@ function _leverResolveApplyUrl() {
     const postingId = leverUrlMatch[2]
     // Lever's own form POSTs to the same URL with /apply or just the posting URL
     // The public API endpoint pattern:
-    const apiUrl = `https://jobs.lever.co/v0/postings/${company}/${postingId}`
+    const apiUrl = `https://jobs.lever.co/${company}/${postingId}/apply`
     log('Lever apply URL from URL pattern:', apiUrl)
     return apiUrl
   }
@@ -3776,7 +3776,7 @@ function _leverResolveApplyUrl() {
       const companyMatch = pageUrl.match(/jobs\.lever\.co\/([^/]+)/) || text.match(/company["':\s]+["']([^"']+)["']/)
       const company = companyMatch ? companyMatch[1] : null
       if (company) {
-        const apiUrl = `https://jobs.lever.co/v0/postings/${company}/${match[1]}`
+        const apiUrl = `https://jobs.lever.co/${company}/${match[1]}/apply`
         log('Lever apply URL from inline script:', apiUrl)
         return apiUrl
       }
