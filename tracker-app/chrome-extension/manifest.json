@@ -1,0 +1,103 @@
+{
+  "manifest_version": 3,
+  "name": "JobTracker - Auto Apply",
+  "short_name": "JobTracker",
+  "version": "4.6.0",
+  "description": "Auto-apply to jobs on LinkedIn Easy Apply and 15+ ATS platforms. Discover, review, and submit from one dashboard.",
+  "author": "JobTracker",
+  "homepage_url": "https://tracker-app-lyart.vercel.app",
+  "permissions": [
+    "cookies",
+    "storage",
+    "tabs",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://*.linkedin.com/*",
+    "https://tracker-app-lyart.vercel.app/*",
+    "https://*.greenhouse.io/*",
+    "https://boards.greenhouse.io/*",
+    "https://*.lever.co/*",
+    "https://*.workable.com/*",
+    "https://*.ashbyhq.com/*",
+    "https://*.careers-page.com/*",
+    "https://*.breezy.hr/*",
+    "https://*.recruitee.com/*",
+    "https://*.teamtailor.com/*",
+    "https://*.smartrecruiters.com/*",
+    "https://*.bamboohr.com/*",
+    "https://*.applytojob.com/*",
+    "https://*.jobvite.com/*",
+    "https://*.icims.com/*",
+    "https://*.myworkdayjobs.com/*",
+    "https://*.workday.com/*",
+    "https://weworkremotely.com/*",
+    "https://remoteok.com/*",
+    "https://*.remoteok.com/*",
+    "https://dribbble.com/jobs/*",
+    "https://jobicy.com/*",
+    "https://himalayas.app/*",
+    "https://remotive.com/*",
+    "https://wellfound.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "externally_connectable": {
+    "matches": [
+      "https://tracker-app-lyart.vercel.app/*"
+    ]
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://tracker-app-lyart.vercel.app/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.linkedin.com/jobs/view/*",
+        "https://*.linkedin.com/jobs/view/*"
+      ],
+      "js": ["linkedin-apply.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://*.greenhouse.io/*",
+        "https://boards.greenhouse.io/*",
+        "https://*.lever.co/*",
+        "https://*.workable.com/*",
+        "https://*.ashbyhq.com/*",
+        "https://*.careers-page.com/*",
+        "https://*.breezy.hr/*",
+        "https://*.recruitee.com/*",
+        "https://*.teamtailor.com/*",
+        "https://*.smartrecruiters.com/*",
+        "https://*.bamboohr.com/*",
+        "https://*.applytojob.com/*",
+        "https://*.jobvite.com/*",
+        "https://*.icims.com/*",
+        "https://*.myworkdayjobs.com/*",
+        "https://*.workday.com/*"
+      ],
+      "js": ["ats-apply.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

@@ -336,7 +336,7 @@ interface ReviewQueueItem {
   cvName: string
   coverLetterSnippet: string
   coverLetterVariant?: string
-  status: 'pending' | 'approved' | 'skipped' | 'submitting' | 'submitted' | 'failed' | 'expired' | 'needs_manual' | 'unmatched' | 'applying'
+  status: 'pending' | 'approved' | 'skipped' | 'submitting' | 'submitted' | 'failed' | 'expired' | 'needs_manual' | 'unmatched'
   submittingStartedAt?: number
   editedCoverLetter?: string
   editedAnswers?: Record<string, string>
@@ -1841,8 +1841,6 @@ function ApplicationReviewCard({
   onUndo,
   onDismiss,
   onPreview,
-  onApply,
-  onMarkApplied,
 }: {
   item: ReviewQueueItem
   onApprove: (id: string) => void
@@ -1850,8 +1848,6 @@ function ApplicationReviewCard({
   onUndo: (id: string) => void
   onDismiss?: (id: string) => void
   onPreview?: (id: string) => void
-  onApply?: (id: string) => void
-  onMarkApplied?: (id: string) => void
 }) {
   const scoreColor =
     item.matchScore > 70 ? '#34d399' : item.matchScore >= 50 ? '#fbbf24' : '#f43f5e'
@@ -1955,51 +1951,10 @@ function ApplicationReviewCard({
             <CheckCircle2 size={12} color="#34d399" />
             <span style={{ color: '#34d399', fontSize: 12, fontWeight: 600 }}>Approved</span>
           </div>
-          {/* ATS jobs: show "Apply" link that opens the job URL */}
-          {onApply && item.jobUrl && !/linkedin\.com/i.test(item.jobUrl) && (
-            <a
-              href={item.jobUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={reviewStyles.btnApply}
-              onClick={(e) => {
-                e.stopPropagation()
-                onApply(item.id)
-              }}
-            >
-              <ExternalLink size={12} />
-              <span>Apply &rarr;</span>
-            </a>
-          )}
           <button
             style={reviewStyles.btnUndo}
             onClick={() => onUndo(item.id)}
             title="Undo — move back to pending"
-          >
-            Undo
-          </button>
-        </div>
-      )}
-      {item.status === 'applying' && (
-        <div style={reviewStyles.cardActions}>
-          <div style={reviewStyles.statusLabel}>
-            <Link2 size={12} color="#60a5fa" />
-            <span style={{ color: '#60a5fa', fontSize: 12, fontWeight: 600 }}>Opened — fill &amp; submit on the ATS page</span>
-          </div>
-          {onMarkApplied && (
-            <button
-              style={reviewStyles.btnMarkApplied}
-              onClick={() => onMarkApplied(item.id)}
-              title="Confirm you submitted the application"
-            >
-              <Check size={12} />
-              <span>Mark as Applied</span>
-            </button>
-          )}
-          <button
-            style={reviewStyles.btnUndo}
-            onClick={() => onUndo(item.id)}
-            title="Undo — move back to approved"
           >
             Undo
           </button>
@@ -2395,8 +2350,6 @@ function ReviewQueue({
   onSkipAll,
   onSubmitApproved,
   onPreview,
-  onApply,
-  onMarkApplied,
   isDemo,
   reviewMode,
   onToggleMode,
@@ -2410,17 +2363,12 @@ function ReviewQueue({
   onSkipAll: () => void
   onSubmitApproved: () => void
   onPreview?: (id: string) => void
-  onApply?: (id: string) => void
-  onMarkApplied?: (id: string) => void
   isDemo: boolean
   reviewMode: ReviewMode
   onToggleMode: (mode: ReviewMode) => void
 }) {
   const pendingCount = queue.filter((i) => i.status === 'pending').length
-  // Only count LinkedIn approved jobs for the batch submit button
-  const linkedInApprovedCount = queue.filter(
-    (i) => i.status === 'approved' && i.jobUrl && /linkedin\.com/i.test(i.jobUrl)
-  ).length
+  const approvedCount = queue.filter((i) => i.status === 'approved').length
   if (queue.length === 0) return null
 
   return (
@@ -2504,24 +2452,24 @@ function ReviewQueue({
               onSkip={onSkip}
               onDismiss={onDismiss}
               onPreview={onPreview}
-              onApply={onApply}
-              onMarkApplied={onMarkApplied}
             />
           ))}
         </div>
       )}
 
-      {/* Bottom CTA — only show for LinkedIn batch submissions */}
+      {/* Bottom CTA */}
       <div style={reviewStyles.queueBottom}>
-        {linkedInApprovedCount > 0 && (
-          <button
-            style={reviewStyles.btnSubmitApproved}
-            onClick={onSubmitApproved}
-          >
-            <Play size={14} />
-            <span>Submit {linkedInApprovedCount} LinkedIn Application{linkedInApprovedCount !== 1 ? 's' : ''}</span>
-          </button>
-        )}
+        <button
+          style={{
+            ...reviewStyles.btnSubmitApproved,
+            ...(approvedCount === 0 ? { opacity: 0.4, cursor: 'not-allowed' } : {}),
+          }}
+          disabled={approvedCount === 0}
+          onClick={onSubmitApproved}
+        >
+          <Play size={14} />
+          <span>Submit {approvedCount} Approved Application{approvedCount !== 1 ? 's' : ''}</span>
+        </button>
         <button style={reviewStyles.btnSaveLater}>
           <Save size={12} />
           <span>Save and submit later</span>
@@ -2881,37 +2829,6 @@ const reviewStyles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     transition: 'opacity 0.15s',
   },
-  btnApply: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 4,
-    background: '#34d399',
-    color: '#09090b',
-    fontWeight: 600,
-    fontSize: 12,
-    padding: '6px 14px',
-    borderRadius: 6,
-    border: 'none',
-    cursor: 'pointer',
-    transition: 'opacity 0.15s',
-    textDecoration: 'none',
-    marginLeft: 'auto',
-  } as React.CSSProperties,
-  btnMarkApplied: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 4,
-    background: 'rgba(34, 197, 94, 0.12)',
-    color: '#22c55e',
-    fontWeight: 600,
-    fontSize: 11,
-    padding: '4px 10px',
-    borderRadius: 6,
-    border: '1px solid rgba(34, 197, 94, 0.25)',
-    cursor: 'pointer',
-    transition: 'background 0.15s',
-    marginLeft: 'auto',
-  } as React.CSSProperties,
   btnUndo: {
     background: 'none',
     border: 'none',
@@ -4592,12 +4509,7 @@ export function AutopilotView() {
 
   const handleReviewUndo = useCallback((id: string) => {
     setReviewQueue((prev) =>
-      prev.map((item) => {
-        if (item.id !== id) return item
-        // 'applying' goes back to 'approved'; everything else goes to 'pending'
-        const newStatus = item.status === 'applying' ? 'approved' as const : 'pending' as const
-        return { ...item, status: newStatus }
-      })
+      prev.map((item) => (item.id === id ? { ...item, status: 'pending' as const } : item))
     )
   }, [])
 
@@ -4616,18 +4528,6 @@ export function AutopilotView() {
 
   const handleReviewDismiss = useCallback((id: string) => {
     setReviewQueue(prev => prev.filter(item => item.id !== id))
-  }, [])
-
-  const handleReviewApply = useCallback((id: string) => {
-    setReviewQueue(prev =>
-      prev.map(item => item.id === id ? { ...item, status: 'applying' as const } : item)
-    )
-  }, [])
-
-  const handleReviewMarkApplied = useCallback((id: string) => {
-    setReviewQueue(prev =>
-      prev.map(item => item.id === id ? { ...item, status: 'submitted' as const } : item)
-    )
   }, [])
 
   const handleReviewApproveAll = useCallback(() => {
@@ -4685,10 +4585,7 @@ export function AutopilotView() {
   const handleSubmitApproved = useCallback(async () => {
     if (!requireAuth('start_bot', () => { handleSubmitApprovedRef.current() })) return
 
-    // Only batch-submit LinkedIn jobs — ATS jobs use individual "Apply" links
-    const approved = reviewQueue.filter(
-      i => i.status === 'approved' && i.jobUrl && /linkedin\.com/i.test(i.jobUrl)
-    )
+    const approved = reviewQueue.filter(i => i.status === 'approved')
     if (approved.length === 0) return
 
     setIsTriggering(true)
@@ -4699,15 +4596,14 @@ export function AutopilotView() {
     setPolledRunStatus(null)
     setPolledMetadata(null)
 
-    // Mark only LinkedIn approved items as submitting (with timestamp for timeout tracking)
+    // Mark all approved as submitting (with timestamp for timeout tracking)
     const now = Date.now()
-    const approvedIds = new Set(approved.map(i => i.id))
     setReviewQueue(prev => prev.map(item =>
-      approvedIds.has(item.id) && item.status === 'approved' ? { ...item, status: 'submitting' as const, submittingStartedAt: now } : item
+      item.status === 'approved' ? { ...item, status: 'submitting' as const, submittingStartedAt: now } : item
     ))
 
-    // ─── LinkedIn batch applies routed through Chrome extension ───
-    // Extension handles LinkedIn Easy Apply multi-step flow
+    // ─── All applies routed through Chrome extension ───
+    // LinkedIn + ATS (Greenhouse/Lever/etc.): Chrome extension handles all form fills
     try {
       const jobsToApply = approved.map(item => ({
         url: (item.jobUrl || '').replace(/https?:\/\/[a-z]{2}\.linkedin\.com/, 'https://www.linkedin.com'),
@@ -4717,7 +4613,9 @@ export function AutopilotView() {
         matchScore: item.matchScore,
       }))
 
-      console.log(`[Submit] Sending ${jobsToApply.length} LinkedIn jobs to Chrome extension for batch apply...`)
+      const linkedInCount = jobsToApply.filter(j => /linkedin\.com\/jobs/i.test(j.url)).length
+      const atsCount = jobsToApply.length - linkedInCount
+      console.log(`[Submit] Sending ${jobsToApply.length} jobs to Chrome extension (${linkedInCount} LinkedIn + ${atsCount} ATS)...`)
 
       const cloudResult = await triggerApplyJobs(jobsToApply)
       setActiveRunId(cloudResult.runId)
@@ -4860,8 +4758,6 @@ export function AutopilotView() {
           onSkipAll={handleReviewSkipAll}
           onSubmitApproved={handleSubmitApproved}
           onPreview={handleReviewPreview}
-          onApply={handleReviewApply}
-          onMarkApplied={handleReviewMarkApplied}
           isDemo={isReviewDemo}
           reviewMode={reviewMode}
           onToggleMode={handleToggleReviewMode}
@@ -5708,8 +5604,6 @@ export function AutopilotView() {
                 onSkipAll={handleReviewSkipAll}
                 onSubmitApproved={handleSubmitApproved}
                 onPreview={handleReviewPreview}
-                onApply={handleReviewApply}
-                onMarkApplied={handleReviewMarkApplied}
                 isDemo={isReviewDemo}
                 reviewMode={reviewMode}
                 onToggleMode={handleToggleReviewMode}
