@@ -408,8 +408,20 @@ function findAndClickButton(texts) {
     if (el.id && (el.id.includes('claude') || el.id.includes('mcp'))) continue
     if (el.closest('[id*="claude"], [id*="mcp"], [class*="claude"]')) continue
 
+    // Skip invisible/hidden elements (offsetHeight 0 means not rendered or display:none)
+    if (el.offsetHeight === 0 || el.offsetWidth === 0) continue
+    // Skip elements hidden via CSS visibility or opacity
+    const style = window.getComputedStyle(el)
+    if (style.visibility === 'hidden' || style.opacity === '0' || style.display === 'none') continue
+    // Skip disabled buttons
+    if (el.disabled || el.getAttribute('aria-disabled') === 'true') continue
+
     const text = (el.textContent || el.value || '').trim().toLowerCase()
     const ariaLabel = (el.getAttribute('aria-label') || '').toLowerCase()
+
+    // Skip buttons with no visible text AND no aria-label (likely icon-only or phantom elements)
+    if (!text && !ariaLabel) continue
+
     for (let i = 0; i < texts.length; i++) {
       const t = texts[i].toLowerCase()
       const matchesText = text.includes(t)
@@ -2999,6 +3011,7 @@ async function handleGreenhouseSecurityCode() {
 async function navigateMultiStepForm() {
   let submitAttempts = 0
   const maxSubmitRetries = 3
+  let consecutiveZeroFills = 0  // Stuck detection: count consecutive steps with 0 fields filled
 
   for (let step = 0; step < ATS_CONFIG.maxAttempts; step++) {
     log(`--- Form step ${step + 1} ---`)
@@ -3010,7 +3023,8 @@ async function navigateMultiStepForm() {
     }
 
     // Fill current step
-    try { await fillAllFormFields() } catch(e) { warn('navigateMultiStep fillAll error:', e.message) }
+    let filledCount = 0
+    try { filledCount = (await fillAllFormFields()) || 0 } catch(e) { warn('navigateMultiStep fillAll error:', e.message) }
 
     // Upload CV if file input appeared on this step
     const fileInput = document.querySelector('input[type="file"]')
@@ -3028,28 +3042,42 @@ async function navigateMultiStepForm() {
 
     await sleep(1000)
 
-    // Look for Next / Continue button (multi-step forms)
-    const nextBtn = findAndClickButton([
-      'Next', 'Continue', 'Suivant', 'Continuer',
-      'Save and continue', 'Save & continue',
-      'Next step', 'Proceed',
-    ])
-    if (nextBtn && !nextBtn.disabled) {
-      log('Clicking next/continue:', nextBtn.textContent?.trim())
-      nextBtn.click()
-      await randomDelay(ATS_CONFIG.stepDelay.min, ATS_CONFIG.stepDelay.max)
+    // Stuck detection: track consecutive steps with 0 fields filled
+    log(`Filled ${filledCount} fields on step ${step + 1}`)
+    if (filledCount === 0) {
+      consecutiveZeroFills++
+    } else {
+      consecutiveZeroFills = 0
+    }
 
-      // Check if page actually changed (button might have triggered validation)
-      await sleep(1000)
-      const errorsAfterNext = getValidationErrors()
-      if (errorsAfterNext.length > 0) {
-        log('Validation errors after Next click:', errorsAfterNext.length)
-        errorsAfterNext.forEach(e => log('  Error:', e))
-        // Try to fill errored fields and retry
-        await fillAllFormFields()
-        await sleep(500)
+    // If 3+ consecutive steps filled 0 fields, the "Next" button is likely phantom —
+    // skip Next detection entirely and fall through to Submit
+    if (consecutiveZeroFills < 3) {
+      // Look for Next / Continue button (multi-step forms)
+      const nextBtn = findAndClickButton([
+        'Next', 'Continue', 'Suivant', 'Continuer',
+        'Save and continue', 'Save & continue',
+        'Next step', 'Proceed',
+      ])
+      if (nextBtn && !nextBtn.disabled) {
+        log('Clicking next/continue:', nextBtn.textContent?.trim())
+        nextBtn.click()
+        await randomDelay(ATS_CONFIG.stepDelay.min, ATS_CONFIG.stepDelay.max)
+
+        // Check if page actually changed (button might have triggered validation)
+        await sleep(1000)
+        const errorsAfterNext = getValidationErrors()
+        if (errorsAfterNext.length > 0) {
+          log('Validation errors after Next click:', errorsAfterNext.length)
+          errorsAfterNext.forEach(e => log('  Error:', e))
+          // Try to fill errored fields and retry
+          await fillAllFormFields()
+          await sleep(500)
+        }
+        continue
       }
-      continue
+    } else {
+      log(`Stuck detected: ${consecutiveZeroFills} consecutive steps with 0 fields filled — skipping Next, trying Submit`)
     }
 
     // No Next button — look for Submit

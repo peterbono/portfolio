@@ -1,5 +1,14 @@
 /**
- * JobTracker LinkedIn Connect — Background Service Worker v2.9.0
+ * JobTracker LinkedIn Connect — Background Service Worker v3.0.0
+ *
+ * v3.0.0 — Job Board Redirect Flow:
+ * - applyAtsDirectly now detects job board URLs (WWR, RemoteOK, Dribbble, Jobicy,
+ *   Himalayas, Remotive, Wellfound) and handles them before the ATS type check.
+ * - Opens the job board listing page, finds the "Apply" / "View & Apply" button
+ *   via chrome.scripting.executeScript, clicks it, and waits for the tab to
+ *   redirect to the real ATS domain.
+ * - Once on the ATS page, sets atsApplyContext and injects ats-apply.js normally.
+ * - Existing ATS direct flow is completely unchanged.
  *
  * v2.9.0 fixes:
  * - pending_external: when linkedin-apply.js clicks external Apply, it now reports
@@ -67,6 +76,79 @@ const SKIP_DOMAINS = [
   /tracker-app-lyart\.vercel\.app/i,
   /localhost/i,
 ]
+
+// ─── Job Board Detection ─────────────────────────────────────────────
+// Job boards list jobs but don't host ATS forms. When we receive a job
+// board URL, we must open the page, click the "Apply" button, follow
+// the redirect to the real ATS, then inject ats-apply.js there.
+const JOB_BOARD_PATTERNS = [
+  { pattern: /weworkremotely\.com/i, name: 'weworkremotely' },
+  { pattern: /remoteok\.com/i, name: 'remoteok' },
+  { pattern: /dribbble\.com\/jobs\//i, name: 'dribbble' },
+  { pattern: /jobicy\.com/i, name: 'jobicy' },
+  { pattern: /himalayas\.app/i, name: 'himalayas' },
+  { pattern: /remotive\.com/i, name: 'remotive' },
+  { pattern: /wellfound\.com/i, name: 'wellfound' },
+]
+
+function detectJobBoard(url) {
+  if (!url) return null
+  for (const board of JOB_BOARD_PATTERNS) {
+    if (board.pattern.test(url)) return board.name
+  }
+  return null
+}
+
+/**
+ * Content script injected into a job board page to find and click the
+ * "Apply" / "View & Apply" button. Returns the href if it's an <a> tag,
+ * or 'clicked' if it's a button that was clicked (expecting a navigation).
+ */
+function jobBoardClickApplyScript() {
+  // Selectors ordered from most specific (per-board) to generic
+  const selectors = [
+    // WWR
+    'a.apply-button',
+    'a[href*="/apply"]',
+    'input[type="button"][value*="Apply"]',
+    // RemoteOK
+    'a.action-apply',
+    'a[itemprop="url"]',
+    // Dribbble
+    'a[data-test="apply-button"]',
+    // Jobicy
+    'a.btn-apply',
+    // Generic: any link or button whose visible text includes "Apply"
+  ]
+
+  // First, try specific selectors
+  for (const sel of selectors) {
+    const el = document.querySelector(sel)
+    if (el) {
+      console.log('[JobTracker:JobBoard] Found Apply element via selector:', sel, el.href || el.textContent?.trim())
+      if (el.href) return el.href
+      el.click()
+      return 'clicked'
+    }
+  }
+
+  // Fallback: scan all <a> and <button> elements for text containing "Apply"
+  const applyTexts = ['view & apply', 'view and apply', 'apply for this job', 'apply now', 'apply']
+  const allLinks = [...document.querySelectorAll('a, button')]
+  for (const text of applyTexts) {
+    for (const el of allLinks) {
+      const elText = (el.textContent || '').trim().toLowerCase()
+      if (elText === text || elText.startsWith(text)) {
+        console.log('[JobTracker:JobBoard] Found Apply element via text match:', JSON.stringify(text), '→', el.href || el.tagName)
+        if (el.href && el.href !== '#' && el.href !== window.location.href) return el.href
+        el.click()
+        return 'clicked'
+      }
+    }
+  }
+
+  return null
+}
 
 // ─── Auto re-inject content scripts after extension reload/update ────────────
 // When the extension reloads, all previously injected content scripts lose their
@@ -607,7 +689,291 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         return { success: false, status: 'error', error: 'No ATS URL provided', requestId }
       }
 
-      const atsUrl = job.url
+      let atsUrl = job.url
+      const jobBoard = detectJobBoard(atsUrl)
+
+      // ─── Job Board Redirect Flow ──────────────────────────────────
+      // If the URL is a job board (not an ATS), open the listing page,
+      // click the "Apply" button, and follow the redirect to the real ATS.
+      if (jobBoard) {
+        console.log('[JobTracker] Job board detected:', jobBoard, '| URL:', atsUrl, '| Company:', job.company, '| requestId:', requestId)
+
+        // Clear stale state
+        await chrome.storage.local.remove('lastApplyResult')
+        await chrome.storage.local.remove('atsApplyContext')
+        await chrome.storage.local.remove('atsApplyRunning')
+        await chrome.storage.local.remove('atsApplyForceRerun')
+
+        // Step 1: Open job board page in a new window
+        let boardTab
+        let boardWindowId = null
+        try {
+          const win = await chrome.windows.create({
+            url: atsUrl,
+            width: 1400,
+            height: 900,
+            focused: true,
+            type: 'normal',
+          })
+          boardTab = win.tabs[0]
+          boardWindowId = win.id
+          console.log('[JobTracker] [JobBoard] Window created:', win.id, 'tab:', boardTab.id)
+        } catch (winErr) {
+          try {
+            boardTab = await chrome.tabs.create({ url: atsUrl, active: false })
+          } catch (tabErr) {
+            return { success: false, status: 'error', error: 'Failed to open job board: ' + (winErr.message || tabErr.message), requestId }
+          }
+        }
+
+        const boardTabCreatedAt = Date.now()
+
+        async function cleanupBoardTab() {
+          try { await chrome.tabs.remove(boardTab.id) } catch {}
+          if (boardWindowId) {
+            try { await chrome.windows.remove(boardWindowId) } catch {}
+          }
+        }
+
+        // Step 2: Wait for job board page to load
+        const boardLoadResult = await new Promise((resolve) => {
+          const LOAD_TIMEOUT = 20000
+          let settled = false
+
+          function settle(result) {
+            if (settled) return
+            settled = true
+            chrome.tabs.onUpdated.removeListener(onUpdate)
+            clearTimeout(timer)
+            resolve(result)
+          }
+
+          function onUpdate(tabId, changeInfo, updatedTab) {
+            if (tabId !== boardTab.id) return
+            if (changeInfo.status === 'complete') {
+              const loadTime = ((Date.now() - boardTabCreatedAt) / 1000).toFixed(1)
+              console.log('[JobTracker] [JobBoard] Tab loaded in', loadTime + 's — URL:', updatedTab.url)
+              settle({ loaded: true, finalUrl: updatedTab.url || '' })
+            }
+          }
+
+          chrome.tabs.onUpdated.addListener(onUpdate)
+
+          chrome.tabs.get(boardTab.id).then(currentTab => {
+            if (currentTab.status === 'complete') {
+              settle({ loaded: true, finalUrl: currentTab.url || '' })
+            }
+          }).catch(() => {})
+
+          const timer = setTimeout(() => {
+            console.warn('[JobTracker] [JobBoard] Tab did not load within 20s — proceeding anyway')
+            settle({ loaded: false, finalUrl: '' })
+          }, LOAD_TIMEOUT)
+        })
+
+        // Wait for page to fully render (SPAs, lazy load)
+        await new Promise(r => setTimeout(r, 3000))
+
+        // Step 3: Find and click the "Apply" button on the job board page
+        let applyResult = null
+        try {
+          const results = await chrome.scripting.executeScript({
+            target: { tabId: boardTab.id },
+            func: jobBoardClickApplyScript,
+          })
+          applyResult = results?.[0]?.result || null
+          console.log('[JobTracker] [JobBoard] Apply button script result:', applyResult)
+        } catch (clickErr) {
+          console.warn('[JobTracker] [JobBoard] Apply button script failed:', clickErr.message)
+          await cleanupBoardTab()
+          return { success: false, status: 'needs_manual', reason: 'Could not find Apply button on ' + jobBoard + ' page: ' + clickErr.message, company: job.company, role: job.role || '', requestId }
+        }
+
+        if (!applyResult) {
+          console.warn('[JobTracker] [JobBoard] No Apply button found on', jobBoard, 'page')
+          await cleanupBoardTab()
+          return { success: false, status: 'needs_manual', reason: 'No Apply button found on ' + jobBoard + ' job listing page', company: job.company, role: job.role || '', requestId }
+        }
+
+        // Step 4: If the result is a URL (from an <a> tag), navigate to it.
+        // If 'clicked', the page should navigate via the button click.
+        if (applyResult !== 'clicked' && applyResult.startsWith('http')) {
+          // Direct URL found — navigate the tab there
+          console.log('[JobTracker] [JobBoard] Navigating to Apply URL:', applyResult)
+          try {
+            await chrome.tabs.update(boardTab.id, { url: applyResult })
+          } catch (navErr) {
+            console.warn('[JobTracker] [JobBoard] Navigation failed:', navErr.message)
+          }
+        }
+
+        // Step 5: Wait for the tab to navigate away from the job board to an ATS domain.
+        // Listen for URL changes on this tab. Timeout after 30s.
+        const resolvedAtsUrl = await new Promise((resolve) => {
+          const REDIRECT_TIMEOUT = 30000
+          let settled = false
+          const startedAt = Date.now()
+
+          function settle(result) {
+            if (settled) return
+            settled = true
+            chrome.tabs.onUpdated.removeListener(onRedirect)
+            clearTimeout(timer)
+            resolve(result)
+          }
+
+          function onRedirect(tabId, changeInfo, updatedTab) {
+            if (tabId !== boardTab.id) return
+            // Check URL changes (even before complete — catch redirects early)
+            const newUrl = changeInfo.url || updatedTab.url || ''
+            if (!newUrl) return
+
+            // Did we leave the job board domain?
+            const stillOnJobBoard = detectJobBoard(newUrl)
+            if (stillOnJobBoard) return // Still on the job board, keep waiting
+
+            // Check if the new URL is an ATS
+            const newAtsType = detectAtsType(newUrl)
+            if (newAtsType) {
+              const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1)
+              console.log('[JobTracker] [JobBoard] Redirected to ATS in', elapsed + 's:', newAtsType, '—', newUrl)
+              // Wait for the page to actually finish loading before resolving
+              if (changeInfo.status === 'complete') {
+                settle(newUrl)
+              } else {
+                // Set up a secondary listener for 'complete' on this URL
+                const waitForComplete = (tid, ci) => {
+                  if (tid !== boardTab.id) return
+                  if (ci.status === 'complete') {
+                    chrome.tabs.onUpdated.removeListener(waitForComplete)
+                    settle(newUrl)
+                  }
+                }
+                chrome.tabs.onUpdated.addListener(waitForComplete)
+                // Safety: if complete never fires, resolve after 10s
+                setTimeout(() => {
+                  chrome.tabs.onUpdated.removeListener(waitForComplete)
+                  settle(newUrl)
+                }, 10000)
+              }
+            } else if (!stillOnJobBoard && newUrl.startsWith('http') && changeInfo.status === 'complete') {
+              // Landed on an unknown external page (not a known ATS, not the job board).
+              // This could be a company careers page with a generic form.
+              const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1)
+              console.log('[JobTracker] [JobBoard] Redirected to external (generic) in', elapsed + 's:', newUrl)
+              settle(newUrl)
+            }
+          }
+
+          chrome.tabs.onUpdated.addListener(onRedirect)
+
+          // Also check current URL immediately (redirect may have already happened)
+          chrome.tabs.get(boardTab.id).then(currentTab => {
+            if (currentTab.url && !detectJobBoard(currentTab.url) && currentTab.url !== atsUrl) {
+              const newAtsType = detectAtsType(currentTab.url)
+              if (newAtsType || currentTab.status === 'complete') {
+                settle(currentTab.url)
+              }
+            }
+          }).catch(() => {})
+
+          const timer = setTimeout(() => {
+            console.warn('[JobTracker] [JobBoard] No redirect detected within 30s')
+            settle(null)
+          }, REDIRECT_TIMEOUT)
+        })
+
+        if (!resolvedAtsUrl) {
+          console.warn('[JobTracker] [JobBoard] Failed to resolve ATS URL from', jobBoard, '— no redirect detected')
+          await cleanupBoardTab()
+          return { success: false, status: 'needs_manual', reason: 'Job board Apply button did not redirect to a known ATS within 30s', company: job.company, role: job.role || '', requestId }
+        }
+
+        // Step 6: We are now on the ATS page. Update atsUrl and continue
+        // with the normal ATS apply flow below (reusing the same tab).
+        console.log('[JobTracker] [JobBoard] Resolved ATS URL:', resolvedAtsUrl, '— proceeding with ATS apply flow')
+        atsUrl = resolvedAtsUrl
+
+        const resolvedAtsType = detectAtsType(atsUrl) || 'generic'
+
+        // Wait for the ATS page to finish rendering
+        await new Promise(r => setTimeout(r, 2000))
+
+        // Set atsApplyContext for the resolved ATS page
+        await chrome.storage.local.set({
+          atsApplyContext: {
+            company: job.company || 'Unknown',
+            role: job.role || 'Unknown',
+            url: job.url || '',
+            linkedinUrl: job.linkedinUrl || '',
+            atsType: resolvedAtsType,
+            atsUrl: atsUrl,
+            tabId: boardTab.id,
+          }
+        })
+        await chrome.storage.local.remove('atsApplyRunning')
+
+        // Inject ats-apply.js on the ATS page
+        try {
+          await chrome.storage.local.set({ atsApplyForceRerun: true })
+          await chrome.scripting.executeScript({
+            target: { tabId: boardTab.id },
+            files: ['ats-apply.js'],
+          })
+          console.log('[JobTracker] [JobBoard] ats-apply.js injected on', resolvedAtsType, '(tab:', boardTab.id, ')')
+        } catch (injectErr) {
+          console.warn('[JobTracker] [JobBoard] ats-apply.js injection failed:', injectErr.message)
+          await chrome.storage.local.remove('atsApplyForceRerun')
+          await cleanupBoardTab()
+          return { success: false, status: 'failed', error: 'Redirected to ATS but failed to inject ats-apply.js: ' + injectErr.message, requestId }
+        }
+
+        // Poll for result (same pattern as normal ATS apply)
+        let boardAttempts = 0
+        const boardMaxAttempts = 90
+
+        while (boardAttempts < boardMaxAttempts) {
+          await new Promise(r => setTimeout(r, 1000))
+
+          const data = await chrome.storage.local.get(['lastApplyResult'])
+          if (boardAttempts % 10 === 0 && boardAttempts > 0) {
+            const elapsed = ((Date.now() - boardTabCreatedAt) / 1000).toFixed(1)
+            console.log('[JobTracker] [JobBoard] ATS poll #' + boardAttempts + ' (' + elapsed + 's) — result:', data.lastApplyResult ? data.lastApplyResult.status : 'none')
+          }
+
+          if (data.lastApplyResult) {
+            const matchesCompany = data.lastApplyResult.company === (job.company || 'Unknown')
+            const matchesAts = data.lastApplyResult.atsType === resolvedAtsType
+
+            if (matchesCompany || matchesAts) {
+              const totalTime = ((Date.now() - boardTabCreatedAt) / 1000).toFixed(1)
+              console.log('[JobTracker] [JobBoard] ATS result at attempt', boardAttempts, '(' + totalTime + 's) — status:', data.lastApplyResult.status)
+              const result = { ...data.lastApplyResult, requestId, jobBoard }
+              await chrome.storage.local.remove('lastApplyResult')
+              await chrome.storage.local.remove('atsApplyContext')
+              await chrome.storage.local.remove('atsApplyRunning')
+              await chrome.storage.local.remove('atsApplyForceRerun')
+
+              console.log('[JobTracker] [JobBoard] Result for', job.company, ':', result.status, '-', result.reason)
+              await cleanupBoardTab()
+              return result
+            }
+          }
+          boardAttempts++
+        }
+
+        // Timeout
+        const boardTimeoutElapsed = ((Date.now() - boardTabCreatedAt) / 1000).toFixed(1)
+        console.warn('[JobTracker] [JobBoard] Timeout for', job.company, 'after', boardTimeoutElapsed + 's (job board:', jobBoard, ')')
+        await cleanupBoardTab()
+        await chrome.storage.local.remove('atsApplyContext')
+        await chrome.storage.local.remove('lastApplyResult')
+        await chrome.storage.local.remove('atsApplyRunning')
+        await chrome.storage.local.remove('atsApplyForceRerun')
+        return { success: false, status: 'timeout', error: 'ATS apply via job board redirect timed out after ' + boardTimeoutElapsed + ' seconds', requestId, jobBoard }
+      }
+      // ─── End Job Board Redirect Flow ──────────────────────────────
+
       const atsType = detectAtsType(atsUrl)
       if (!atsType) {
         return { success: false, status: 'error', error: 'URL does not match any known ATS pattern: ' + atsUrl, requestId }
