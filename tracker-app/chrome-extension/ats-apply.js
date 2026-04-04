@@ -42,6 +42,20 @@ async function loadProfile() {
     const data = await chrome.storage.local.get(['userProfile'])
     if (data.userProfile && typeof data.userProfile === 'object') {
       PROFILE = { ...PROFILE_DEFAULTS, ...data.userProfile }
+      // Derive fullName if missing
+      if (!PROFILE.fullName && (PROFILE.firstName || PROFILE.lastName)) {
+        PROFILE.fullName = `${PROFILE.firstName || ''} ${PROFILE.lastName || ''}`.trim()
+      }
+      // Derive firstName/lastName from fullName if missing
+      if (PROFILE.fullName && !PROFILE.firstName) {
+        const parts = PROFILE.fullName.trim().split(/\s+/)
+        PROFILE.firstName = parts[0] || ''
+        PROFILE.lastName = parts.slice(1).join(' ') || ''
+      }
+      // Fallback cvUrl
+      if (!PROFILE.cvUrl) {
+        PROFILE.cvUrl = 'https://raw.githubusercontent.com/peterbono/portfolio/main/cvflo.pdf'
+      }
       console.log('[JobTracker ATS] Profile loaded from storage — keys:', Object.keys(data.userProfile).join(', '))
     } else {
       console.log('[JobTracker ATS] No stored profile — using defaults')
@@ -1138,7 +1152,7 @@ function matchFieldToValue(labelInfo) {
   if (l.includes('last') && l.includes('name')) return PROFILE.lastName
   if (l.includes('prenom') || l.includes('prénom')) return PROFILE.firstName
   if (l.includes('nom de famille') || (l.includes('nom') && !l.includes('prenom') && !l.includes('prénom') && !l.includes('company') && !l.includes('entreprise'))) return PROFILE.lastName
-  if (l.includes('full name') || l.includes('your name') || l.includes('candidate name') || l === 'name') return PROFILE.fullName
+  if (l.includes('full name') || l.includes('your name') || l.includes('candidate name') || l === 'name') return PROFILE.fullName || `${PROFILE.firstName} ${PROFILE.lastName}`.trim() || 'Florian Gouloubi'
 
   // ── Contact ──
   if (l.includes('email') || l.includes('e-mail') || l.includes('courriel')) return PROFILE.email
