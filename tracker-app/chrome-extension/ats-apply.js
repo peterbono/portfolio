@@ -68,12 +68,15 @@ function randomDelay(min, max) {
   return sleep(min + Math.random() * (max - min))
 }
 
+const _debugLog = []
 function log(...args) {
   console.log('[JobTracker ATS]', ...args)
+  _debugLog.push('[LOG] ' + args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '))
 }
 
 function warn(...args) {
   console.warn('[JobTracker ATS]', ...args)
+  _debugLog.push('[WARN] ' + args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '))
 }
 
 // Human-like typing into an input field
@@ -3303,6 +3306,11 @@ const ATS_HANDLERS = {
     result.status = 'failed'
     result.reason = `Error on ${atsType}: ${err.message}`
   }
+
+  // Store debug log for diagnostics
+  try {
+    await chrome.storage.local.set({ atsApplyDebugLog: _debugLog || [] })
+  } catch {}
 
   // Store result for background.js to pick up
   log('Final result:', result.status, result.reason)
