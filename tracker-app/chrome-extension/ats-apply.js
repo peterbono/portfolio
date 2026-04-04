@@ -491,6 +491,11 @@ async function fetchAndUploadCV(fileInput) {
   }
 
   try {
+    // Ensure cvUrl is available (may be empty after extension reinstall)
+    if (!PROFILE.cvUrl) {
+      try { const s = await chrome.storage.local.get(['userProfile']); if (s.userProfile?.cvUrl) PROFILE.cvUrl = s.userProfile.cvUrl } catch {}
+    }
+    if (!PROFILE.cvUrl) PROFILE.cvUrl = 'https://raw.githubusercontent.com/peterbono/portfolio/main/cvflo.pdf'
     log('Fetching CV from GitHub...', PROFILE.cvUrl)
     // Content scripts have their own fetch (not subject to page CSP)
     const response = await fetch(PROFILE.cvUrl)
@@ -3863,10 +3868,18 @@ async function _leverDirectSubmit() {
     }
     log('Lever direct submit: endpoint =', applyUrl)
 
-    // ── 2. Fetch the CV from GitHub ──
+    // ── 2. Fetch the CV ──
+    // PROFILE.cvUrl may be empty if chrome.storage was wiped (extension reinstall).
+    // Fall back to chrome.storage direct read, then hardcoded GitHub URL.
     if (!PROFILE.cvUrl) {
-      warn('Lever direct submit: no cvUrl in profile')
-      return false
+      try {
+        const stored = await chrome.storage.local.get(['userProfile'])
+        if (stored.userProfile?.cvUrl) PROFILE.cvUrl = stored.userProfile.cvUrl
+      } catch {}
+    }
+    if (!PROFILE.cvUrl) {
+      PROFILE.cvUrl = 'https://raw.githubusercontent.com/peterbono/portfolio/main/cvflo.pdf'
+      log('Lever direct submit: using fallback CV URL')
     }
     log('Lever direct submit: fetching CV from', PROFILE.cvUrl)
     const cvResponse = await fetch(PROFILE.cvUrl)
