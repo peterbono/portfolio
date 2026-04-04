@@ -391,9 +391,9 @@ function getLabelText(input) {
   const labelText = labelEl?.textContent || ''
   // Check parent label
   const parentLabel = input.closest('label')?.textContent || ''
-  // Check nearby label in parent container
-  const container = input.closest('.field, .form-group, .form-field, [class*="field"], [class*="form"]')
-  const nearbyLabel = container?.querySelector('label, .label, [class*="label"]')?.textContent || ''
+  // Check nearby label in parent container (includes Lever custom-question / application-question)
+  const container = input.closest('.field, .form-group, .form-field, [class*="field"], [class*="form"], .custom-question, .application-question, [class*="custom-question"], [class*="application-question"]')
+  const nearbyLabel = container?.querySelector('label, .label, [class*="label"], .custom-question-title, .question-label')?.textContent || ''
   // Check name attribute
   const name = input.getAttribute('name') || ''
 
@@ -450,6 +450,38 @@ function findAndClickButton(texts) {
   return bestMatch
 }
 
+// ─── CV Upload Error Detection ───────────────────────────────────────
+// After setting files on an input, check if the ATS displayed an error message
+// (e.g. "File exceeds maximum upload size"). This catches cases where DataTransfer
+// sets fileInput.files correctly but React's internal state rejects the file.
+
+function _detectUploadError() {
+  // Look for common error patterns near file inputs
+  const errorSelectors = [
+    '.error', '.error-message', '[class*="error"]', '[class*="Error"]',
+    '[role="alert"]', '.invalid-feedback', '.field-error',
+    '[class*="upload-error"]', '[class*="file-error"]',
+    '.form-error', '.validation-error'
+  ]
+  for (const sel of errorSelectors) {
+    const els = document.querySelectorAll(sel)
+    for (const el of els) {
+      const text = (el.textContent || '').trim()
+      if (!text) continue
+      // Only flag actual file/upload errors, not unrelated form validation
+      if (text.toLowerCase().includes('file') ||
+          text.toLowerCase().includes('upload') ||
+          text.toLowerCase().includes('size') ||
+          text.toLowerCase().includes('too large') ||
+          text.toLowerCase().includes('exceed') ||
+          text.toLowerCase().includes('maximum')) {
+        return text
+      }
+    }
+  }
+  return null
+}
+
 // ─── CV Upload via fetch + DataTransfer ───────────────────────────────
 
 async function fetchAndUploadCV(fileInput) {
@@ -466,34 +498,101 @@ async function fetchAndUploadCV(fileInput) {
 
     const blob = await response.blob()
     log('CV fetched:', blob.size, 'bytes, type:', blob.type)
-    const file = new File([blob], PROFILE.cvFilename, { type: 'application/pdf' })
 
-    // Method 1: DataTransfer API (most reliable in content scripts)
-    log('Uploading CV via DataTransfer API...')
+    // ── Sanity check: reject if file is unexpectedly large (corrupt fetch / redirect page) ──
+    const MAX_CV_SIZE = 10 * 1024 * 1024 // 10 MB
+    if (blob.size > MAX_CV_SIZE) {
+      warn(`CV fetch returned ${blob.size} bytes (>${MAX_CV_SIZE}) — aborting upload (likely a redirect/error page)`)
+      return false
+    }
+    if (blob.size < 1000) {
+      warn(`CV fetch returned only ${blob.size} bytes — aborting upload (likely a 404 page)`)
+      return false
+    }
+
+    // ── Force correct MIME type ──
+    // GitHub raw serves as application/octet-stream — Lever/React may validate the
+    // File.type property and reject or misinterpret non-PDF types.
+    // Re-wrap the blob to guarantee type: 'application/pdf'.
+    const pdfBlob = new Blob([blob], { type: 'application/pdf' })
+    const file = new File([pdfBlob], PROFILE.cvFilename, {
+      type: 'application/pdf',
+      lastModified: Date.now()
+    })
+    log('File object created:', file.name, file.size, 'bytes, type:', file.type)
+
+    // ── Build DataTransfer ──
     const dataTransfer = new DataTransfer()
     dataTransfer.items.add(file)
-    fileInput.files = dataTransfer.files
-    fileInput.dispatchEvent(new Event('change', { bubbles: true }))
-    fileInput.dispatchEvent(new Event('input', { bubbles: true }))
-    await sleep(500)
 
-    // Verify file was accepted
-    if (fileInput.files?.length > 0 && fileInput.files[0]?.size > 0) {
+    // ── Method 1: React internal props (FIRST — most reliable for React ATS like Lever) ──
+    // React attaches its own event system via __reactProps. Calling onChange directly
+    // guarantees React's state updates, unlike native DOM events which React may ignore
+    // on file inputs. This is why DataTransfer "worked" (set fileInput.files) but Lever
+    // still showed the 100MB error: React's state never received the file.
+    const reactProps = getReactProps(fileInput)
+    if (reactProps?.onChange) {
+      log('Found React props on file input — calling onChange directly...')
+      // Set files on the DOM element first so React can read them
+      fileInput.files = dataTransfer.files
+      // Call React's onChange with a synthetic-like event object
+      reactProps.onChange({
+        target: fileInput,
+        currentTarget: fileInput,
+        type: 'change',
+        bubbles: true,
+        preventDefault: () => {},
+        stopPropagation: () => {},
+        nativeEvent: new Event('change', { bubbles: true })
+      })
+      await sleep(1000)
+
+      // Check for error messages that indicate rejection
+      const errorAfterReact = _detectUploadError()
+      if (!errorAfterReact) {
+        log('CV uploaded via React onChange props:', file.name, file.size, 'bytes')
+        return true
+      }
+      warn('React onChange triggered but error detected:', errorAfterReact)
+    }
+
+    // ── Method 2: DataTransfer + native events (standard approach) ──
+    log('Uploading CV via DataTransfer API...')
+    fileInput.files = dataTransfer.files
+
+    // Dispatch both Event and InputEvent — some React versions listen to one or the other
+    // via their delegated event system at document root
+    fileInput.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }))
+    fileInput.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }))
+
+    // Also try React's synthetic event trigger: React 16+ delegates to document/root,
+    // so we simulate what happens when React's event handler fires
+    const reactFiberKey = Object.keys(fileInput).find(k => k.startsWith('__reactFiber$') || k.startsWith('__reactInternalInstance$'))
+    if (reactFiberKey) {
+      log('Found React fiber — attempting simulated React event dispatch...')
+      try {
+        // React 17+ listens on the root container, not document
+        const rootContainer = fileInput.closest('[data-reactroot]') || document.getElementById('root') || document.body
+        const changeEvent = new Event('change', { bubbles: true, cancelable: true })
+        Object.defineProperty(changeEvent, 'target', { writable: false, value: fileInput })
+        rootContainer.dispatchEvent(changeEvent)
+      } catch (e) {
+        log('React fiber dispatch attempt failed (non-critical):', e.message)
+      }
+    }
+    await sleep(1000)
+
+    // Verify: check both that files are set AND no error message appeared
+    const errorAfterDT = _detectUploadError()
+    if (fileInput.files?.length > 0 && fileInput.files[0]?.size > 0 && !errorAfterDT) {
       log('CV uploaded successfully via DataTransfer:', PROFILE.cvFilename, fileInput.files[0].size, 'bytes')
       return true
     }
-
-    // Method 2: React internal props
-    log('DataTransfer didn\'t stick, trying React props...')
-    const reactProps = getReactProps(fileInput)
-    if (reactProps?.onChange) {
-      reactProps.onChange({ target: { files: dataTransfer.files } })
-      await sleep(1000)
-      log('CV uploaded via React onChange props')
-      return true
+    if (errorAfterDT) {
+      warn('DataTransfer set files but error detected:', errorAfterDT)
     }
 
-    // Method 3: DragEvent on nearest drop zone
+    // ── Method 3: DragEvent on nearest drop zone ──
     log('Trying DragEvent on drop zone...')
     const dropZone = fileInput.closest('[class*="drop"], [class*="upload"], [class*="file"], .field')
       || fileInput.parentElement
@@ -502,18 +601,44 @@ async function fetchAndUploadCV(fileInput) {
       const dragOverEvent = new DragEvent('dragover', { bubbles: true, cancelable: true })
       const dropEvent = new DragEvent('drop', { bubbles: true, cancelable: true })
       Object.defineProperty(dropEvent, 'dataTransfer', {
-        value: { files: [file], items: [{ kind: 'file', type: 'application/pdf', getAsFile: () => file }], types: ['Files'] }
+        value: {
+          files: dataTransfer.files,
+          items: [{ kind: 'file', type: 'application/pdf', getAsFile: () => file }],
+          types: ['Files']
+        }
       })
       dropZone.dispatchEvent(dragEnterEvent)
       dropZone.dispatchEvent(dragOverEvent)
       dropZone.dispatchEvent(dropEvent)
       await sleep(1000)
-      log('CV uploaded via DragEvent on drop zone')
-      return true
+
+      const errorAfterDrop = _detectUploadError()
+      if (!errorAfterDrop) {
+        log('CV uploaded via DragEvent on drop zone')
+        return true
+      }
+      warn('DragEvent dispatched but error detected:', errorAfterDrop)
+    }
+
+    // ── Method 4: React props on parent/drop zone ──
+    // Some React ATS attach onChange not on the <input> but on a wrapper component
+    if (dropZone) {
+      const dropZoneProps = getReactProps(dropZone)
+      if (dropZoneProps?.onDrop) {
+        log('Found React onDrop on drop zone — calling directly...')
+        dropZoneProps.onDrop({
+          dataTransfer: { files: dataTransfer.files },
+          preventDefault: () => {},
+          stopPropagation: () => {}
+        })
+        await sleep(1000)
+        log('CV uploaded via React onDrop on drop zone')
+        return true
+      }
     }
 
     // If all methods tried, consider it uploaded (DataTransfer was set even if files prop didn't stick)
-    log('CV upload methods exhausted — DataTransfer was applied')
+    log('CV upload methods exhausted — DataTransfer was applied, files set:', fileInput.files?.length)
     return true
   } catch (err) {
     warn('CV upload failed:', err.message)
@@ -1076,6 +1201,21 @@ async function fillAllFormFields() {
         labelInfo.includes('about you') || labelInfo.includes('lettre') || labelInfo.includes('presentation')
       )) {
         matched = `I am a Senior Product Designer with 7+ years of experience specializing in design systems, complex product architecture, and design ops. I have led design across iGaming, B2B SaaS, and media platforms, delivering scalable systems that improved development feedback by 90% and managed 143+ templates. I am currently based in Bangkok and available to start immediately. Please find my portfolio at ${PROFILE.portfolio}`
+      }
+
+      // Fallback: try answerCustomQuestion for unmatched fields (e.g. Lever cards[*] custom questions)
+      // matchFieldToValue only matches standard field names; answerCustomQuestion handles screening questions
+      if (!matched) {
+        // Build richer label from container context (Lever wraps cards in .custom-question / .application-question)
+        const questionContainer = input.closest('.custom-question, .application-question, [class*="custom-question"], [class*="application-question"], .field, .form-field, fieldset, [class*="question"]')
+        const containerLabel = questionContainer?.querySelector('label, legend, .field-label, [class*="label"], .custom-question-title, .question-label, h3, h4, [class*="title"]')?.textContent?.trim() || ''
+        const enrichedLabel = (labelInfo + ' ' + containerLabel.toLowerCase()).trim()
+        if (enrichedLabel.length > 5) {
+          matched = answerCustomQuestion(enrichedLabel)
+          if (matched) {
+            log(`[classify:text:customQ] [${enrichedLabel.substring(0, 50)}] -> ${matched.substring(0, 30)}...`)
+          }
+        }
       }
 
       if (matched) {
@@ -3222,6 +3362,155 @@ async function fillGreenhouseDropdowns() {
 
 // ── Lever ─────────────────────────────────────────────────────────────
 
+// Lever custom questions use a cards[xxx][fieldN] name pattern inside
+// .custom-question or .application-question containers. These are NOT
+// covered by fillGreenhouseCustomQuestions (which targets #custom_fields).
+// This function scans all cards[*] fields and fills them via answerCustomQuestion.
+async function fillLeverCustomQuestions() {
+  log('Scanning for Lever cards[*] custom questions...')
+  let filledCount = 0
+  const processedInputs = new Set()
+
+  // Strategy 1: Container-based scan — Lever wraps custom questions in
+  // .custom-question or .application-question divs, each with a label and input(s)
+  const leverContainers = document.querySelectorAll(
+    '.custom-question, .application-question, ' +
+    '[class*="custom-question"], [class*="application-question"]'
+  )
+
+  for (const container of leverContainers) {
+    // Extract question text from the container label
+    const questionText = (
+      container.querySelector('label, .custom-question-title, .question-label, legend, [class*="label"], [class*="title"], h3, h4')?.textContent?.trim()
+      || container.getAttribute('aria-label')
+      || ''
+    )
+    if (!questionText || questionText.length < 3) continue
+
+    const answer = answerCustomQuestion(questionText)
+    if (!answer) {
+      log(`Lever custom Q: no answer for "${questionText.substring(0, 60)}"`)
+      continue
+    }
+
+    // ── Text inputs ──
+    const textInputs = container.querySelectorAll('input[type="text"], input[type="email"], input[type="tel"], input[type="url"], input[type="number"], input:not([type]), textarea')
+    for (const input of textInputs) {
+      if (processedInputs.has(input)) continue
+      const fieldType = classifyFormField(input)
+      if (fieldType !== 'text') continue
+      if (input.value && input.value.trim().length > 0) continue
+
+      const actualValue = answer === '___PHONE___' ? PROFILE.phone : answer
+      _fillTextField(input, actualValue)
+      processedInputs.add(input)
+      filledCount++
+      log(`Lever custom Q [text] [${questionText.substring(0, 50)}] -> ${actualValue.substring(0, 30)}...`)
+      await sleep(200)
+    }
+
+    // ── Native <select> ──
+    const selects = container.querySelectorAll('select')
+    for (const select of selects) {
+      if (processedInputs.has(select)) continue
+      if (select.value && select.selectedIndex > 0) continue
+
+      if (_fillNativeSelect(select, answer)) {
+        processedInputs.add(select)
+        filledCount++
+        log(`Lever custom Q [select] [${questionText.substring(0, 50)}] -> ${answer.substring(0, 30)}`)
+      }
+      await sleep(200)
+    }
+
+    // ── Radio buttons ──
+    const radios = container.querySelectorAll('input[type="radio"]')
+    if (radios.length > 0 && !Array.from(radios).some(r => r.checked)) {
+      const filled = await _fillRadioField(container, answer)
+      if (filled) {
+        filledCount++
+        log(`Lever custom Q [radio] [${questionText.substring(0, 50)}] -> ${answer.substring(0, 30)}`)
+      }
+    }
+
+    // ── Checkboxes ──
+    const checkboxes = container.querySelectorAll('input[type="checkbox"]')
+    for (const cb of checkboxes) {
+      if (cb.checked) continue
+      _fillCheckboxField(cb, answer)
+      filledCount++
+      log(`Lever custom Q [checkbox] [${questionText.substring(0, 50)}] -> ${answer.substring(0, 30)}`)
+    }
+  }
+
+  // Strategy 2: Direct selector scan — find ALL inputs whose name matches cards[*]
+  // This catches fields that may not be inside a recognized container class
+  const cardInputs = document.querySelectorAll('input[name^="cards["], textarea[name^="cards["], select[name^="cards["]')
+  for (const input of cardInputs) {
+    if (processedInputs.has(input)) continue
+    const fieldType = classifyFormField(input)
+    if (fieldType === 'hidden' || fieldType === 'file') continue
+
+    // Check if already filled
+    if (fieldType === 'text' && input.value && input.value.trim().length > 0) continue
+    if (fieldType === 'select' && input.selectedIndex > 0) continue
+    if (fieldType === 'checkbox' && input.checked) continue
+    if (fieldType === 'radio' && document.querySelector(`input[name="${input.name}"]:checked`)) continue
+
+    // Build label from surrounding context
+    const labelInfo = getLabelText(input)
+    const questionContainer = input.closest('.custom-question, .application-question, [class*="custom-question"], [class*="application-question"], .field, fieldset, [class*="question"]')
+    const containerLabel = questionContainer?.querySelector('label, legend, .field-label, [class*="label"], .custom-question-title, .question-label, h3, h4, [class*="title"]')?.textContent?.trim() || ''
+    const enrichedLabel = (labelInfo + ' ' + containerLabel.toLowerCase()).trim()
+
+    if (enrichedLabel.length < 5) {
+      log(`Lever cards[*] field: no label found for ${input.name}`)
+      continue
+    }
+
+    if (fieldType === 'text') {
+      const answer = answerCustomQuestion(enrichedLabel) || matchFieldToValue(enrichedLabel)
+      if (answer) {
+        const actualValue = answer === '___PHONE___' ? PROFILE.phone : answer
+        _fillTextField(input, actualValue)
+        processedInputs.add(input)
+        filledCount++
+        log(`Lever cards[*] [text] [${enrichedLabel.substring(0, 50)}] -> ${actualValue.substring(0, 30)}...`)
+        await sleep(200)
+      }
+    } else if (fieldType === 'select') {
+      const answer = answerCustomQuestion(enrichedLabel)
+      if (answer && _fillNativeSelect(input, answer)) {
+        processedInputs.add(input)
+        filledCount++
+        log(`Lever cards[*] [select] [${enrichedLabel.substring(0, 50)}] -> ${answer.substring(0, 30)}`)
+      }
+    } else if (fieldType === 'radio') {
+      const answer = answerCustomQuestion(enrichedLabel)
+      if (answer) {
+        const radioContainer = input.closest('fieldset, [role="radiogroup"], [class*="radio-group"], [class*="question"], .custom-question, .application-question')
+        if (radioContainer) {
+          const filled = await _fillRadioField(radioContainer, answer)
+          if (filled) {
+            filledCount++
+            log(`Lever cards[*] [radio] [${enrichedLabel.substring(0, 50)}] -> ${answer.substring(0, 30)}`)
+          }
+        }
+      }
+    } else if (fieldType === 'checkbox') {
+      const answer = answerCustomQuestion(enrichedLabel)
+      if (answer) {
+        _fillCheckboxField(input, answer)
+        filledCount++
+        log(`Lever cards[*] [checkbox] [${enrichedLabel.substring(0, 50)}] -> ${answer.substring(0, 30)}`)
+      }
+    }
+  }
+
+  log(`Lever custom questions: filled ${filledCount} cards[*] fields`)
+  return filledCount
+}
+
 async function handleLever() {
   log('Lever ATS detected')
   await sleep(ATS_CONFIG.pageLoadWait)
@@ -3260,6 +3549,9 @@ async function handleLever() {
   // Upload CV
   const fileInput = document.querySelector('input[type="file"][name="resume"], input[type="file"]')
   if (fileInput) await fetchAndUploadCV(fileInput)
+
+  // Fill Lever-specific cards[*] custom questions (screening questions)
+  try { await fillLeverCustomQuestions() } catch(e) { warn('fillLeverCustomQuestions error:', e.message) }
 
   // Fill any remaining generic fields
   await fillAllFormFields()
@@ -3508,11 +3800,16 @@ async function handleWorkday() {
       const response = await fetch(PROFILE.cvUrl, { mode: 'cors' })
       if (response.ok) {
         const blob = await response.blob()
-        const file = new File([blob], PROFILE.cvFilename, { type: 'application/pdf' })
-        const dzProps = getReactProps(dropZone)
-        if (dzProps?.onDrop) {
-          dzProps.onDrop({ dataTransfer: { files: [file] }, preventDefault: () => {}, stopPropagation: () => {} })
-          filled++
+        if (blob.size > 10 * 1024 * 1024 || blob.size < 1000) {
+          log('Workday CV fetch returned unexpected size:', blob.size, '— skipping')
+        } else {
+          const pdfBlob = new Blob([blob], { type: 'application/pdf' })
+          const file = new File([pdfBlob], PROFILE.cvFilename, { type: 'application/pdf', lastModified: Date.now() })
+          const dzProps = getReactProps(dropZone)
+          if (dzProps?.onDrop) {
+            dzProps.onDrop({ dataTransfer: { files: [file] }, preventDefault: () => {}, stopPropagation: () => {} })
+            filled++
+          }
         }
       }
     } catch (e) {
@@ -3808,6 +4105,11 @@ async function navigateMultiStepForm() {
     // Fill custom questions if on a Greenhouse-like form
     if (document.querySelector('#custom_fields, .custom-field, [class*="custom_field"]')) {
       try { await fillGreenhouseCustomQuestions() } catch(e) {}
+    }
+
+    // Fill Lever cards[*] custom questions if on a Lever form
+    if (document.querySelector('input[name^="cards["], .custom-question, .application-question')) {
+      try { await fillLeverCustomQuestions() } catch(e) {}
     }
 
     // Label-based scan — fills fields that container-based scanning missed
