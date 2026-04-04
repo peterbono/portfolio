@@ -1,4 +1,5 @@
 import { task, metadata, tasks } from "@trigger.dev/sdk/v3"
+import { classifyJobUrl } from "../lib/classify-job-url"
 
 export const applyJobTask = task({
   id: "apply-job-pipeline",
@@ -182,10 +183,18 @@ export const applyJobTask = task({
             console.log(`[apply-job-pipeline] Excluded ${skippedLinkedIn} LinkedIn Easy Apply jobs from cloud apply — they require local Chrome extension`)
           }
 
-          // Trigger apply-jobs as a child task (ATS jobs only)
+          // Classify ATS jobs: auto_apply (cloud-automatable) vs direct_apply (manual only)
+          const autoApplyJobs = atsOnlyJobs.filter(j => classifyJobUrl(j.url) === 'auto_apply')
+          const directApplyJobs = atsOnlyJobs.filter(j => classifyJobUrl(j.url) === 'direct_apply')
+
+          if (directApplyJobs.length > 0) {
+            console.log(`[apply-job-pipeline] ${directApplyJobs.length} jobs routed to direct_apply (manual): ${directApplyJobs.map(j => j.company).join(', ')}`)
+          }
+
+          // Trigger apply-jobs as a child task (auto_apply jobs only)
           const applyJobsPayload = {
             userId: payload.userId,
-            jobs: atsOnlyJobs.slice(0, payload.maxApplications ?? 20).map(j => ({
+            jobs: autoApplyJobs.slice(0, payload.maxApplications ?? 20).map(j => ({
               url: j.url,
               company: j.company,
               role: j.title,
@@ -198,14 +207,21 @@ export const applyJobTask = task({
             gmailAccessToken: payload.gmailAccessToken,
           }
 
-          // Only trigger cloud apply if there are ATS jobs to process
-          if (atsOnlyJobs.length > 0) {
+          // Mark direct_apply jobs as needs_manual in the qualified results
+          // so the dashboard shows them with "Candidature directe" badges
+          for (const j of directApplyJobs) {
+            (j as any).applyMethod = 'direct_apply'
+            ;(j as any).needsManualReason = `Candidature directe \u2014 postulez sur: ${j.url}`
+          }
+
+          // Only trigger cloud apply if there are auto_apply jobs to process
+          if (autoApplyJobs.length > 0) {
             const handle = await tasks.trigger("apply-jobs", applyJobsPayload)
-            console.log(`[apply-job-pipeline] Triggered apply-jobs: ${handle.id} (${atsOnlyJobs.length} ATS jobs)`)
-            applyResult = { applied: -1, failed: -1, needsManual: -1 } // -1 = in progress
+            console.log(`[apply-job-pipeline] Triggered apply-jobs: ${handle.id} (${autoApplyJobs.length} auto_apply jobs, ${directApplyJobs.length} direct_apply)`)
+            applyResult = { applied: -1, failed: -1, needsManual: directApplyJobs.length } // -1 = in progress
           } else {
-            console.log(`[apply-job-pipeline] No ATS jobs to apply — all ${qualifiedJobs.length} are LinkedIn Easy Apply (requires local extension)`)
-            applyResult = { applied: 0, failed: 0, needsManual: 0 }
+            console.log(`[apply-job-pipeline] No auto_apply jobs — ${directApplyJobs.length} direct_apply, ${skippedLinkedIn} LinkedIn`)
+            applyResult = { applied: 0, failed: 0, needsManual: directApplyJobs.length }
           }
         } catch (applyErr) {
           console.warn(`[apply-job-pipeline] Auto-apply trigger failed:`, (applyErr as Error).message)

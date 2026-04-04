@@ -3,6 +3,8 @@
  * The proxy at /api/trigger-task forwards requests to Trigger.dev server-side.
  */
 
+import { classifyJobUrl } from './classify-job-url'
+
 const PROXY_TASK_URL = '/api/trigger-task'
 const RESOLVE_URL_ENDPOINT = '/api/resolve-url'
 
@@ -796,7 +798,7 @@ export async function triggerApplyJobs(
       await applyLinkedInJobsViaExtension(linkedInJobs)
     }
 
-    // Step 3: ATS batch — pre-resolve job board URLs, then apply sequentially
+    // Step 3: ATS batch — pre-resolve job board URLs, classify, then apply sequentially
     if (atsJobs.length > 0) {
       console.log(`[bot-api] Step 3: pre-resolving ${atsJobs.length} ATS jobs. URLs: ${atsJobs.map(j => j.url).join(', ')}`)
       const resolvedAtsJobs: typeof atsJobs = []
@@ -806,8 +808,32 @@ export async function triggerApplyJobs(
         console.log(`[bot-api] Pre-resolve result: ${job.company} | ${resolvedUrl === job.url ? 'UNCHANGED' : 'RESOLVED → ' + resolvedUrl}`)
         resolvedAtsJobs.push(resolvedUrl !== job.url ? { ...job, url: resolvedUrl } : job)
       }
-      console.log(`[bot-api] Step 3 done: applying ${resolvedAtsJobs.length} ATS jobs. Final URLs: ${resolvedAtsJobs.map(j => j.url).join(', ')}`)
-      await applyAtsJobsViaExtension(resolvedAtsJobs)
+
+      // Re-classify after URL resolution: auto_apply vs direct_apply
+      const autoApplyAtsJobs = resolvedAtsJobs.filter(j => classifyJobUrl(j.url) === 'auto_apply')
+      const directApplyAtsJobs = resolvedAtsJobs.filter(j => classifyJobUrl(j.url) === 'direct_apply')
+
+      if (directApplyAtsJobs.length > 0) {
+        console.log(`[bot-api] ${directApplyAtsJobs.length} ATS jobs routed to direct_apply: ${directApplyAtsJobs.map(j => j.company).join(', ')}`)
+        // Emit needs_manual results for direct_apply jobs immediately
+        for (const job of directApplyAtsJobs) {
+          window.dispatchEvent(new CustomEvent('jobtracker:extension-apply-result', {
+            detail: {
+              success: false,
+              status: 'needs_manual',
+              reason: `Candidature directe \u2014 postulez sur: ${job.url}`,
+              company: job.company,
+              role: job.role,
+              url: job.url,
+            },
+          }))
+        }
+      }
+
+      console.log(`[bot-api] Step 3 done: applying ${autoApplyAtsJobs.length} auto_apply ATS jobs (${directApplyAtsJobs.length} direct_apply skipped). Final URLs: ${autoApplyAtsJobs.map(j => j.url).join(', ')}`)
+      if (autoApplyAtsJobs.length > 0) {
+        await applyAtsJobsViaExtension(autoApplyAtsJobs)
+      }
     }
 
     // All jobs routed to extension — return synthetic runId

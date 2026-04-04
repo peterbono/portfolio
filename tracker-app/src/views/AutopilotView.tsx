@@ -1841,6 +1841,7 @@ function ApplicationReviewCard({
   onUndo,
   onDismiss,
   onPreview,
+  onMarkSubmitted,
 }: {
   item: ReviewQueueItem
   onApprove: (id: string) => void
@@ -1848,6 +1849,7 @@ function ApplicationReviewCard({
   onUndo: (id: string) => void
   onDismiss?: (id: string) => void
   onPreview?: (id: string) => void
+  onMarkSubmitted?: (id: string) => void
 }) {
   const scoreColor =
     item.matchScore > 70 ? '#34d399' : item.matchScore >= 50 ? '#fbbf24' : '#f43f5e'
@@ -1970,9 +1972,17 @@ function ApplicationReviewCard({
       )}
       {item.status === 'submitted' && (
         <div style={reviewStyles.cardActions}>
-          <div style={reviewStyles.statusLabel}>
-            <CheckCircle2 size={12} color="#22c55e" />
-            <span style={{ color: '#22c55e', fontSize: 12, fontWeight: 700 }}>✓ Submitted</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={reviewStyles.statusLabel}>
+              <CheckCircle2 size={12} color="#22c55e" />
+              <span style={{ color: '#22c55e', fontSize: 12, fontWeight: 700 }}>&#10003; Submitted</span>
+            </div>
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              padding: '2px 8px', borderRadius: 9999,
+              background: 'rgba(34, 197, 94, 0.12)', color: '#22c55e',
+              fontSize: 10, fontWeight: 700, letterSpacing: 0.3,
+            }}>Auto-Apply</span>
           </div>
           {onDismiss && (
             <button
@@ -2005,26 +2015,72 @@ function ApplicationReviewCard({
           </button>
         </div>
       )}
-      {item.status === 'needs_manual' && (
-        <div style={reviewStyles.cardActions}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
-            <div style={reviewStyles.statusLabel}>
-              <AlertTriangle size={12} color="#f59e0b" />
-              <span style={{ color: '#f59e0b', fontSize: 12, fontWeight: 600 }}>Needs Manual</span>
+      {item.status === 'needs_manual' && (() => {
+        const isDirectApply = item.failReason && (/postulez sur:|Apply manually at:/i.test(item.failReason))
+        const directUrl = isDirectApply
+          ? item.failReason!.match(/(?:postulez sur:|Apply manually at:)\s*(https?:\/\/\S+)/i)?.[1] || item.jobUrl
+          : null
+        return (
+          <div style={reviewStyles.cardActions}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={reviewStyles.statusLabel}>
+                  {isDirectApply ? (
+                    <>
+                      <ExternalLink size={12} color="#3b82f6" />
+                      <span style={{ color: '#3b82f6', fontSize: 12, fontWeight: 600 }}>Candidature directe</span>
+                    </>
+                  ) : (
+                    <>
+                      <AlertTriangle size={12} color="#f59e0b" />
+                      <span style={{ color: '#f59e0b', fontSize: 12, fontWeight: 600 }}>Needs Manual</span>
+                    </>
+                  )}
+                </div>
+                {isDirectApply && (
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 4,
+                    padding: '2px 8px', borderRadius: 9999,
+                    background: 'rgba(59, 130, 246, 0.12)', color: '#3b82f6',
+                    fontSize: 10, fontWeight: 700, letterSpacing: 0.3,
+                  }}>Candidature directe</span>
+                )}
+              </div>
+              {isDirectApply && directUrl ? (
+                <a
+                  href={directUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ color: '#3b82f6', fontSize: 11, lineHeight: 1.3, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                >
+                  Candidature directe &rarr;
+                </a>
+              ) : item.failReason ? (
+                <span style={{ color: '#9ca3af', fontSize: 11, lineHeight: 1.3 }}>{item.failReason}</span>
+              ) : null}
             </div>
-            {item.failReason && (
-              <span style={{ color: '#9ca3af', fontSize: 11, lineHeight: 1.3 }}>{item.failReason}</span>
-            )}
+            <div style={{ display: 'flex', gap: 6 }}>
+              {isDirectApply && onMarkSubmitted && (
+                <button
+                  style={{ ...reviewStyles.btnApprove, fontSize: 11, padding: '4px 10px' }}
+                  onClick={() => onMarkSubmitted(item.id)}
+                  title="Marquer comme postul\u00e9"
+                >
+                  <Check size={12} />
+                  <span>Postul\u00e9</span>
+                </button>
+              )}
+              <button
+                style={reviewStyles.btnUndo}
+                onClick={() => onUndo(item.id)}
+                title="Retry — move back to approved"
+              >
+                Retry
+              </button>
+            </div>
           </div>
-          <button
-            style={reviewStyles.btnUndo}
-            onClick={() => onUndo(item.id)}
-            title="Retry — move back to approved"
-          >
-            Retry
-          </button>
-        </div>
-      )}
+        )
+      })()}
       {item.status === 'unmatched' && (
         <div style={reviewStyles.cardActions}>
           <div style={reviewStyles.statusLabel}>
@@ -2350,6 +2406,7 @@ function ReviewQueue({
   onSkipAll,
   onSubmitApproved,
   onPreview,
+  onMarkSubmitted,
   isDemo,
   reviewMode,
   onToggleMode,
@@ -2363,6 +2420,7 @@ function ReviewQueue({
   onSkipAll: () => void
   onSubmitApproved: () => void
   onPreview?: (id: string) => void
+  onMarkSubmitted?: (id: string) => void
   isDemo: boolean
   reviewMode: ReviewMode
   onToggleMode: (mode: ReviewMode) => void
@@ -2452,6 +2510,7 @@ function ReviewQueue({
               onSkip={onSkip}
               onDismiss={onDismiss}
               onPreview={onPreview}
+              onMarkSubmitted={onMarkSubmitted}
             />
           ))}
         </div>
@@ -4530,6 +4589,12 @@ export function AutopilotView() {
     setReviewQueue(prev => prev.filter(item => item.id !== id))
   }, [])
 
+  const handleMarkSubmitted = useCallback((id: string) => {
+    setReviewQueue(prev => prev.map(item =>
+      item.id === id ? { ...item, status: 'submitted' as const, failReason: undefined } : item
+    ))
+  }, [])
+
   const handleReviewApproveAll = useCallback(() => {
     setReviewQueue(prev => {
       const updated = prev.map(item => item.status === 'pending' ? { ...item, status: 'approved' as const } : item)
@@ -4758,6 +4823,7 @@ export function AutopilotView() {
           onSkipAll={handleReviewSkipAll}
           onSubmitApproved={handleSubmitApproved}
           onPreview={handleReviewPreview}
+          onMarkSubmitted={handleMarkSubmitted}
           isDemo={isReviewDemo}
           reviewMode={reviewMode}
           onToggleMode={handleToggleReviewMode}
@@ -5604,6 +5670,7 @@ export function AutopilotView() {
                 onSkipAll={handleReviewSkipAll}
                 onSubmitApproved={handleSubmitApproved}
                 onPreview={handleReviewPreview}
+                onMarkSubmitted={handleMarkSubmitted}
                 isDemo={isReviewDemo}
                 reviewMode={reviewMode}
                 onToggleMode={handleToggleReviewMode}
@@ -5612,81 +5679,143 @@ export function AutopilotView() {
           )}
 
           {/* ─── To Submit Manually — shows needs_manual jobs with apply links ─── */}
-          {reviewQueue.filter(i => i.status === 'needs_manual').length > 0 && (
-            <div style={{
-              background: 'rgba(245, 158, 11, 0.06)',
-              border: '1px solid rgba(245, 158, 11, 0.2)',
-              borderRadius: 12,
-              padding: '16px 20px',
-              marginBottom: 16,
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                <AlertTriangle size={16} color="#f59e0b" />
-                <span style={{ fontWeight: 600, fontSize: 14, color: '#f59e0b' }}>
-                  To Submit Manually ({reviewQueue.filter(i => i.status === 'needs_manual').length})
-                </span>
-              </div>
-              <p style={{ fontSize: 12, color: '#94a3b8', margin: '0 0 12px 0', lineHeight: 1.4 }}>
-                These jobs couldn't be auto-submitted. Click to open the application page and apply manually.
-              </p>
-              <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 8 }}>
-                {reviewQueue.filter(i => i.status === 'needs_manual').map(item => (
-                  <div key={item.id} style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 12,
-                    padding: '10px 12px',
-                    background: 'rgba(30, 32, 44, 0.6)',
-                    borderRadius: 8,
-                    border: '1px solid rgba(245, 158, 11, 0.12)',
-                  }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: 13, color: '#e2e8f0', whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.role}</div>
-                      <div style={{ fontSize: 12, color: '#94a3b8' }}>{item.company}</div>
-                    </div>
-                    {item.jobUrl && (
-                      <a
-                        href={item.jobUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 4,
-                          padding: '6px 12px',
-                          background: '#f59e0b',
-                          color: '#000',
-                          borderRadius: 6,
-                          fontSize: 12,
-                          fontWeight: 600,
-                          textDecoration: 'none',
-                          whiteSpace: 'nowrap' as const,
-                          flexShrink: 0,
-                        }}
-                      >
-                        Apply <ExternalLink size={11} />
-                      </a>
-                    )}
-                    <button
-                      onClick={() => handleReviewDismiss(item.id)}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        color: '#64748b',
-                        cursor: 'pointer',
-                        padding: 4,
+          {reviewQueue.filter(i => i.status === 'needs_manual').length > 0 && (() => {
+            const manualItems = reviewQueue.filter(i => i.status === 'needs_manual')
+            const directApplyItems = manualItems.filter(i => i.failReason && /postulez sur:|Apply manually at:/i.test(i.failReason))
+            const otherManualItems = manualItems.filter(i => !i.failReason || !/postulez sur:|Apply manually at:/i.test(i.failReason))
+            const extractDirectUrl = (reason: string) =>
+              reason.match(/(?:postulez sur:|Apply manually at:)\s*(https?:\/\/\S+)/i)?.[1] || null
+
+            return (
+              <div style={{
+                background: directApplyItems.length > 0 && otherManualItems.length === 0
+                  ? 'rgba(59, 130, 246, 0.06)'
+                  : 'rgba(245, 158, 11, 0.06)',
+                border: `1px solid ${directApplyItems.length > 0 && otherManualItems.length === 0 ? 'rgba(59, 130, 246, 0.2)' : 'rgba(245, 158, 11, 0.2)'}`,
+                borderRadius: 12,
+                padding: '16px 20px',
+                marginBottom: 16,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                  {directApplyItems.length > 0 && otherManualItems.length === 0 ? (
+                    <>
+                      <ExternalLink size={16} color="#3b82f6" />
+                      <span style={{ fontWeight: 600, fontSize: 14, color: '#3b82f6' }}>
+                        Candidature directe ({directApplyItems.length})
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <AlertTriangle size={16} color="#f59e0b" />
+                      <span style={{ fontWeight: 600, fontSize: 14, color: '#f59e0b' }}>
+                        To Submit Manually ({manualItems.length})
+                      </span>
+                    </>
+                  )}
+                </div>
+                <p style={{ fontSize: 12, color: '#94a3b8', margin: '0 0 12px 0', lineHeight: 1.4 }}>
+                  {directApplyItems.length > 0 && otherManualItems.length === 0
+                    ? 'Ces offres ne supportent pas l\'auto-apply. Postulez directement sur le site.'
+                    : 'These jobs couldn\'t be auto-submitted. Click to open the application page and apply manually.'}
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 8 }}>
+                  {manualItems.map(item => {
+                    const isDirectApply = item.failReason && /postulez sur:|Apply manually at:/i.test(item.failReason)
+                    const directUrl = isDirectApply ? extractDirectUrl(item.failReason!) : null
+                    const applyUrl = directUrl || item.jobUrl
+                    const borderColor = isDirectApply ? 'rgba(59, 130, 246, 0.12)' : 'rgba(245, 158, 11, 0.12)'
+
+                    return (
+                      <div key={item.id} style={{
                         display: 'flex',
-                        flexShrink: 0,
-                      }}
-                      title="Dismiss"
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
-                ))}
+                        alignItems: 'center',
+                        gap: 12,
+                        padding: '10px 12px',
+                        background: 'rgba(30, 32, 44, 0.6)',
+                        borderRadius: 8,
+                        border: `1px solid ${borderColor}`,
+                      }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ fontWeight: 600, fontSize: 13, color: '#e2e8f0', whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.role}</span>
+                            {isDirectApply && (
+                              <span style={{
+                                display: 'inline-flex', alignItems: 'center',
+                                padding: '1px 6px', borderRadius: 9999,
+                                background: 'rgba(59, 130, 246, 0.12)', color: '#3b82f6',
+                                fontSize: 9, fontWeight: 700, letterSpacing: 0.3,
+                                whiteSpace: 'nowrap' as const, flexShrink: 0,
+                              }}>Candidature directe</span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: 12, color: '#94a3b8' }}>{item.company}</div>
+                        </div>
+                        {applyUrl && (
+                          <a
+                            href={applyUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              padding: '6px 12px',
+                              background: isDirectApply ? '#3b82f6' : '#f59e0b',
+                              color: '#fff',
+                              borderRadius: 6,
+                              fontSize: 12,
+                              fontWeight: 600,
+                              textDecoration: 'none',
+                              whiteSpace: 'nowrap' as const,
+                              flexShrink: 0,
+                            }}
+                          >
+                            {isDirectApply ? 'Candidature directe' : 'Apply'} <ExternalLink size={11} />
+                          </a>
+                        )}
+                        <button
+                          onClick={() => handleMarkSubmitted(item.id)}
+                          style={{
+                            background: 'none',
+                            border: '1px solid rgba(34, 197, 94, 0.3)',
+                            color: '#22c55e',
+                            cursor: 'pointer',
+                            padding: '4px 8px',
+                            borderRadius: 6,
+                            fontSize: 11,
+                            fontWeight: 600,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            flexShrink: 0,
+                            whiteSpace: 'nowrap' as const,
+                          }}
+                          title="Marquer comme postul\u00e9"
+                        >
+                          <Check size={11} /> Postul&eacute;
+                        </button>
+                        <button
+                          onClick={() => handleReviewDismiss(item.id)}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: '#64748b',
+                            cursor: 'pointer',
+                            padding: 4,
+                            display: 'flex',
+                            flexShrink: 0,
+                          }}
+                          title="Dismiss"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
-            </div>
-          )}
+            )
+          })()}
 
           {/* Preview Drawer (authenticated) */}
           {previewItem && (
