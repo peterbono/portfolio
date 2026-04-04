@@ -3556,17 +3556,235 @@ async function handleLever() {
     }
   }
 
-  // Upload CV
-  const fileInput = document.querySelector('input[type="file"][name="resume"], input[type="file"]')
-  if (fileInput) await fetchAndUploadCV(fileInput)
-
   // Fill Lever-specific cards[*] custom questions (screening questions)
   try { await fillLeverCustomQuestions() } catch(e) { warn('fillLeverCustomQuestions error:', e.message) }
 
   // Fill any remaining generic fields
   await fillAllFormFields()
 
+  // ── CV Upload: Direct API submission ──────────────────────────────────
+  // Lever's React file input rejects DataTransfer-set files with a spurious
+  // "File exceeds 100MB" error on any file, regardless of size.  Instead of
+  // fighting React, we bypass its file input entirely:
+  //   1. Fetch the CV from GitHub (content-script fetch — not subject to page CSP)
+  //   2. Collect every filled field value from the DOM
+  //   3. Build a FormData with fields + CV as "resume" file
+  //   4. POST directly to Lever's apply endpoint (same origin — no CORS issues)
+  // If the direct submit succeeds, we set a flag so navigateMultiStepForm()
+  // knows the application is already submitted and skips clicking Submit.
+  const directSubmitOk = await _leverDirectSubmit()
+  if (directSubmitOk) {
+    // Signal to the main flow that submission already happened
+    window.__leverDirectSubmitted = true
+    return true
+  }
+
+  // Fallback: try the standard file input approach (unlikely to work, but safe)
+  log('Lever direct submit failed — falling back to DataTransfer file input')
+  const fileInput = document.querySelector('input[type="file"][name="resume"], input[type="file"]')
+  if (fileInput) await fetchAndUploadCV(fileInput)
+
   return true
+}
+
+// ── Lever Direct Submit (bypasses React file input) ─────────────────────
+// Collects form field values + CV and POSTs directly to Lever's apply endpoint.
+// This runs from the content script on jobs.lever.co — same origin, no CORS.
+
+async function _leverDirectSubmit() {
+  try {
+    // ── 1. Resolve the Lever apply endpoint ──
+    const applyUrl = _leverResolveApplyUrl()
+    if (!applyUrl) {
+      warn('Lever direct submit: could not determine apply endpoint')
+      return false
+    }
+    log('Lever direct submit: endpoint =', applyUrl)
+
+    // ── 2. Fetch the CV from GitHub ──
+    if (!PROFILE.cvUrl) {
+      warn('Lever direct submit: no cvUrl in profile')
+      return false
+    }
+    log('Lever direct submit: fetching CV from', PROFILE.cvUrl)
+    const cvResponse = await fetch(PROFILE.cvUrl)
+    if (!cvResponse.ok) {
+      warn('Lever direct submit: CV fetch failed:', cvResponse.status, cvResponse.statusText)
+      return false
+    }
+    const cvBlob = await cvResponse.blob()
+    if (cvBlob.size < 1000 || cvBlob.size > 10 * 1024 * 1024) {
+      warn('Lever direct submit: CV size suspicious:', cvBlob.size, 'bytes')
+      return false
+    }
+    const pdfBlob = new Blob([cvBlob], { type: 'application/pdf' })
+    const cvFile = new File([pdfBlob], PROFILE.cvFilename || 'CV.pdf', {
+      type: 'application/pdf',
+      lastModified: Date.now(),
+    })
+    log('Lever direct submit: CV ready —', cvFile.name, cvFile.size, 'bytes')
+
+    // ── 3. Build FormData from filled form fields ──
+    const formData = new FormData()
+
+    // 3a. Standard Lever fields (read from DOM — reflects what user sees)
+    const fieldMap = {
+      name: 'input[name="name"]',
+      email: 'input[name="email"]',
+      phone: 'input[name="phone"]',
+      org: 'input[name="org"]',
+      'urls[LinkedIn]': 'input[name="urls[LinkedIn]"]',
+      'urls[Portfolio]': 'input[name="urls[Portfolio]"]',
+      'urls[Other]': 'input[name="urls[Other]"]',
+      'urls[Twitter]': 'input[name="urls[Twitter]"]',
+      'urls[GitHub]': 'input[name="urls[GitHub]"]',
+      comments: 'textarea[name="comments"]',
+    }
+
+    for (const [name, selector] of Object.entries(fieldMap)) {
+      const el = document.querySelector(selector)
+      if (el && el.value && el.value.trim()) {
+        formData.append(name, el.value.trim())
+      }
+    }
+
+    // 3b. cards[*] custom questions (screening questions)
+    const cardInputs = document.querySelectorAll(
+      'input[name^="cards["], textarea[name^="cards["], select[name^="cards["]'
+    )
+    for (const input of cardInputs) {
+      const name = input.getAttribute('name')
+      if (!name) continue
+      if (input.type === 'radio') {
+        if (input.checked) formData.append(name, input.value)
+      } else if (input.type === 'checkbox') {
+        if (input.checked) formData.append(name, input.value || 'on')
+      } else if (input.value && input.value.trim()) {
+        formData.append(name, input.value.trim())
+      }
+    }
+
+    // 3c. Hidden fields (CSRF tokens, posting ID, etc.)
+    const hiddenInputs = document.querySelectorAll('input[type="hidden"]')
+    for (const hi of hiddenInputs) {
+      const name = hi.getAttribute('name')
+      if (name && hi.value) {
+        formData.append(name, hi.value)
+      }
+    }
+
+    // 3d. Consent / privacy checkboxes
+    const consentBoxes = document.querySelectorAll(
+      'input[type="checkbox"][name*="consent"], input[type="checkbox"][name*="privacy"], ' +
+      'input[type="checkbox"][name*="gdpr"], input[type="checkbox"][name*="terms"]'
+    )
+    for (const cb of consentBoxes) {
+      if (cb.checked) {
+        formData.append(cb.name, cb.value || 'on')
+      }
+    }
+
+    // 3e. Attach the CV as "resume"
+    formData.append('resume', cvFile, cvFile.name)
+
+    // ── 4. POST to Lever's apply endpoint ──
+    log('Lever direct submit: POSTing to', applyUrl, '...')
+    const submitResponse = await fetch(applyUrl, {
+      method: 'POST',
+      body: formData,
+      credentials: 'same-origin', // Send cookies (session, CSRF)
+      // Do NOT set Content-Type — browser will set multipart boundary automatically
+    })
+
+    log('Lever direct submit: response status =', submitResponse.status)
+
+    if (submitResponse.ok || submitResponse.status === 303 || submitResponse.status === 302) {
+      log('Lever direct submit: SUCCESS — application submitted via API')
+      return true
+    }
+
+    // Some Lever endpoints return JSON with error details
+    let responseBody = ''
+    try { responseBody = await submitResponse.text() } catch {}
+    warn('Lever direct submit: failed — status', submitResponse.status, responseBody.substring(0, 500))
+
+    // 4xx might mean missing required fields — log them for debugging
+    if (submitResponse.status >= 400 && submitResponse.status < 500) {
+      log('Lever direct submit: form fields sent:')
+      for (const [key, val] of formData.entries()) {
+        if (key === 'resume') {
+          log('  resume:', cvFile.name, cvFile.size, 'bytes')
+        } else {
+          log('  ' + key + ':', String(val).substring(0, 80))
+        }
+      }
+    }
+
+    return false
+  } catch (err) {
+    warn('Lever direct submit: exception —', err.message)
+    return false
+  }
+}
+
+// ── Resolve the Lever apply URL from the current page ───────────────────
+// Lever forms use several endpoint patterns. We try them in order of reliability.
+
+function _leverResolveApplyUrl() {
+  const pageUrl = window.location.href
+
+  // Method 1: Read the form's action attribute directly
+  const form = document.querySelector('form[action]')
+  if (form) {
+    const action = form.getAttribute('action')
+    if (action) {
+      // Resolve relative URLs against the page origin
+      try {
+        const resolved = new URL(action, window.location.origin).href
+        log('Lever apply URL from form action:', resolved)
+        return resolved
+      } catch {}
+    }
+  }
+
+  // Method 2: Parse the page URL — Lever postings follow:
+  //   https://jobs.lever.co/{company}/{postingId}
+  //   https://jobs.lever.co/{company}/{postingId}/apply
+  // The API endpoint is:
+  //   https://jobs.lever.co/v0/postings/{company}/{postingId}?lever-source[]=Applied
+  const leverUrlMatch = pageUrl.match(
+    /https:\/\/jobs\.lever\.co\/([^/]+)\/([0-9a-f-]{36})/i
+  )
+  if (leverUrlMatch) {
+    const company = leverUrlMatch[1]
+    const postingId = leverUrlMatch[2]
+    // Lever's own form POSTs to the same URL with /apply or just the posting URL
+    // The public API endpoint pattern:
+    const apiUrl = `https://jobs.lever.co/v0/postings/${company}/${postingId}`
+    log('Lever apply URL from URL pattern:', apiUrl)
+    return apiUrl
+  }
+
+  // Method 3: Look for XHR/fetch intercepted URLs in the page
+  // Some Lever pages embed the posting ID in a script tag or data attribute
+  const scripts = document.querySelectorAll('script:not([src])')
+  for (const script of scripts) {
+    const text = script.textContent || ''
+    const match = text.match(/postingId["':\s]+["']([0-9a-f-]{36})["']/i)
+    if (match) {
+      // Try to also find company from the URL or page
+      const companyMatch = pageUrl.match(/jobs\.lever\.co\/([^/]+)/) || text.match(/company["':\s]+["']([^"']+)["']/)
+      const company = companyMatch ? companyMatch[1] : null
+      if (company) {
+        const apiUrl = `https://jobs.lever.co/v0/postings/${company}/${match[1]}`
+        log('Lever apply URL from inline script:', apiUrl)
+        return apiUrl
+      }
+    }
+  }
+
+  warn('Lever: could not resolve apply URL from page')
+  return null
 }
 
 // ── Workable ──────────────────────────────────────────────────────────
@@ -4089,6 +4307,14 @@ async function handleGreenhouseSecurityCode() {
 // ─── Multi-Step Form Navigation ───────────────────────────────────────
 
 async function navigateMultiStepForm() {
+  // ── Lever direct submit bypass ──
+  // If handleLever() already submitted the application via direct API POST,
+  // skip the entire multi-step navigation — the application is done.
+  if (window.__leverDirectSubmitted) {
+    log('Lever direct submit already completed — skipping navigateMultiStepForm')
+    return 'submitted'
+  }
+
   let submitAttempts = 0
   const maxSubmitRetries = 3
   let consecutiveZeroFills = 0  // Stuck detection: count consecutive steps with 0 fields filled
