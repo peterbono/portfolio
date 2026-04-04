@@ -1,5 +1,5 @@
 /**
- * JobTracker — ATS Auto-Apply Content Script v2.5.0
+ * JobTracker — ATS Auto-Apply Content Script v2.5.2
  *
  * Injected on external career pages (Greenhouse, Lever, Workable, etc.)
  * after the user clicks "Apply on company website" from LinkedIn.
@@ -392,19 +392,38 @@ function getLabelText(input) {
   return (ariaLabel + ' ' + placeholder + ' ' + labelText + ' ' + parentLabel + ' ' + nearbyLabel + ' ' + name).toLowerCase()
 }
 
-// Click a button matching any of the given text patterns
+// Find a button matching any of the given text patterns
+// Prioritizes: exact text match > contains match, and form-area buttons > header buttons
 function findAndClickButton(texts) {
   const allClickables = document.querySelectorAll('button, input[type="submit"], a[role="button"], [class*="submit"], [class*="btn"]')
+  let bestMatch = null
+  let bestScore = -1
+
   for (const el of allClickables) {
     const text = (el.textContent || el.value || '').trim().toLowerCase()
     const ariaLabel = (el.getAttribute('aria-label') || '').toLowerCase()
-    for (const t of texts) {
-      if (text.includes(t.toLowerCase()) || ariaLabel.includes(t.toLowerCase())) {
-        return el
+    for (let i = 0; i < texts.length; i++) {
+      const t = texts[i].toLowerCase()
+      const matchesText = text.includes(t)
+      const matchesAria = ariaLabel.includes(t)
+      if (!matchesText && !matchesAria) continue
+
+      // Score: lower index in texts array = higher priority (earlier = more specific)
+      // Exact text match gets bonus, form-context button gets bonus
+      let score = (texts.length - i) * 10
+      if (text === t) score += 50                    // Exact match bonus
+      if (el.type === 'submit') score += 30          // type="submit" bonus
+      if (el.closest('form')) score += 20            // Inside a form bonus
+      if (el.closest('.application--submit, [class*="submit"], [class*="actions"]')) score += 15 // Submit area bonus
+
+      if (score > bestScore) {
+        bestScore = score
+        bestMatch = el
       }
+      break // Don't check remaining text patterns for this element
     }
   }
-  return null
+  return bestMatch
 }
 
 // ─── CV Upload via fetch + DataTransfer ───────────────────────────────
@@ -1161,6 +1180,16 @@ async function handleGreenhouse(context) {
   if (errors.length > 0) {
     log('Pre-submit validation issues:', errors.length)
     errors.forEach(e => log('  -', e))
+  }
+
+  // Step 10: Scroll submit button into view for Greenhouse Remix
+  // Greenhouse Remix forms can be very long (5000px+). The submit button at the bottom
+  // may not be interactable via click() if it's far off-screen in some browser configs.
+  const ghSubmitBtn = document.querySelector('.application--submit button, #submit_app, #application-form button[type="submit"], button[type="submit"]')
+  if (ghSubmitBtn) {
+    ghSubmitBtn.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    await sleep(600)
+    log('Scrolled to Greenhouse submit button:', (ghSubmitBtn.textContent || '').trim())
   }
 
   return true // Always try to proceed to submit
@@ -2698,51 +2727,70 @@ async function handleGeneric() {
 // ─── Submit Form ──────────────────────────────────────────────────────
 
 async function submitForm() {
+  // Helper: check if a button is truly clickable (visible, not disabled, not aria-disabled)
+  function isClickable(btn) {
+    if (!btn || btn.offsetHeight === 0) return false
+    if (btn.disabled) return false
+    // Greenhouse Remix uses aria-disabled="true" instead of native disabled
+    if (btn.getAttribute('aria-disabled') === 'true') return false
+    return true
+  }
+
+  // Helper: scroll to button and click with human-like behavior
+  async function scrollAndClick(btn, source) {
+    log('Found submit via', source, '| Text:', (btn.textContent || btn.value || '').trim())
+    // Scroll button into view — some React apps ignore clicks on off-screen elements
+    btn.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    await sleep(500)
+    await randomDelay(ATS_CONFIG.clickDelay.min, ATS_CONFIG.clickDelay.max)
+    btn.click()
+    await sleep(3000)
+    return true
+  }
+
   // Try ATS-specific submit selectors first (most reliable)
   const specificSelectors = [
-    '#submit_app',                          // Greenhouse
-    'input[type="submit"]',                 // Standard HTML submit
-    'button[type="submit"]',                // Standard button submit
-    'button[data-testid="submit"]',         // Modern React ATS
-    'button[class*="submit"]',              // Class-based
-    '#application-submit',                  // Common pattern
+    '#submit_app',                                    // Greenhouse Classic
+    '.application--submit button',                    // Greenhouse Remix (job-boards.greenhouse.io)
+    '#application-form button[type="submit"]',        // Greenhouse Remix by form ID
+    'button[type="submit"]',                          // Standard button submit
+    'input[type="submit"]',                           // Standard HTML submit
+    'button[data-testid="submit"]',                   // Modern React ATS (camelCase)
+    'button[data-test-id="submit-application"]',      // React ATS (kebab-case)
+    'button[class*="submit"]',                        // Class-based
+    '#application-submit',                            // Common pattern
   ]
 
   for (const sel of specificSelectors) {
     const btn = document.querySelector(sel)
-    if (btn && btn.offsetHeight > 0 && !btn.disabled) {
-      log('Found submit via selector:', sel, '| Text:', (btn.textContent || btn.value || '').trim())
-      await randomDelay(ATS_CONFIG.clickDelay.min, ATS_CONFIG.clickDelay.max)
-      btn.click()
-      await sleep(3000)
-      return true
+    if (isClickable(btn)) {
+      return await scrollAndClick(btn, 'selector: ' + sel)
     }
   }
 
   // Fallback: text-based button search
+  // IMPORTANT: "Apply" alone is too broad — it matches header/navigation buttons
+  // on Greenhouse Remix (div.job__header > button "Apply") which is NOT the submit button.
+  // Use specific submit phrases only.
   const submitBtn = findAndClickButton([
     'Submit Application', 'Submit application', 'Submit',
     'Send Application', 'Send application',
     'Soumettre ma candidature', 'Soumettre', 'Envoyer',
     'Complete Application', 'Finish Application',
-    'Apply Now', 'Apply', 'Confirm', 'Confirmer',
+    'Apply Now', 'Confirm', 'Confirmer',
   ])
 
-  if (submitBtn && !submitBtn.disabled) {
-    log('Found submit button by text:', submitBtn.textContent?.trim())
-    await randomDelay(ATS_CONFIG.clickDelay.min, ATS_CONFIG.clickDelay.max)
-    submitBtn.click()
-    await sleep(3000)
-    return true
+  if (submitBtn && isClickable(submitBtn)) {
+    return await scrollAndClick(submitBtn, 'text match')
   }
 
-  if (submitBtn && submitBtn.disabled) {
-    log('Submit button found but DISABLED — required fields likely missing')
+  if (submitBtn && !isClickable(submitBtn)) {
+    log('Submit button found but NOT CLICKABLE — disabled:', submitBtn.disabled, 'aria-disabled:', submitBtn.getAttribute('aria-disabled'))
     return false
   }
 
   // Last resort: form.submit()
-  const form = document.querySelector('form[class*="apply"], form[class*="application"], form[action*="apply"], form')
+  const form = document.querySelector('#application-form, form[class*="apply"], form[class*="application"], form[action*="apply"], form')
   if (form) {
     log('No submit button found, trying form.submit()')
     try {
@@ -3023,7 +3071,19 @@ async function navigateMultiStepForm() {
       }
     }
 
-    // No next or submit button found — we're stuck
+    // No next or submit button found — retry once after a longer wait
+    // React re-renders or lazy-loaded components may need extra time
+    if (step === 0) {
+      log('No Next or Submit button found on first attempt — waiting 3s and retrying...')
+      await sleep(3000)
+      // Scroll to bottom of form to trigger any lazy rendering
+      const formBottom = document.querySelector('.application--submit, [class*="submit"], form')
+      if (formBottom) {
+        formBottom.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        await sleep(1000)
+      }
+      continue
+    }
     log('No Next or Submit button found on this step')
     break
   }
@@ -3086,7 +3146,7 @@ const ATS_HANDLERS = {
     warn('Guard check failed, proceeding anyway:', guardErr.message)
   }
 
-  log('ats-apply.js v2.5.1 loaded on:', currentUrl)
+  log('ats-apply.js v2.5.2 loaded on:', currentUrl)
 
   // Load user profile from storage (overrides hardcoded defaults)
   await loadProfile()
