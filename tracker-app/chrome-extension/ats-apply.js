@@ -768,9 +768,12 @@ async function fillAllFormFields() {
 // Smart answers for common custom questions on ATS forms
 const CUSTOM_QUESTION_ANSWERS = {
   // Work authorization
-  authorized: 'Yes — EU citizen (French passport), eligible to work in most countries',
+  authorized: 'Yes',
+  authorizedLong: 'Yes — EU citizen (French passport), eligible to work in most countries',
   sponsor: 'No',
+  sponsorLong: 'No — I do not require visa sponsorship now or in the future.',
   visa: 'I hold a French/EU passport and am currently based in Bangkok, Thailand. I do not require visa sponsorship for EU-based remote positions.',
+  citizenship: 'French (EU citizen)',
 
   // Availability
   startDate: 'Immediately',
@@ -780,105 +783,230 @@ const CUSTOM_QUESTION_ANSWERS = {
   // Salary
   salary: '80000',
   salaryExpectation: '80,000 EUR annually',
+  salaryRange: '70000-90000',
 
   // Experience
   yearsExperience: '7',
   designSystems: 'Yes — 7+ years building and maintaining design systems (Figma, Storybook, Zeroheight). Managed 143+ templates across 7 SaaS products.',
   tools: 'Figma, Storybook, Zeroheight, Jira, Maze, Rive, Notion, Adobe Creative Suite',
 
-  // Remote
+  // Remote / location
   remote: 'Yes',
   relocate: 'Open to discussion',
   timezone: 'GMT+7 (Bangkok) — flexible with async teams',
+  onsite: 'Yes — open to on-site, hybrid, or remote arrangements',
+  travel: 'Yes — willing to travel as needed',
+  currentLocation: 'Bangkok, Thailand',
+
+  // Education
+  education: "Bachelor's Degree",
+  educationDetail: "Bachelor's Degree in Digital Design",
+
+  // Background / compliance
+  backgroundCheck: 'Yes',
+  drugTest: 'Yes',
+  criminalHistory: 'No',
+  nda: 'Yes',
+  over18: 'Yes',
+
+  // EEO / demographics (always decline)
+  eeoDecline: 'Decline to Self Identify',
+  eeoPreferNot: 'Prefer not to say',
+
+  // Employment type
+  employmentType: 'Full-time',
+  contractType: 'Open to full-time, contract, or freelance',
+
+  // Current employment
+  currentEmployer: 'Currently seeking new opportunities',
+  reasonLeaving: 'Seeking new challenges and growth opportunities in product design',
+
+  // Languages
+  languages: 'Bilingual French/English (native French, fluent English). Working proficiency in both languages.',
+  french: 'Native French speaker',
 
   // Generic
   howHeard: 'LinkedIn',
   referral: 'No referral — found via LinkedIn',
   portfolio: 'https://www.floriangouloubi.com/',
+  linkedin: 'LinkedIn profile available upon request',
   coverLetter: 'I am a Senior Product Designer with 7+ years of experience specializing in design systems, complex product architecture, and design ops. I have led design across iGaming, B2B SaaS, and media platforms, delivering scalable systems that improved development feedback by 90% and managed 143+ templates across 7 SaaS products. Currently based in Bangkok, available immediately. Portfolio: https://www.floriangouloubi.com/',
+
+  // Consent / agreement
+  consent: 'Yes',
+  dataConsent: 'Yes, I consent to the processing of my personal data for recruitment purposes.',
+
+  // Previously employed / affiliated
+  previouslyEmployed: 'No',
+  previouslyApplied: 'No',
+  hasRelative: 'No',
+  nonCompete: 'No',
+  meetsRequirements: 'Yes',
+
+  // Accommodations
+  accommodations: 'No accommodations needed.',
+  interviewAvailability: 'Available for interviews any weekday. Based in Bangkok (GMT+7), flexible with time zones for video calls.',
 }
 
 // Match a custom question text to a smart answer
+// Covers 50+ common screening question patterns from Greenhouse, Lever, Workable, etc.
 function answerCustomQuestion(questionText) {
-  const q = questionText.toLowerCase()
+  const q = questionText.toLowerCase().trim()
 
-  // Work authorization / right to work — MUST come before generic country/location
-  if (q.includes('authorized') || q.includes('authorised') || q.includes('right to work') || q.includes('eligible to work') || (q.includes('legally') && q.includes('work'))) return CUSTOM_QUESTION_ANSWERS.authorized
-  if (q.includes('sponsor') && (q.includes('visa') || q.includes('now or in the future') || q.includes('immigration') || q.includes('require'))) return CUSTOM_QUESTION_ANSWERS.sponsor
+  // ─── 1. VISA / SPONSORSHIP / WORK AUTHORIZATION ─────────────────────
+  // These MUST come first — highest priority, most common screening failures
+
+  // "Will you now or in the future require visa sponsorship?" (exact Greenhouse/Virtru pattern)
+  if (q.includes('require') && (q.includes('sponsor') || q.includes('visa'))) return CUSTOM_QUESTION_ANSWERS.sponsor
+  // "Do you now or will you in the future require sponsorship?"
+  if (q.includes('now or') && (q.includes('future') || q.includes('ever')) && (q.includes('sponsor') || q.includes('visa'))) return CUSTOM_QUESTION_ANSWERS.sponsor
+  // "Will you require sponsorship..." / "Do you require sponsorship..."
+  if (q.includes('sponsor') && (q.includes('visa') || q.includes('now or in the future') || q.includes('immigration') || q.includes('employ'))) return CUSTOM_QUESTION_ANSWERS.sponsor
+  // Standalone "sponsorship" question (e.g., "Sponsorship required?")
+  if (q.includes('sponsorship')) return CUSTOM_QUESTION_ANSWERS.sponsor
+
+  // "Are you authorized to work in..." / "Are you authorised..."
+  if (q.includes('authorized') || q.includes('authorised')) return CUSTOM_QUESTION_ANSWERS.authorized
+  // "Do you have the right to work..." / "Right to work in..."
+  if (q.includes('right to work')) return CUSTOM_QUESTION_ANSWERS.authorized
+  // "Are you eligible to work..." / "Eligible for employment..."
+  if (q.includes('eligible to work') || q.includes('eligible for employment')) return CUSTOM_QUESTION_ANSWERS.authorized
+  // "Are you legally authorized..." / "Legally able to work..."
+  if (q.includes('legally') && q.includes('work')) return CUSTOM_QUESTION_ANSWERS.authorized
+  // "Do you have a valid work visa..."
   if ((q.includes('visa') || q.includes('work permit')) && !q.includes('status')) return CUSTOM_QUESTION_ANSWERS.visa
+  // "Legal right to work" / "Employment eligibility"
+  if (q.includes('legal right') || q.includes('employment eligib')) return CUSTOM_QUESTION_ANSWERS.authorized
+  // "Immigration status" / "Citizenship"
+  if (q.includes('immigration') && !q.includes('sponsor')) return CUSTOM_QUESTION_ANSWERS.visa
+  if (q.includes('citizen') && !q.includes('senior')) return CUSTOM_QUESTION_ANSWERS.citizenship
+  // "Work permit" standalone
+  if (q.includes('work') && q.includes('permit')) return CUSTOM_QUESTION_ANSWERS.visa
 
-  // Employment history at THIS company
-  if (q.includes('ever been employed') || q.includes('previously employed') || q.includes('former employee') || q.includes('worked at') || q.includes('have you worked')) return 'No'
-  if (q.includes('previously interviewed') || q.includes('ever interviewed') || q.includes('applied before') || q.includes('prior application')) return 'No'
-  if (q.includes('relative') || q.includes('spouse') || q.includes('partner') || q.includes('in-law')) return 'No'
-  if (q.includes('prohibited') || q.includes('restrictive') || q.includes('non-compete') || q.includes('covenant') || q.includes('limited in your performance')) return 'No'
-  if (q.includes('meet') && q.includes('qualifications') || q.includes('meet') && q.includes('requirements')) return 'Yes'
+  // ─── 2. EEO / DEMOGRAPHICS (always decline) ────────────────────────
+  // Must come before generic keyword matches to avoid false positives
+  if (q.includes('gender') || q.includes('sex') && !q.includes('sexual harassment')) return CUSTOM_QUESTION_ANSWERS.eeoDecline
+  if (q.includes('race') || q.includes('ethnicity') || q.includes('ethnic background')) return CUSTOM_QUESTION_ANSWERS.eeoDecline
+  if (q.includes('hispanic') || q.includes('latino') || q.includes('latina')) return CUSTOM_QUESTION_ANSWERS.eeoDecline
+  if (q.includes('veteran') || q.includes('military') && q.includes('status')) return CUSTOM_QUESTION_ANSWERS.eeoDecline
+  if (q.includes('disability') && !q.includes('accommodat') && !q.includes('require')) return CUSTOM_QUESTION_ANSWERS.eeoDecline
+  if (q.includes('sexual orientation') || q.includes('lgbtq') || q.includes('pronouns')) return CUSTOM_QUESTION_ANSWERS.eeoPreferNot
+  if (q.includes('protected class') || q.includes('demographic') || q.includes('self-identify') || q.includes('self identify')) return CUSTOM_QUESTION_ANSWERS.eeoDecline
 
-  // Salary / compensation
-  if (q.includes('extra compensation') || q.includes('current salary') || q.includes('benefits you receive') || q.includes('current') && q.includes('compensation')) return 'No additional compensation or benefits beyond base salary.'
-  if (q.includes('salary') || q.includes('compensation') || q.includes('pay expectation') || q.includes('desired pay') || q.includes('annual') && q.includes('expect')) return CUSTOM_QUESTION_ANSWERS.salaryExpectation
-  if (q.includes('salary') && (q.includes('range') || q.includes('number'))) return CUSTOM_QUESTION_ANSWERS.salary
+  // ─── 3. EMPLOYMENT HISTORY AT THIS COMPANY ──────────────────────────
+  if (q.includes('ever been employed') || q.includes('previously employed') || q.includes('former employee') || q.includes('worked at') || q.includes('have you worked')) return CUSTOM_QUESTION_ANSWERS.previouslyEmployed
+  if (q.includes('previously interviewed') || q.includes('ever interviewed') || q.includes('applied before') || q.includes('prior application') || q.includes('previously applied') || q.includes('applied to this')) return CUSTOM_QUESTION_ANSWERS.previouslyApplied
+  if (q.includes('relative') || q.includes('spouse') || q.includes('partner') || q.includes('in-law') || q.includes('family member')) return CUSTOM_QUESTION_ANSWERS.hasRelative
+  if (q.includes('prohibited') || q.includes('restrictive') || q.includes('non-compete') || q.includes('covenant') || q.includes('limited in your performance') || q.includes('non compete') || q.includes('noncompete')) return CUSTOM_QUESTION_ANSWERS.nonCompete
+  if ((q.includes('meet') && q.includes('qualifications')) || (q.includes('meet') && q.includes('requirements')) || (q.includes('meet') && q.includes('minimum'))) return CUSTOM_QUESTION_ANSWERS.meetsRequirements
 
-  // AI tools — MUST come before generic tools/experience checks
+  // ─── 4. AGE / LEGAL REQUIREMENTS ───────────────────────────────────
+  if (q.includes('18 years') || q.includes('over 18') || q.includes('at least 18') || q.includes('age of 18') || q.includes('legal age') || q.includes('minimum age')) return CUSTOM_QUESTION_ANSWERS.over18
+  if (q.includes('21 years') || q.includes('over 21') || q.includes('at least 21')) return 'Yes'
+
+  // ─── 5. BACKGROUND CHECK / DRUG TEST / COMPLIANCE ──────────────────
+  if (q.includes('background check') || q.includes('background screening') || q.includes('background investigation')) return CUSTOM_QUESTION_ANSWERS.backgroundCheck
+  if (q.includes('drug test') || q.includes('drug screen') || q.includes('substance')) return CUSTOM_QUESTION_ANSWERS.drugTest
+  if (q.includes('criminal') || q.includes('conviction') || q.includes('felony') || q.includes('misdemeanor') || q.includes('arrested')) return CUSTOM_QUESTION_ANSWERS.criminalHistory
+  if (q.includes('nda') || q.includes('non-disclosure') || q.includes('confidential') && q.includes('agree')) return CUSTOM_QUESTION_ANSWERS.nda
+
+  // ─── 6. SALARY / COMPENSATION ──────────────────────────────────────
+  if (q.includes('extra compensation') || q.includes('benefits you receive') || (q.includes('current') && q.includes('compensation'))) return 'No additional compensation or benefits beyond base salary.'
+  if (q.includes('current salary') || q.includes('current pay') || q.includes('present salary')) return CUSTOM_QUESTION_ANSWERS.salary
+  if (q.includes('salary') && (q.includes('range') || q.includes('minimum') && q.includes('maximum'))) return CUSTOM_QUESTION_ANSWERS.salaryRange
+  if (q.includes('minimum salary') || q.includes('lowest') && q.includes('salary')) return CUSTOM_QUESTION_ANSWERS.salary
+  if (q.includes('salary') || q.includes('compensation') || q.includes('pay expectation') || q.includes('desired pay') || q.includes('desired salary') || (q.includes('annual') && q.includes('expect'))) return CUSTOM_QUESTION_ANSWERS.salaryExpectation
+
+  // ─── 7. AI TOOLS (before generic tool check) ──────────────────────
   if (q.includes('ai') && (q.includes('tool') || q.includes('software') || q.includes('use') || q.includes('familiar'))) return 'Experienced with AI-assisted design workflows: Figma AI, Midjourney for concept exploration, ChatGPT/Claude for UX writing, and custom design system automation.'
-  // Beauty / brand — MUST come before generic years/experience check
+
+  // ─── 8. INDUSTRY / BRAND EXPERIENCE (before generic experience) ────
   if (q.includes('beauty') || (q.includes('brand') && !q.includes('brandtech')) || q.includes('luxury') || q.includes('fashion') || q.includes('cosmetic') || q.includes('skincare')) return 'Experienced with premium brand design across iGaming, B2B SaaS, and media platforms. Strong visual design skills with attention to brand consistency and premium aesthetics.'
 
-  // Experience / years (generic — after specific checks above)
-  if (q.includes('years') && (q.includes('experience') || q.includes('expérience'))) return CUSTOM_QUESTION_ANSWERS.yearsExperience
+  // ─── 9. EXPERIENCE / YEARS ─────────────────────────────────────────
+  if ((q.includes('years') || q.includes('how many') || q.includes('how long')) && (q.includes('experience') || q.includes('expérience'))) return CUSTOM_QUESTION_ANSWERS.yearsExperience
+  if (q.includes('years of') && (q.includes('design') || q.includes('product') || q.includes('ux') || q.includes('ui'))) return CUSTOM_QUESTION_ANSWERS.yearsExperience
+  if (q.includes('level of experience') || q.includes('experience level') || q.includes('seniority')) return 'Senior (7+ years)'
   if (q.includes('design system') || q.includes('design ops')) return CUSTOM_QUESTION_ANSWERS.designSystems
   if (q.includes('tool') || q.includes('software') || q.includes('proficien')) return CUSTOM_QUESTION_ANSWERS.tools
 
-  // Availability / start date / notice period
-  if (q.includes('start date') || q.includes('when can you') || q.includes('earliest')) return CUSTOM_QUESTION_ANSWERS.startDate
-  if (q.includes('notice period') || q.includes('préavis')) return CUSTOM_QUESTION_ANSWERS.noticePeriod
+  // ─── 10. EDUCATION ─────────────────────────────────────────────────
+  if (q.includes('highest degree') || q.includes('level of education') || q.includes('education level') || q.includes('degree') && (q.includes('what') || q.includes('highest') || q.includes('type'))) return CUSTOM_QUESTION_ANSWERS.education
+  if (q.includes('education') && !q.includes('continue') && !q.includes('additional')) return CUSTOM_QUESTION_ANSWERS.educationDetail
+  if (q.includes('university') || q.includes('college') || q.includes('school') && q.includes('attend')) return CUSTOM_QUESTION_ANSWERS.educationDetail
+  if (q.includes('gpa') || q.includes('grade point')) return 'N/A'
+  if (q.includes('major') || q.includes('field of study') || q.includes('area of study')) return 'Digital Design'
+  if (q.includes('certif') && !q.includes('certify') && !q.includes('i certif')) return 'Figma Professional Certificate, Google UX Design Certificate'
+
+  // ─── 11. AVAILABILITY / START DATE / NOTICE PERIOD ─────────────────
+  if (q.includes('start date') || q.includes('when can you start') || q.includes('available to start') || q.includes('earliest start') || q.includes('earliest date')) return CUSTOM_QUESTION_ANSWERS.startDate
+  if (q.includes('when can you') || q.includes('how soon')) return CUSTOM_QUESTION_ANSWERS.startDate
+  if (q.includes('notice period') || q.includes('préavis') || q.includes('notice required')) return CUSTOM_QUESTION_ANSWERS.noticePeriod
   if (q.includes('availab') || q.includes('disponib')) return CUSTOM_QUESTION_ANSWERS.availability
 
-  // Country (standalone label, not part of a complex question)
+  // ─── 12. EMPLOYMENT TYPE / CONTRACT ────────────────────────────────
+  if (q.includes('employment type') || q.includes('type of employment') || q.includes('full-time') || q.includes('full time') || q.includes('part-time') || q.includes('part time')) return CUSTOM_QUESTION_ANSWERS.employmentType
+  if (q.includes('contract') && (q.includes('type') || q.includes('prefer') || q.includes('open to'))) return CUSTOM_QUESTION_ANSWERS.contractType
+  if (q.includes('freelance') || q.includes('contractor') || q.includes('w-2') || q.includes('w2') || q.includes('1099') || q.includes('c2c')) return CUSTOM_QUESTION_ANSWERS.contractType
+
+  // ─── 13. CURRENT EMPLOYER / REASON FOR LEAVING ─────────────────────
+  if (q.includes('current employer') || q.includes('current company') || q.includes('present employer') || q.includes('where do you work')) return CUSTOM_QUESTION_ANSWERS.currentEmployer
+  if (q.includes('reason') && (q.includes('leaving') || q.includes('left') || q.includes('looking') || q.includes('change'))) return CUSTOM_QUESTION_ANSWERS.reasonLeaving
+
+  // ─── 14. COUNTRY (standalone label) ────────────────────────────────
   if ((q === 'country' || q === 'country*') && q.length < 15) return PROFILE.country
 
-  // Remote / location / relocation / timezone
-  if (q.includes('remote') || q.includes('work from home') || q.includes('wfh')) return CUSTOM_QUESTION_ANSWERS.remote
-  if (q.includes('relocat') || q.includes('willing to move') || q.includes('commute')) return CUSTOM_QUESTION_ANSWERS.relocate
-  if (q.includes('timezone') || q.includes('time zone') || q.includes('time difference')) return CUSTOM_QUESTION_ANSWERS.timezone
+  // ─── 15. LOCATION / REMOTE / COMMUTE / ON-SITE ────────────────────
+  if (q.includes('on-site') || q.includes('onsite') || q.includes('in-office') || q.includes('in office') || q.includes('hybrid')) return CUSTOM_QUESTION_ANSWERS.onsite
+  if (q.includes('remote') || q.includes('work from home') || q.includes('wfh') || q.includes('télétravail')) return CUSTOM_QUESTION_ANSWERS.remote
+  if (q.includes('willing to commute') || q.includes('commute') && q.includes('willing')) return CUSTOM_QUESTION_ANSWERS.onsite
+  if (q.includes('relocat') || q.includes('willing to move')) return CUSTOM_QUESTION_ANSWERS.relocate
+  if (q.includes('travel') && (q.includes('willing') || q.includes('able') || q.includes('require') || q.includes('percent') || q.includes('%'))) return CUSTOM_QUESTION_ANSWERS.travel
+  if (q.includes('overtime') || q.includes('extra hours') || q.includes('weekend') && q.includes('work')) return 'Yes'
+  if (q.includes('timezone') || q.includes('time zone') || q.includes('time difference') || q.includes('fuseau')) return CUSTOM_QUESTION_ANSWERS.timezone
+  if (q.includes('where are you based') || q.includes('current location') || q.includes('where do you live') || q.includes('current city')) return CUSTOM_QUESTION_ANSWERS.currentLocation
 
-  // Referral / source
-  if (q.includes('how did you hear') || q.includes('how did you find') || q.includes('source') || q.includes('where did you')) return CUSTOM_QUESTION_ANSWERS.howHeard
-  if ((q.includes('referr') && (q.includes('employee') || q.includes('someone') || q.includes('who') || q.includes('by'))) || q.includes('recommend') || q.includes('who referred')) return CUSTOM_QUESTION_ANSWERS.referral
+  // ─── 16. REFERRAL / SOURCE ─────────────────────────────────────────
+  if (q.includes('how did you hear') || q.includes('how did you find') || q.includes('how did you learn') || q.includes('where did you')) return CUSTOM_QUESTION_ANSWERS.howHeard
+  if (q.includes('source') && !q.includes('open source') && !q.includes('source code')) return CUSTOM_QUESTION_ANSWERS.howHeard
+  if ((q.includes('referr') && (q.includes('employee') || q.includes('someone') || q.includes('who') || q.includes('by') || q.includes('name'))) || q.includes('recommend') || q.includes('who referred')) return CUSTOM_QUESTION_ANSWERS.referral
 
-  // Cover letter / motivation / about you / why
-  if (q.includes('cover letter') || q.includes('motivation') || q.includes('why') && q.includes('interest') || q.includes('tell us about') || q.includes('about yourself') || q.includes('why this role') || q.includes('additional information')) return CUSTOM_QUESTION_ANSWERS.coverLetter
+  // ─── 17. COVER LETTER / MOTIVATION / ABOUT YOU ─────────────────────
+  if (q.includes('cover letter') || q.includes('lettre de motivation')) return CUSTOM_QUESTION_ANSWERS.coverLetter
+  if (q.includes('why this role') || q.includes('why this position') || q.includes('why this company')) return CUSTOM_QUESTION_ANSWERS.coverLetter
+  if (q.includes('additional information') || q.includes('additional comments') || q.includes('anything else')) return CUSTOM_QUESTION_ANSWERS.coverLetter
+  if ((q.includes('why') && q.includes('interest')) || (q.includes('why') && q.includes('apply')) || (q.includes('why') && q.includes('join'))) return CUSTOM_QUESTION_ANSWERS.coverLetter
+  if (q.includes('motivation') || q.includes('about yourself') || q.includes('tell us about')) return CUSTOM_QUESTION_ANSWERS.coverLetter
 
-  // Portfolio / website / link
-  if (q.includes('portfolio') || q.includes('website') || q.includes('url') || q.includes('link to your work') || q.includes('examples of')) return CUSTOM_QUESTION_ANSWERS.portfolio
+  // ─── 18. PORTFOLIO / WEBSITE / LINK ────────────────────────────────
+  if (q.includes('portfolio') || q.includes('website') || q.includes('personal site')) return CUSTOM_QUESTION_ANSWERS.portfolio
+  if (q.includes('url') || q.includes('link to your work') || q.includes('examples of') || q.includes('work samples')) return CUSTOM_QUESTION_ANSWERS.portfolio
+  if (q.includes('linkedin') && (q.includes('url') || q.includes('profile') || q.includes('link'))) return PROFILE.linkedin || CUSTOM_QUESTION_ANSWERS.linkedin
+  if (q.includes('github') || q.includes('dribbble') || q.includes('behance')) return CUSTOM_QUESTION_ANSWERS.portfolio
 
-  // Gender / race / veteran / EEO — "Decline to Self Identify" or "Prefer not to say"
-  if (q.includes('gender') || q.includes('race') || q.includes('veteran') || q.includes('disability') || q.includes('ethnicity') || q.includes('hispanic')) return 'Decline to Self Identify'
+  // ─── 19. DATA / CONSENT / GDPR ────────────────────────────────────
+  if (q.includes('data') && (q.includes('transfer') || q.includes('consent') || q.includes('process') || q.includes('protection') || q.includes('privacy'))) return CUSTOM_QUESTION_ANSWERS.dataConsent
+  if (q.includes('gdpr') || q.includes('rgpd')) return CUSTOM_QUESTION_ANSWERS.dataConsent
 
-  // Data transfer / consent / GDPR
-  if (q.includes('data') && (q.includes('transfer') || q.includes('consent') || q.includes('process') || q.includes('protection') || q.includes('privacy'))) return 'Yes, I consent to the processing of my personal data for recruitment purposes.'
+  // ─── 20. ACCOMMODATIONS / INTERVIEW ────────────────────────────────
+  if (q.includes('accommodat') || q.includes('special requirement') || q.includes('adjustment') || q.includes('accessibility need') || (q.includes('disability') && q.includes('require'))) return CUSTOM_QUESTION_ANSWERS.accommodations
+  if (q.includes('interview') && (q.includes('consider') || q.includes('prefer') || q.includes('availab') || q.includes('schedule'))) return CUSTOM_QUESTION_ANSWERS.interviewAvailability
 
-  // Accommodations / interview considerations / disability
-  if (q.includes('accommodat') || q.includes('special requirement') || q.includes('disability') && q.includes('require') || q.includes('adjustment') || q.includes('accessibility need')) return 'No accommodations needed.'
-  if (q.includes('interview') && (q.includes('consider') || q.includes('prefer') || q.includes('availab') || q.includes('schedule'))) return 'Available for interviews any weekday. Based in Bangkok (GMT+7), flexible with time zones for video calls.'
+  // ─── 21. LANGUAGES / FLUENCY ───────────────────────────────────────
+  if (q.includes('language') || q.includes('fluent') || (q.includes('proficien') && q.includes('english'))) return CUSTOM_QUESTION_ANSWERS.languages
+  if (q.includes('french') || q.includes('français')) return CUSTOM_QUESTION_ANSWERS.french
+  if (q.includes('english') && (q.includes('level') || q.includes('proficien') || q.includes('fluent'))) return 'Fluent / Professional working proficiency'
+
+  // ─── 22. "ANYTHING ELSE" / OPEN-ENDED ─────────────────────────────
   if (q.includes('anything') && (q.includes('know') || q.includes('share') || q.includes('else') || q.includes('add'))) return `Portfolio: ${PROFILE.portfolio} — 7+ years as a Senior Product Designer specializing in design systems, complex product architecture, and design ops.`
 
-  // Right to work (broader patterns)
-  if (q.includes('right') && q.includes('work')) return CUSTOM_QUESTION_ANSWERS.authorized
-  if (q.includes('legally') || q.includes('legal right') || q.includes('employment eligib')) return CUSTOM_QUESTION_ANSWERS.authorized
-  if (q.includes('work') && q.includes('permit')) return CUSTOM_QUESTION_ANSWERS.visa
-  if (q.includes('immigration') || q.includes('citizen')) return CUSTOM_QUESTION_ANSWERS.visa
-
-  // Language / fluency
-  if (q.includes('language') || q.includes('fluent') || q.includes('proficien') && q.includes('english')) return 'Bilingual French/English (native French, fluent English). Working proficiency in both languages.'
-  if (q.includes('french') || q.includes('français')) return 'Native French speaker'
-
-  // Interest / motivation / why this role (broader)
-  if (q.includes('interest') || q.includes('motivat') || q.includes('why') && (q.includes('apply') || q.includes('join') || q.includes('role') || q.includes('company') || q.includes('position'))) return CUSTOM_QUESTION_ANSWERS.coverLetter
+  // ─── 23. BROADER INTEREST / MOTIVATION (catch-all) ─────────────────
+  if (q.includes('interest') && (q.includes('role') || q.includes('position') || q.includes('company') || q.includes('job'))) return CUSTOM_QUESTION_ANSWERS.coverLetter
+  if (q.includes('motivat') || (q.includes('why') && (q.includes('role') || q.includes('company') || q.includes('position')))) return CUSTOM_QUESTION_ANSWERS.coverLetter
   if (q.includes('tell us') || q.includes('describe') || q.includes('about yourself') || q.includes('summary') || q.includes('introduce')) return CUSTOM_QUESTION_ANSWERS.coverLetter
 
-  // Consent / agreement (broader)
-  if (q.includes('consent') || q.includes('agree') || q.includes('acknowledge') || q.includes('confirm') || q.includes('certify') || q.includes('attest')) return 'Yes'
+  // ─── 24. CONSENT / AGREEMENT (broad catch-all) ────────────────────
+  if (q.includes('consent') || q.includes('agree') || q.includes('acknowledge') || q.includes('confirm') || q.includes('certify') || q.includes('attest') || q.includes('i understand')) return CUSTOM_QUESTION_ANSWERS.consent
 
   // Generic fallback for any remaining text field
   return null
@@ -1726,7 +1854,19 @@ function findBestOption(menuOptions, answer) {
         (optText.includes('decline') || optText.includes('prefer not') || optText.includes('not wish') ||
          optText.includes('not declared') || optText.includes('not specified') ||
          optText.includes('do not want to answer') || optText.includes("don't wish") ||
-         optText.includes('choose not') || optText.includes('rather not'))) { bestMatch = opt; break }
+         optText.includes('choose not') || optText.includes('rather not') ||
+         optText.includes('i do not wish') || optText.includes('opt out') ||
+         optText.includes('not disclose'))) { bestMatch = opt; break }
+
+    // Education: match degree level
+    if (ansLower.includes('bachelor') && optText.includes('bachelor')) { bestMatch = opt; break }
+    if (ansLower.includes('master') && optText.includes('master')) { bestMatch = opt; break }
+
+    // Immediately / available now (for start date dropdowns)
+    if (ansLower.includes('immediately') && (optText.includes('immediately') || optText.includes('asap') || optText.includes('right away') || optText.includes('2 weeks') || optText.includes('less than'))) { bestMatch = opt; break }
+
+    // Full-time employment type
+    if (ansLower.includes('full-time') && (optText.includes('full-time') || optText.includes('full time'))) { bestMatch = opt; break }
 
     // Partial match — only for LONG answers (>5 chars) to avoid false positives
     if (ansLower.length > 5 && (optText.includes(ansLower) || ansLower.includes(optText))) { bestMatch = opt; break }
