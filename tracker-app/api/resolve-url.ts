@@ -189,11 +189,10 @@ async function probeCompanyAtsPages(companyName: string, roleTitle?: string): Pr
             const specificJob = await findJobOnCareerPage(careerPageUrl, roleTitle)
             if (specificJob) return specificJob
           }
-          // Return career page as fallback only for known ATS domains
-          if (careerPageUrl.includes('greenhouse') || careerPageUrl.includes('lever')
-              || careerPageUrl.includes('ashby') || careerPageUrl.includes('workable')) {
-            return careerPageUrl
-          }
+          // Do NOT return career page URLs as "resolved" — they don't have
+          // application forms. Only return if we found the specific job posting.
+          // Returning a company career page would cause ats-apply.js to run on a
+          // job listing page with no form, wasting time in a 15-step loop.
         }
       } catch { /* skip */ }
     }
