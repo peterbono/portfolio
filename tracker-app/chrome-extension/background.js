@@ -841,6 +841,67 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         // Wait for page to fully render (SPAs, lazy load)
         await new Promise(r => setTimeout(r, 3000))
 
+        // Step 2b: Detect and wait for Cloudflare challenge pages
+        // CF challenges show "Just a moment..." or similar titles while verifying
+        // the browser. The real page loads after 3-8s with a second status=complete.
+        const CF_TITLE_PATTERNS = /just a moment|checking your browser|verify you are human|attention required|cloudflare/i
+        const CF_POLL_INTERVAL = 2000
+        const CF_MAX_WAIT = 15000
+
+        try {
+          const tabInfo = await chrome.tabs.get(boardTab.id)
+          const tabTitle = tabInfo.title || ''
+          const tabUrl = tabInfo.url || ''
+          const isCfChallenge = CF_TITLE_PATTERNS.test(tabTitle) || /[?&]__cf_chl_/.test(tabUrl)
+
+          if (isCfChallenge) {
+            console.log('[JobTracker] [JobBoard] Cloudflare challenge detected — title:', JSON.stringify(tabTitle), '| Waiting up to', CF_MAX_WAIT / 1000 + 's for resolution...')
+
+            const cfResolved = await new Promise((resolve) => {
+              const cfStart = Date.now()
+              const pollTimer = setInterval(async () => {
+                try {
+                  const current = await chrome.tabs.get(boardTab.id)
+                  const currentTitle = current.title || ''
+                  const currentUrl = current.url || ''
+                  const stillCf = CF_TITLE_PATTERNS.test(currentTitle) || /[?&]__cf_chl_/.test(currentUrl)
+
+                  if (!stillCf) {
+                    clearInterval(pollTimer)
+                    const elapsed = ((Date.now() - cfStart) / 1000).toFixed(1)
+                    console.log('[JobTracker] [JobBoard] Cloudflare challenge resolved in', elapsed + 's — new title:', JSON.stringify(currentTitle))
+                    // Give the real page a moment to fully render after CF clears
+                    await new Promise(r => setTimeout(r, 2000))
+                    resolve(true)
+                  } else if (Date.now() - cfStart >= CF_MAX_WAIT) {
+                    clearInterval(pollTimer)
+                    console.warn('[JobTracker] [JobBoard] Cloudflare challenge did not resolve within', CF_MAX_WAIT / 1000 + 's')
+                    resolve(false)
+                  }
+                } catch (pollErr) {
+                  clearInterval(pollTimer)
+                  console.warn('[JobTracker] [JobBoard] Tab closed during CF wait:', pollErr.message)
+                  resolve(false)
+                }
+              }, CF_POLL_INTERVAL)
+            })
+
+            if (!cfResolved) {
+              await cleanupBoardTab()
+              return {
+                success: false,
+                status: 'needs_manual',
+                reason: 'Cloudflare challenge on ' + jobBoard + ' page did not resolve — please open manually',
+                company: job.company,
+                role: job.role || '',
+                requestId,
+              }
+            }
+          }
+        } catch (cfCheckErr) {
+          console.warn('[JobTracker] [JobBoard] CF check failed (non-fatal):', cfCheckErr.message)
+        }
+
         // Step 3: Find and click the "Apply" button on the job board page
         // Returns { href: string } | { clicked: true } | null
         let applyResult = null
