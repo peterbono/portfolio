@@ -30,7 +30,15 @@
     "https://*.jobvite.com/*",
     "https://*.icims.com/*",
     "https://*.myworkdayjobs.com/*",
-    "https://*.workday.com/*"
+    "https://*.workday.com/*",
+    "https://weworkremotely.com/*",
+    "https://remoteok.com/*",
+    "https://*.remoteok.com/*",
+    "https://dribbble.com/jobs/*",
+    "https://jobicy.com/*",
+    "https://himalayas.app/*",
+    "https://remotive.com/*",
+    "https://wellfound.com/*"
   ],
   "action": {
     "default_popup": "popup.html",
