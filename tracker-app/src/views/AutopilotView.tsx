@@ -58,6 +58,7 @@ import {
   type FeedbackSignal,
 } from '../lib/feedback-signals'
 import { notifyBotError, notifyApplicationsSubmitted } from '../lib/notifications'
+import { classifyJobUrl } from '../lib/classify-job-url'
 
 /* ------------------------------------------------------------------ */
 /*  Mobile responsive CSS injection                                    */
@@ -2425,8 +2426,24 @@ function ReviewQueue({
   reviewMode: ReviewMode
   onToggleMode: (mode: ReviewMode) => void
 }) {
-  const pendingCount = queue.filter((i) => i.status === 'pending').length
-  const approvedCount = queue.filter((i) => i.status === 'approved').length
+  const [applyFilter, setApplyFilter] = useState<'all' | 'auto' | 'direct'>('all')
+
+  // Compute counts per filter category
+  const autoCount = queue.filter(i => {
+    const c = classifyJobUrl(i.jobUrl || '')
+    return c === 'auto_apply' || c === 'linkedin'
+  }).length
+  const directCount = queue.filter(i => classifyJobUrl(i.jobUrl || '') === 'direct_apply').length
+
+  // Apply filter to queue
+  const filteredQueue = applyFilter === 'all'
+    ? queue
+    : applyFilter === 'auto'
+      ? queue.filter(i => { const c = classifyJobUrl(i.jobUrl || ''); return c === 'auto_apply' || c === 'linkedin' })
+      : queue.filter(i => classifyJobUrl(i.jobUrl || '') === 'direct_apply')
+
+  const pendingCount = filteredQueue.filter((i) => i.status === 'pending').length
+  const approvedCount = filteredQueue.filter((i) => i.status === 'approved').length
   if (queue.length === 0) return null
 
   return (
@@ -2446,6 +2463,25 @@ function ReviewQueue({
           <p style={reviewStyles.queueSubtext}>
             Review your matches. Nothing is submitted until you approve.
           </p>
+          {/* Apply method filter pills */}
+          <div style={reviewStyles.applyFilterWrap}>
+            {([
+              { key: 'all' as const, label: 'All', count: queue.length },
+              { key: 'auto' as const, label: 'Auto-Apply', count: autoCount },
+              { key: 'direct' as const, label: 'Candidature directe', count: directCount },
+            ]).map(f => (
+              <button
+                key={f.key}
+                style={{
+                  ...reviewStyles.applyFilterPill,
+                  ...(applyFilter === f.key ? reviewStyles.applyFilterPillActive : {}),
+                }}
+                onClick={() => setApplyFilter(f.key)}
+              >
+                {f.label} ({f.count})
+              </button>
+            ))}
+          </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {/* View toggle */}
@@ -2490,7 +2526,7 @@ function ReviewQueue({
       {/* Card Stack mode */}
       {reviewMode === 'card' && (
         <CardStackReview
-          queue={queue}
+          queue={filteredQueue}
           onApprove={onApprove}
           onSkip={onSkip}
           onUndo={onUndo}
@@ -2501,7 +2537,7 @@ function ReviewQueue({
       {/* List mode */}
       {reviewMode === 'list' && (
         <div style={reviewStyles.queueList}>
-          {queue.map((item) => (
+          {filteredQueue.map((item) => (
             <ApplicationReviewCard
               key={item.id}
               item={item}
@@ -2957,6 +2993,30 @@ const reviewStyles: Record<string, React.CSSProperties> = {
   },
   viewToggleBtnActive: {
     background: 'rgba(96, 165, 250, 0.12)',
+    color: '#93c5fd',
+  },
+  applyFilterWrap: {
+    display: 'flex',
+    gap: 6,
+    marginTop: 8,
+    flexWrap: 'wrap' as const,
+  },
+  applyFilterPill: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    fontSize: 12,
+    fontWeight: 500,
+    padding: '4px 12px',
+    borderRadius: 999,
+    border: '1px solid var(--border)',
+    background: 'transparent',
+    color: 'var(--text-secondary)',
+    cursor: 'pointer',
+    transition: 'background 0.15s, color 0.15s, border-color 0.15s',
+  },
+  applyFilterPillActive: {
+    background: 'rgba(96, 165, 250, 0.15)',
+    borderColor: 'rgba(96, 165, 250, 0.4)',
     color: '#93c5fd',
   },
 }
@@ -3778,7 +3838,7 @@ export function AutopilotView() {
   } = usePlan()
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const { setActiveView: navigateToView } = useUI()
-  const { allJobs } = useJobs()
+  const { allJobs, addJob } = useJobs()
 
   // Auto-save handler with debounce
   const handleConfigChange = useCallback((patch: Partial<SearchConfig>) => {
@@ -4298,7 +4358,25 @@ export function AutopilotView() {
           return { ...item, status: 'expired' as const, submittingStartedAt: undefined, failReason: r || s }
         }
         if (s === 'needs_manual') {
-          return { ...item, status: 'needs_manual' as const, submittingStartedAt: undefined, failReason: r || 'Needs manual application' }
+          // Add to main job tracker as "manual" (To Submit) instead of keeping in autopilot
+          const manualId = `autopilot-manual-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+          addJob({
+            id: manualId,
+            date: new Date().toISOString().split('T')[0],
+            status: 'manual',
+            role: item.role,
+            company: item.company,
+            location: '',
+            salary: '',
+            ats: '',
+            cv: item.cvName || '',
+            portfolio: '',
+            link: item.jobUrl || '',
+            notes: r || 'Needs manual application',
+            source: 'auto',
+          })
+          // Mark as submitted in autopilot queue so it disappears from the review list
+          return { ...item, status: 'submitted' as const, submittingStartedAt: undefined }
         }
         // Map 'skipped' bot result to 'skipped' queue status (not 'failed')
         if (s === 'skipped') {
@@ -4332,9 +4410,8 @@ export function AutopilotView() {
       } else {
         const manualCount = results.filter(r => r.status === 'needs_manual').length
         const failedNames = results.filter(r => r.status !== 'needs_manual').map(r => `"${r.role}" at ${r.company}`).join(', ')
-        const manualNames = results.filter(r => r.status === 'needs_manual').map(r => `"${r.role}" at ${r.company}`).join(', ')
         const parts: string[] = []
-        if (manualCount > 0) parts.push(`${manualCount} job${manualCount > 1 ? 's' : ''} need${manualCount === 1 ? 's' : ''} manual application — see below`)
+        if (manualCount > 0) parts.push(`${manualCount} job${manualCount > 1 ? 's' : ''} added to Applications board as "To Submit"`)
         if (failedNames) parts.push(`Failed: ${failedNames}`)
         setTriggerError(parts.join('. ') || 'No applications were submitted.')
       }
@@ -4387,7 +4464,25 @@ export function AutopilotView() {
           return { ...item, status: 'expired' as const, submittingStartedAt: undefined, failReason: reason || status }
         }
         if (status === 'needs_manual' || status === 'auth_wall') {
-          return { ...item, status: 'needs_manual' as const, submittingStartedAt: undefined, failReason: reason || 'Needs manual application' }
+          // Add to main job tracker as "manual" (To Submit) instead of keeping in autopilot
+          const manualId = `autopilot-manual-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+          addJob({
+            id: manualId,
+            date: new Date().toISOString().split('T')[0],
+            status: 'manual',
+            role: item.role,
+            company: item.company,
+            location: '',
+            salary: '',
+            ats: '',
+            cv: item.cvName || '',
+            portfolio: '',
+            link: item.jobUrl || '',
+            notes: reason || 'Needs manual application',
+            source: 'auto',
+          })
+          // Mark as submitted in autopilot queue so it disappears from the review list
+          return { ...item, status: 'submitted' as const, submittingStartedAt: undefined }
         }
         // Map 'skipped' to 'skipped' (not 'failed')
         if (status === 'skipped') {
@@ -5387,13 +5482,12 @@ export function AutopilotView() {
                   ? ` (search ${metaProcessed}/${scoutSearchesTotal})`
                   : ''
                 const appliedTotal = (polledRunOutput?.applied as number | undefined) ?? 0
-                const needsManualTotal = reviewQueue.filter(i => i.status === 'needs_manual').length
                 const failedTotal = reviewQueue.filter(i => i.status === 'failed').length
                 const unmatchedTotal = reviewQueue.filter(i => i.status === 'unmatched').length
                 const applyAllFailed = isComplete && isApplyRun && appliedTotal === 0
                 const statusText = isApplyRun
                   ? (isFailed ? 'Application failed'
-                    : applyAllFailed ? (needsManualTotal > 0 ? `${needsManualTotal} job${needsManualTotal > 1 ? 's' : ''} to submit manually` : 'No applications submitted')
+                    : applyAllFailed ? 'No applications submitted'
                     : isComplete ? `${appliedTotal} application${appliedTotal !== 1 ? 's' : ''} submitted`
                     : polledRunStatus === 'QUEUED' || polledRunStatus === 'REATTEMPTING' || isTriggering ? 'Submitting applications...'
                     : 'Submitting applications...')
@@ -5539,9 +5633,6 @@ export function AutopilotView() {
                           {isApplyRun ? (
                             <>
                               {appliedTotal} submitted
-                              {needsManualTotal > 0 && (
-                                <> &middot; <span style={{ color: '#f59e0b' }}>{needsManualTotal} to submit manually</span></>
-                              )}
                               {failedTotal > 0 && (
                                 <> &middot; <span style={{ color: '#f43f5e' }}>{failedTotal} failed</span></>
                               )}
@@ -5678,144 +5769,7 @@ export function AutopilotView() {
             </div>
           )}
 
-          {/* ─── To Submit Manually — shows needs_manual jobs with apply links ─── */}
-          {reviewQueue.filter(i => i.status === 'needs_manual').length > 0 && (() => {
-            const manualItems = reviewQueue.filter(i => i.status === 'needs_manual')
-            const directApplyItems = manualItems.filter(i => i.failReason && /postulez sur:|Apply manually at:/i.test(i.failReason))
-            const otherManualItems = manualItems.filter(i => !i.failReason || !/postulez sur:|Apply manually at:/i.test(i.failReason))
-            const extractDirectUrl = (reason: string) =>
-              reason.match(/(?:postulez sur:|Apply manually at:)\s*(https?:\/\/\S+)/i)?.[1] || null
-
-            return (
-              <div style={{
-                background: directApplyItems.length > 0 && otherManualItems.length === 0
-                  ? 'rgba(59, 130, 246, 0.06)'
-                  : 'rgba(245, 158, 11, 0.06)',
-                border: `1px solid ${directApplyItems.length > 0 && otherManualItems.length === 0 ? 'rgba(59, 130, 246, 0.2)' : 'rgba(245, 158, 11, 0.2)'}`,
-                borderRadius: 12,
-                padding: '16px 20px',
-                marginBottom: 16,
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                  {directApplyItems.length > 0 && otherManualItems.length === 0 ? (
-                    <>
-                      <ExternalLink size={16} color="#3b82f6" />
-                      <span style={{ fontWeight: 600, fontSize: 14, color: '#3b82f6' }}>
-                        Candidature directe ({directApplyItems.length})
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <AlertTriangle size={16} color="#f59e0b" />
-                      <span style={{ fontWeight: 600, fontSize: 14, color: '#f59e0b' }}>
-                        To Submit Manually ({manualItems.length})
-                      </span>
-                    </>
-                  )}
-                </div>
-                <p style={{ fontSize: 12, color: '#94a3b8', margin: '0 0 12px 0', lineHeight: 1.4 }}>
-                  {directApplyItems.length > 0 && otherManualItems.length === 0
-                    ? 'Ces offres ne supportent pas l\'auto-apply. Postulez directement sur le site.'
-                    : 'These jobs couldn\'t be auto-submitted. Click to open the application page and apply manually.'}
-                </p>
-                <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 8 }}>
-                  {manualItems.map(item => {
-                    const isDirectApply = item.failReason && /postulez sur:|Apply manually at:/i.test(item.failReason)
-                    const directUrl = isDirectApply ? extractDirectUrl(item.failReason!) : null
-                    const applyUrl = directUrl || item.jobUrl
-                    const borderColor = isDirectApply ? 'rgba(59, 130, 246, 0.12)' : 'rgba(245, 158, 11, 0.12)'
-
-                    return (
-                      <div key={item.id} style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 12,
-                        padding: '10px 12px',
-                        background: 'rgba(30, 32, 44, 0.6)',
-                        borderRadius: 8,
-                        border: `1px solid ${borderColor}`,
-                      }}>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <span style={{ fontWeight: 600, fontSize: 13, color: '#e2e8f0', whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.role}</span>
-                            {isDirectApply && (
-                              <span style={{
-                                display: 'inline-flex', alignItems: 'center',
-                                padding: '1px 6px', borderRadius: 9999,
-                                background: 'rgba(59, 130, 246, 0.12)', color: '#3b82f6',
-                                fontSize: 9, fontWeight: 700, letterSpacing: 0.3,
-                                whiteSpace: 'nowrap' as const, flexShrink: 0,
-                              }}>Candidature directe</span>
-                            )}
-                          </div>
-                          <div style={{ fontSize: 12, color: '#94a3b8' }}>{item.company}</div>
-                        </div>
-                        {applyUrl && (
-                          <a
-                            href={applyUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 4,
-                              padding: '6px 12px',
-                              background: isDirectApply ? '#3b82f6' : '#f59e0b',
-                              color: '#fff',
-                              borderRadius: 6,
-                              fontSize: 12,
-                              fontWeight: 600,
-                              textDecoration: 'none',
-                              whiteSpace: 'nowrap' as const,
-                              flexShrink: 0,
-                            }}
-                          >
-                            {isDirectApply ? 'Candidature directe' : 'Apply'} <ExternalLink size={11} />
-                          </a>
-                        )}
-                        <button
-                          onClick={() => handleMarkSubmitted(item.id)}
-                          style={{
-                            background: 'none',
-                            border: '1px solid rgba(34, 197, 94, 0.3)',
-                            color: '#22c55e',
-                            cursor: 'pointer',
-                            padding: '4px 8px',
-                            borderRadius: 6,
-                            fontSize: 11,
-                            fontWeight: 600,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 4,
-                            flexShrink: 0,
-                            whiteSpace: 'nowrap' as const,
-                          }}
-                          title="Marquer comme postul\u00e9"
-                        >
-                          <Check size={11} /> Postul&eacute;
-                        </button>
-                        <button
-                          onClick={() => handleReviewDismiss(item.id)}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            color: '#64748b',
-                            cursor: 'pointer',
-                            padding: 4,
-                            display: 'flex',
-                            flexShrink: 0,
-                          }}
-                          title="Dismiss"
-                        >
-                          <X size={14} />
-                        </button>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )
-          })()}
+          {/* needs_manual jobs are now sent directly to the Applications kanban (status: "manual" / To Submit) */}
 
           {/* Preview Drawer (authenticated) */}
           {previewItem && (
