@@ -530,7 +530,17 @@ async function fetchAndUploadCV(fileInput) {
     // guarantees React's state updates, unlike native DOM events which React may ignore
     // on file inputs. This is why DataTransfer "worked" (set fileInput.files) but Lever
     // still showed the 100MB error: React's state never received the file.
-    const reactProps = getReactProps(fileInput)
+    // Search for React onChange on the file input AND its ancestors (Lever puts it on a wrapper)
+    let reactProps = getReactProps(fileInput)
+    if (!reactProps?.onChange) {
+      // Walk up to 5 ancestors looking for onChange
+      let el = fileInput.parentElement
+      for (let i = 0; i < 5 && el; i++) {
+        const props = getReactProps(el)
+        if (props?.onChange) { reactProps = props; break }
+        el = el.parentElement
+      }
+    }
     if (reactProps?.onChange) {
       log('Found React props on file input — calling onChange directly...')
       // Set files on the DOM element first so React can read them
