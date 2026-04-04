@@ -117,34 +117,6 @@ window.addEventListener('message', (event) => {
     })
   }
 
-  // Handle direct ATS apply via extension (no LinkedIn redirect)
-  if (event.data?.type === 'JOBTRACKER_APPLY_ATS_VIA_EXTENSION') {
-    const jobData = event.data.jobData
-    const requestId = event.data.requestId || null
-    console.log('[JobTracker Extension] ATS direct apply request received:', jobData?.company, '| requestId:', requestId)
-
-    chrome.runtime.sendMessage({ action: 'applyAtsDirectly', jobData, requestId }, (response) => {
-      if (chrome.runtime.lastError) {
-        window.postMessage({
-          type: 'JOBTRACKER_APPLY_RESULT',
-          success: false,
-          status: 'failed',
-          reason: chrome.runtime.lastError.message,
-          company: jobData?.company,
-          requestId,
-        }, '*')
-        return
-      }
-
-      window.postMessage({
-        type: 'JOBTRACKER_APPLY_RESULT',
-        ...response,
-        company: jobData?.company,
-        requestId,
-      }, '*')
-    })
-  }
-
   // Handle disconnect request
   if (event.data?.type === 'JOBTRACKER_REQUEST_DISCONNECT') {
     chrome.runtime.sendMessage({ action: 'disconnect' }, (response) => {

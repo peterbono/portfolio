@@ -1,13 +1,15 @@
 /**
- * JobTracker — ATS Auto-Apply Content Script v2.6.0
+ * JobTracker — ATS Autofill Content Script v2.7.0
  *
  * Injected on external career pages (Greenhouse, Lever, Workable, etc.)
  * after the user clicks "Apply on company website" from LinkedIn.
  *
  * Reads atsApplyContext from chrome.storage.local, detects ATS type,
- * fills the form, uploads CV, and submits.
+ * fills the form, uploads CV, and stops (autofill-only — no auto-submit).
  *
  * v2.0.0: Smart Greenhouse handler, validation-aware submit, retry on errors
+ * v2.7.0: Autofill-only mode — fill all fields, upload CV, but DO NOT submit.
+ *         Injects overlay banner for user to review & submit manually.
  *
  * SECURITY: Runs in the user's own browser with their own IP and cookies.
  */
@@ -2239,9 +2241,9 @@ async function handleGreenhouse(context) {
     errors.forEach(e => log('  -', e))
   }
 
-  // Step 10: Scroll submit button into view for Greenhouse Remix
-  // Greenhouse Remix forms can be very long (5000px+). The submit button at the bottom
-  // may not be interactable via click() if it's far off-screen in some browser configs.
+  // Step 10: Scroll submit button into view so the user can see it
+  // Greenhouse Remix forms can be very long (5000px+). Scroll so the user
+  // can easily find and click Submit after reviewing the filled fields.
   const ghSubmitBtn = document.querySelector('.application--submit button, #submit_app, #application-form button[type="submit"], button[type="submit"]')
   if (ghSubmitBtn) {
     ghSubmitBtn.scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -2249,7 +2251,7 @@ async function handleGreenhouse(context) {
     log('Scrolled to Greenhouse submit button:', (ghSubmitBtn.textContent || '').trim())
   }
 
-  return true // Always try to proceed to submit
+  return true // Form filled — navigateMultiStepForm will handle the rest (no auto-submit)
 }
 
 async function uploadGreenhouseCV() {
@@ -3864,25 +3866,11 @@ async function handleLever() {
   // Fill any remaining generic fields
   await fillAllFormFields()
 
-  // ── CV Upload: Direct API submission ──────────────────────────────────
-  // Lever's React file input rejects DataTransfer-set files with a spurious
-  // "File exceeds 100MB" error on any file, regardless of size.  Instead of
-  // fighting React, we bypass its file input entirely:
-  //   1. Fetch the CV from GitHub (content-script fetch — not subject to page CSP)
-  //   2. Collect every filled field value from the DOM
-  //   3. Build a FormData with fields + CV as "resume" file
-  //   4. POST directly to Lever's apply endpoint (same origin — no CORS issues)
-  // If the direct submit succeeds, we set a flag so navigateMultiStepForm()
-  // knows the application is already submitted and skips clicking Submit.
-  const directSubmitOk = await _leverDirectSubmit()
-  if (directSubmitOk) {
-    // Signal to the main flow that submission already happened
-    window.__leverDirectSubmitted = true
-    return true
-  }
-
-  // Fallback: try the standard file input approach (unlikely to work, but safe)
-  log('Lever direct submit failed — falling back to DataTransfer file input')
+  // ── CV Upload (autofill-only — no direct API submit) ──────────────────
+  // In autofill-only mode we do NOT call _leverDirectSubmit() because that
+  // POSTs the application via Lever's API. Instead, only upload the CV via
+  // the standard DataTransfer file input so the user can review & submit.
+  log('Lever autofill-only mode — uploading CV via file input (no direct submit)')
   const fileInput = document.querySelector('input[type="file"][name="resume"], input[type="file"]')
   if (fileInput) await fetchAndUploadCV(fileInput)
 
@@ -4388,7 +4376,38 @@ async function handleGeneric() {
   return filled > 0
 }
 
+// ─── Autofill Overlay Banner ─────────────────────────────────────────
+// Injects a fixed banner at the bottom of the page informing the user
+// that fields have been filled and they should review before submitting.
+
+function injectOverlay(filledCount) {
+  // Remove any existing overlay first
+  const existing = document.getElementById('jobtracker-overlay')
+  if (existing) existing.remove()
+
+  const overlay = document.createElement('div')
+  overlay.id = 'jobtracker-overlay'
+  overlay.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#10b981;color:white;padding:12px 20px;font-family:system-ui;font-size:14px;display:flex;align-items:center;justify-content:space-between;z-index:99999;box-shadow:0 -2px 10px rgba(0,0,0,0.1)'
+
+  const textSpan = document.createElement('span')
+  textSpan.innerHTML = `\u2705 JobTracker filled ${filledCount} field${filledCount !== 1 ? 's' : ''} &mdash; Review &amp; Submit when ready<br><small style="opacity:0.85;font-size:12px">Check the filled fields, then click the form's Submit button</small>`
+
+  const closeBtn = document.createElement('button')
+  closeBtn.textContent = '\u2715'
+  closeBtn.style.cssText = 'background:none;border:none;color:white;font-size:18px;cursor:pointer;padding:4px 8px;margin-left:12px;flex-shrink:0'
+  closeBtn.addEventListener('click', () => overlay.remove())
+
+  overlay.appendChild(textSpan)
+  overlay.appendChild(closeBtn)
+  document.body.appendChild(overlay)
+
+  log(`Overlay injected: ${filledCount} fields filled`)
+}
+
 // ─── Submit Form ──────────────────────────────────────────────────────
+// NOTE: submitForm() is kept defined but is NO LONGER called in the main
+// ats-apply.js flow (autofill-only mode). It remains available for
+// linkedin-apply.js and any future auto-submit needs.
 
 async function submitForm() {
   // Helper: check if a button is truly clickable (visible, not disabled, not aria-disabled)
@@ -4617,16 +4636,15 @@ async function handleGreenhouseSecurityCode() {
 // ─── Multi-Step Form Navigation ───────────────────────────────────────
 
 async function navigateMultiStepForm() {
-  // ── Lever direct submit bypass ──
-  // If handleLever() already submitted the application via direct API POST,
-  // skip the entire multi-step navigation — the application is done.
+  // ── Lever direct submit bypass (legacy — no longer triggered in v2.7.0) ──
+  // handleLever() no longer calls _leverDirectSubmit() in autofill-only mode.
+  // This guard is kept for safety only.
   if (window.__leverDirectSubmitted) {
-    log('Lever direct submit already completed — skipping navigateMultiStepForm')
-    return 'submitted'
+    log('Lever direct submit flag set (unexpected in autofill-only mode)')
+    return 'filled'
   }
 
-  let submitAttempts = 0
-  const maxSubmitRetries = 3
+  let totalFilledCount = 0      // Accumulate filled fields across all steps
   let consecutiveZeroFills = 0  // Stuck detection: count consecutive steps with 0 fields filled
 
   for (let step = 0; step < ATS_CONFIG.maxAttempts; step++) {
@@ -4680,7 +4698,7 @@ async function navigateMultiStepForm() {
     }
 
     // If 3+ consecutive steps filled 0 fields, the "Next" button is likely phantom —
-    // skip Next detection entirely and fall through to Submit
+    // skip Next detection entirely and fall through to autofill-done
     if (consecutiveZeroFills < 3) {
       // Look for Next / Continue button (multi-step forms)
       const nextBtn = findAndClickButton([
@@ -4703,123 +4721,35 @@ async function navigateMultiStepForm() {
           await fillAllFormFields()
           await sleep(500)
         }
+        totalFilledCount += filledCount
         continue
       }
     } else {
-      log(`Stuck detected: ${consecutiveZeroFills} consecutive steps with 0 fields filled — skipping Next, trying Submit`)
+      log(`Stuck detected: ${consecutiveZeroFills} consecutive steps with 0 fields filled — all steps filled`)
     }
 
-    // No Next button — look for Submit
-    const preSubmitErrors = getValidationErrors()
-    if (preSubmitErrors.length > 0) {
-      log('Pre-submit validation errors:', preSubmitErrors.length)
-      preSubmitErrors.forEach(e => log('  -', e))
+    // ── Autofill-only mode: STOP here — do NOT click Submit ──
+    // All form steps have been filled. Return 'filled' so the main flow
+    // can inject the overlay banner and let the user review & submit manually.
+    totalFilledCount += filledCount
+    log(`Autofill complete — ${totalFilledCount} total fields filled across ${step + 1} step(s). NOT submitting.`)
+
+    // Scroll to the submit button area so the user can see it
+    const submitArea = document.querySelector('.application--submit, [class*="submit"], button[type="submit"], #submit_app')
+    if (submitArea) {
+      submitArea.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      await sleep(600)
     }
 
-    const submitted = await submitForm()
-    if (submitted) {
-      await sleep(3000)
-
-      // Check for confirmation
-      if (isApplicationConfirmed()) {
-        return 'confirmed'
-      }
-
-      // Check for Greenhouse security code page (email 2FA)
-      const securityResult = await handleGreenhouseSecurityCode()
-      if (securityResult === 'confirmed') {
-        return 'confirmed'
-      } else if (securityResult === 'submitted') {
-        return 'submitted'
-      }
-
-      // Check for validation errors (submit clicked but form stayed on page)
-      const postSubmitErrors = getValidationErrors()
-      const stillOnForm = !!document.querySelector('form[class*="apply"], form[class*="application"], form')
-      const urlChanged = false // Can't easily detect URL changes in content script
-
-      if (postSubmitErrors.length > 0 && stillOnForm && submitAttempts < maxSubmitRetries) {
-        submitAttempts++
-        log(`Submit attempt ${submitAttempts}/${maxSubmitRetries} — validation errors detected, retrying...`)
-        postSubmitErrors.forEach(e => log('  Error:', e))
-
-        // Try to fill the errored fields
-        await fillAllFormFields()
-
-        // Specifically try to fill required empty fields highlighted by errors
-        const errorFields = document.querySelectorAll(
-          '.field--error input, .field-error input, [aria-invalid="true"], ' +
-          '.has-error input, .error input:not([type="hidden"])'
-        )
-        for (const ef of errorFields) {
-          if (!ef.value || ef.value.trim() === '') {
-            const label = getLabelText(ef)
-            const isTA = ef.tagName === 'TEXTAREA'
-            const answer = answerCustomQuestion(label, isTA ? 'textarea' : 'text') || matchFieldToValue(label)
-            if (answer) {
-              setReactValue(ef, answer)
-              ef.dispatchEvent(new Event('input', { bubbles: true }))
-              ef.dispatchEvent(new Event('change', { bubbles: true }))
-              log('Fixed errored field:', label.substring(0, 50))
-            }
-          }
-        }
-
-        await sleep(1000)
-        continue // Retry the loop (will try submit again)
-      }
-
-      // If no errors or max retries reached
-      if (postSubmitErrors.length === 0 || !stillOnForm) {
-        return 'submitted' // Likely succeeded — no errors visible
-      } else {
-        // Last resort: if the only remaining error is the CV "100MB" bug,
-        // clear the file input and retry submit WITHOUT the CV.
-        // Better to submit without CV than not submit at all.
-        const onlyCvError = postSubmitErrors.every(e =>
-          e.toLowerCase().includes('file') || e.toLowerCase().includes('upload') || e.toLowerCase().includes('100mb') || e.toLowerCase().includes('size')
-        )
-        if (onlyCvError && postSubmitErrors.length > 0) {
-          log('Only CV upload error remains — clearing file input and retrying submit without CV')
-          const fileInputs = document.querySelectorAll('input[type="file"]')
-          for (const fi of fileInputs) {
-            try {
-              fi.value = ''
-              fi.files = new DataTransfer().files
-              fi.dispatchEvent(new Event('change', { bubbles: true }))
-            } catch {}
-          }
-          await sleep(1000)
-          const retrySubmit = await submitForm()
-          if (retrySubmit) {
-            await sleep(3000)
-            if (isApplicationConfirmed()) return 'confirmed'
-            return 'submitted' // Submitted without CV — user can add later
-          }
-        }
-        log('Submit failed after retries — still has validation errors')
-        return 'validation_errors'
-      }
-    }
-
-    // No next or submit button found — retry once after a longer wait
-    // React re-renders or lazy-loaded components may need extra time
-    if (step === 0) {
-      log('No Next or Submit button found on first attempt — waiting 3s and retrying...')
-      await sleep(3000)
-      // Scroll to bottom of form to trigger any lazy rendering
-      const formBottom = document.querySelector('.application--submit, [class*="submit"], form')
-      if (formBottom) {
-        formBottom.scrollIntoView({ behavior: 'smooth', block: 'center' })
-        await sleep(1000)
-      }
-      continue
-    }
-    log('No Next or Submit button found on this step')
-    break
+    // Store the filled count on the window for the main flow to pick up
+    window.__atsFilledCount = totalFilledCount
+    return 'filled'
   }
 
-  return 'stuck'
+  // If we exhausted all steps without finding a stopping point
+  window.__atsFilledCount = totalFilledCount
+  log(`Autofill exhausted all steps — ${totalFilledCount} total fields filled`)
+  return 'filled'
 }
 
 // ─── ATS Router ───────────────────────────────────────────────────────
@@ -4877,7 +4807,7 @@ const ATS_HANDLERS = {
     warn('Guard check failed, proceeding anyway:', guardErr.message)
   }
 
-  log('ats-apply.js v2.6.0 loaded on:', currentUrl)
+  log('ats-apply.js v2.7.0 (autofill-only) loaded on:', currentUrl)
 
   // ─── Early confirmation page detection ──────────────────────────────
   // If we landed on a /confirmation page (e.g. after Greenhouse submit navigated here),
@@ -5001,29 +4931,31 @@ const ATS_HANDLERS = {
         result.reason = 'Form fill incomplete — some fields could not be matched'
       }
     } else {
-      // Try multi-step navigation and submission
+      // Try multi-step navigation and autofill (no auto-submit in v2.7.0+)
       const navResult = await navigateMultiStepForm()
+      const filledCount = window.__atsFilledCount || 0
 
       if (navResult === 'confirmed') {
+        // Edge case: user may have manually submitted while we were filling
         result.success = true
         result.status = 'applied_external'
         result.reason = `Application submitted via ${atsType} ATS — confirmation detected`
-      } else if (navResult === 'submitted') {
-        // Submit was clicked and no errors remained — likely succeeded
+      } else if (navResult === 'filled') {
+        // Autofill-only mode: form filled, NOT submitted — user must review & submit
         result.success = true
-        result.status = 'applied_external'
-        result.reason = `Submit clicked on ${atsType} — no validation errors, likely submitted`
-      } else if (navResult === 'validation_errors') {
-        // Submit was clicked but validation errors remain — NOT submitted
-        result.success = false
-        result.status = 'needs_manual'
-        const errors = getValidationErrors()
-        result.reason = `Form filled on ${atsType} but validation errors remain (${errors.length} errors) — submit did NOT complete. Errors: ${errors.slice(0, 3).join('; ')}`
+        result.status = 'filled'
+        result.fieldsFilledCount = filledCount
+        result.reason = `Autofilled ${filledCount} fields on ${atsType} — review & submit manually`
+        // Inject the overlay banner
+        injectOverlay(filledCount)
       } else {
-        // Stuck — no submit button found
+        // Stuck or unexpected state — fields were filled but navigation stalled
         result.success = false
         result.status = 'needs_manual'
-        result.reason = `Form filled on ${atsType} but could not find submit/next button — check manually`
+        result.fieldsFilledCount = filledCount
+        result.reason = `Form partially filled on ${atsType} but navigation stalled — check manually`
+        // Still inject overlay so user knows fields were filled
+        if (filledCount > 0) injectOverlay(filledCount)
       }
     }
   } catch (err) {
@@ -5036,6 +4968,28 @@ const ATS_HANDLERS = {
   try {
     await chrome.storage.local.set({ atsApplyDebugLog: _debugLog || [] })
   } catch {}
+
+  // Track the autofill in chrome.storage for the dashboard history
+  if (result.status === 'filled') {
+    try {
+      const fillRecord = {
+        url: result.atsUrl,
+        company: result.company,
+        atsType: result.atsType,
+        fieldsFilledCount: result.fieldsFilledCount || 0,
+        timestamp: result.timestamp,
+        status: 'filled',
+      }
+      const { atsApplyHistory = [] } = await chrome.storage.local.get('atsApplyHistory')
+      atsApplyHistory.push(fillRecord)
+      // Keep only the last 200 entries to avoid storage bloat
+      if (atsApplyHistory.length > 200) atsApplyHistory.splice(0, atsApplyHistory.length - 200)
+      await chrome.storage.local.set({ atsApplyHistory })
+      log('Tracked fill in atsApplyHistory:', fillRecord.company, fillRecord.fieldsFilledCount, 'fields')
+    } catch (histErr) {
+      warn('Failed to track fill in history:', histErr.message)
+    }
+  }
 
   // Store result for background.js to pick up
   log('Final result:', result.status, result.reason)
