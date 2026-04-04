@@ -262,7 +262,27 @@ export function SettingsView() {
   const updateProfile = useCallback((patch: Partial<UserProfile>) => {
     setProfile(prev => {
       const next = { ...prev, ...patch }
-      saveJSON(LS_PROFILE, next)
+
+      // Merge with existing localStorage data to avoid overwriting fields
+      // set by OnboardingWizard or ProfileSetupModal (they share the same key)
+      let existing: Record<string, unknown> = {}
+      try {
+        const raw = localStorage.getItem(LS_PROFILE)
+        if (raw) existing = JSON.parse(raw)
+      } catch { /* ignore */ }
+
+      // Derive firstName/lastName from displayName for extension sync
+      const displayName = next.displayName || ''
+      const nameParts = displayName.trim().split(/\s+/)
+      const firstName = nameParts[0] || ''
+      const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : ''
+
+      saveJSON(LS_PROFILE, {
+        ...existing,
+        ...next,
+        firstName: firstName || existing.firstName || '',
+        lastName: lastName || existing.lastName || '',
+      })
       return next
     })
     setProfileSaved(true)

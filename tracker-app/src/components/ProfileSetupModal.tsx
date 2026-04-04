@@ -179,7 +179,14 @@ function loadProfile(): UserProfile {
 
 function saveProfile(p: UserProfile) {
   try {
-    localStorage.setItem(PROFILE_LS_KEY, JSON.stringify(p))
+    // Merge with existing data to preserve fields set by OnboardingWizard
+    // and SettingsView (firstName, lastName, name, email, location, etc.)
+    let existing: Record<string, unknown> = {}
+    try {
+      const raw = localStorage.getItem(PROFILE_LS_KEY)
+      if (raw) existing = JSON.parse(raw)
+    } catch { /* ignore */ }
+    localStorage.setItem(PROFILE_LS_KEY, JSON.stringify({ ...existing, ...p }))
   } catch { /* ignore */ }
 }
 

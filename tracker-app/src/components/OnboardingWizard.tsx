@@ -521,8 +521,23 @@ export function OnboardingWizard({ onComplete, defaultEmail, defaultName }: Onbo
   const handleComplete = useCallback(() => {
     localStorage.setItem(ONBOARDING_KEY, 'true')
 
+    // Split full name into firstName/lastName for extension sync compatibility
+    const nameParts = (name || '').trim().split(/\s+/)
+    const firstName = nameParts[0] || ''
+    const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : ''
+
+    // Merge with any existing profile data (ProfileSetupModal may have added fields)
+    let existingProfile: Record<string, unknown> = {}
+    try {
+      const raw = localStorage.getItem('tracker_v2_user_profile')
+      if (raw) existingProfile = JSON.parse(raw)
+    } catch { /* ignore */ }
+
     const profile = {
+      ...existingProfile,
       name,
+      firstName,
+      lastName,
       email,
       location,
       roles: selectedRoles,
