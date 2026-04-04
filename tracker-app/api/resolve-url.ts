@@ -189,15 +189,50 @@ async function probeCompanyAtsPages(companyName: string, roleTitle?: string): Pr
             const specificJob = await findJobOnCareerPage(careerPageUrl, roleTitle)
             if (specificJob) return specificJob
           }
-          // Do NOT return career page URLs as "resolved" — they don't have
-          // application forms. Only return if we found the specific job posting.
-          // Returning a company career page would cause ats-apply.js to run on a
-          // job listing page with no form, wasting time in a 15-step loop.
+          // For Lever: career pages are client-rendered (JS), so HTML scraping
+          // doesn't work. Use the Lever public JSON API instead.
+          if (careerPageUrl.includes('lever.co') && roleTitle) {
+            const leverSlug = careerPageUrl.match(/lever\.co\/([^/]+)/)?.[1]
+            if (leverSlug) {
+              const leverJob = await findJobViaLeverApi(leverSlug, roleTitle)
+              if (leverJob) return leverJob
+            }
+          }
         }
       } catch { /* skip */ }
     }
   }
 
+  return null
+}
+
+/** Find a specific job via Lever's public JSON API */
+async function findJobViaLeverApi(companySlug: string, roleTitle: string): Promise<string | null> {
+  try {
+    const response = await fetch(`https://api.lever.co/v0/postings/${companySlug}?mode=json`, {
+      headers: { 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(8_000),
+    })
+    if (!response.ok) return null
+    const jobs = await response.json() as Array<{ text: string; hostedUrl: string }>
+    if (!Array.isArray(jobs) || jobs.length === 0) return null
+
+    const roleWords = roleTitle.toLowerCase().split(/[\s/,\-–—]+/).filter(w => w.length >= 3)
+    let bestMatch: { url: string; score: number } | null = null
+    for (const job of jobs) {
+      const text = (job.text || '').toLowerCase()
+      const score = roleWords.filter(w => text.includes(w)).length
+      if (score > 0 && (!bestMatch || score > bestMatch.score)) {
+        bestMatch = { url: job.hostedUrl, score }
+      }
+    }
+    if (bestMatch) {
+      console.log(`[resolve-url] Lever API match: "${roleTitle}" → ${bestMatch.url} (score ${bestMatch.score})`)
+      return bestMatch.url
+    }
+  } catch (err) {
+    console.log(`[resolve-url] Lever API failed for ${companySlug}: ${err instanceof Error ? err.message : err}`)
+  }
   return null
 }
 
