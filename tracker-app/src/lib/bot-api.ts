@@ -821,7 +821,7 @@ export async function triggerApplyJobs(
             detail: {
               success: false,
               status: 'needs_manual',
-              reason: `Candidature directe \u2014 postulez sur: ${job.url}`,
+              reason: `Direct Apply \u2014 Apply manually at: ${job.url}`,
               company: job.company,
               role: job.role,
               url: job.url,

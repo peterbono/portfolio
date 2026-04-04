@@ -2018,9 +2018,9 @@ function ApplicationReviewCard({
         </div>
       )}
       {item.status === 'needs_manual' && (() => {
-        const isDirectApply = item.failReason && (/postulez sur:|Apply manually at:/i.test(item.failReason))
+        const isDirectApply = item.failReason && (/Apply manually at:|Apply manually at:/i.test(item.failReason))
         const directUrl = isDirectApply
-          ? item.failReason!.match(/(?:postulez sur:|Apply manually at:)\s*(https?:\/\/\S+)/i)?.[1] || item.jobUrl
+          ? item.failReason!.match(/(?:Apply manually at:|Apply manually at:)\s*(https?:\/\/\S+)/i)?.[1] || item.jobUrl
           : null
         return (
           <div style={reviewStyles.cardActions}>
@@ -2030,7 +2030,7 @@ function ApplicationReviewCard({
                   {isDirectApply ? (
                     <>
                       <ExternalLink size={12} color="#3b82f6" />
-                      <span style={{ color: '#3b82f6', fontSize: 12, fontWeight: 600 }}>Candidature directe</span>
+                      <span style={{ color: '#3b82f6', fontSize: 12, fontWeight: 600 }}>Direct Apply</span>
                     </>
                   ) : (
                     <>
@@ -2047,7 +2047,7 @@ function ApplicationReviewCard({
                   rel="noopener noreferrer"
                   style={{ color: '#3b82f6', fontSize: 11, lineHeight: 1.3, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}
                 >
-                  Candidature directe &rarr;
+                  Direct Apply &rarr;
                 </a>
               ) : item.failReason ? (
                 <span style={{ color: '#9ca3af', fontSize: 11, lineHeight: 1.3 }}>{item.failReason}</span>
@@ -2056,12 +2056,12 @@ function ApplicationReviewCard({
             <div style={{ display: 'flex', gap: 6 }}>
               {isDirectApply && onMarkSubmitted && (
                 <button
-                  style={{ ...reviewStyles.btnApprove, fontSize: 11, padding: '4px 10px' }}
+                  style={reviewStyles.btnApprove}
                   onClick={() => onMarkSubmitted(item.id)}
-                  title="Marquer comme postul\u00e9"
+                  title="Mark as applied"
                 >
                   <Check size={12} />
-                  <span>Postulé</span>
+                  <span>Mark Applied</span>
                 </button>
               )}
               <button
@@ -2461,7 +2461,7 @@ function ReviewQueue({
             {([
               { key: 'all' as const, label: 'All', count: queue.length },
               { key: 'auto' as const, label: 'Auto-Apply', count: autoCount },
-              { key: 'direct' as const, label: 'Candidature directe', count: directCount },
+              { key: 'direct' as const, label: 'Direct Apply', count: directCount },
             ]).map(f => (
               <button
                 key={f.key}

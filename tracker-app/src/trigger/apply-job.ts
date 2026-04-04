@@ -208,10 +208,10 @@ export const applyJobTask = task({
           }
 
           // Mark direct_apply jobs as needs_manual in the qualified results
-          // so the dashboard shows them with "Candidature directe" badges
+          // so the dashboard shows them with "Direct Apply" badges
           for (const j of directApplyJobs) {
             (j as any).applyMethod = 'direct_apply'
-            ;(j as any).needsManualReason = `Candidature directe \u2014 postulez sur: ${j.url}`
+            ;(j as any).needsManualReason = `Direct Apply \u2014 Apply manually at: ${j.url}`
           }
 
           // Only trigger cloud apply if there are auto_apply jobs to process
