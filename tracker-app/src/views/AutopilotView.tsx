@@ -4334,13 +4334,13 @@ export function AutopilotView() {
 
       if (applied > 0) {
         notifyApplicationsSubmitted({
-          company: 'LinkedIn (Extension)',
+          company: 'Chrome Extension',
           role: `${applied} jobs`,
           count: applied,
         })
       }
       if (failed > 0 && applied === 0) {
-        setTriggerError(`Extension apply: ${failed}/${total} jobs failed. Check LinkedIn session.`)
+        setTriggerError(`Extension apply: ${failed}/${total} jobs failed. Check browser session.`)
       }
     }
 
@@ -4589,9 +4589,8 @@ export function AutopilotView() {
       item.status === 'approved' ? { ...item, status: 'submitting' as const, submittingStartedAt: now } : item
     ))
 
-    // ─── Smart routing: LinkedIn → Chrome extension, ATS → Trigger.dev cloud ───
-    // LinkedIn Easy Apply: Chrome extension (user's browser, avoids cloud IP blocks)
-    // ATS (Greenhouse/Lever/etc.): Trigger.dev cloud + Bright Data Scraping Browser
+    // ─── All applies routed through Chrome extension ───
+    // LinkedIn + ATS (Greenhouse/Lever/etc.): Chrome extension handles all form fills
     try {
       const jobsToApply = approved.map(item => ({
         url: (item.jobUrl || '').replace(/https?:\/\/[a-z]{2}\.linkedin\.com/, 'https://www.linkedin.com'),
@@ -4603,7 +4602,7 @@ export function AutopilotView() {
 
       const linkedInCount = jobsToApply.filter(j => /linkedin\.com\/jobs/i.test(j.url)).length
       const atsCount = jobsToApply.length - linkedInCount
-      console.log(`[Submit] Sending ${jobsToApply.length} jobs to Trigger.dev cloud (${linkedInCount} LinkedIn + ${atsCount} ATS)...`)
+      console.log(`[Submit] Sending ${jobsToApply.length} jobs to Chrome extension (${linkedInCount} LinkedIn + ${atsCount} ATS)...`)
 
       const cloudResult = await triggerApplyJobs(jobsToApply)
       setActiveRunId(cloudResult.runId)
@@ -4611,8 +4610,8 @@ export function AutopilotView() {
       setRunStartTime(Date.now())
       setPolledRunStatus('QUEUED')
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : 'Cloud apply failed'
-      console.error(`[Submit] Failed to trigger cloud apply: ${errMsg}`)
+      const errMsg = err instanceof Error ? err.message : 'Apply failed'
+      console.error(`[Submit] Failed to trigger apply: ${errMsg}`)
       setTriggerError(errMsg)
       // Fire-and-forget error notification
       notifyBotError({ errorMessage: errMsg, runId: 'apply-trigger-failed' })
@@ -5249,7 +5248,7 @@ export function AutopilotView() {
               }}>
                 <AlertTriangle size={12} color="#93c5fd" />
                 <span style={{ fontSize: 11, color: '#93c5fd', fontWeight: 500 }}>
-                  LinkedIn daily limit reached — applying via direct ATS only
+                  LinkedIn daily limit reached — applying to ATS jobs only
                 </span>
               </div>
             )}

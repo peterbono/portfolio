@@ -588,6 +588,188 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       return { success: false, status: 'timeout', error: 'Apply timed out after ' + timeoutElapsed + ' seconds', requestId }
     }
 
+    // ─── Sync User Profile ─────────────────────────────────────────
+    if (message.action === 'syncProfile') {
+      const profileData = message.profileData
+      if (!profileData || typeof profileData !== 'object') {
+        return { success: false, error: 'No profile data provided' }
+      }
+      await chrome.storage.local.set({ userProfile: profileData })
+      console.log('[JobTracker] User profile synced to storage:', Object.keys(profileData).join(', '))
+      return { success: true }
+    }
+
+    // ─── Direct ATS Apply (no LinkedIn redirect) ────────────────────
+    if (message.action === 'applyAtsDirectly') {
+      const job = message.jobData
+      const requestId = message.requestId || null
+      if (!job?.url) {
+        return { success: false, status: 'error', error: 'No ATS URL provided', requestId }
+      }
+
+      const atsUrl = job.url
+      const atsType = detectAtsType(atsUrl)
+      if (!atsType) {
+        return { success: false, status: 'error', error: 'URL does not match any known ATS pattern: ' + atsUrl, requestId }
+      }
+
+      console.log('[JobTracker] Direct ATS apply:', job.company, '| ATS:', atsType, '| URL:', atsUrl, '| requestId:', requestId)
+
+      // Clear any stale lastApplyResult from a previous job
+      const staleCheck = await chrome.storage.local.get(['lastApplyResult'])
+      if (staleCheck.lastApplyResult) {
+        console.log('[JobTracker] Clearing stale lastApplyResult from previous job:', staleCheck.lastApplyResult.company)
+        await chrome.storage.local.remove('lastApplyResult')
+      }
+
+      // Open ATS URL in a new focused window (same pattern as applyViaExtension)
+      let tab
+      let windowId = null
+      try {
+        const win = await chrome.windows.create({
+          url: atsUrl,
+          width: 1400,
+          height: 900,
+          focused: true,
+          type: 'normal',
+        })
+        tab = win.tabs[0]
+        windowId = win.id
+        console.log('[JobTracker] ATS window created:', win.id, 'tab:', tab.id)
+      } catch (winErr) {
+        // Fallback: background tab
+        try {
+          tab = await chrome.tabs.create({ url: atsUrl, active: false })
+        } catch (tabErr) {
+          return { success: false, status: 'error', error: 'Failed to open ATS URL: ' + (winErr.message || tabErr.message), requestId }
+        }
+      }
+
+      const tabCreatedAt = Date.now()
+
+      // Helper: close the tab + window (best effort)
+      async function cleanupAtsTab() {
+        try { await chrome.tabs.remove(tab.id) } catch {}
+        if (windowId) {
+          try { await chrome.windows.remove(windowId) } catch {}
+        }
+      }
+
+      // Wait for page load (event-driven with 20s timeout, same as applyViaExtension)
+      const tabLoadResult = await new Promise((resolve) => {
+        const LOAD_TIMEOUT = 20000
+        let settled = false
+
+        function settle(result) {
+          if (settled) return
+          settled = true
+          chrome.tabs.onUpdated.removeListener(onUpdate)
+          clearTimeout(timer)
+          resolve(result)
+        }
+
+        function onUpdate(tabId, changeInfo, updatedTab) {
+          if (tabId !== tab.id) return
+          if (changeInfo.status === 'complete') {
+            const loadTime = ((Date.now() - tabCreatedAt) / 1000).toFixed(1)
+            console.log('[JobTracker] ATS tab', tab.id, 'loaded in', loadTime + 's — URL:', updatedTab.url)
+            settle({ loaded: true, finalUrl: updatedTab.url || '' })
+          }
+        }
+
+        chrome.tabs.onUpdated.addListener(onUpdate)
+
+        // Race condition guard: tab might already be complete
+        chrome.tabs.get(tab.id).then(currentTab => {
+          if (currentTab.status === 'complete') {
+            settle({ loaded: true, finalUrl: currentTab.url || '' })
+          }
+        }).catch(() => {})
+
+        const timer = setTimeout(() => {
+          console.warn('[JobTracker] ATS tab', tab.id, 'did not reach complete within 20s — proceeding anyway')
+          settle({ loaded: false, finalUrl: '' })
+        }, LOAD_TIMEOUT)
+      })
+
+      // Post-load delay for ATS page rendering
+      await new Promise(r => setTimeout(r, 2000))
+
+      // Detect ATS type from the final URL (may differ after redirects)
+      const finalAtsType = detectAtsType(tabLoadResult.finalUrl || atsUrl) || atsType
+
+      // Set atsApplyContext so ats-apply.js can read it
+      await chrome.storage.local.set({
+        atsApplyContext: {
+          company: job.company || 'Unknown',
+          role: job.role || 'Unknown',
+          url: job.url || '',
+          linkedinUrl: job.linkedinUrl || '',
+          atsType: finalAtsType,
+          atsUrl: tabLoadResult.finalUrl || atsUrl,
+          tabId: tab.id,
+        }
+      })
+
+      // Clear the guard flag and inject ats-apply.js programmatically
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: () => { window._jobTrackerAtsRan = false; },
+        })
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          files: ['ats-apply.js'],
+        })
+        console.log('[JobTracker] ats-apply.js injected for direct ATS apply on', finalAtsType)
+      } catch (injectErr) {
+        console.warn('[JobTracker] ats-apply.js injection failed:', injectErr.message)
+        await cleanupAtsTab()
+        return { success: false, status: 'failed', error: 'Failed to inject ats-apply.js: ' + injectErr.message, requestId }
+      }
+
+      // Poll for result (ats-apply.js stores it in chrome.storage.local.lastApplyResult)
+      let attempts = 0
+      const maxAttempts = 90 // 90 seconds max for ATS form fill + submit
+
+      while (attempts < maxAttempts) {
+        await new Promise(r => setTimeout(r, 1000))
+
+        const data = await chrome.storage.local.get(['lastApplyResult'])
+        if (attempts % 10 === 0 && attempts > 0) {
+          const elapsed = ((Date.now() - tabCreatedAt) / 1000).toFixed(1)
+          console.log('[JobTracker] ATS poll #' + attempts + ' (' + elapsed + 's) — result:', data.lastApplyResult ? data.lastApplyResult.status : 'none')
+        }
+
+        if (data.lastApplyResult) {
+          // Match by company name or ATS type (direct ATS has no LinkedIn URL to match)
+          const matchesCompany = data.lastApplyResult.company === (job.company || 'Unknown')
+          const matchesAts = data.lastApplyResult.atsType === finalAtsType
+
+          if (matchesCompany || matchesAts) {
+            const totalTime = ((Date.now() - tabCreatedAt) / 1000).toFixed(1)
+            console.log('[JobTracker] ATS result at attempt', attempts, '(' + totalTime + 's) — status:', data.lastApplyResult.status)
+            const result = { ...data.lastApplyResult, requestId }
+            await chrome.storage.local.remove('lastApplyResult')
+            await chrome.storage.local.remove('atsApplyContext')
+
+            console.log('[JobTracker] Direct ATS result for', job.company, ':', result.status, '-', result.reason)
+            await cleanupAtsTab()
+            return result
+          }
+        }
+        attempts++
+      }
+
+      // Timeout — clean up
+      const timeoutElapsed = ((Date.now() - tabCreatedAt) / 1000).toFixed(1)
+      console.warn('[JobTracker] Direct ATS timeout for', job.company, 'after', timeoutElapsed + 's')
+      await cleanupAtsTab()
+      await chrome.storage.local.remove('atsApplyContext')
+      await chrome.storage.local.remove('lastApplyResult')
+      return { success: false, status: 'timeout', error: 'ATS apply timed out after ' + timeoutElapsed + ' seconds', requestId }
+    }
+
     if (message.action === 'reloadExtension') {
       console.log('[JobTracker] Extension self-reload requested')
       chrome.runtime.reload()

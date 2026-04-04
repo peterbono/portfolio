@@ -12,9 +12,9 @@
  * SECURITY: Runs in the user's own browser with their own IP and cookies.
  */
 
-// ─── Profile Data (hardcoded for now) ─────────────────────────────────
+// ─── Profile Data (defaults, overridden by stored userProfile) ───────
 
-const PROFILE = {
+const PROFILE_DEFAULTS = {
   firstName: 'Florian',
   lastName: 'Gouloubi',
   fullName: 'Florian Gouloubi',
@@ -29,6 +29,22 @@ const PROFILE = {
   currentTitle: 'Senior Product Designer',
   cvUrl: 'https://raw.githubusercontent.com/peterbono/portfolio/main/cvflo.pdf',
   cvFilename: 'Florian_Gouloubi_CV.pdf',
+}
+
+let PROFILE = { ...PROFILE_DEFAULTS }
+
+async function loadProfile() {
+  try {
+    const data = await chrome.storage.local.get(['userProfile'])
+    if (data.userProfile && typeof data.userProfile === 'object') {
+      PROFILE = { ...PROFILE_DEFAULTS, ...data.userProfile }
+      console.log('[JobTracker ATS] Profile loaded from storage — keys:', Object.keys(data.userProfile).join(', '))
+    } else {
+      console.log('[JobTracker ATS] No stored profile — using defaults')
+    }
+  } catch (err) {
+    console.warn('[JobTracker ATS] Failed to load profile from storage:', err.message, '— using defaults')
+  }
 }
 
 // ─── Config ───────────────────────────────────────────────────────────
@@ -3057,7 +3073,10 @@ const ATS_HANDLERS = {
   }
   window._jobTrackerAtsRan = true
 
-  log('ats-apply.js v2.4.0 loaded on:', window.location.href)
+  log('ats-apply.js v2.5.0 loaded on:', window.location.href)
+
+  // Load user profile from storage (overrides hardcoded defaults)
+  await loadProfile()
 
   // Read context from storage — retry up to 10 times (background.js may not have set it yet)
   let context = null
