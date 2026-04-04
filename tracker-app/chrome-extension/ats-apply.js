@@ -894,14 +894,50 @@ function getValidationErrors() {
 
 async function handleGreenhouse(context) {
   log('Greenhouse ATS v2 — smart handler with exact IDs')
+
+  // Greenhouse Remix pages are React SPAs — wait for hydration before interacting.
+  // Poll for a key form element (#first_name or #application) up to 10s instead of
+  // relying on a fixed sleep, which may be too short for heavy pages.
+  const ghHydrationDeadline = Date.now() + 10000
+  while (Date.now() < ghHydrationDeadline) {
+    if (document.querySelector('#first_name') || document.querySelector('#application')) break
+    await sleep(500)
+  }
+  // Still give a baseline wait for any remaining rendering
   await sleep(ATS_CONFIG.pageLoadWait)
 
   // Step 1: Click "Apply for this job" if on landing page
+  // On Remix layouts the form is below the job description on the SAME page.
+  // The Apply button triggers a smooth scroll to #application — we can't rely on
+  // the scroll animation timing. Instead, after clicking, we scroll directly to the
+  // form section and then poll until #first_name is in the viewport.
   const applyBtn = findAndClickButton(['Apply for this job', 'Apply now', 'Apply', 'Postuler'])
   if (applyBtn) {
     log('Clicking Greenhouse apply button...')
     applyBtn.click()
-    await sleep(3000)
+    await sleep(500) // Brief pause for any click handler side-effects
+
+    // Scroll directly to the application section (don't rely on smooth scroll finishing)
+    const appSection = document.querySelector('#application') || document.querySelector('[class*="application"]')
+    if (appSection) {
+      appSection.scrollIntoView({ behavior: 'instant', block: 'start' })
+      log('Scrolled directly to #application section')
+    }
+
+    // Poll until #first_name is in the viewport (form is visible and interactable)
+    const scrollDeadline = Date.now() + 10000
+    while (Date.now() < scrollDeadline) {
+      const fn = document.querySelector('#first_name')
+      if (fn) {
+        const rect = fn.getBoundingClientRect()
+        if (rect.top >= 0 && rect.top < window.innerHeight) {
+          log('#first_name is in viewport — form ready')
+          break
+        }
+      }
+      await sleep(500)
+    }
+    await sleep(500) // Small buffer after form becomes visible
   }
 
   // Step 2: Fill basic fields via confirmed Greenhouse IDs (#main_fields)
