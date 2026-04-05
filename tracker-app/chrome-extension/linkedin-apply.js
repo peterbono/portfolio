@@ -937,13 +937,41 @@ function runHaikuFieldFallback() {
 
   if (candidates.length === 0) {
     log('[haiku-fallback] No unfilled fields to escalate');
+
+    // Diagnostic DOM dump: when we find nothing, list all visible text/select/textarea
+    // on the page with their label + in-apply-context status. This tells us whether
+    // fields exist but are being filtered, or whether they're truly not in the DOM.
+    try {
+      var allPageInputs = document.querySelectorAll('input, textarea, select');
+      log('[haiku-fallback] DIAG: total document inputs = ' + allPageInputs.length);
+      var dumped = 0;
+      for (var di = 0; di < allPageInputs.length && dumped < 20; di++) {
+        var dinp = allPageInputs[di];
+        if (dinp.offsetHeight === 0) continue;
+        var dtype = (dinp.type || '').toLowerCase();
+        if (dtype === 'hidden' || dtype === 'submit' || dtype === 'button' || dtype === 'file') continue;
+        var dlabel = '';
+        try { dlabel = _getHaikuFieldLabel(dinp) || ''; } catch (e) { dlabel = '<err>'; }
+        var dval = (dinp.value || '').slice(0, 30);
+        var dinCtx = false;
+        try { dinCtx = isInApplyContext(dinp); } catch (e) { dinCtx = false; }
+        log('[haiku-fallback] DIAG input[' + di + ']: tag=' + dinp.tagName + ' type=' + (dtype || '-') + ' name=' + (dinp.name || '-') + ' inApplyCtx=' + dinCtx + ' val="' + dval + '" label="' + dlabel.slice(0, 60) + '"');
+        dumped++;
+      }
+    } catch (diagErr) {
+      log('[haiku-fallback] DIAG error: ' + (diagErr && diagErr.message));
+    }
+
+    try { persistDebugLog(); } catch (e) { /* ignore */ }
     return Promise.resolve(0);
   }
 
   log('[haiku-fallback] Escalating ' + candidates.length + ' unfilled field(s) to Haiku');
+  try { persistDebugLog(); } catch (e) { /* ignore */ }
   return fillUnknownFieldsViaHaiku(candidates).then(function (answerMap) {
     if (!answerMap || answerMap.size === 0) {
       log('[haiku-fallback] No answers from Haiku — skipping');
+      try { persistDebugLog(); } catch (e) { /* ignore */ }
       return 0;
     }
     var filled = 0;
