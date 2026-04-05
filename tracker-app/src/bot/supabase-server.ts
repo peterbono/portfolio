@@ -337,31 +337,73 @@ export interface DiscoveredJobForDB {
   ats?: string
 }
 
-/** Create a job_listing + application record from a bot apply result */
+/** Create a job_listing + application record from a bot apply result.
+ *
+ * Dedup behavior (Phase 1b — April 2026): if a job_listing with the same
+ * (user_id, link) already exists, reuse it instead of inserting a duplicate.
+ * Same for applications — if a 'submitted' application already exists for
+ * the listing, skip the insert so the user isn't counted as having applied
+ * to the same job twice. This fixes the bug where Fueled/Circle.so/Virtru
+ * accumulated 3-4 identical submissions from scout re-discoveries.
+ */
 export async function createApplicationFromBot(
   userId: string,
   job: DiscoveredJobForDB,
   result: ApplyResult,
 ): Promise<void> {
-  // 1. Insert the job listing
-  const { data: listing, error: listingErr } = await insertRow('job_listings', {
-    user_id: userId,
-    company: job.company,
-    role: job.title,
-    location: job.location,
-    link: job.url,
-    ats: job.ats ?? result.ats,
-    source: 'bot',
-  })
+  // 1. Look up existing job_listing by (user_id, link) — reuse if present
+  let listingId: string | null = null
+  if (job.url) {
+    const { data: existing } = await db
+      .from('job_listings')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('link', job.url)
+      .limit(1)
+      .maybeSingle()
+    if (existing?.id) {
+      listingId = existing.id as string
+      console.log(`[supabase] Reusing existing job_listing ${listingId} for ${job.url}`)
+    }
+  }
 
-  if (listingErr || !listing) {
-    console.error('[supabase] Failed to create job listing:', listingErr?.message)
+  // 2. Insert a new job_listing only if no match was found
+  if (!listingId) {
+    const { data: listing, error: listingErr } = await insertRow('job_listings', {
+      user_id: userId,
+      company: job.company,
+      role: job.title,
+      location: job.location,
+      link: job.url,
+      ats: job.ats ?? result.ats,
+      source: 'bot',
+    })
+
+    if (listingErr || !listing) {
+      console.error('[supabase] Failed to create job listing:', listingErr?.message)
+      return
+    }
+    listingId = (listing as any).id as string
+  }
+
+  // 3. Dedup check on applications — skip if a submitted application
+  //    already exists for this (user_id, job_id) pair. This is the main
+  //    guard against the re-submission bug.
+  const { data: existingApp } = await db
+    .from('applications')
+    .select('id, status')
+    .eq('user_id', userId)
+    .eq('job_id', listingId)
+    .eq('status', 'submitted')
+    .limit(1)
+    .maybeSingle()
+
+  if (existingApp) {
+    console.log(`[supabase] Skipping duplicate application — job_id ${listingId} already has a submitted application`)
     return
   }
 
-  const listingId = (listing as any).id as string
-
-  // 2. Create the application
+  // 4. Create the application record
   const statusMap: Record<ApplyResult['status'], string> = {
     applied: 'submitted',
     skipped: 'skipped',
