@@ -59,7 +59,7 @@ import {
 } from '../lib/feedback-signals'
 import { notifyBotError, notifyApplicationsSubmitted } from '../lib/notifications'
 import { getGmailAppliedCompanies } from '../lib/gmail-scanner'
-import { classifyJobUrl } from '../lib/classify-job-url'
+import { classifyJobUrl, isSupportedAutoApplyAts } from '../lib/classify-job-url'
 
 /* ------------------------------------------------------------------ */
 /*  Mobile responsive CSS injection                                    */
@@ -2428,8 +2428,19 @@ function ReviewQueue({
       ? queue.filter(i => { const c = classifyJobUrl(i.jobUrl || ''); return c === 'auto_apply' || c === 'linkedin' })
       : queue.filter(i => classifyJobUrl(i.jobUrl || '') === 'direct_apply')
 
-  const pendingCount = filteredQueue.filter((i) => i.status === 'pending').length
-  const approvedCount = filteredQueue.filter((i) => i.status === 'approved').length
+  // Bubble supported ATS (Greenhouse + LinkedIn Easy Apply) to the top.
+  // Everything else stays visible below in its original order.
+  // Use index-based decoration to guarantee stability across browsers.
+  const sortedQueue = filteredQueue
+    .map((item, idx) => ({ item, idx, supported: isSupportedAutoApplyAts(item.jobUrl || '') }))
+    .sort((a, b) => {
+      if (a.supported !== b.supported) return a.supported ? -1 : 1
+      return a.idx - b.idx
+    })
+    .map(({ item }) => item)
+
+  const pendingCount = sortedQueue.filter((i) => i.status === 'pending').length
+  const approvedCount = sortedQueue.filter((i) => i.status === 'approved').length
   if (queue.length === 0) return null
 
   return (
@@ -2493,7 +2504,7 @@ function ReviewQueue({
       {/* Card Stack mode */}
       {reviewMode === 'card' && (
         <CardStackReview
-          queue={filteredQueue}
+          queue={sortedQueue}
           onApprove={onApprove}
           onSkip={onSkip}
           onUndo={onUndo}
@@ -2504,7 +2515,7 @@ function ReviewQueue({
       {/* List mode */}
       {reviewMode === 'list' && (
         <div style={reviewStyles.queueList}>
-          {filteredQueue.map((item) => (
+          {sortedQueue.map((item) => (
             <ApplicationReviewCard
               key={item.id}
               item={item}
@@ -4150,9 +4161,28 @@ export function AutopilotView() {
     // Dedup against Gmail confirmation emails (optional — empty set if Gmail not connected)
     const gmailAppliedCompanies = getGmailAppliedCompanies()
 
+    // Prevent re-surfacing jobs that already have a submitted application.
+    // Guards against the scout-level dedup bug where the same job gets
+    // multiple job_listings rows across re-discoveries.
+    const submittedJobIds = new Set(
+      allJobs.filter(j => j.status === 'submitted').map(j => j.id)
+    )
+    const submittedLinks = new Set(
+      allJobs.filter(j => j.status === 'submitted').map(j => j.link?.trim()).filter(Boolean)
+    )
+
     // Filter out already-seen jobs
     const newItems: ReviewQueueItem[] = jobs
       .filter(job => {
+        // Drop anything already submitted (by id or by link — catches scout-dedup siblings).
+        if ('id' in job && job.id && submittedJobIds.has(job.id as string)) {
+          console.log(`[AutopilotView] Skipping already-submitted job (id match): ${job.url}`)
+          return false
+        }
+        if (job.url && submittedLinks.has(job.url)) {
+          console.log(`[AutopilotView] Skipping already-submitted job (link match): ${job.url}`)
+          return false
+        }
         if (!job.url) {
           console.log(`[AutopilotView] Skipping job with no URL: ${job.company} - ${job.title}`)
           return false

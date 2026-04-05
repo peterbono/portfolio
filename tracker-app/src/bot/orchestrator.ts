@@ -11,6 +11,7 @@ import {
   type QualificationResult,
 } from './qualifier'
 import { blockUnnecessaryResources } from './helpers'
+import { isSupportedAutoApplyAts } from '../lib/classify-job-url'
 import {
   createBotRun,
   updateBotRun,
@@ -845,6 +846,17 @@ async function phaseScout(
   const mergeWithDedup = (jobs: DiscoveredJob[]): number => {
     let dupes = 0
     for (const job of jobs) {
+      // Focus scope: only Greenhouse + LinkedIn for now. Other ATS are broken
+      // post-migration and we drop here to avoid wasting qualify/apply compute.
+      // See src/lib/classify-job-url.ts for the supported list.
+      // Tagged ATS takes precedence; fall back to URL-based check for untagged jobs.
+      if (job.ats) {
+        if (!['greenhouse', 'linkedin'].includes(job.ats.toLowerCase())) {
+          continue
+        }
+      } else if (!isSupportedAutoApplyAts(job.url)) {
+        continue
+      }
       const key = `${normalizeForDedup(job.company)}|${normalizeForDedup(job.title)}`
       if (seenCompanyTitle.has(key)) { dupes++; continue }
       seenCompanyTitle.add(key)

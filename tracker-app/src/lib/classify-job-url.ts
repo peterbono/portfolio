@@ -34,3 +34,29 @@ export function classifyJobUrl(url: string): JobApplyMethod {
   // Unknown domains — try auto-apply with generic adapter
   return 'auto_apply'
 }
+
+/**
+ * Currently-supported auto-apply ATS — the only platforms where our bot
+ * reliably completes submissions. Everything else (Lever, Workable, Ashby,
+ * Breezy, Teamtailor, SmartRecruiters, Manatal, etc.) is disabled pending
+ * per-ATS fix work.
+ *
+ * LinkedIn here = LinkedIn Easy Apply ONLY. Non-EA LinkedIn jobs redirect
+ * to external ATS and must be filtered out at scout level (where we have
+ * access to LinkedIn's applyMethod flag).
+ */
+export const SUPPORTED_AUTO_APPLY_ATS = ['greenhouse', 'linkedin_easy_apply'] as const
+export type SupportedAutoApplyAts = typeof SUPPORTED_AUTO_APPLY_ATS[number]
+
+/**
+ * Returns true only if the URL is a Greenhouse job or a LinkedIn job.
+ * NOTE: LinkedIn here includes ALL linkedin.com/jobs URLs — the Easy Apply
+ * vs external-apply distinction must be enforced at scout ingestion time
+ * (where we actually have access to LinkedIn's applyMethod flag).
+ */
+export function isSupportedAutoApplyAts(url: string): boolean {
+  if (!url) return false
+  if (/greenhouse\.io|job-boards\.greenhouse\.io/i.test(url)) return true
+  if (/linkedin\.com\/jobs/i.test(url)) return true
+  return false
+}

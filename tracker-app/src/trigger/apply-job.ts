@@ -155,14 +155,22 @@ export const applyJobTask = task({
             }],
           })
 
-          // Sort qualified jobs by ATS priority: Lever first, Ashby last
+          // Sort qualified jobs by ATS priority.
+          // Post-migration focus (April 2026): Greenhouse + LinkedIn Easy Apply
+          // are the only reliably-working auto-apply targets. Every other ATS
+          // (Lever, Workable, Teamtailor, Breezy, SmartRecruiters) is broken
+          // and deprioritized to 50 so they sort LAST but still surface in case
+          // a user wants to review them manually. Ashby stays at 99 (never).
           const ATS_PRIORITY: Record<string, number> = {
-            lever: 1,
-            workable: 2,
-            greenhouse: 3,
-            teamtailor: 4,
-            breezy: 4,
-            linkedin: 5,
+            greenhouse: 1,
+            linkedin: 2,
+            // Deprioritized — auto-apply currently broken, kept low so they surface last
+            // in case a user wants to manually review them.
+            lever: 50,
+            workable: 50,
+            teamtailor: 50,
+            breezy: 50,
+            smartrecruiters: 50,
             ashby: 99,
           }
           qualifiedJobs.sort((a, b) => {
