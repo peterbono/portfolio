@@ -5218,7 +5218,7 @@ const ATS_HANDLERS = {
   try {
     // Route to ATS-specific handler
     const handler = ATS_HANDLERS[atsType] || handleGeneric
-    const fillSuccess = await handler(context)
+    let fillSuccess = await handler(context)
 
     // Safety net: always run label-based scan after handler completes
     // (handles forms where container-based scanning missed fields)
@@ -5227,9 +5227,17 @@ const ATS_HANDLERS = {
     // Last-resort fallback: ask Haiku to answer any remaining unfilled fields
     // in a single batch. Runs ONCE per form, right before submit. Ashby/Workday
     // are skipped — they can't submit regardless, so the extra API call is wasted.
+    //
+    // If the handler bailed (fillSuccess=false) because of unfilled custom fields
+    // and Haiku successfully filled some of them, we rescue the flow and proceed
+    // to submit instead of marking as needs_manual.
     if (atsType !== 'ashby' && atsType !== 'workday') {
       try {
-        await runHaikuFieldFallback()
+        const haikuFilled = await runHaikuFieldFallback()
+        if (haikuFilled > 0 && !fillSuccess) {
+          log(`[haiku-fallback] Rescued form: ${haikuFilled} field(s) filled by Haiku — proceeding to submit instead of needs_manual`)
+          fillSuccess = true
+        }
       } catch (e) {
         warn('runHaikuFieldFallback error:', e.message)
       }
