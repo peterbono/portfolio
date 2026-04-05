@@ -2404,6 +2404,7 @@ function ReviewQueue({
   isDemo,
   reviewMode,
   onToggleMode,
+  applyFilter,
 }: {
   queue: ReviewQueueItem[]
   onApprove: (id: string) => void
@@ -2418,16 +2419,8 @@ function ReviewQueue({
   isDemo: boolean
   reviewMode: ReviewMode
   onToggleMode: (mode: ReviewMode) => void
+  applyFilter: 'all' | 'auto' | 'direct'
 }) {
-  const [applyFilter, setApplyFilter] = useState<'all' | 'auto' | 'direct'>('all')
-
-  // Compute counts per filter category
-  const autoCount = queue.filter(i => {
-    const c = classifyJobUrl(i.jobUrl || '')
-    return c === 'auto_apply' || c === 'linkedin'
-  }).length
-  const directCount = queue.filter(i => classifyJobUrl(i.jobUrl || '') === 'direct_apply').length
-
   // Apply filter to queue
   const filteredQueue = applyFilter === 'all'
     ? queue
@@ -2456,25 +2449,6 @@ function ReviewQueue({
           <p style={reviewStyles.queueSubtext}>
             Review your matches. Nothing is submitted until you approve.
           </p>
-          {/* Apply method filter pills */}
-          <div style={reviewStyles.applyFilterWrap}>
-            {([
-              { key: 'all' as const, label: 'All', count: queue.length },
-              { key: 'auto' as const, label: 'Auto-Apply', count: autoCount },
-              { key: 'direct' as const, label: 'Direct Apply', count: directCount },
-            ]).map(f => (
-              <button
-                key={f.key}
-                style={{
-                  ...reviewStyles.applyFilterPill,
-                  ...(applyFilter === f.key ? reviewStyles.applyFilterPillActive : {}),
-                }}
-                onClick={() => setApplyFilter(f.key)}
-              >
-                {f.label} ({f.count})
-              </button>
-            ))}
-          </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {/* View toggle */}
@@ -2702,7 +2676,7 @@ const reviewStyles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-    marginBottom: 16,
+    marginBottom: 12,
     gap: 12,
     flexWrap: 'wrap' as const,
   },
@@ -2771,7 +2745,7 @@ const reviewStyles: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     gap: 10,
-    maxHeight: 480,
+    maxHeight: 600,
     overflowY: 'auto',
   },
   queueBottom: {
@@ -2780,7 +2754,13 @@ const reviewStyles: Record<string, React.CSSProperties> = {
     gap: 16,
     marginTop: 16,
     paddingTop: 16,
+    paddingBottom: 16,
     borderTop: '1px solid var(--border)',
+    position: 'sticky',
+    bottom: 0,
+    zIndex: 10,
+    background: 'var(--bg-surface)',
+    boxShadow: '0 -4px 12px rgba(0, 0, 0, 0.15)',
   },
   btnSubmitApproved: {
     display: 'inline-flex',
@@ -3392,12 +3372,26 @@ function FilterSidebar({
   onChange,
   showSaved,
   onEditProfile,
+  queue,
+  applyFilter,
+  onApplyFilterChange,
 }: {
   config: SearchConfig
   onChange: (patch: Partial<SearchConfig>) => void
   showSaved: boolean
   onEditProfile?: () => void
+  queue?: { jobUrl?: string }[]
+  applyFilter?: 'all' | 'auto' | 'direct'
+  onApplyFilterChange?: (f: 'all' | 'auto' | 'direct') => void
 }) {
+  // Compute filter counts from queue
+  const autoCount = queue ? queue.filter(i => {
+    const c = classifyJobUrl(i.jobUrl || '')
+    return c === 'auto_apply' || c === 'linkedin'
+  }).length : 0
+  const directCount = queue ? queue.filter(i => classifyJobUrl(i.jobUrl || '') === 'direct_apply').length : 0
+  const totalCount = queue ? queue.length : 0
+
   return (
     <div style={sidebarStyles.inner}>
       {/* Sidebar header */}
@@ -3426,6 +3420,33 @@ function FilterSidebar({
           compact
         />
       </div>
+
+      {/* Apply method filter pills — moved from review queue */}
+      {queue && queue.length > 0 && applyFilter !== undefined && onApplyFilterChange && (
+        <div style={{ marginTop: 4 }}>
+          <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6, display: 'block' }}>
+            Apply Method
+          </label>
+          <div style={reviewStyles.applyFilterWrap}>
+            {([
+              { key: 'all' as const, label: 'All', count: totalCount },
+              { key: 'auto' as const, label: 'Auto-Apply', count: autoCount },
+              { key: 'direct' as const, label: 'Direct Apply', count: directCount },
+            ]).map(f => (
+              <button
+                key={f.key}
+                style={{
+                  ...reviewStyles.applyFilterPill,
+                  ...(applyFilter === f.key ? reviewStyles.applyFilterPillActive : {}),
+                }}
+                onClick={() => onApplyFilterChange(f.key)}
+              >
+                {f.label} ({f.count})
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Edit Profile link removed — now in top bar */}
     </div>
@@ -3945,6 +3966,7 @@ export function AutopilotView() {
   const [reviewQueue, setReviewQueue] = useState<ReviewQueueItem[]>(() => loadReviewQueue())
   const [isReviewDemo] = useState(false)
   const [reviewMode, setReviewMode] = useState<ReviewMode>(() => loadReviewMode())
+  const [applyFilter, setApplyFilter] = useState<'all' | 'auto' | 'direct'>('all')
 
   const handleToggleReviewMode = useCallback((mode: ReviewMode) => {
     setReviewMode(mode)
@@ -4939,6 +4961,7 @@ export function AutopilotView() {
           isDemo={isReviewDemo}
           reviewMode={reviewMode}
           onToggleMode={handleToggleReviewMode}
+          applyFilter={applyFilter}
         />
 
         {/* Preview Drawer */}
@@ -5081,6 +5104,91 @@ export function AutopilotView() {
               <button style={autoSubmitStyles.topBarBadgeOff as React.CSSProperties} onClick={handleDisableAutoSubmit}>[Turn off]</button>
             </span>
           )}
+
+          {/* Platform credit bars — inline in top bar */}
+          {canUseBot && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 14,
+              flexShrink: 0,
+              padding: '0 4px',
+            }}>
+              {/* LinkedIn credit bar */}
+              {(() => {
+                const liMax = platformLimits.linkedInPerDay >= 999 ? Infinity : platformLimits.linkedInPerDay
+                const liRemaining = linkedInRemainingToday
+                const liUsed = linkedInUsedToday
+                const liIsUnlimited = liMax === Infinity
+                const liPct = liIsUnlimited ? (liUsed > 0 ? 30 : 0) : (liMax > 0 ? (liUsed / liMax) * 100 : 0)
+                const liBarColor = liRemaining === 0 ? '#ef4444' : liPct >= 60 ? '#f59e0b' : '#34d399'
+                return (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', minWidth: 42 }}>LinkedIn</span>
+                    <div style={{
+                      width: 60, height: 3, borderRadius: 2,
+                      background: 'rgba(255,255,255,0.06)',
+                      overflow: 'hidden', flexShrink: 0,
+                    }}>
+                      <div style={{
+                        width: liIsUnlimited ? '100%' : `${Math.max(liPct, 0)}%`,
+                        height: '100%', borderRadius: 2,
+                        background: liBarColor,
+                        transition: 'width 0.3s ease, background 0.3s ease',
+                      }} />
+                    </div>
+                    <span style={{ fontSize: 10, fontWeight: 500, color: liBarColor, minWidth: 36 }}>
+                      {liIsUnlimited ? `${liUsed} used` : `${liUsed}/${liMax} used`}
+                    </span>
+                  </div>
+                )
+              })()}
+              {/* ATS credit bar */}
+              {(() => {
+                const atsMax = platformLimits.atsPerDay >= 999 ? Infinity : platformLimits.atsPerDay
+                const atsRemaining = atsRemainingToday
+                const atsUsed = atsUsedToday
+                const atsIsUnlimited = atsMax === Infinity
+                const atsPct = atsIsUnlimited ? (atsUsed > 0 ? 30 : 0) : (atsMax > 0 ? (atsUsed / atsMax) * 100 : 0)
+                const atsBarColor = atsRemaining === 0 ? '#ef4444' : atsPct >= 60 ? '#f59e0b' : '#34d399'
+                return (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', minWidth: 22 }}>ATS</span>
+                    <div style={{
+                      width: 60, height: 3, borderRadius: 2,
+                      background: 'rgba(255,255,255,0.06)',
+                      overflow: 'hidden', flexShrink: 0,
+                    }}>
+                      <div style={{
+                        width: atsIsUnlimited ? '100%' : `${Math.max(atsPct, 0)}%`,
+                        height: '100%', borderRadius: 2,
+                        background: atsBarColor,
+                        transition: 'width 0.3s ease, background 0.3s ease',
+                      }} />
+                    </div>
+                    <span style={{ fontSize: 10, fontWeight: 500, color: atsBarColor, minWidth: 36 }}>
+                      {atsIsUnlimited ? `${atsUsed} used` : `${atsUsed}/${atsMax} used`}
+                    </span>
+                  </div>
+                )
+              })()}
+              {/* LinkedIn exhausted — auto-switch badge */}
+              {linkedInRemainingToday === 0 && platformLimits.linkedInPerDay < 999 && (
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  padding: '2px 8px', borderRadius: 10,
+                  background: 'rgba(96, 165, 250, 0.1)',
+                  border: '1px solid rgba(96, 165, 250, 0.2)',
+                  fontSize: 9, fontWeight: 600,
+                  color: '#93c5fd', whiteSpace: 'nowrap',
+                }}>
+                  <Briefcase size={9} />
+                  ATS only
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Divider before Bot Profile */}
+          {canUseBot && <div style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 2px' }} />}
 
           {/* Bot Profile button — secondary/outline style */}
           <button
@@ -5270,6 +5378,9 @@ export function AutopilotView() {
               onChange={handleConfigChange}
               showSaved={showSaved}
               onEditProfile={() => setShowProfileEditModal(true)}
+              queue={reviewQueue}
+              applyFilter={applyFilter}
+              onApplyFilterChange={setApplyFilter}
             />
           </div>
         )}
@@ -5296,6 +5407,9 @@ export function AutopilotView() {
                 onChange={handleConfigChange}
                 showSaved={showSaved}
                 onEditProfile={() => setShowProfileEditModal(true)}
+                queue={reviewQueue}
+                applyFilter={applyFilter}
+                onApplyFilterChange={setApplyFilter}
               />
             </div>
           </>
@@ -5341,93 +5455,11 @@ export function AutopilotView() {
             </div>
           )}
 
-          {/* Active filter tags bar + platform credit bars */}
+          {/* Active filter tags bar */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <ActiveFilterTags config={searchConfig} />
             </div>
-            {/* Platform credit bars — polished mini progress bars */}
-            {canUseBot && (
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 16,
-                flexShrink: 0,
-              }}>
-                {/* LinkedIn credit bar */}
-                {(() => {
-                  const liMax = platformLimits.linkedInPerDay >= 999 ? Infinity : platformLimits.linkedInPerDay
-                  const liRemaining = linkedInRemainingToday
-                  const liUsed = linkedInUsedToday
-                  const liIsUnlimited = liMax === Infinity
-                  const liPct = liIsUnlimited ? (liUsed > 0 ? 30 : 0) : (liMax > 0 ? (liUsed / liMax) * 100 : 0)
-                  const liBarColor = liRemaining === 0 ? '#ef4444' : liPct >= 60 ? '#f59e0b' : '#34d399'
-                  return (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', minWidth: 52 }}>LinkedIn</span>
-                      <div style={{
-                        width: 80, height: 4, borderRadius: 2,
-                        background: 'rgba(255,255,255,0.06)',
-                        overflow: 'hidden', flexShrink: 0,
-                      }}>
-                        <div style={{
-                          width: liIsUnlimited ? '100%' : `${Math.max(liPct, 0)}%`,
-                          height: '100%', borderRadius: 2,
-                          background: liBarColor,
-                          transition: 'width 0.3s ease, background 0.3s ease',
-                        }} />
-                      </div>
-                      <span style={{ fontSize: 11, fontWeight: 500, color: liBarColor, minWidth: 44 }}>
-                        {liIsUnlimited ? `${liUsed} used` : `${liUsed}/${liMax} used`}
-                      </span>
-                    </div>
-                  )
-                })()}
-
-                {/* ATS credit bar */}
-                {(() => {
-                  const atsMax = platformLimits.atsPerDay >= 999 ? Infinity : platformLimits.atsPerDay
-                  const atsRemaining = atsRemainingToday
-                  const atsUsed = atsUsedToday
-                  const atsIsUnlimited = atsMax === Infinity
-                  const atsPct = atsIsUnlimited ? (atsUsed > 0 ? 30 : 0) : (atsMax > 0 ? (atsUsed / atsMax) * 100 : 0)
-                  const atsBarColor = atsRemaining === 0 ? '#ef4444' : atsPct >= 60 ? '#f59e0b' : '#34d399'
-                  return (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', minWidth: 24 }}>ATS</span>
-                      <div style={{
-                        width: 80, height: 4, borderRadius: 2,
-                        background: 'rgba(255,255,255,0.06)',
-                        overflow: 'hidden', flexShrink: 0,
-                      }}>
-                        <div style={{
-                          width: atsIsUnlimited ? '100%' : `${Math.max(atsPct, 0)}%`,
-                          height: '100%', borderRadius: 2,
-                          background: atsBarColor,
-                          transition: 'width 0.3s ease, background 0.3s ease',
-                        }} />
-                      </div>
-                      <span style={{ fontSize: 11, fontWeight: 500, color: atsBarColor, minWidth: 44 }}>
-                        {atsIsUnlimited ? `${atsUsed} used` : `${atsUsed}/${atsMax} used`}
-                      </span>
-                    </div>
-                  )
-                })()}
-
-                {/* LinkedIn exhausted — auto-switch badge */}
-                {linkedInRemainingToday === 0 && platformLimits.linkedInPerDay < 999 && (
-                  <span style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 5,
-                    padding: '3px 10px', borderRadius: 12,
-                    background: 'rgba(96, 165, 250, 0.1)',
-                    border: '1px solid rgba(96, 165, 250, 0.2)',
-                    fontSize: 10, fontWeight: 600,
-                    color: '#93c5fd', whiteSpace: 'nowrap',
-                  }}>
-                    <Briefcase size={10} />
-                    ATS only mode
-                  </span>
-                )}
-              </div>
-            )}
 
             {/* LinkedIn limit reached info banner */}
             {canUseBot && linkedInRemainingToday === 0 && platformLimits.linkedInPerDay < 999 && (
@@ -5782,6 +5814,7 @@ export function AutopilotView() {
                 isDemo={isReviewDemo}
                 reviewMode={reviewMode}
                 onToggleMode={handleToggleReviewMode}
+                applyFilter={applyFilter}
               />
             </div>
           )}
