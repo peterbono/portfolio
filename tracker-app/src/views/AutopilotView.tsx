@@ -3233,138 +3233,6 @@ const sidebarFormStyles: Record<string, React.CSSProperties> = {
 }
 
 /* ------------------------------------------------------------------ */
-/*  ActiveFilterTags — compact summary tags for the right panel         */
-/* ------------------------------------------------------------------ */
-function ActiveFilterTags({ config }: { config: SearchConfig }) {
-  const hasAnything = config.keywords.length > 0 || config.locationRules.length > 0 ||
-    config.excludedCompanies.length > 0
-  if (!hasAnything) return null
-
-  return (
-    <div style={filterTagStyles.bar}>
-      <Tag size={12} color="var(--text-tertiary)" style={{ flexShrink: 0 }} />
-
-      {/* Keywords as tags */}
-      {config.keywords.map((kw, i) => (
-        <span key={`kw-${i}`} style={filterTagStyles.tag}>
-          <Search size={10} />
-          {kw}
-        </span>
-      ))}
-
-      {/* Location rules as tags */}
-      {config.locationRules.map((rule) => {
-        const icon = getLocationRuleIcon(rule)
-        const salaryPart = rule.minSalary && rule.minSalary > 0
-          ? ` ${getCurrencySymbol(rule.currency)}${(rule.minSalary / 1000).toFixed(0)}k+`
-          : ''
-        const arrangement = rule.workArrangement === 'any' ? '' :
-          rule.workArrangement === 'remote' ? ' Remote' :
-          rule.workArrangement === 'hybrid' ? ' Hybrid' : ' On-site'
-        return (
-          <span key={rule.id} style={filterTagStyles.tagLocation}>
-            {icon} {rule.value}{arrangement}{salaryPart}
-          </span>
-        )
-      })}
-
-      {/* Excluded count */}
-      {config.excludedCompanies.length > 0 && (
-        <span style={filterTagStyles.tagExcluded}>
-          <Building2 size={10} />
-          {config.excludedCompanies.length} excluded
-        </span>
-      )}
-
-      {/* Daily cap */}
-      {config.dailyLimit && (
-        <span style={filterTagStyles.tagCap}>
-          <Shield size={10} />
-          {config.dailyLimit}/day
-        </span>
-      )}
-    </div>
-  )
-}
-
-const filterTagStyles: Record<string, React.CSSProperties> = {
-  bar: {
-    display: 'flex',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 6,
-    padding: '10px 14px',
-    background: 'rgba(96, 165, 250, 0.04)',
-    border: '1px solid rgba(96, 165, 250, 0.12)',
-    borderRadius: 'var(--radius-md)',
-  },
-  profileName: {
-    fontSize: 13,
-    fontWeight: 600,
-    color: 'var(--text-primary)',
-    whiteSpace: 'nowrap',
-  },
-  divider: {
-    width: 1,
-    height: 16,
-    background: 'var(--border)',
-    flexShrink: 0,
-  },
-  tag: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 4,
-    padding: '2px 8px',
-    fontSize: 11,
-    fontWeight: 500,
-    borderRadius: 12,
-    background: 'rgba(96, 165, 250, 0.10)',
-    color: '#93c5fd',
-    border: '1px solid rgba(96, 165, 250, 0.18)',
-    whiteSpace: 'nowrap',
-  },
-  tagLocation: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 3,
-    padding: '2px 8px',
-    fontSize: 11,
-    fontWeight: 500,
-    borderRadius: 12,
-    background: 'rgba(52, 211, 153, 0.08)',
-    color: '#6ee7b7',
-    border: '1px solid rgba(52, 211, 153, 0.18)',
-    whiteSpace: 'nowrap',
-  },
-  tagExcluded: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 4,
-    padding: '2px 8px',
-    fontSize: 11,
-    fontWeight: 500,
-    borderRadius: 12,
-    background: 'rgba(244, 63, 94, 0.08)',
-    color: '#fda4af',
-    border: '1px solid rgba(244, 63, 94, 0.15)',
-    whiteSpace: 'nowrap',
-  },
-  tagCap: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 4,
-    padding: '2px 8px',
-    fontSize: 11,
-    fontWeight: 500,
-    borderRadius: 12,
-    background: 'rgba(251, 191, 36, 0.08)',
-    color: '#fcd34d',
-    border: '1px solid rgba(251, 191, 36, 0.15)',
-    whiteSpace: 'nowrap',
-  },
-}
-
-/* ------------------------------------------------------------------ */
 /*  FilterSidebar — collapsible left panel showing search settings       */
 /* ------------------------------------------------------------------ */
 function FilterSidebar({
@@ -5455,27 +5323,20 @@ export function AutopilotView() {
             </div>
           )}
 
-          {/* Active filter tags bar */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <ActiveFilterTags config={searchConfig} />
+          {/* LinkedIn limit reached info banner */}
+          {canUseBot && linkedInRemainingToday === 0 && platformLimits.linkedInPerDay < 999 && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '6px 12px', borderRadius: 6,
+              background: 'rgba(96, 165, 250, 0.06)',
+              border: '1px solid rgba(96, 165, 250, 0.12)',
+            }}>
+              <AlertTriangle size={12} color="#93c5fd" />
+              <span style={{ fontSize: 11, color: '#93c5fd', fontWeight: 500 }}>
+                LinkedIn daily limit reached — applying to ATS jobs only
+              </span>
             </div>
-
-            {/* LinkedIn limit reached info banner */}
-            {canUseBot && linkedInRemainingToday === 0 && platformLimits.linkedInPerDay < 999 && (
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 8,
-                padding: '6px 12px', borderRadius: 6,
-                background: 'rgba(96, 165, 250, 0.06)',
-                border: '1px solid rgba(96, 165, 250, 0.12)',
-              }}>
-                <AlertTriangle size={12} color="#93c5fd" />
-                <span style={{ fontSize: 11, color: '#93c5fd', fontWeight: 500 }}>
-                  LinkedIn daily limit reached — applying to ATS jobs only
-                </span>
-              </div>
-            )}
-          </div>
+          )}
 
           {/* Progress Banner — shows during and after bot runs */}
           {!isStaleTerminalRun && (isRunPolling || isRunTerminal || isTriggering || isBotActive || currentRun?.status === 'completed' || currentRun?.status === 'failed') && (
