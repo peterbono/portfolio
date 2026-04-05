@@ -1464,44 +1464,13 @@ function fillCurrentStep() {
     }
   }
 
-  // ─── CATCH-ALL: Default "Yes" for any required, unanswered radio groups ───
-  // Custom employer questions (from ATS like PYJAMAHR) often have Yes/No radios
-  // that don't match any of our keyword patterns above. Default to "Yes".
-  var allRadiosCatchall = document.querySelectorAll('input[type="radio"]');
-  var groupsHandled = {};
-  for (var rc = 0; rc < allRadiosCatchall.length; rc++) {
-    var rca = allRadiosCatchall[rc];
-    if (!isInApplyContext(rca)) continue;
-    if (rca.offsetHeight === 0) continue;
-    var gn = rca.getAttribute('name');
-    if (!gn || groupsHandled[gn]) continue;
-    // Check if already checked
-    var alreadyChecked = document.querySelector('input[type="radio"][name="' + gn + '"]:checked');
-    if (alreadyChecked) {
-      groupsHandled[gn] = true;
-      continue;
-    }
-    // Not checked — find all options in this group and pick "Yes" or first
-    var groupRadios = document.querySelectorAll('input[type="radio"][name="' + gn + '"]');
-    var pickedYes = false;
-    for (var gr = 0; gr < groupRadios.length; gr++) {
-      var grLabel = '';
-      try { grLabel = (groupRadios[gr].closest('label') || groupRadios[gr].parentElement).textContent.trim().toLowerCase(); } catch(e) {}
-      if (grLabel === 'yes' || grLabel === 'oui') {
-        groupRadios[gr].click();
-        filledCount++;
-        pickedYes = true;
-        console.log('[JobTracker] Default "Yes" for unanswered required radio group: ' + gn.substring(0, 40));
-        break;
-      }
-    }
-    if (!pickedYes && groupRadios.length > 0) {
-      groupRadios[0].click();
-      filledCount++;
-      console.log('[JobTracker] Default first option for unanswered radio group: ' + gn.substring(0, 40));
-    }
-    groupsHandled[gn] = true;
-  }
+  // NOTE: The "default Yes" catchall for remaining radio groups was moved
+  // to defaultRemainingRadiosToYes() and is now called AFTER runHaikuFieldFallback
+  // in handleMultiStepForm. Reason: previously this logic filled every radio
+  // before Haiku ran, so Haiku never got to answer questions like "Are you
+  // currently employed at {company}?" or "Are you residing in {country}?"
+  // with correct context-aware answers. Now Haiku fills what it can, then
+  // this safety net fills only what remains.
 
   // Handle checkboxes (follow company, share data, etc.)
   var checkboxes = document.querySelectorAll('input[type="checkbox"]');
@@ -1641,6 +1610,49 @@ function fillCurrentStep() {
   }
 
   return filledCount;
+}
+
+// ─── Catchall: default unanswered radio groups to "Yes" (or first option) ───
+// This is the LAST-RESORT fallback, called AFTER Haiku has filled what it can.
+// Previously this ran inside fillCurrentStep BEFORE Haiku, which meant Haiku
+// never saw radio groups like "Are you currently residing in X?" and wrong
+// "Yes" defaults were submitted. Now Haiku gets first shot with full context.
+function defaultRemainingRadiosToYes() {
+  var filled = 0;
+  var allRadios = document.querySelectorAll('input[type="radio"]');
+  var handled = {};
+  for (var i = 0; i < allRadios.length; i++) {
+    var r = allRadios[i];
+    if (!isInApplyContext(r)) continue;
+    if (r.offsetHeight === 0) continue;
+    var name = r.getAttribute('name');
+    if (!name || handled[name]) continue;
+    // Already checked?
+    var alreadyChecked = document.querySelector('input[type="radio"][name="' + name + '"]:checked');
+    if (alreadyChecked) { handled[name] = true; continue; }
+
+    var group = document.querySelectorAll('input[type="radio"][name="' + name + '"]');
+    var picked = false;
+    // Prefer "Yes" / "Oui"
+    for (var g = 0; g < group.length; g++) {
+      var lbl = '';
+      try { lbl = (group[g].closest('label') || group[g].parentElement).textContent.trim().toLowerCase(); } catch (e) {}
+      if (lbl === 'yes' || lbl === 'oui') {
+        group[g].click();
+        filled++;
+        picked = true;
+        log('[default-radio] Safety-net "Yes" for unanswered radio: ' + name.substring(0, 50));
+        break;
+      }
+    }
+    if (!picked && group.length > 0) {
+      group[0].click();
+      filled++;
+      log('[default-radio] Safety-net first option for unanswered radio: ' + name.substring(0, 50));
+    }
+    handled[name] = true;
+  }
+  return filled;
 }
 
 // ─── Helper: set input value using native setter (for React-managed inputs) ───
@@ -2178,6 +2190,20 @@ function handleMultiStepForm(company, role, stepNum, maxSteps, callback) {
     }).catch(function (hErr2) {
       log('[haiku-fallback] error:', hErr2 && hErr2.message);
     }).then(function () {
+      // Safety net: any radio group Haiku didn't answer (because it returned
+      // null, or its answer couldn't match an option) gets defaulted to "Yes"
+      // as a last resort. Runs AFTER Haiku so Haiku's context-aware answers
+      // take precedence. Previously this ran inside fillCurrentStep BEFORE
+      // Haiku, which caused wrong "Yes" defaults for questions like "Are you
+      // currently employed at {X}?" or "Are you residing in {Y}?".
+      try {
+        var safetyFilled = defaultRemainingRadiosToYes();
+        if (safetyFilled > 0) {
+          log('[default-radio] Safety-net filled ' + safetyFilled + ' remaining radio group(s) with Yes/first option');
+        }
+      } catch (srErr) {
+        warn('[default-radio] safety-net error:', srErr && srErr.message);
+      }
       _runStepNavigation(company, role, stepNum, maxSteps, hasVisibleFields, callback);
     });
   }, stepDelay); // Adaptive: 4s for typeahead, 1s for normal fills
