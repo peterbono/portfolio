@@ -33,7 +33,7 @@ window._jobTrackerApplyRan = true;
 console.log('[JobTracker] linkedin-apply.js v6.2.0 loaded on:', window.location.href);
 
 // ─── Build stamp for version verification ───
-var BUILD_STAMP = '2026-04-06-haiku-v2-linkedin';
+var BUILD_STAMP = '2026-04-06-haiku-v3-wrappers';
 try {
   var _mf = chrome.runtime.getManifest();
   console.log('[JobTracker LinkedIn] Loaded v' + _mf.version + ' (' + BUILD_STAMP + ')');
@@ -829,60 +829,170 @@ function runHaikuFieldFallback() {
   }
   log('[haiku-fallback] Scope root: ' + rootInfo);
 
-  // ── Pass 1: text / textarea / select ──
-  var allInputs = root.querySelectorAll('input, textarea, select');
-  log('[haiku-fallback] Raw inputs under root: ' + allInputs.length);
+  // ── Pass 1: LinkedIn form wrappers (2026 structure) ──
+  // Step 2+ of Easy Apply renders custom questions as wrappers containing
+  // React-Select or Artdeco components; the underlying <input> is hidden/empty
+  // so a native tag scan finds nothing. Enumerate wrappers instead.
+  var wrapperSelectors = [
+    '.fb-dash-form-element',
+    '[data-test-form-element]',
+    '[data-test-single-line-text-form-component]',
+    '[data-test-text-entity-list-form-component]',
+    '[data-test-multi-line-text-form-component]',
+    '[data-test-checkbox-form-component]',
+    '.jobs-easy-apply-form-element'
+  ].join(',');
+  var wrappers = root.querySelectorAll(wrapperSelectors);
+  log('[haiku-fallback] Wrappers found: ' + wrappers.length);
 
-  // FALLBACK: if the scoped container has NO inputs but document has some,
+  // FALLBACK: if the scoped container has NO wrappers but document has some,
   // the container is probably stale (mid-transition between multi-step pages)
-  // or findApplyDialog picked the wrong modal. Retry with document scope and
-  // rely on isInApplyContext() to filter out unrelated LinkedIn inputs.
-  if (allInputs.length === 0 && container) {
-    var docInputs = document.querySelectorAll('input, textarea, select');
-    if (docInputs.length > 0) {
-      log('[haiku-fallback] Container is empty but document has ' + docInputs.length + ' inputs — falling back to document scope');
+  // or findApplyDialog picked the wrong modal. Retry with document scope.
+  if (wrappers.length === 0 && container) {
+    var docWrappers = document.querySelectorAll(wrapperSelectors);
+    if (docWrappers.length > 0) {
+      log('[haiku-fallback] Container has 0 wrappers but document has ' + docWrappers.length + ' — falling back to document scope');
       root = document;
-      allInputs = docInputs;
+      wrappers = docWrappers;
     }
   }
-  for (var i = 0; i < allInputs.length; i++) {
-    var input = allInputs[i];
-    if (!input) continue;
-    var tag = input.tagName;
-    var type = (input.type || '').toLowerCase();
 
-    if (type === 'hidden' || type === 'submit' || type === 'button' || type === 'file') continue;
-    if (type === 'radio') continue;    // handled in pass 2
-    if (type === 'checkbox') continue; // consent handled elsewhere
+  // Dedup wrappers — nested data-test-* can match twice
+  var seenWrappers = (typeof Set !== 'undefined') ? new Set() : { _s: [], has: function(x) { return this._s.indexOf(x) >= 0; }, add: function(x) { this._s.push(x); } };
 
-    if (input.offsetHeight === 0) { skipInvisible++; continue; }
-    if (!isInApplyContext(input)) continue;
+  for (var wi = 0; wi < wrappers.length; wi++) {
+    var wrapper = wrappers[wi];
 
-    var fieldType = _classifyHaikuField(input);
-    var labelInfo = _getHaikuFieldLabel(input);
-
-    // Skip already-filled text-like fields
-    if ((fieldType === 'text' || fieldType === 'textarea') && input.value && input.value.trim().length > 0) {
-      skipAlreadyFilled++;
-      continue;
+    // Skip if this wrapper is nested inside another wrapper we'll process
+    var hasAncestorWrapper = false;
+    var cur = wrapper.parentElement;
+    while (cur && cur !== root) {
+      if (cur.matches && cur.matches(wrapperSelectors)) { hasAncestorWrapper = true; break; }
+      cur = cur.parentElement;
     }
-    if (fieldType === 'select' && input.value && input.selectedIndex > 0) {
-      skipAlreadyFilled++;
-      continue;
+    if (hasAncestorWrapper) continue;
+    if (seenWrappers.has(wrapper)) continue;
+    seenWrappers.add(wrapper);
+
+    // Skip invisible wrappers
+    if (wrapper.offsetHeight === 0) { skipInvisible++; continue; }
+
+    // Find the control inside: priority = select > textarea > radio(group) > contenteditable > text/combobox input
+    var control = null;
+    var fieldType = 'text';
+    var options = null;
+
+    // 1. Native <select>
+    var nativeSelect = wrapper.querySelector('select');
+    if (nativeSelect && nativeSelect.offsetHeight > 0) {
+      control = nativeSelect;
+      fieldType = 'select';
+      options = [];
+      for (var oi = 0; oi < nativeSelect.options.length; oi++) {
+        if (oi === 0 && (!nativeSelect.options[oi].value || /select|choose|--/i.test(nativeSelect.options[oi].text))) continue;
+        options.push(nativeSelect.options[oi].text);
+      }
     }
 
-    // Sensitive (EEO/legal) — leave to existing logic
-    if (_isSensitiveFieldForHaiku(labelInfo, input)) {
-      skipSensitive++;
-      log('[haiku-fallback] SKIP sensitive: "' + (labelInfo || '').slice(0, 60) + '"');
-      continue;
+    // 2. <textarea>
+    if (!control) {
+      var textarea = wrapper.querySelector('textarea');
+      if (textarea && textarea.offsetHeight > 0) {
+        control = textarea;
+        fieldType = 'textarea';
+      }
     }
+
+    // 3. Radio group inside wrapper — handled by Pass 2, skip here
+    if (!control) {
+      var radioInside = wrapper.querySelector('input[type="radio"]');
+      if (radioInside) continue;
+    }
+
+    // 4. Checkbox — consent handled elsewhere
+    if (!control) {
+      var checkbox = wrapper.querySelector('input[type="checkbox"]');
+      if (checkbox) continue;
+    }
+
+    // 5. Text input / combobox (React-Select / typeahead)
+    if (!control) {
+      var textInput = wrapper.querySelector('input[type="text"], input:not([type]), input[role="combobox"], input[aria-autocomplete]');
+      if (textInput && textInput.offsetHeight > 0) {
+        control = textInput;
+        // Is it a React-Select / typeahead?
+        if (textInput.getAttribute('role') === 'combobox' ||
+            textInput.getAttribute('aria-autocomplete') ||
+            wrapper.querySelector('[class*="typeahead"], [role="listbox"]')) {
+          fieldType = 'select';
+          // Options often unavailable until user clicks — leave null, Haiku will produce text
+          options = null;
+        } else {
+          fieldType = 'text';
+        }
+      }
+    }
+
+    // 6. contenteditable (LinkedIn long-form answers)
+    if (!control) {
+      var editable = wrapper.querySelector('[contenteditable="true"]');
+      if (editable && editable.offsetHeight > 0) {
+        control = editable;
+        fieldType = 'textarea';
+      }
+    }
+
+    if (!control) continue; // no fillable control in this wrapper
+
+    // Determine if already filled
+    var isFilled = false;
+    if (fieldType === 'select' && control.tagName === 'SELECT') {
+      isFilled = control.value && control.selectedIndex > 0;
+    } else if (control.tagName === 'INPUT' || control.tagName === 'TEXTAREA') {
+      isFilled = !!(control.value && control.value.trim().length > 0);
+      // React-Select shows selected value via sibling, not .value
+      if (!isFilled) {
+        var singleVal = wrapper.querySelector('.select__single-value, .artdeco-text-input--single-value, [class*="single-value"]');
+        if (singleVal && singleVal.textContent && singleVal.textContent.trim().length > 0) {
+          isFilled = true;
+        }
+      }
+    } else if (control.isContentEditable) {
+      isFilled = !!(control.textContent && control.textContent.trim().length > 0);
+    }
+
+    if (isFilled) { skipAlreadyFilled++; continue; }
+
+    // Extract label via the wrapper-aware helper
+    var labelInfo = '';
+    try { labelInfo = _getHaikuFieldLabel(control) || ''; } catch (e) {}
+    if (!labelInfo) {
+      // Fallback: use wrapper's own label element
+      var wl = wrapper.querySelector('label, legend, .fb-dash-form-element__label, [data-test-form-element-label]');
+      if (wl) labelInfo = (wl.textContent || '').replace(/\s+/g, ' ').trim();
+    }
+
     if (!labelInfo || labelInfo.replace(/\s+/g, ' ').trim().length < 3) {
       skipShortLabel++;
       continue;
     }
 
-    candidates.push(_describeFieldForHaiku(input, labelInfo, idx++));
+    // Sensitive filter (EEO/legal)
+    if (_isSensitiveFieldForHaiku(labelInfo, control)) {
+      skipSensitive++;
+      log('[haiku-fallback] SKIP sensitive: "' + labelInfo.slice(0, 60) + '"');
+      continue;
+    }
+
+    candidates.push({
+      id: 'field-' + (idx++),
+      label: labelInfo.slice(0, 300),
+      type: fieldType,
+      options: options,
+      context: labelInfo.slice(0, 200),
+      _el: control,
+      _fieldType: fieldType,
+    });
   }
 
   // ── Pass 2: unanswered radio groups ──
@@ -895,7 +1005,6 @@ function runHaikuFieldFallback() {
     var anyChecked = false;
     for (var rc = 0; rc < radios.length; rc++) { if (radios[rc].checked) { anyChecked = true; break; } }
     if (anyChecked) continue;
-    if (!isInApplyContext(radios[0])) continue;
 
     var gname = radios[0].getAttribute('name') || '';
     if (gname && seenGroups[gname]) continue;
@@ -934,6 +1043,12 @@ function runHaikuFieldFallback() {
 
   var passSummary = 'skipped: sensitive=' + skipSensitive + ' shortLabel=' + skipShortLabel + ' alreadyFilled=' + skipAlreadyFilled + ' invisible=' + skipInvisible;
   log('[haiku-fallback] Collection done: ' + candidates.length + ' candidates (' + passSummary + ')');
+
+  // Critical diagnostic: wrappers present but 0 candidates means they were all filtered out.
+  // This distinguishes "wrapper-not-found" (LI structure changed again) from "wrapper-found-but-filtered".
+  if (wrappers && wrappers.length > 0 && candidates.length === 0) {
+    warn('[haiku-fallback] WARN: ' + wrappers.length + ' wrappers found but 0 candidates survived filtering (' + passSummary + ')');
+  }
 
   if (candidates.length === 0) {
     log('[haiku-fallback] No unfilled fields to escalate');
