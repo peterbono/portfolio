@@ -1645,35 +1645,53 @@ function fillCurrentStep() {
 
 // ─── Helper: set input value using native setter (for React-managed inputs) ───
 function setNativeValue(el, value) {
-  // Focus the element first — LinkedIn React inputs need focus to accept changes
-  el.focus();
-  el.dispatchEvent(new Event('focus', { bubbles: true }));
-  el.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+  if (!el) return false;
+  try {
+    // Focus the element first — LinkedIn React inputs need focus to accept changes
+    try { el.focus(); } catch (fe) { /* some elements can't focus */ }
+    try { el.dispatchEvent(new Event('focus', { bubbles: true })); } catch (e) {}
+    try { el.dispatchEvent(new FocusEvent('focusin', { bubbles: true })); } catch (e) {}
 
-  // Use the native setter to bypass React's synthetic event system
-  var descriptor = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
-  if (!descriptor || !descriptor.set) {
-    descriptor = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value');
-  }
-  if (!descriptor || !descriptor.set) {
-    descriptor = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value');
-  }
-  if (descriptor && descriptor.set) {
-    descriptor.set.call(el, value);
-  } else {
-    el.value = value;
-  }
+    // Use the RIGHT native setter for the element's actual tag — calling
+    // HTMLInputElement's value setter on a textarea throws "Illegal invocation"
+    // and kills the entire form-fill flow (the Haiku fallback hook included).
+    var proto;
+    var tag = el.tagName;
+    if (tag === 'TEXTAREA') {
+      proto = window.HTMLTextAreaElement && window.HTMLTextAreaElement.prototype;
+    } else if (tag === 'SELECT') {
+      proto = window.HTMLSelectElement && window.HTMLSelectElement.prototype;
+    } else {
+      proto = window.HTMLInputElement && window.HTMLInputElement.prototype;
+    }
 
-  // Fire all the events React might be listening to
-  el.dispatchEvent(new Event('input', { bubbles: true }));
-  el.dispatchEvent(new Event('change', { bubbles: true }));
-  // Simulate keydown/keyup for the last character (triggers React onChange in some builds)
-  if (value.length > 0) {
-    el.dispatchEvent(new KeyboardEvent('keydown', { key: value[value.length - 1], bubbles: true }));
-    el.dispatchEvent(new KeyboardEvent('keyup', { key: value[value.length - 1], bubbles: true }));
+    var descriptor = proto && Object.getOwnPropertyDescriptor(proto, 'value');
+    if (descriptor && descriptor.set) {
+      descriptor.set.call(el, value);
+    } else {
+      el.value = value;
+    }
+
+    // Fire all the events React might be listening to
+    try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
+    try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
+    // Simulate keydown/keyup for the last character (triggers React onChange in some builds)
+    if (value && value.length > 0) {
+      try {
+        el.dispatchEvent(new KeyboardEvent('keydown', { key: value[value.length - 1], bubbles: true }));
+        el.dispatchEvent(new KeyboardEvent('keyup', { key: value[value.length - 1], bubbles: true }));
+      } catch (e) {}
+    }
+    try { el.dispatchEvent(new Event('blur', { bubbles: true })); } catch (e) {}
+    try { el.dispatchEvent(new FocusEvent('focusout', { bubbles: true })); } catch (e) {}
+    return true;
+  } catch (err) {
+    // NEVER throw from setNativeValue — a single bad element must not kill
+    // the whole form-fill flow. If this throws, the Haiku fallback (which runs
+    // AFTER fillCurrentStep) never gets a chance to rescue the form.
+    try { warn('setNativeValue error on ' + (el.tagName || '?') + ': ' + (err && err.message)); } catch (e) {}
+    return false;
   }
-  el.dispatchEvent(new Event('blur', { bubbles: true }));
-  el.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
 }
 
 // ─── Find modal/form buttons ───
@@ -2127,9 +2145,16 @@ function handleMultiStepForm(company, role, stepNum, maxSteps, callback) {
 
   console.log('[JobTracker] Step ' + stepNum + '/' + maxSteps + ' — filling fields... (fingerprint: ' + currentFingerprint + ')');
 
-  // Fill all fields on current step
+  // Fill all fields on current step — wrapped in try/catch so a single bad
+  // field (e.g. Illegal invocation on textarea native setter) does NOT crash
+  // the whole apply flow before the Haiku fallback hook has a chance to run.
   window._typeaheadTriggered = false; // Reset before fill
-  var filled = fillCurrentStep();
+  var filled = 0;
+  try {
+    filled = fillCurrentStep();
+  } catch (fillErr) {
+    warn('[JobTracker] fillCurrentStep threw on step ' + stepNum + ': ' + (fillErr && fillErr.message) + ' — continuing to Haiku fallback');
+  }
   console.log('[JobTracker] Filled ' + filled + ' fields on step ' + stepNum + (window._typeaheadTriggered ? ' (typeahead triggered)' : ''));
 
   // Adaptive delay: 4s if typeahead was triggered (needs dropdown selection), 1s otherwise
