@@ -372,7 +372,11 @@ async function scrapeViaGuestApiFetch(
   const allCards: RawJobCard[] = []
 
   for (let pageNum = 0; pageNum < maxPages; pageNum++) {
-    const start = pageNum * 25
+    // LinkedIn guest API returns 10 results per page, NOT 25. Using an offset
+    // of pageNum * 25 skipped jobs 10-24 between pages. Verified empirically
+    // (start=0 → jobs 0-9, start=10 → jobs 10-19, pagination works up to
+    // start=50, returns empty at start=100).
+    const start = pageNum * 10
     const apiUrl = buildGuestApiUrl(searchProfile, start, keywordOverride, locationOverride)
 
     try {
@@ -569,7 +573,8 @@ async function scrapeViaGuestApi(
   const allCards: RawJobCard[] = []
 
   for (let pageNum = 0; pageNum < maxPages; pageNum++) {
-    const start = pageNum * 25
+    // LinkedIn guest API returns 10 results per page — see scrapeViaGuestApiFetch
+    const start = pageNum * 10
     const apiUrl = buildGuestApiUrl(searchProfile, start, keywordOverride, locationOverride)
     console.log(`[scout:guest-api] Fetching page ${pageNum + 1}: ${apiUrl}`)
 

@@ -639,10 +639,14 @@ const DEFAULT_SCOUT_KEYWORDS = [
   'Design System',
 ]
 
-/** Number of LinkedIn pages to scrape per keyword×location combo (25 results/page).
- * Reduced from 3 to 2: diminishing returns on page 3 (mostly duplicates),
- * and with parallel fetch-based scout, 2 pages × 33 combos still yields 50+ results/page. */
-const PAGES_PER_SEARCH = 2
+/** Number of LinkedIn pages to scrape per keyword×location combo.
+ * LinkedIn guest API serves 10 results per page (NOT 25 — verified empirically).
+ * With 4 pages we get up to 40 jobs per combo. Pagination works up to start=50
+ * (returns empty at start=100), so PAGES_PER_SEARCH max useful = 6.
+ * Historical note: this was 2 with a buggy start=pageNum*25 offset that
+ * skipped jobs 10-24 — scout was effectively getting ~20 jobs per combo with
+ * gaps. Bumped to 4 alongside the offset fix for ~2x funnel size. */
+const PAGES_PER_SEARCH = 4
 
 async function phaseScout(
   page: Page,
