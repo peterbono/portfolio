@@ -87,12 +87,14 @@ const FILL_FIELD_TIMEOUT_MS = 25000
 // Labels/ids that must NEVER be sent to Haiku — legal-sensitive or EEO fields.
 // These are left to the existing EEO fallback logic (decline/prefer not).
 const HAIKU_SENSITIVE_PATTERNS = [
-  'authorized', 'authorised', 'sponsor', 'visa', 'work permit', 'permit',
-  'right to work', 'legally', 'eligible to work', 'immigration', 'citizen',
-  'veteran', 'disability', 'gender', 'race', 'ethnicity', 'hispanic',
-  'sexual orientation', 'lgbtq', 'pronouns', 'protected class', 'demographic',
-  'self-identify', 'self identify', 'criminal', 'conviction', 'felony',
-  'background check', 'drug test',
+  'authorized to work', 'authorised to work', 'sponsorship', 'visa',
+  'work permit', 'work authorization', 'right to work',
+  'eligible to work', 'immigration status', 'citizenship',
+  'veteran status', 'disability', 'gender identity', 'race',
+  'ethnicity', 'hispanic', 'latino', 'sexual orientation', 'lgbtq',
+  'pronouns', 'protected class', 'demographic',
+  'self-identify', 'self identify', 'criminal history',
+  'conviction', 'felony', 'background check', 'drug test',
 ]
 
 // ─── Utility Functions ────────────────────────────────────────────────
@@ -1270,16 +1272,19 @@ async function fillUnknownFieldsViaHaiku(fields) {
     ...(f.context ? { context: f.context } : {}),
     ...(f.maxLength ? { maxLength: f.maxLength } : {}),
   }))
+  // Phase 3: log fields being sent for DevTools-level visibility
+  log(`[haiku-fallback] Sending ${payloadFields.length} fields to Haiku:`)
+  payloadFields.forEach(f => log(`  - [${f.type}] "${f.label.slice(0, 60)}" options=${f.options?.length || 0}`))
+
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), FILL_FIELD_TIMEOUT_MS)
   try {
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), FILL_FIELD_TIMEOUT_MS)
     const res = await fetch(FILL_FIELD_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ profile: PROFILE, fields: payloadFields }),
       signal: controller.signal,
     })
-    clearTimeout(timeoutId)
     if (!res.ok) {
       log(`[haiku-fallback] API returned ${res.status}`)
       return new Map()
@@ -1288,6 +1293,7 @@ async function fillUnknownFieldsViaHaiku(fields) {
     const answers = Array.isArray(data?.answers) ? data.answers : []
     const answered = answers.filter(a => a && a.answer != null).length
     log(`[haiku-fallback] Got ${answered}/${batch.length} answers from Haiku`)
+    log(`[haiku-fallback] Received answers: ${answers.map(a => a.answer ? `${a.id}="${String(a.answer).slice(0,30)}"` : `${a.id}=null`).join(', ')}`)
     const map = new Map()
     for (const a of answers) {
       if (!a || a.answer == null) continue
@@ -1300,7 +1306,39 @@ async function fillUnknownFieldsViaHaiku(fields) {
   } catch (err) {
     log(`[haiku-fallback] Error: ${err.message}`)
     return new Map()
+  } finally {
+    clearTimeout(timeoutId)
   }
+}
+
+// Phase 3 fix: enhanced label extraction for Haiku fallback candidates.
+// The generic getLabelText() misses LinkedIn (.fb-dash-form-element wrapper)
+// and sometimes grabs short/empty text on Greenhouse custom fields.
+function _getHaikuFieldLabel(input) {
+  // First try the existing generic label helper
+  let label = (getLabelText(input) || '').trim()
+
+  // LinkedIn-specific: look for .fb-dash-form-element__label in the ancestor chain
+  const linkedinWrapper = input.closest('.fb-dash-form-element, [data-test-form-element]')
+  if (linkedinWrapper) {
+    const linkedinLabel = linkedinWrapper.querySelector('label.fb-dash-form-element__label, [data-test-form-element-label], label')
+    if (linkedinLabel) {
+      const text = (linkedinLabel.textContent || '').trim()
+      if (text && text.length > label.length) label = text
+    }
+  }
+
+  // Greenhouse-specific: look for .field > label pattern
+  const ghField = input.closest('.field, [class*="field-"], fieldset')
+  if (ghField && (!label || label.length < 5)) {
+    const ghLabel = ghField.querySelector('label, legend')
+    if (ghLabel) {
+      const text = (ghLabel.textContent || '').trim()
+      if (text && text.length > label.length) label = text
+    }
+  }
+
+  return label
 }
 
 // Scan the page for fields still unfilled after the pattern bank, ask Haiku,
@@ -1311,6 +1349,10 @@ async function runHaikuFieldFallback() {
 
   const candidates = []
   let idx = 0
+  let skipSensitive = 0
+  let skipShortLabel = 0
+  let skipAlreadyFilled = 0
+  let skipInvisible = 0
 
   // ── Pass 1: text / textarea / native select ──
   const allInputs = document.querySelectorAll('input, textarea, select')
@@ -1322,27 +1364,49 @@ async function runHaikuFieldFallback() {
     if (fieldType === 'checkbox') continue // consent checkboxes handled by patterns; skip
 
     // Skip invisible inputs
-    if (input.offsetParent === null && !input.closest('[style*="display"]')) continue
+    if (input.offsetParent === null && !input.closest('[style*="display"]')) { skipInvisible++; continue }
     // Skip intl-tel / country search inputs
     if (input.id === 'country' || input.closest('.iti__search-input, .iti')) continue
 
+    // Pre-compute label for better logs
+    const labelInfo = _getHaikuFieldLabel(input)
+
     // Skip if already filled
-    if (fieldType === 'text' && input.value && input.value.trim().length > 0) continue
-    if (fieldType === 'select' && input.value && input.selectedIndex > 0) continue
+    if (fieldType === 'text' && input.value && input.value.trim().length > 0) {
+      skipAlreadyFilled++
+      log(`[haiku-fallback] SKIP already-filled: type=${fieldType} label="${(labelInfo || '').slice(0, 40)}"`)
+      continue
+    }
+    if (fieldType === 'select' && input.value && input.selectedIndex > 0) {
+      skipAlreadyFilled++
+      log(`[haiku-fallback] SKIP already-filled: type=${fieldType} label="${(labelInfo || '').slice(0, 40)}"`)
+      continue
+    }
     if (fieldType === 'react-select') {
       // react-select is filled via a sibling display node, not .value
       const shell = input.closest('.select-shell') || input.closest('[class*="select__container"]')
       const existing = shell?.querySelector('[class*="select__single-value"], [class*="singleValue"]')
-      if (existing && existing.textContent?.trim()) continue
+      if (existing && existing.textContent?.trim()) {
+        skipAlreadyFilled++
+        log(`[haiku-fallback] SKIP already-filled: type=${fieldType} label="${(labelInfo || '').slice(0, 40)}"`)
+        continue
+      }
       // Skip phone-country react-selects
       if (shell && isPhoneCountryShell(shell)) continue
     }
 
-    const labelInfo = getLabelText(input)
     // Legal-sensitive fields: leave to existing EEO/sponsor logic
-    if (_isSensitiveFieldForHaiku(labelInfo, input)) continue
+    if (_isSensitiveFieldForHaiku(labelInfo, input)) {
+      skipSensitive++
+      log(`[haiku-fallback] SKIP sensitive: "${(labelInfo || '').slice(0, 60)}"`)
+      continue
+    }
     // Skip if label is too short/empty — Haiku has nothing to work with
-    if (!labelInfo || labelInfo.replace(/\s+/g, ' ').trim().length < 3) continue
+    if (!labelInfo || labelInfo.replace(/\s+/g, ' ').trim().length < 3) {
+      skipShortLabel++
+      log(`[haiku-fallback] SKIP short-label (<3 chars): tag=${input.tagName} id=${input.id || '?'}`)
+      continue
+    }
 
     candidates.push(_describeFieldForHaiku(input, labelInfo, idx++))
   }
@@ -1359,9 +1423,31 @@ async function runHaikuFieldFallback() {
     if (name && seenGroups.has(name)) continue
     if (name) seenGroups.add(name)
 
-    const groupText = (group.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 300)
-    if (groupText.length < 3) continue
-    if (_isSensitiveFieldForHaiku(groupText, radios[0])) continue
+    // Phase 3 fix: extract ONLY the question label, not the full group text
+    // (which would concatenate other questions present inside the same wrapper).
+    const legendEl = group.querySelector('legend, .fb-dash-form-element__label, [data-test-form-element-label], > label')
+    const groupLabel = legendEl
+      ? (legendEl.textContent || '').trim()
+      : (group.getAttribute('aria-label') || '').trim()
+
+    // Fallback: use text-node children before any INPUT/LABEL descendant
+    const groupText = (groupLabel || Array.from(group.childNodes)
+      .filter(n => n.nodeType === Node.TEXT_NODE || (n.nodeType === 1 && !['INPUT', 'LABEL'].includes(n.tagName)))
+      .map(n => n.textContent || '')
+      .join(' ')
+      .trim()
+      .slice(0, 200)).replace(/\s+/g, ' ').trim()
+
+    if (groupText.length < 3) {
+      skipShortLabel++
+      log(`[haiku-fallback] SKIP short-label radio group: name=${name || '?'}`)
+      continue
+    }
+    if (_isSensitiveFieldForHaiku(groupText, radios[0])) {
+      skipSensitive++
+      log(`[haiku-fallback] SKIP sensitive radio: "${groupText.slice(0, 60)}"`)
+      continue
+    }
 
     const options = Array.from(radios).map(r => {
       const lbl = (r.closest('label')?.textContent || r.nextElementSibling?.textContent || r.parentElement?.textContent || '').trim()
@@ -1378,6 +1464,9 @@ async function runHaikuFieldFallback() {
       _fieldType: 'radio',
     })
   }
+
+  const passSummary = `skipped: sensitive=${skipSensitive} shortLabel=${skipShortLabel} alreadyFilled=${skipAlreadyFilled} invisible=${skipInvisible}`
+  log(`[haiku-fallback] Collection done: ${candidates.length} candidates (${passSummary})`)
 
   if (candidates.length === 0) {
     log('[haiku-fallback] No unfilled fields to escalate')
@@ -1398,6 +1487,19 @@ async function runHaikuFieldFallback() {
     if (!entry) continue
     const answer = String(entry.answer).trim()
     if (!answer) continue
+
+    // Phase 3 fix: verify element is still in the DOM after the Haiku await.
+    // React re-renders, multi-step navigation, or dynamic form updates can
+    // disconnect _el during the 5-15s API round-trip. Skip stale refs.
+    if (!f._el || !document.contains(f._el)) {
+      log(`[haiku-fallback] SKIP stale element: "${f.label.slice(0, 50)}" (disconnected after Haiku call)`)
+      continue
+    }
+    if (f._el.offsetParent === null && f._el.type !== 'hidden') {
+      log(`[haiku-fallback] SKIP invisible element: "${f.label.slice(0, 50)}" (offsetParent null)`)
+      continue
+    }
+
     try {
       const ok = await fillClassifiedField(f._el, f._fieldType, answer, f.label)
       if (ok) {
@@ -4905,6 +5007,22 @@ async function navigateMultiStepForm() {
     // Label-based scan — fills fields that container-based scanning missed
     try { await fillByLabelScan() } catch(e) { warn('navigateMultiStep labelScan error:', e.message) }
 
+    // Phase 3 fix: fill unknown custom fields on THIS step via Haiku before advancing.
+    // The feature previously ran only once at the end of the IIFE, missing fields
+    // on steps 2-3 of multi-step forms. runHaikuFieldFallback is safe to call
+    // multiple times — it skips already-filled fields in the candidate loop.
+    // Ashby/Workday are skipped (they can't submit regardless, extra API call wasted).
+    const _host = window.location.hostname.toLowerCase()
+    const _skipHaikuHost = _host.includes('ashbyhq.com') || _host.includes('workday.com') || _host.includes('myworkdayjobs.com')
+    if (!_skipHaikuHost) {
+      try {
+        const haikuFilled = await runHaikuFieldFallback()
+        if (haikuFilled > 0) log(`[haiku-fallback] Filled ${haikuFilled} field(s) before advancing to next step`)
+      } catch (e) {
+        warn('[haiku-fallback] mid-step error:', e.message)
+      }
+    }
+
     await sleep(1000)
 
     // Stuck detection: track consecutive steps with 0 fields filled
@@ -5113,7 +5231,8 @@ const ATS_HANDLERS = {
     warn('Guard check failed, proceeding anyway:', guardErr.message)
   }
 
-  log('ats-apply.js v2.6.0 loaded on:', currentUrl)
+  const BUILD_STAMP = '2026-04-06-haiku-v2'
+  log(`[JobTracker ATS] Loaded v${chrome.runtime.getManifest().version} (${BUILD_STAMP}) on: ${currentUrl}`)
 
   // ─── Early confirmation page detection ──────────────────────────────
   // If we landed on a /confirmation page (e.g. after Greenhouse submit navigated here),
