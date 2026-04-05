@@ -3270,17 +3270,22 @@ function FilterSidebar({
   onChange: (patch: Partial<SearchConfig>) => void
   showSaved: boolean
   onEditProfile?: () => void
-  queue?: { jobUrl?: string }[]
+  queue?: { jobUrl?: string; status?: string }[]
   applyFilter?: 'all' | 'auto' | 'direct'
   onApplyFilterChange?: (f: 'all' | 'auto' | 'direct') => void
 }) {
-  // Compute filter counts from queue
-  const autoCount = queue ? queue.filter(i => {
+  // Compute filter counts from queue — MUST match ReviewQueue's visibility logic.
+  // Terminal statuses (submitted, skipped, expired) are hidden in the rendered
+  // list, so they must also be excluded from the counts, otherwise the user sees
+  // "Auto-Apply (2)" and clicks through to an empty list.
+  const TERMINAL = new Set(['submitted', 'skipped', 'expired'])
+  const visibleQueue = queue ? queue.filter(i => !TERMINAL.has(i.status || '')) : []
+  const autoCount = visibleQueue.filter(i => {
     const c = classifyJobUrl(i.jobUrl || '')
     return c === 'auto_apply' || c === 'linkedin'
-  }).length : 0
-  const directCount = queue ? queue.filter(i => classifyJobUrl(i.jobUrl || '') === 'direct_apply').length : 0
-  const totalCount = queue ? queue.length : 0
+  }).length
+  const directCount = visibleQueue.filter(i => classifyJobUrl(i.jobUrl || '') === 'direct_apply').length
+  const totalCount = visibleQueue.length
 
   return (
     <div style={sidebarStyles.inner}>
