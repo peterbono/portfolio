@@ -76,6 +76,25 @@ const ATS_CONFIG = {
   cvFetchTimeout: 15000,    // CV download timeout
 }
 
+// ─── Haiku Fallback (server-side LLM fill for unmatched fields) ───────
+// When the pattern bank + ATS handler + label scan all miss a field,
+// we POST the remaining unfilled fields to /api/fill-field (Haiku 4.5)
+// for a best-effort answer. One batch call per form, right before submit.
+const FILL_FIELD_ENDPOINT = 'https://tracker-app-lyart.vercel.app/api/fill-field'
+const FILL_FIELD_MAX_BATCH = 20
+const FILL_FIELD_TIMEOUT_MS = 25000
+
+// Labels/ids that must NEVER be sent to Haiku — legal-sensitive or EEO fields.
+// These are left to the existing EEO fallback logic (decline/prefer not).
+const HAIKU_SENSITIVE_PATTERNS = [
+  'authorized', 'authorised', 'sponsor', 'visa', 'work permit', 'permit',
+  'right to work', 'legally', 'eligible to work', 'immigration', 'citizen',
+  'veteran', 'disability', 'gender', 'race', 'ethnicity', 'hispanic',
+  'sexual orientation', 'lgbtq', 'pronouns', 'protected class', 'demographic',
+  'self-identify', 'self identify', 'criminal', 'conviction', 'felony',
+  'background check', 'drug test',
+]
+
 // ─── Utility Functions ────────────────────────────────────────────────
 
 function sleep(ms) {
@@ -1178,6 +1197,223 @@ function matchFieldToValue(labelInfo) {
   if (l.includes('how did you hear') || l.includes('source') || l.includes('referral') || l.includes('comment avez')) return 'LinkedIn'
 
   return null
+}
+
+// ─── Haiku Fallback Helper ────────────────────────────────────────────
+// Called AFTER the pattern bank + handler + label scan have run. Collects
+// every still-unfilled, non-sensitive field on the page, POSTs them in a
+// single batch to /api/fill-field, and writes the answers back into the DOM
+// using the same primitives (fillClassifiedField) the rest of the script uses.
+//
+// Safety:
+//  - Legal/EEO-sensitive labels are filtered out BEFORE the API call.
+//  - Capped at FILL_FIELD_MAX_BATCH fields per form (the rest fall through
+//    to needs_manual, as before).
+//  - On any error (network, timeout, non-2xx) we silently return 0 — the
+//    existing fallback path (needs_manual) remains unchanged.
+
+function _isSensitiveFieldForHaiku(labelInfo, input) {
+  const l = (labelInfo || '').toLowerCase()
+  for (const pat of HAIKU_SENSITIVE_PATTERNS) {
+    if (l.includes(pat)) return true
+  }
+  const id = (input?.id || '').toLowerCase()
+  if (id.startsWith('4014') || id.startsWith('4015')) return true
+  const eeoIds = ['gender', 'race', 'ethnicity', 'hispanic_ethnicity', 'veteran_status', 'disability_status']
+  if (eeoIds.includes(id)) return true
+  return false
+}
+
+function _describeFieldForHaiku(input, labelInfo, idx) {
+  const fieldType = classifyFormField(input)
+  let kind = 'text'
+  if (fieldType === 'select') kind = 'select'
+  else if (fieldType === 'react-select') kind = 'select'
+  else if (fieldType === 'radio') kind = 'radio'
+  else if (fieldType === 'checkbox') kind = 'checkbox'
+  else if (input.tagName === 'TEXTAREA') kind = 'textarea'
+
+  let options
+  if (input.tagName === 'SELECT') {
+    options = Array.from(input.options)
+      .map(o => (o.text || '').trim())
+      .filter(t => t && t.toLowerCase() !== 'select...' && t.toLowerCase() !== '-- select --')
+  }
+
+  const maxLength = input.maxLength && input.maxLength > 0 ? input.maxLength : undefined
+  const label = (labelInfo || '').trim().slice(0, 300)
+
+  return {
+    id: `field-${idx}`,
+    label,
+    type: kind,
+    options,
+    context: label.slice(0, 200),
+    maxLength,
+    _el: input,
+    _fieldType: fieldType,
+  }
+}
+
+async function fillUnknownFieldsViaHaiku(fields) {
+  if (!Array.isArray(fields) || fields.length === 0) return new Map()
+  const batch = fields.slice(0, FILL_FIELD_MAX_BATCH)
+  if (fields.length > FILL_FIELD_MAX_BATCH) {
+    log(`[haiku-fallback] Capping batch to ${FILL_FIELD_MAX_BATCH} (had ${fields.length})`)
+  }
+  // Strip DOM refs before sending
+  const payloadFields = batch.map(f => ({
+    id: f.id,
+    label: f.label,
+    type: f.type,
+    ...(f.options ? { options: f.options } : {}),
+    ...(f.context ? { context: f.context } : {}),
+    ...(f.maxLength ? { maxLength: f.maxLength } : {}),
+  }))
+  try {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), FILL_FIELD_TIMEOUT_MS)
+    const res = await fetch(FILL_FIELD_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profile: PROFILE, fields: payloadFields }),
+      signal: controller.signal,
+    })
+    clearTimeout(timeoutId)
+    if (!res.ok) {
+      log(`[haiku-fallback] API returned ${res.status}`)
+      return new Map()
+    }
+    const data = await res.json()
+    const answers = Array.isArray(data?.answers) ? data.answers : []
+    const answered = answers.filter(a => a && a.answer != null).length
+    log(`[haiku-fallback] Got ${answered}/${batch.length} answers from Haiku`)
+    const map = new Map()
+    for (const a of answers) {
+      if (!a || a.answer == null) continue
+      // Reject obviously-bogus answers
+      const ans = typeof a.answer === 'string' ? a.answer.trim() : a.answer
+      if (ans === '' || ans === 'null' || ans === 'undefined' || ans === 'N/A') continue
+      map.set(a.id, { answer: ans, confidence: a.confidence || 'unknown' })
+    }
+    return map
+  } catch (err) {
+    log(`[haiku-fallback] Error: ${err.message}`)
+    return new Map()
+  }
+}
+
+// Scan the page for fields still unfilled after the pattern bank, ask Haiku,
+// and apply the answers. Runs once per form, just before submit.
+// Returns the number of fields filled by Haiku.
+async function runHaikuFieldFallback() {
+  log('[haiku-fallback] Scanning for unfilled fields...')
+
+  const candidates = []
+  let idx = 0
+
+  // ── Pass 1: text / textarea / native select ──
+  const allInputs = document.querySelectorAll('input, textarea, select')
+  for (const input of allInputs) {
+    const fieldType = classifyFormField(input)
+    if (fieldType === 'hidden' || fieldType === 'button' || fieldType === 'unknown') continue
+    if (fieldType === 'file') continue
+    if (fieldType === 'radio') continue // handled by pass 2 below
+    if (fieldType === 'checkbox') continue // consent checkboxes handled by patterns; skip
+
+    // Skip invisible inputs
+    if (input.offsetParent === null && !input.closest('[style*="display"]')) continue
+    // Skip intl-tel / country search inputs
+    if (input.id === 'country' || input.closest('.iti__search-input, .iti')) continue
+
+    // Skip if already filled
+    if (fieldType === 'text' && input.value && input.value.trim().length > 0) continue
+    if (fieldType === 'select' && input.value && input.selectedIndex > 0) continue
+    if (fieldType === 'react-select') {
+      // react-select is filled via a sibling display node, not .value
+      const shell = input.closest('.select-shell') || input.closest('[class*="select__container"]')
+      const existing = shell?.querySelector('[class*="select__single-value"], [class*="singleValue"]')
+      if (existing && existing.textContent?.trim()) continue
+      // Skip phone-country react-selects
+      if (shell && isPhoneCountryShell(shell)) continue
+    }
+
+    const labelInfo = getLabelText(input)
+    // Legal-sensitive fields: leave to existing EEO/sponsor logic
+    if (_isSensitiveFieldForHaiku(labelInfo, input)) continue
+    // Skip if label is too short/empty — Haiku has nothing to work with
+    if (!labelInfo || labelInfo.replace(/\s+/g, ' ').trim().length < 3) continue
+
+    candidates.push(_describeFieldForHaiku(input, labelInfo, idx++))
+  }
+
+  // ── Pass 2: unanswered radio groups ──
+  const radioGroups = document.querySelectorAll('fieldset, [role="radiogroup"], [class*="radio-group"], [class*="question"]')
+  const seenGroups = new Set()
+  for (const group of radioGroups) {
+    const radios = group.querySelectorAll('input[type="radio"]')
+    if (radios.length === 0) continue
+    if (Array.from(radios).some(r => r.checked)) continue
+    // De-dupe via shared name
+    const name = radios[0].getAttribute('name') || ''
+    if (name && seenGroups.has(name)) continue
+    if (name) seenGroups.add(name)
+
+    const groupText = (group.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 300)
+    if (groupText.length < 3) continue
+    if (_isSensitiveFieldForHaiku(groupText, radios[0])) continue
+
+    const options = Array.from(radios).map(r => {
+      const lbl = (r.closest('label')?.textContent || r.nextElementSibling?.textContent || r.parentElement?.textContent || '').trim()
+      return lbl
+    }).filter(Boolean)
+
+    candidates.push({
+      id: `field-${idx++}`,
+      label: groupText,
+      type: 'radio',
+      options,
+      context: groupText.slice(0, 200),
+      _el: radios[0], // _fillRadioField walks the group from any radio
+      _fieldType: 'radio',
+    })
+  }
+
+  if (candidates.length === 0) {
+    log('[haiku-fallback] No unfilled fields to escalate')
+    return 0
+  }
+
+  log(`[haiku-fallback] Escalating ${candidates.length} unfilled field(s) to Haiku`)
+  const answerMap = await fillUnknownFieldsViaHaiku(candidates)
+  if (answerMap.size === 0) {
+    log('[haiku-fallback] No answers from Haiku — skipping')
+    return 0
+  }
+
+  let filled = 0
+  const batch = candidates.slice(0, FILL_FIELD_MAX_BATCH)
+  for (const f of batch) {
+    const entry = answerMap.get(f.id)
+    if (!entry) continue
+    const answer = String(entry.answer).trim()
+    if (!answer) continue
+    try {
+      const ok = await fillClassifiedField(f._el, f._fieldType, answer, f.label)
+      if (ok) {
+        filled++
+        log(`[haiku-fallback] Filled [${f._fieldType}] "${f.label.slice(0, 50)}" -> ${answer.slice(0, 40)} (conf=${entry.confidence})`)
+        await sleep(150)
+      } else {
+        log(`[haiku-fallback] Fill attempt failed for "${f.label.slice(0, 50)}" (answer="${answer.slice(0, 40)}")`)
+      }
+    } catch (err) {
+      warn(`[haiku-fallback] Fill error for "${f.label.slice(0, 50)}":`, err.message)
+    }
+  }
+
+  log(`[haiku-fallback] Filled ${filled} additional fields via Haiku`)
+  return filled
 }
 
 // ─── Generic Form Filler ──────────────────────────────────────────────
@@ -4987,6 +5223,17 @@ const ATS_HANDLERS = {
     // Safety net: always run label-based scan after handler completes
     // (handles forms where container-based scanning missed fields)
     try { await fillByLabelScan() } catch(e) { warn('Post-handler fillByLabelScan error:', e.message) }
+
+    // Last-resort fallback: ask Haiku to answer any remaining unfilled fields
+    // in a single batch. Runs ONCE per form, right before submit. Ashby/Workday
+    // are skipped — they can't submit regardless, so the extra API call is wasted.
+    if (atsType !== 'ashby' && atsType !== 'workday') {
+      try {
+        await runHaikuFieldFallback()
+      } catch (e) {
+        warn('runHaikuFieldFallback error:', e.message)
+      }
+    }
 
     if (!fillSuccess) {
       // Handler returned false — mark as needs_manual
