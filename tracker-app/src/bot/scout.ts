@@ -535,9 +535,19 @@ export async function scoutJobsFetch(
     return true
   })
 
-  console.log(`[scout:fetch] "${kw}" × "${loc}": ${totalFound} found, ${filteredOut} filtered, ${deduped.length} unique`)
+  // --- Phase 2: filter LinkedIn jobs to Easy Apply only ---
+  // The guest API does not expose EA status on job cards, so we probe each
+  // job's detail page in parallel and drop any that contain the
+  // `offsite-apply` marker (external ATS redirects).
+  const filteredJobs = await filterLinkedinEasyApply(deduped, LINKEDIN_EA_PROBE_UA)
+  console.log(
+    `[scout:fetch] "${kw}" × "${loc}": Guest API returned ${deduped.length} jobs; ` +
+    `${filteredJobs.length} are Easy Apply after filter`,
+  )
 
-  return { jobs: deduped, totalFound, filteredOut }
+  console.log(`[scout:fetch] "${kw}" × "${loc}": ${totalFound} found, ${filteredOut} filtered, ${filteredJobs.length} unique`)
+
+  return { jobs: filteredJobs, totalFound, filteredOut }
 }
 
 // ---------------------------------------------------------------------------
@@ -920,6 +930,82 @@ interface RawJobCard {
 }
 
 // ---------------------------------------------------------------------------
+// Easy Apply post-filter (LinkedIn guest API doesn't expose EA status)
+// ---------------------------------------------------------------------------
+
+/**
+ * User-Agent used for the LinkedIn detail-page probe. Matches the one used by
+ * the rest of the scout so LinkedIn sees a consistent client fingerprint.
+ */
+const LINKEDIN_EA_PROBE_UA =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+
+/**
+ * Check if a LinkedIn job is Easy Apply by fetching its detail page.
+ * Returns true if the page does NOT contain the offsite-apply marker
+ * (meaning it IS Easy Apply). External/offsite jobs return false.
+ *
+ * The scout's caller will drop non-EA jobs — we DON'T want LinkedIn jobs
+ * that redirect to Lever/Workable/Ashby since those ATS are broken.
+ */
+async function isLinkedinEasyApply(jobUrl: string, userAgent: string): Promise<boolean> {
+  try {
+    const res = await fetch(jobUrl, {
+      headers: {
+        'User-Agent': userAgent,
+        'Accept': 'text/html,application/xhtml+xml',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+      signal: AbortSignal.timeout(15000),
+    })
+    if (!res.ok) return false
+    const html = await res.text()
+    // 'offsite-apply' and 'apply-link-offsite' are LinkedIn's own markers
+    // for external-apply jobs. If absent, the job is Easy Apply.
+    if (html.includes('offsite-apply') || html.includes('apply-link-offsite')) {
+      return false
+    }
+    return true
+  } catch {
+    // On fetch error, be conservative: assume NOT Easy Apply
+    return false
+  }
+}
+
+/**
+ * Filter a list of LinkedIn jobs down to Easy Apply only, by probing each
+ * job's detail page in parallel batches. Non-EA jobs are dropped entirely.
+ */
+async function filterLinkedinEasyApply(
+  jobs: DiscoveredJob[],
+  userAgent: string,
+): Promise<DiscoveredJob[]> {
+  const CONCURRENCY = 5
+  const results: DiscoveredJob[] = []
+  let dropped = 0
+  for (let i = 0; i < jobs.length; i += CONCURRENCY) {
+    const batch = jobs.slice(i, i + CONCURRENCY)
+    const checks = await Promise.all(
+      batch.map(async (job) => ({
+        job,
+        isEa: await isLinkedinEasyApply(job.url, userAgent),
+      })),
+    )
+    for (const { job, isEa } of checks) {
+      if (isEa) {
+        results.push({ ...job, isEasyApply: true })
+      } else {
+        dropped++
+      }
+    }
+  }
+  console.log(
+    `[linkedin-scout] EA filter: kept ${results.length}, dropped ${dropped} offsite-apply jobs`,
+  )
+  return results
+}
+
+// ---------------------------------------------------------------------------
 // Main scout function
 // ---------------------------------------------------------------------------
 
@@ -1053,13 +1139,22 @@ export async function scoutJobs(
     )
   }
 
+  // --- Phase 2: filter LinkedIn jobs to Easy Apply only ---
+  // Non-EA jobs redirect to external ATS (Lever/Workable/Ashby) which are
+  // currently broken in our apply flow. We probe each job's detail page in
+  // parallel and drop any that contain the `offsite-apply` marker.
+  const filteredJobs = await filterLinkedinEasyApply(deduped, LINKEDIN_EA_PROBE_UA)
+  console.log(
+    `[scout] Guest API returned ${deduped.length} jobs; ${filteredJobs.length} are Easy Apply after filter`,
+  )
+
   console.log(
     `[scout] Finished: ${totalFound} valid, ${extractionFailures} extraction failures, ` +
-    `${filteredOut} filtered, ${deduped.length} candidates`,
+    `${filteredOut} filtered, ${filteredJobs.length} candidates`,
   )
 
   return {
-    jobs: deduped,
+    jobs: filteredJobs,
     totalFound,
     filteredOut,
   }
