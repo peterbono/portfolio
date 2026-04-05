@@ -11,7 +11,6 @@ import {
   type QualificationResult,
 } from './qualifier'
 import { blockUnnecessaryResources } from './helpers'
-import { isSupportedAutoApplyAts } from '../lib/classify-job-url'
 import {
   createBotRun,
   updateBotRun,
@@ -833,28 +832,48 @@ async function phaseScout(
   const dribbbleJobs = extractResult(dribbbleResult, 'Dribbble', COST_DRIBBBLE_PER_PAGE, dribbbleKeywords.length)
 
   // --- Merge & cross-source dedup ---
-  const mergedJobs: DiscoveredJob[] = [...linkedinResult.jobs]
+  //
+  // Focus scope (April 2026 post-migration): we only auto-apply reliably to
+  // Greenhouse and LinkedIn Easy Apply. Every other ATS is broken in the
+  // extension-based apply flow, so we drop them here rather than wasting
+  // qualify LLM calls / user review time on jobs we can't actually submit.
+  //
+  // Two rules enforced in this block:
+  //   1. LinkedIn jobs are only kept if `isEasyApply === true`. Non-EA
+  //      LinkedIn postings redirect the user to Lever/Workable/Ashby/etc
+  //      which are currently broken.
+  //   2. Job-board scouts (RemoteOK/WWR/Himalayas/etc) must have resolved
+  //      their URL to a real Greenhouse link during scout-time parsing
+  //      (scout-boards.ts extractAtsUrlFromHtml). Untagged jobs (ats=null)
+  //      and jobs tagged with any non-Greenhouse ATS are dropped.
+  //
+  // LinkedIn scout-level filter note: the LinkedIn scout itself currently
+  // does NOT set isEasyApply reliably — see Phase 2 fix. Until then, this
+  // filter may drop all LinkedIn jobs. That's safer than letting non-EA
+  // jobs through.
+
+  const easyApplyLinkedin = linkedinResult.jobs.filter(j => j.isEasyApply === true)
+  const droppedLinkedinNonEa = linkedinResult.jobs.length - easyApplyLinkedin.length
+  if (droppedLinkedinNonEa > 0) {
+    console.log(`[pipeline] Focus filter: dropped ${droppedLinkedinNonEa} LinkedIn non-EasyApply jobs`)
+  }
+
+  const mergedJobs: DiscoveredJob[] = [...easyApplyLinkedin]
   const seenCompanyTitle = new Set<string>()
 
-  // Index LinkedIn jobs for dedup
-  for (const job of linkedinResult.jobs) {
+  // Index EA LinkedIn jobs for cross-source dedup
+  for (const job of easyApplyLinkedin) {
     const key = `${normalizeForDedup(job.company)}|${normalizeForDedup(job.title)}`
     seenCompanyTitle.add(key)
   }
 
-  // Merge helper: dedup against seen set, return count of duplicates
+  // Merge helper: focus filter + dedup against seen set, return count of duplicates
   const mergeWithDedup = (jobs: DiscoveredJob[]): number => {
     let dupes = 0
     for (const job of jobs) {
-      // Focus scope: only Greenhouse + LinkedIn for now. Other ATS are broken
-      // post-migration and we drop here to avoid wasting qualify/apply compute.
-      // See src/lib/classify-job-url.ts for the supported list.
-      // Tagged ATS takes precedence; fall back to URL-based check for untagged jobs.
-      if (job.ats) {
-        if (!['greenhouse', 'linkedin'].includes(job.ats.toLowerCase())) {
-          continue
-        }
-      } else if (!isSupportedAutoApplyAts(job.url)) {
+      // Focus filter: only keep jobs whose ATS is tagged as Greenhouse.
+      // Untagged jobs and jobs tagged with a non-supported ATS are dropped.
+      if (job.ats?.toLowerCase() !== 'greenhouse') {
         continue
       }
       const key = `${normalizeForDedup(job.company)}|${normalizeForDedup(job.title)}`
