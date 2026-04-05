@@ -821,8 +821,30 @@ function runHaikuFieldFallback() {
   try { container = findApplyDialog(); } catch (e) { container = null; }
   var root = container || document;
 
+  // Diagnostic: log what we're scoping to
+  var rootInfo = 'document';
+  if (container) {
+    var cls = (container.className || '').toString().slice(0, 60);
+    rootInfo = container.tagName + (cls ? '.' + cls : '') + ' (children=' + container.childElementCount + ')';
+  }
+  log('[haiku-fallback] Scope root: ' + rootInfo);
+
   // ── Pass 1: text / textarea / select ──
   var allInputs = root.querySelectorAll('input, textarea, select');
+  log('[haiku-fallback] Raw inputs under root: ' + allInputs.length);
+
+  // FALLBACK: if the scoped container has NO inputs but document has some,
+  // the container is probably stale (mid-transition between multi-step pages)
+  // or findApplyDialog picked the wrong modal. Retry with document scope and
+  // rely on isInApplyContext() to filter out unrelated LinkedIn inputs.
+  if (allInputs.length === 0 && container) {
+    var docInputs = document.querySelectorAll('input, textarea, select');
+    if (docInputs.length > 0) {
+      log('[haiku-fallback] Container is empty but document has ' + docInputs.length + ' inputs — falling back to document scope');
+      root = document;
+      allInputs = docInputs;
+    }
+  }
   for (var i = 0; i < allInputs.length; i++) {
     var input = allInputs[i];
     if (!input) continue;
