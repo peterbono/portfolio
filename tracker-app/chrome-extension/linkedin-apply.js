@@ -32,6 +32,95 @@ window._jobTrackerApplyRan = true;
 
 console.log('[JobTracker] linkedin-apply.js v6.2.0 loaded on:', window.location.href);
 
+// ─── Build stamp for version verification ───
+var BUILD_STAMP = '2026-04-06-haiku-v2-linkedin';
+try {
+  var _mf = chrome.runtime.getManifest();
+  console.log('[JobTracker LinkedIn] Loaded v' + _mf.version + ' (' + BUILD_STAMP + ')');
+} catch (_mfErr) {
+  console.log('[JobTracker LinkedIn] Loaded (' + BUILD_STAMP + ')');
+}
+
+// ─── Debug log helper (mirrors ats-apply.js; persisted at flow end) ───
+var _debugLog = [];
+function log() {
+  var args = Array.prototype.slice.call(arguments);
+  console.log.apply(console, ['[JobTracker]'].concat(args));
+  try {
+    _debugLog.push('[LOG] ' + args.map(function (a) {
+      return typeof a === 'object' ? JSON.stringify(a) : String(a);
+    }).join(' '));
+  } catch (e) { /* ignore */ }
+}
+function warn() {
+  var args = Array.prototype.slice.call(arguments);
+  console.warn.apply(console, ['[JobTracker]'].concat(args));
+  try {
+    _debugLog.push('[WARN] ' + args.map(function (a) {
+      return typeof a === 'object' ? JSON.stringify(a) : String(a);
+    }).join(' '));
+  } catch (e) { /* ignore */ }
+}
+function persistDebugLog() {
+  try {
+    chrome.storage.local.set({ atsApplyDebugLog: _debugLog.slice(-500) });
+  } catch (e) { /* ignore */ }
+}
+
+// ─── Profile (synced from dashboard via chrome.storage.local) ───
+// Used by the Haiku fallback — populated asynchronously at script start.
+var PROFILE_DEFAULTS = {
+  firstName: 'Florian',
+  lastName: 'Gouloubi',
+  fullName: 'Florian Gouloubi',
+  email: 'florian.gouloubi@gmail.com',
+  phone: '+66 618156481',
+  portfolio: 'https://www.floriangouloubi.com/',
+  linkedin: 'https://www.linkedin.com/in/floriangouloubi/',
+  city: 'Bangkok',
+  country: 'Thailand',
+  yearsExperience: '7',
+  salary: '80000',
+  currentTitle: 'Senior Product Designer',
+};
+var PROFILE = {};
+for (var _pk in PROFILE_DEFAULTS) { PROFILE[_pk] = PROFILE_DEFAULTS[_pk]; }
+try {
+  chrome.storage.local.get(['userProfile'], function (data) {
+    if (data && data.userProfile && typeof data.userProfile === 'object') {
+      for (var k in data.userProfile) {
+        if (data.userProfile[k] != null && data.userProfile[k] !== '') {
+          PROFILE[k] = data.userProfile[k];
+        }
+      }
+      log('[profile] Loaded userProfile from storage — keys:', Object.keys(data.userProfile).join(','));
+    } else {
+      log('[profile] No stored userProfile — using LinkedIn defaults');
+    }
+  });
+} catch (_pErr) { /* ignore */ }
+
+// ─── Haiku Fallback Config ───
+// When the pattern bank + hardcoded label scan all miss a field, we POST the
+// remaining unfilled fields to /api/fill-field (Haiku 4.5) for a best-effort
+// answer. Runs before each Next/Review/Submit click on LinkedIn Easy Apply.
+var FILL_FIELD_ENDPOINT = 'https://tracker-app-lyart.vercel.app/api/fill-field';
+var FILL_FIELD_MAX_BATCH = 20;
+var FILL_FIELD_TIMEOUT_MS = 25000;
+
+// Labels/ids that must NEVER be sent to Haiku — legal-sensitive or EEO fields.
+// Mirrors ats-apply.js — keep the two lists in sync.
+var HAIKU_SENSITIVE_PATTERNS = [
+  'authorized to work', 'authorised to work', 'sponsorship', 'visa',
+  'work permit', 'work authorization', 'right to work',
+  'eligible to work', 'immigration status', 'citizenship',
+  'veteran status', 'disability', 'gender identity', 'race',
+  'ethnicity', 'hispanic', 'latino', 'sexual orientation', 'lgbtq',
+  'pronouns', 'protected class', 'demographic',
+  'self-identify', 'self identify', 'criminal history',
+  'conviction', 'felony', 'background check', 'drug test',
+];
+
 // ─── Safety-net: guarantee setResult is called within 20s ───
 // If the main logic silently fails (async callback error, unexpected DOM state),
 // this ensures background.js polling always gets a result instead of timing out.
@@ -489,6 +578,387 @@ function _selectTypeaheadOption(inp, value, attempt) {
     inp.dispatchEvent(new Event('blur', { bubbles: true }));
     inp.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
   }
+}
+
+// ─── Haiku Field Fallback (port from ats-apply.js) ──────────────────
+// Runs BEFORE each Next/Review/Submit click on LinkedIn Easy Apply.
+// Scans unfilled, non-sensitive fields → POSTs to /api/fill-field → writes
+// answers back via setNativeValue / .click() (same primitives as fillCurrentStep).
+//
+// Safety:
+//  - Legal/EEO-sensitive labels are filtered BEFORE the API call.
+//  - Capped at FILL_FIELD_MAX_BATCH fields per call.
+//  - On any error we silently return 0 — existing fallback path unchanged.
+
+function _isSensitiveFieldForHaiku(labelInfo, input) {
+  var l = (labelInfo || '').toLowerCase();
+  for (var i = 0; i < HAIKU_SENSITIVE_PATTERNS.length; i++) {
+    if (l.indexOf(HAIKU_SENSITIVE_PATTERNS[i]) >= 0) return true;
+  }
+  var id = ((input && input.id) || '').toLowerCase();
+  if (id.indexOf('4014') === 0 || id.indexOf('4015') === 0) return true;
+  var eeoIds = ['gender', 'race', 'ethnicity', 'hispanic_ethnicity', 'veteran_status', 'disability_status'];
+  for (var e = 0; e < eeoIds.length; e++) {
+    if (id === eeoIds[e]) return true;
+  }
+  return false;
+}
+
+// Simple field classifier (linkedin-apply.js has no classifyFormField helper).
+function _classifyHaikuField(input) {
+  if (!input) return 'text';
+  var tag = input.tagName;
+  if (tag === 'TEXTAREA') return 'textarea';
+  if (tag === 'SELECT') return 'select';
+  var type = (input.type || '').toLowerCase();
+  if (type === 'radio') return 'radio';
+  if (type === 'checkbox') return 'checkbox';
+  return 'text';
+}
+
+function _describeFieldForHaiku(input, labelInfo, idx) {
+  var fieldType = _classifyHaikuField(input);
+  var kind = fieldType; // already one of text/textarea/select/radio/checkbox
+
+  var options;
+  if (input.tagName === 'SELECT') {
+    options = [];
+    var opts = input.options;
+    for (var o = 0; o < opts.length; o++) {
+      var t = (opts[o].text || '').trim();
+      var lc = t.toLowerCase();
+      if (t && lc !== 'select...' && lc !== '-- select --' && lc !== 'select an option') {
+        options.push(t);
+      }
+    }
+  }
+
+  var maxLength = (input.maxLength && input.maxLength > 0) ? input.maxLength : undefined;
+  var label = (labelInfo || '').trim().slice(0, 300);
+
+  return {
+    id: 'field-' + idx,
+    label: label,
+    type: kind,
+    options: options,
+    context: label.slice(0, 200),
+    maxLength: maxLength,
+    _el: input,
+    _fieldType: fieldType,
+  };
+}
+
+// LinkedIn-aware label extraction (Haiku candidates).
+// Reuses getInputLabel() but ALSO tries fb-dash-form-element wrappers, which
+// carry the real question text on LinkedIn custom screening questions.
+function _getHaikuFieldLabel(input) {
+  var label = '';
+  try { label = (getInputLabel(input) || '').trim(); } catch (e) { label = ''; }
+
+  // LinkedIn-specific: fb-dash-form-element__label or data-test-form-element-label
+  var linkedinWrapper = input.closest('.fb-dash-form-element, [data-test-form-element]');
+  if (linkedinWrapper) {
+    var linkedinLabel = linkedinWrapper.querySelector('label.fb-dash-form-element__label, [data-test-form-element-label], label');
+    if (linkedinLabel) {
+      var text = (linkedinLabel.textContent || '').trim();
+      if (text && text.length > label.length) label = text;
+    }
+  }
+
+  // Generic fieldset/legend fallback
+  var fset = input.closest('fieldset');
+  if (fset && (!label || label.length < 5)) {
+    var legend = fset.querySelector('legend, label');
+    if (legend) {
+      var lt = (legend.textContent || '').trim();
+      if (lt && lt.length > label.length) label = lt;
+    }
+  }
+
+  return label;
+}
+
+function fillUnknownFieldsViaHaiku(fields) {
+  if (!Array.isArray(fields) || fields.length === 0) return Promise.resolve(new Map());
+  var batch = fields.slice(0, FILL_FIELD_MAX_BATCH);
+  if (fields.length > FILL_FIELD_MAX_BATCH) {
+    log('[haiku-fallback] Capping batch to ' + FILL_FIELD_MAX_BATCH + ' (had ' + fields.length + ')');
+  }
+  // Strip DOM refs before sending
+  var payloadFields = batch.map(function (f) {
+    var obj = { id: f.id, label: f.label, type: f.type };
+    if (f.options) obj.options = f.options;
+    if (f.context) obj.context = f.context;
+    if (f.maxLength) obj.maxLength = f.maxLength;
+    return obj;
+  });
+  log('[haiku-fallback] Sending ' + payloadFields.length + ' fields to Haiku:');
+  payloadFields.forEach(function (f) {
+    log('  - [' + f.type + '] "' + (f.label || '').slice(0, 60) + '" options=' + ((f.options && f.options.length) || 0));
+  });
+
+  var controller = new AbortController();
+  var timeoutId = setTimeout(function () { controller.abort(); }, FILL_FIELD_TIMEOUT_MS);
+
+  return fetch(FILL_FIELD_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ profile: PROFILE, fields: payloadFields }),
+    signal: controller.signal,
+  }).then(function (res) {
+    clearTimeout(timeoutId);
+    if (!res.ok) {
+      log('[haiku-fallback] API returned ' + res.status);
+      return new Map();
+    }
+    return res.json().then(function (data) {
+      var answers = (data && Array.isArray(data.answers)) ? data.answers : [];
+      var answered = 0;
+      for (var ai = 0; ai < answers.length; ai++) {
+        if (answers[ai] && answers[ai].answer != null) answered++;
+      }
+      log('[haiku-fallback] Got ' + answered + '/' + batch.length + ' answers from Haiku');
+      var recvSummary = answers.map(function (a) {
+        return a && a.answer != null
+          ? (a.id + '="' + String(a.answer).slice(0, 30) + '"')
+          : (a ? a.id + '=null' : 'null');
+      }).join(', ');
+      log('[haiku-fallback] Received answers: ' + recvSummary);
+      var map = new Map();
+      for (var i = 0; i < answers.length; i++) {
+        var a = answers[i];
+        if (!a || a.answer == null) continue;
+        var ans = typeof a.answer === 'string' ? a.answer.trim() : a.answer;
+        if (ans === '' || ans === 'null' || ans === 'undefined' || ans === 'N/A') continue;
+        map.set(a.id, { answer: ans, confidence: a.confidence || 'unknown' });
+      }
+      return map;
+    });
+  }).catch(function (err) {
+    clearTimeout(timeoutId);
+    log('[haiku-fallback] Error: ' + (err && err.message));
+    return new Map();
+  });
+}
+
+// Apply a Haiku answer to a LinkedIn form field using linkedin-apply.js primitives.
+// linkedin-apply.js has no `fillClassifiedField` — we dispatch on _fieldType directly.
+function _applyHaikuAnswer(el, fieldType, answer, groupLabel) {
+  try {
+    if (fieldType === 'text' || fieldType === 'textarea') {
+      setNativeValue(el, String(answer));
+      return true;
+    }
+    if (fieldType === 'select') {
+      var target = String(answer).toLowerCase().trim();
+      var opts = el.options || [];
+      // Exact match first, then contains
+      for (var i = 0; i < opts.length; i++) {
+        if ((opts[i].text || '').toLowerCase().trim() === target) {
+          el.value = opts[i].value;
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          return true;
+        }
+      }
+      for (var j = 0; j < opts.length; j++) {
+        if ((opts[j].text || '').toLowerCase().indexOf(target) >= 0) {
+          el.value = opts[j].value;
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          return true;
+        }
+      }
+      return false;
+    }
+    if (fieldType === 'radio') {
+      // el is one radio in the group — walk siblings by name
+      var name = el.getAttribute('name') || '';
+      var radios = name
+        ? document.querySelectorAll('input[type="radio"][name="' + name + '"]')
+        : [el];
+      var target2 = String(answer).toLowerCase().trim();
+      for (var r = 0; r < radios.length; r++) {
+        var lbl = '';
+        try {
+          lbl = (radios[r].closest('label') || radios[r].parentElement || {}).textContent || '';
+          lbl = lbl.trim().toLowerCase();
+        } catch (e) { lbl = ''; }
+        if (lbl === target2 || lbl.indexOf(target2) >= 0) {
+          radios[r].click();
+          return true;
+        }
+      }
+      return false;
+    }
+    if (fieldType === 'checkbox') {
+      var wantTrue = /^(yes|true|on|checked|1)$/i.test(String(answer).trim());
+      if (wantTrue && !el.checked) { el.click(); return true; }
+      if (!wantTrue && el.checked) { el.click(); return true; }
+      return true;
+    }
+  } catch (err) {
+    warn('[haiku-fallback] _applyHaikuAnswer error:', err && err.message);
+    return false;
+  }
+  return false;
+}
+
+// Scan page for unfilled fields, ask Haiku, apply answers. Returns fill count.
+// Async (returns a Promise<number>) — called via .then() from ES5 callback code.
+function runHaikuFieldFallback() {
+  log('[haiku-fallback] Scanning for unfilled fields...');
+
+  var candidates = [];
+  var idx = 0;
+  var skipSensitive = 0;
+  var skipShortLabel = 0;
+  var skipAlreadyFilled = 0;
+  var skipInvisible = 0;
+
+  // Scope to the apply dialog when possible (avoid scraping unrelated LI widgets)
+  var container = null;
+  try { container = findApplyDialog(); } catch (e) { container = null; }
+  var root = container || document;
+
+  // ── Pass 1: text / textarea / select ──
+  var allInputs = root.querySelectorAll('input, textarea, select');
+  for (var i = 0; i < allInputs.length; i++) {
+    var input = allInputs[i];
+    if (!input) continue;
+    var tag = input.tagName;
+    var type = (input.type || '').toLowerCase();
+
+    if (type === 'hidden' || type === 'submit' || type === 'button' || type === 'file') continue;
+    if (type === 'radio') continue;    // handled in pass 2
+    if (type === 'checkbox') continue; // consent handled elsewhere
+
+    if (input.offsetHeight === 0) { skipInvisible++; continue; }
+    if (!isInApplyContext(input)) continue;
+
+    var fieldType = _classifyHaikuField(input);
+    var labelInfo = _getHaikuFieldLabel(input);
+
+    // Skip already-filled text-like fields
+    if ((fieldType === 'text' || fieldType === 'textarea') && input.value && input.value.trim().length > 0) {
+      skipAlreadyFilled++;
+      continue;
+    }
+    if (fieldType === 'select' && input.value && input.selectedIndex > 0) {
+      skipAlreadyFilled++;
+      continue;
+    }
+
+    // Sensitive (EEO/legal) — leave to existing logic
+    if (_isSensitiveFieldForHaiku(labelInfo, input)) {
+      skipSensitive++;
+      log('[haiku-fallback] SKIP sensitive: "' + (labelInfo || '').slice(0, 60) + '"');
+      continue;
+    }
+    if (!labelInfo || labelInfo.replace(/\s+/g, ' ').trim().length < 3) {
+      skipShortLabel++;
+      continue;
+    }
+
+    candidates.push(_describeFieldForHaiku(input, labelInfo, idx++));
+  }
+
+  // ── Pass 2: unanswered radio groups ──
+  var radioGroupEls = root.querySelectorAll('fieldset, [role="radiogroup"], [class*="radio-group"], [class*="question"]');
+  var seenGroups = {};
+  for (var g = 0; g < radioGroupEls.length; g++) {
+    var group = radioGroupEls[g];
+    var radios = group.querySelectorAll('input[type="radio"]');
+    if (radios.length === 0) continue;
+    var anyChecked = false;
+    for (var rc = 0; rc < radios.length; rc++) { if (radios[rc].checked) { anyChecked = true; break; } }
+    if (anyChecked) continue;
+    if (!isInApplyContext(radios[0])) continue;
+
+    var gname = radios[0].getAttribute('name') || '';
+    if (gname && seenGroups[gname]) continue;
+    if (gname) seenGroups[gname] = true;
+
+    var legendEl = group.querySelector('legend, .fb-dash-form-element__label, [data-test-form-element-label]');
+    var groupLabel = legendEl ? (legendEl.textContent || '').trim() : (group.getAttribute('aria-label') || '').trim();
+    var groupText = (groupLabel || (group.textContent || '').trim().slice(0, 200)).replace(/\s+/g, ' ').trim();
+
+    if (groupText.length < 3) { skipShortLabel++; continue; }
+    if (_isSensitiveFieldForHaiku(groupText, radios[0])) {
+      skipSensitive++;
+      log('[haiku-fallback] SKIP sensitive radio: "' + groupText.slice(0, 60) + '"');
+      continue;
+    }
+
+    var rOptions = [];
+    for (var ro = 0; ro < radios.length; ro++) {
+      var rLbl = '';
+      try {
+        rLbl = ((radios[ro].closest('label') || radios[ro].parentElement || {}).textContent || '').trim();
+      } catch (e) { rLbl = ''; }
+      if (rLbl) rOptions.push(rLbl);
+    }
+
+    candidates.push({
+      id: 'field-' + (idx++),
+      label: groupText.slice(0, 300),
+      type: 'radio',
+      options: rOptions,
+      context: groupText.slice(0, 200),
+      _el: radios[0],
+      _fieldType: 'radio',
+    });
+  }
+
+  var passSummary = 'skipped: sensitive=' + skipSensitive + ' shortLabel=' + skipShortLabel + ' alreadyFilled=' + skipAlreadyFilled + ' invisible=' + skipInvisible;
+  log('[haiku-fallback] Collection done: ' + candidates.length + ' candidates (' + passSummary + ')');
+
+  if (candidates.length === 0) {
+    log('[haiku-fallback] No unfilled fields to escalate');
+    return Promise.resolve(0);
+  }
+
+  log('[haiku-fallback] Escalating ' + candidates.length + ' unfilled field(s) to Haiku');
+  return fillUnknownFieldsViaHaiku(candidates).then(function (answerMap) {
+    if (!answerMap || answerMap.size === 0) {
+      log('[haiku-fallback] No answers from Haiku — skipping');
+      return 0;
+    }
+    var filled = 0;
+    var batch = candidates.slice(0, FILL_FIELD_MAX_BATCH);
+    for (var bi = 0; bi < batch.length; bi++) {
+      var f = batch[bi];
+      var entry = answerMap.get(f.id);
+      if (!entry) continue;
+      var answer = String(entry.answer).trim();
+      if (!answer) continue;
+
+      // Verify element is still in the DOM after the Haiku round-trip.
+      if (!f._el || !document.contains(f._el)) {
+        log('[haiku-fallback] SKIP stale element: "' + (f.label || '').slice(0, 50) + '"');
+        continue;
+      }
+      if (f._el.offsetHeight === 0 && f._el.type !== 'hidden') {
+        log('[haiku-fallback] SKIP invisible element: "' + (f.label || '').slice(0, 50) + '"');
+        continue;
+      }
+
+      try {
+        var ok = _applyHaikuAnswer(f._el, f._fieldType, answer, f.label);
+        if (ok) {
+          filled++;
+          log('[haiku-fallback] Filled [' + f._fieldType + '] "' + (f.label || '').slice(0, 50) + '" -> ' + answer.slice(0, 40) + ' (conf=' + entry.confidence + ')');
+        } else {
+          log('[haiku-fallback] Fill attempt failed for "' + (f.label || '').slice(0, 50) + '"');
+        }
+      } catch (err) {
+        warn('[haiku-fallback] Fill error for "' + (f.label || '').slice(0, 50) + '":', err && err.message);
+      }
+    }
+    log('[haiku-fallback] Filled ' + filled + ' additional fields via Haiku');
+    try { persistDebugLog(); } catch (e) { /* ignore */ }
+    return filled;
+  });
 }
 
 // ─── Fill all visible form fields on the current step ───
@@ -1500,6 +1970,32 @@ function handleMultiStepForm(company, role, stepNum, maxSteps, callback) {
   // Adaptive delay: 4s if typeahead was triggered (needs dropdown selection), 1s otherwise
   var stepDelay = window._typeaheadTriggered ? 4000 : 1000;
   setTimeout(function() {
+    // ─── Haiku fallback: fill LinkedIn custom questions BEFORE advancing ───
+    // Runs once per step, before Next/Review/Submit. Critical for screening
+    // questions on step 2-3 that our hardcoded label matcher misses.
+    var haikuPromise;
+    try {
+      haikuPromise = runHaikuFieldFallback();
+    } catch (hErr) {
+      log('[haiku-fallback] sync error:', hErr && hErr.message);
+      haikuPromise = Promise.resolve(0);
+    }
+
+    haikuPromise.then(function (haikuFilled) {
+      if (haikuFilled > 0) {
+        log('[haiku-fallback] Filled ' + haikuFilled + ' custom field(s) before advancing on step ' + stepNum);
+      }
+    }).catch(function (hErr2) {
+      log('[haiku-fallback] error:', hErr2 && hErr2.message);
+    }).then(function () {
+      _runStepNavigation(company, role, stepNum, maxSteps, hasVisibleFields, callback);
+    });
+  }, stepDelay); // Adaptive: 4s for typeahead, 1s for normal fills
+}
+
+// ─── Step navigation (extracted to allow awaiting Haiku fallback) ───
+function _runStepNavigation(company, role, stepNum, maxSteps, hasVisibleFields, callback) {
+  (function () {
     var buttons = findModalButtons();
 
     if (buttons.submitBtn) {
@@ -1648,7 +2144,7 @@ function handleMultiStepForm(company, role, stepNum, maxSteps, callback) {
         }, 2000);
       }
     }
-  }, stepDelay); // Adaptive: 4s for typeahead, 1s for normal fills
+  })(); // end IIFE inside _runStepNavigation
 }
 
 // ─── Verify DOM changed after clicking Next, retry fill if stuck ───
