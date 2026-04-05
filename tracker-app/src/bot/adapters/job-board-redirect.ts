@@ -88,28 +88,15 @@ export const jobBoardRedirect: ATSAdapter = {
     let role = profile.jobMeta?.role || 'Unknown'
 
     try {
-      // ─── FAST PATH: RemoteOK with known company ─────────────────────
-      // RemoteOK's Apply links redirect through dead aiok.co domain,
-      // and SBR proxy frequently returns 502 "no_peers" for remoteok.com.
-      // Since we already have company/role from the pipeline payload,
-      // probe ATS platforms directly via server-side fetch() (no SBR needed).
-      if (/remoteok\.com/i.test(jobUrl) && company !== 'Unknown') {
-        console.log(`[job-board-redirect] RemoteOK fast path: probing ATS for "${company}" — "${role}"`)
-        const atsUrl = await probeCompanyAtsPages(company, role)
-        if (atsUrl) {
-          const ashbySkip = ashbySkipResult(atsUrl, company, role, start)
-          if (ashbySkip) return ashbySkip
-          console.log(`[job-board-redirect] Fast path found ATS URL: ${atsUrl}`)
-          const { detectAdapter } = await import('./index')
-          const realAdapter = detectAdapter(atsUrl)
-          console.log(`[job-board-redirect] Delegating to ${realAdapter.name} for: ${atsUrl}`)
-          const result = await realAdapter.apply(page, atsUrl, profile)
-          if (result.company === 'Unknown' && company !== 'Unknown') result.company = company
-          if (result.role === 'Unknown' && role !== 'Unknown') result.role = role
-          return result
-        }
-        console.log(`[job-board-redirect] Fast path: no ATS found via probing, falling back to page load`)
-      }
+      // ─── FAST PATH (DISABLED — P0 safety, April 2026) ───────────────
+      // The original fast path called probeCompanyAtsPages to find ATS URLs
+      // for RemoteOK listings without loading the page. That probing was
+      // unsafe: it could match a wrong role at the same company and lead
+      // to applying to Software Engineer positions when the user approved
+      // a Product Designer listing. The fast path is disabled on the
+      // apply-dispatch path; the adapter now always goes through the
+      // standard Playwright resolution path below, which reads the actual
+      // listing page and extracts the real employer URL from it.
 
       // ─── STANDARD PATH: load listing page + resolve redirects ───────
       // Step 1: Navigate to the job board listing page
@@ -127,30 +114,18 @@ export const jobBoardRedirect: ATSAdapter = {
         if (role === 'Unknown' && pageRole !== 'Unknown') role = pageRole
       } catch (navErr) {
         console.log(`[job-board-redirect] Page load failed: ${navErr instanceof Error ? navErr.message : navErr}`)
-        // If page couldn't load but we have company data, try ATS probing
-        if (company !== 'Unknown') {
-          console.log(`[job-board-redirect] Page failed but have company "${company}", probing ATS...`)
-          const atsUrl = await probeCompanyAtsPages(company, role)
-          if (atsUrl) {
-            const ashbySkip = ashbySkipResult(atsUrl, company, role, start)
-            if (ashbySkip) return ashbySkip
-            console.log(`[job-board-redirect] Post-failure probe found: ${atsUrl}`)
-            const { detectAdapter } = await import('./index')
-            const realAdapter = detectAdapter(atsUrl)
-            const result = await realAdapter.apply(page, atsUrl, profile)
-            if (result.company === 'Unknown') result.company = company
-            if (result.role === 'Unknown') result.role = role
-            return result
-          }
-        }
-        // No fallback worked — report failure with the nav error
+        // P0 safety (April 2026): ATS probing fallback removed.
+        // Probing could match a wrong role at the same company and cause
+        // the bot to submit to an unapproved position. If the listing page
+        // can't be loaded, we fail closed (needs_manual) rather than guess
+        // at the employer URL.
         return {
           success: false,
-          status: 'failed',
+          status: 'needs_manual',
           company,
           role,
           ats: 'JobBoardRedirect',
-          reason: `Page load failed: ${navErr instanceof Error ? navErr.message : navErr}`,
+          reason: `Page load failed and ATS probing disabled for safety: ${navErr instanceof Error ? navErr.message : navErr}`,
           duration: Date.now() - start,
         }
       }
@@ -159,21 +134,10 @@ export const jobBoardRedirect: ATSAdapter = {
       const employerUrl = await resolveEmployerUrl(page, jobUrl)
 
       if (!employerUrl) {
-        // Last chance: ATS probing if we have company name
-        if (company !== 'Unknown') {
-          const probeUrl = await probeCompanyAtsPages(company, role)
-          if (probeUrl) {
-            const ashbySkip = ashbySkipResult(probeUrl, company, role, start)
-            if (ashbySkip) return ashbySkip
-            console.log(`[job-board-redirect] Post-resolve probe found: ${probeUrl}`)
-            const { detectAdapter } = await import('./index')
-            const realAdapter = detectAdapter(probeUrl)
-            const result = await realAdapter.apply(page, probeUrl, profile)
-            if (result.company === 'Unknown') result.company = company
-            if (result.role === 'Unknown') result.role = role
-            return result
-          }
-        }
+        // P0 safety (April 2026): ATS probing fallback removed here too.
+        // When the redirect chain fails to produce an employer URL we fail
+        // closed. Probing with only company+role was matching the wrong
+        // position at the same company (e.g. Engineer vs Product Designer).
         const screenshot = await takeScreenshot(page)
         return {
           success: false,
@@ -181,7 +145,7 @@ export const jobBoardRedirect: ATSAdapter = {
           company,
           role,
           ats: 'JobBoardRedirect',
-          reason: 'Could not resolve external employer URL from job board redirect chain',
+          reason: 'Could not resolve external employer URL from job board redirect chain (ATS probing disabled for safety)',
           screenshotUrl: screenshot,
           duration: Date.now() - start,
         }
@@ -214,14 +178,11 @@ export const jobBoardRedirect: ATSAdapter = {
         }
       }
 
-      // Fallback C: probe common ATS platforms with company name slug.
-      if (!finalUrl && company !== 'Unknown') {
-        console.log(`[job-board-redirect] Fallback C: probing ATS platforms for company "${company}"`)
-        finalUrl = await probeCompanyAtsPages(company, role)
-        if (finalUrl) {
-          console.log(`[job-board-redirect] Fallback C: found career page at ${finalUrl}`)
-        }
-      }
+      // Fallback C REMOVED (P0 safety, April 2026):
+      // Previously probed common ATS platforms with the company name slug
+      // and used the first match as the submission target. This caused the
+      // bot to apply to wrong roles at the right company. If Fallbacks A/B
+      // don't find a direct employer URL we fail closed to needs_manual.
 
       if (!finalUrl) {
         const screenshot = await takeScreenshot(page)
@@ -694,13 +655,30 @@ async function resolveViaPlaywright(page: Page, url: string): Promise<string | n
 
 /**
  * Probe common ATS platforms to find a company's career page.
+ *
+ * ⚠️ DANGEROUS — DO NOT CALL ON THE APPLY-DISPATCH PATH.
+ *
  * When tracking domain redirects fail (aiok.co dead), we can still find the
  * employer's real career page by trying known ATS URL patterns with the company
  * name slugified. If a specific job title is provided, we try to find the matching
  * job listing on the career page.
  *
+ * HISTORICAL INCIDENT (April 2026): this function returned any open job at a
+ * company (e.g. JumpCloud "Software Engineer") even when the user-approved
+ * role was a Product Designer listing on RemoteOK/Himalayas. The bot then
+ * submitted applications to jobs the user never approved. All apply-time
+ * callers were removed; the function is kept as dead code for reference while
+ * a strict title-matching replacement is designed.
+ *
+ * Before re-enabling, the caller MUST:
+ *   1. Verify the returned URL's path contains the expected role slug tokens
+ *      (see urlContainsRoleSlug below).
+ *   2. Never be on the apply-dispatch path without passing a real role title.
+ *
  * Returns the career page URL if found (or specific job URL), null otherwise.
  */
+// NOTE: kept as dead code for safety reference; see comment above.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function probeCompanyAtsPages(companyName: string, roleTitle?: string): Promise<string | null> {
   // Generate slug variants from company name
   // "Circle.so" → ["circleso", "circle-so", "circle"]
@@ -1042,6 +1020,45 @@ export function isJobBoardUrl(url: string): boolean {
 }
 
 /**
+ * Tokenize a role title into significant slug tokens for URL matching.
+ * Example: "Senior Product Designer (Remote)" → ["senior", "product", "designer"]
+ * Keeps 2-letter industry terms (ux, ui, ai, etc.) that are load-bearing.
+ */
+function roleSlugTokens(roleTitle: string): string[] {
+  const INDUSTRY_TERMS = new Set(['ux', 'ui', 'ai', 'qa', 'pm', 'vp', 'hr', 'sr', 'cx', 'dx', 'ml'])
+  const STOPWORDS = new Set(['the', 'and', 'for', 'with', 'at', 'in', 'of', 'to', 'a', 'an'])
+  return roleTitle.toLowerCase()
+    .split(/[\s/,\-–—·•()[\]]+/)
+    .map(w => w.replace(/[^a-z0-9]/g, ''))
+    .filter(w => (w.length >= 3 || INDUSTRY_TERMS.has(w)) && !STOPWORDS.has(w))
+}
+
+/**
+ * Title-match safeguard: verify a resolved URL is plausibly about the
+ * same role as the original listing. Returns true if the URL path/slug
+ * contains at least half the significant tokens from the role title
+ * (min 1). If no tokens can be extracted, the check fails closed (false).
+ *
+ * Used to reject ATS URLs that a probe resolved to a completely different
+ * role at the same company (e.g. Product Designer → Software Engineer).
+ */
+function urlContainsRoleSlug(resolvedUrl: string, roleTitle: string): boolean {
+  if (!roleTitle || !resolvedUrl) return false
+  const tokens = roleSlugTokens(roleTitle)
+  if (tokens.length === 0) return false
+  let pathAndQuery = ''
+  try {
+    const u = new URL(resolvedUrl)
+    pathAndQuery = (u.pathname + ' ' + u.search).toLowerCase()
+  } catch {
+    pathAndQuery = resolvedUrl.toLowerCase()
+  }
+  const matches = tokens.filter(t => pathAndQuery.includes(t)).length
+  const minScore = Math.max(1, Math.ceil(tokens.length / 2))
+  return matches >= minScore
+}
+
+/**
  * Lightweight server-side URL resolver for job board listing pages.
  *
  * Attempts to resolve a job board URL to the real ATS URL WITHOUT launching
@@ -1128,6 +1145,14 @@ export async function resolveJobBoardUrlServerSide(
   try {
     const resolved = await resolveRedirectChain(url)
     if (resolved && resolved !== url && !isJobBoardUrl(resolved)) {
+      // SAFETY: title-match guard (P0 fix, April 2026).
+      // Reject resolutions that don't plausibly point to the same role.
+      // Prevents cases where a redirect lands on a generic careers page
+      // or a wrong job at the same company.
+      if (meta?.role && !urlContainsRoleSlug(resolved, meta.role)) {
+        console.warn(`[url-resolver] Title-match guard REJECTED: ${resolved} does not contain role slug for "${meta.role}" — returning original URL`)
+        return url
+      }
       console.log(`[url-resolver] Redirect chain resolved: ${url} -> ${resolved}`)
       return resolved
     }
@@ -1135,14 +1160,24 @@ export async function resolveJobBoardUrlServerSide(
     console.log(`[url-resolver] Redirect chain failed: ${err instanceof Error ? err.message : err}`)
   }
 
-  // Strategy 4: ATS probing with company name (if available).
+  // Strategy 4: ATS probing with company name — DISABLED on apply-dispatch path.
+  //
+  // HISTORICAL INCIDENT (April 2026): probeCompanyAtsPages would find ANY open
+  // job at a company (e.g. JumpCloud/Ethena Labs) and return that URL even when
+  // the role title was a complete mismatch. The bot then auto-submitted
+  // applications to jobs the user NEVER approved (Product Designer → Software
+  // Engineer). findJobOnCareerPage's loose scoring (ceil(words/2)) and the Lever
+  // public API fallback both let wrong roles through.
+  //
+  // resolveJobBoardUrlServerSide is called from src/trigger/apply-jobs.ts,
+  // which is the APPLY DISPATCH path. Silent wrong-URL resolution here turns
+  // into wrong submissions. Probing is disabled on this code path until a
+  // strict title-matching strategy is implemented.
+  //
+  // Scout-time URL enrichment lives in src/bot/scout-boards.ts and does not
+  // call this function, so scout coverage is unaffected.
   if (meta?.company && meta.company !== 'Unknown') {
-    console.log(`[url-resolver] Probing ATS platforms for "${meta.company}" — "${meta.role}"`)
-    const probed = await probeCompanyAtsPages(meta.company, meta.role)
-    if (probed) {
-      console.log(`[url-resolver] ATS probe found: ${probed}`)
-      return probed
-    }
+    console.warn(`[url-resolver] ATS probing disabled on apply-dispatch path (P0 safety). Company="${meta.company}" role="${meta.role ?? ''}" — deferring to adapter.`)
   }
 
   // Resolution failed — return original URL.

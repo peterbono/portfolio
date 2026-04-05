@@ -4758,8 +4758,21 @@ export function AutopilotView() {
   }, [])
 
   const handleReviewApproveAll = useCallback(() => {
+    // P0 FIX: Only approve items that match the currently active filter pill.
+    // Previously this approved every pending item in the queue regardless of
+    // whether the user was viewing "All", "Auto-Apply", or "Direct-Apply".
+    const matchesApplyFilter = (jobUrl: string | undefined) => {
+      if (applyFilter === 'all') return true
+      const c = classifyJobUrl(jobUrl || '')
+      if (applyFilter === 'auto') return c === 'auto_apply' || c === 'linkedin'
+      return c === 'direct_apply'
+    }
     setReviewQueue(prev => {
-      const updated = prev.map(item => item.status === 'pending' ? { ...item, status: 'approved' as const } : item)
+      const updated = prev.map(item =>
+        item.status === 'pending' && matchesApplyFilter(item.jobUrl)
+          ? { ...item, status: 'approved' as const }
+          : item
+      )
       // Record signals for all newly approved items
       updated.filter(i => i.status === 'approved').forEach(item => {
         // Only emit for items that were pending (not already approved)
@@ -4768,7 +4781,7 @@ export function AutopilotView() {
       })
       return updated
     })
-  }, [emitFeedbackSignal])
+  }, [emitFeedbackSignal, applyFilter])
 
   const handleReviewSkipAll = useCallback(() => {
     setReviewQueue(prev => {
@@ -4812,7 +4825,20 @@ export function AutopilotView() {
   const handleSubmitApproved = useCallback(async () => {
     if (!requireAuth('start_bot', () => { handleSubmitApprovedRef.current() })) return
 
-    const approved = reviewQueue.filter(i => i.status === 'approved')
+    // P0 FIX: Respect the visible `applyFilter` pill so users only submit
+    // the subset they're looking at. Previously we submitted ALL approved
+    // items regardless of which filter ('all' | 'auto' | 'direct') was on,
+    // which caused direct-apply jobs to leak into an auto-apply run (and
+    // vice versa).
+    const matchesApplyFilter = (item: typeof reviewQueue[number]) => {
+      if (applyFilter === 'all') return true
+      const c = classifyJobUrl(item.jobUrl || '')
+      if (applyFilter === 'auto') return c === 'auto_apply' || c === 'linkedin'
+      return c === 'direct_apply'
+    }
+    const approved = reviewQueue.filter(i => i.status === 'approved' && matchesApplyFilter(i))
+    const approvedIds = new Set(approved.map(i => i.id))
+    console.log(`[submit] Dispatching ${approved.length} approved applications (filter: ${applyFilter})`)
     if (approved.length === 0) return
 
     setIsTriggering(true)
@@ -4823,10 +4849,14 @@ export function AutopilotView() {
     setPolledRunStatus(null)
     setPolledMetadata(null)
 
-    // Mark all approved as submitting (with timestamp for timeout tracking)
+    // Mark only the filtered approved items as submitting (with timestamp for timeout tracking).
+    // Items approved but outside the current filter stay 'approved' so they can be submitted
+    // later by switching the filter pill.
     const now = Date.now()
     setReviewQueue(prev => prev.map(item =>
-      item.status === 'approved' ? { ...item, status: 'submitting' as const, submittingStartedAt: now } : item
+      item.status === 'approved' && approvedIds.has(item.id)
+        ? { ...item, status: 'submitting' as const, submittingStartedAt: now }
+        : item
     ))
 
     // ─── All applies routed through Chrome extension ───
@@ -4863,7 +4893,7 @@ export function AutopilotView() {
     }
 
     setIsTriggering(false)
-  }, [requireAuth, reviewQueue])
+  }, [requireAuth, reviewQueue, applyFilter])
   handleSubmitApprovedRef.current = handleSubmitApproved
 
   const handleEnableAutoSubmit = useCallback(() => {

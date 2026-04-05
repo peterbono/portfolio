@@ -798,24 +798,54 @@ export async function triggerApplyJobs(
       await applyLinkedInJobsViaExtension(linkedInJobs)
     }
 
-    // Step 3: ATS batch — pre-resolve job board URLs, classify, then apply sequentially
+    // Step 3: ATS batch — classify FIRST, then pre-resolve only auto_apply candidates
     if (atsJobs.length > 0) {
-      console.log(`[bot-api] Step 3: pre-resolving ${atsJobs.length} ATS jobs. URLs: ${atsJobs.map(j => j.url).join(', ')}`)
+      // ── SAFETY GATE (P0 fix, April 2026) ──────────────────────────────
+      // Route direct_apply jobs AWAY from the extension BEFORE any URL
+      // resolution. Historical incident: RemoteOK/Himalayas/etc. direct_apply
+      // URLs (JumpCloud, Ethena Labs) were resolved server-side by probing
+      // the company's ATS pages, which returned a random open role at the
+      // same company (e.g. Engineer instead of Product Designer). The bot
+      // then submitted applications to jobs the user NEVER approved.
+      //
+      // Rule: only auto_apply and linkedin classes may reach the extension.
+      // direct_apply URLs → needs_manual, never sent for auto-submission.
+      // ───────────────────────────────────────────────────────────────────
+      const initialDirectApplyJobs = atsJobs.filter(j => classifyJobUrl(j.url) === 'direct_apply')
+      const candidateJobs = atsJobs.filter(j => classifyJobUrl(j.url) !== 'direct_apply')
+
+      if (initialDirectApplyJobs.length > 0) {
+        console.warn(`[bot-api] SAFETY GATE: ${initialDirectApplyJobs.length} direct_apply jobs blocked from auto-apply path: ${initialDirectApplyJobs.map(j => `${j.company} (${j.url})`).join(', ')}`)
+        for (const job of initialDirectApplyJobs) {
+          window.dispatchEvent(new CustomEvent('jobtracker:extension-apply-result', {
+            detail: {
+              success: false,
+              status: 'needs_manual',
+              reason: `Direct apply — user must apply manually via original URL: ${job.url}`,
+              company: job.company,
+              role: job.role,
+              url: job.url,
+            },
+          }))
+        }
+      }
+
+      console.log(`[bot-api] Step 3: pre-resolving ${candidateJobs.length} candidate ATS jobs. URLs: ${candidateJobs.map(j => j.url).join(', ')}`)
       const resolvedAtsJobs: typeof atsJobs = []
-      for (const job of atsJobs) {
+      for (const job of candidateJobs) {
         console.log(`[bot-api] Pre-resolve: ${job.company} | isJobBoard=${isJobBoardUrl(job.url)} | ${job.url}`)
         const resolvedUrl = await resolveJobBoardUrl(job)
         console.log(`[bot-api] Pre-resolve result: ${job.company} | ${resolvedUrl === job.url ? 'UNCHANGED' : 'RESOLVED → ' + resolvedUrl}`)
         resolvedAtsJobs.push(resolvedUrl !== job.url ? { ...job, url: resolvedUrl } : job)
       }
 
-      // Re-classify after URL resolution: auto_apply vs direct_apply
+      // Re-classify after URL resolution: auto_apply vs direct_apply.
+      // If resolution returned (or left) a direct_apply URL, block it here too.
       const autoApplyAtsJobs = resolvedAtsJobs.filter(j => classifyJobUrl(j.url) === 'auto_apply')
       const directApplyAtsJobs = resolvedAtsJobs.filter(j => classifyJobUrl(j.url) === 'direct_apply')
 
       if (directApplyAtsJobs.length > 0) {
-        console.log(`[bot-api] ${directApplyAtsJobs.length} ATS jobs routed to direct_apply: ${directApplyAtsJobs.map(j => j.company).join(', ')}`)
-        // Emit needs_manual results for direct_apply jobs immediately
+        console.warn(`[bot-api] Post-resolve safety: ${directApplyAtsJobs.length} jobs still classified as direct_apply, routing to needs_manual: ${directApplyAtsJobs.map(j => j.company).join(', ')}`)
         for (const job of directApplyAtsJobs) {
           window.dispatchEvent(new CustomEvent('jobtracker:extension-apply-result', {
             detail: {
@@ -830,7 +860,8 @@ export async function triggerApplyJobs(
         }
       }
 
-      console.log(`[bot-api] Step 3 done: applying ${autoApplyAtsJobs.length} auto_apply ATS jobs (${directApplyAtsJobs.length} direct_apply skipped). Final URLs: ${autoApplyAtsJobs.map(j => j.url).join(', ')}`)
+      const totalDirectApply = initialDirectApplyJobs.length + directApplyAtsJobs.length
+      console.log(`[bot-api] Step 3 done: applying ${autoApplyAtsJobs.length} auto_apply ATS jobs (${totalDirectApply} direct_apply skipped). Final URLs: ${autoApplyAtsJobs.map(j => j.url).join(', ')}`)
       if (autoApplyAtsJobs.length > 0) {
         await applyAtsJobsViaExtension(autoApplyAtsJobs)
       }

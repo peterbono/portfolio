@@ -137,76 +137,36 @@ async function resolveRedirectChain(url: string, maxHops = 10): Promise<string |
   return currentUrl
 }
 
-/** Probe common ATS platforms for a company's career page */
-async function probeCompanyAtsPages(companyName: string, roleTitle?: string): Promise<string | null> {
-  const raw = companyName.toLowerCase().replace(/['']/g, '')
-  const slugs = new Set<string>()
-  const baseSlug = raw.replace(/[^a-z0-9]+/g, '')
-  const dashSlug = raw.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-  slugs.add(baseSlug)
-  slugs.add(dashSlug)
-  slugs.add(baseSlug + 'careers')
-
-  const noSuffix = raw.replace(/\s+(labs?|inc|co|hq|io|ai|corp|group|tech|digital)\s*$/i, '')
-  if (noSuffix !== raw) {
-    slugs.add(noSuffix.replace(/[^a-z0-9]+/g, ''))
-    slugs.add(noSuffix.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''))
-  }
-  const firstWord = raw.split(/[^a-z0-9]+/)[0]
-  if (firstWord && firstWord.length >= 3 && firstWord !== baseSlug) {
-    slugs.add(firstWord)
-  }
-
-  const ATS_TEMPLATES = [
-    'https://job-boards.greenhouse.io/{slug}',
-    'https://boards.greenhouse.io/{slug}',
-    'https://jobs.lever.co/{slug}',
-    'https://jobs.ashbyhq.com/{slug}',
-    'https://apply.workable.com/{slug}/',
-    'https://{slug}.breezy.hr',
-    'https://careers.smartrecruiters.com/{slug}',
-  ]
-
-  const PROBE_TIMEOUT = 20_000
-  const probeStart = Date.now()
-
-  for (const slug of slugs) {
-    if (Date.now() - probeStart > PROBE_TIMEOUT) break
-    for (const template of ATS_TEMPLATES) {
-      if (Date.now() - probeStart > PROBE_TIMEOUT) break
-      const url = template.replace('{slug}', slug)
-      try {
-        const response = await fetch(url, {
-          method: 'HEAD',
-          redirect: 'follow',
-          headers: { 'User-Agent': UA },
-          signal: AbortSignal.timeout(5_000),
-        })
-        if (response.ok) {
-          const careerPageUrl = response.url || url
-          // Try to find specific job if role title given
-          if (roleTitle) {
-            const specificJob = await findJobOnCareerPage(careerPageUrl, roleTitle)
-            if (specificJob) return specificJob
-          }
-          // For Lever: career pages are client-rendered (JS), so HTML scraping
-          // doesn't work. Use the Lever public JSON API instead.
-          if (careerPageUrl.includes('lever.co') && roleTitle) {
-            const leverSlug = careerPageUrl.match(/lever\.co\/([^/]+)/)?.[1]
-            if (leverSlug) {
-              const leverJob = await findJobViaLeverApi(leverSlug, roleTitle)
-              if (leverJob) return leverJob
-            }
-          }
-        }
-      } catch { /* skip */ }
-    }
-  }
-
+/**
+ * ⚠️ DISABLED — P0 safety fix (April 2026).
+ *
+ * This helper used to probe known ATS platforms with the company name slug
+ * and return the first open job URL found, using a loose title-match scorer.
+ * That scorer accepted "Product Engineer" as a match for "Product Designer"
+ * (both share "product"), and the Lever public-API fallback returned best-
+ * match jobs even with score 1/N. As a result the bot submitted to totally
+ * different roles at the right company (JumpCloud, Ethena Labs — Apr 2026).
+ *
+ * resolveUrl() is called from the /api/resolve-url endpoint invoked by
+ * src/lib/bot-api.ts right before dispatching jobs to the Chrome extension
+ * — i.e. the apply dispatch path. It must NEVER return a wrong URL silently.
+ *
+ * Kept as dead code (guarded) until a strict title-matching replacement is
+ * designed. A caller that absolutely needs probing must add its own strict
+ * URL-vs-role slug check after getting the result.
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+async function probeCompanyAtsPages(_companyName: string, _roleTitle?: string): Promise<string | null> {
+  console.warn('[resolve-url] probeCompanyAtsPages is disabled on the apply-dispatch path for safety (P0 fix, Apr 2026).')
   return null
 }
 
-/** Find a specific job via Lever's public JSON API */
+/**
+ * DEAD CODE (April 2026): kept for reference but no longer called.
+ * The Lever public API returns the "best" match even when the best score
+ * is 1 out of many tokens, which caused wrong-role submissions.
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function findJobViaLeverApi(companySlug: string, roleTitle: string): Promise<string | null> {
   try {
     const response = await fetch(`https://api.lever.co/v0/postings/${companySlug}?mode=json`, {
@@ -236,7 +196,12 @@ async function findJobViaLeverApi(companySlug: string, roleTitle: string): Promi
   return null
 }
 
-/** Find a specific job on a career page by matching role title */
+/**
+ * DEAD CODE (April 2026): kept for reference but no longer called.
+ * The loose scoring (ceil(words/2)) let unrelated roles sharing a single
+ * token (e.g. "product" in Product Engineer vs Product Designer) match.
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function findJobOnCareerPage(careerPageUrl: string, roleTitle: string): Promise<string | null> {
   try {
     const response = await fetch(careerPageUrl, {
@@ -283,6 +248,40 @@ async function findJobOnCareerPage(careerPageUrl: string, roleTitle: string): Pr
 }
 
 /**
+ * Tokenize a role title into significant slug tokens.
+ * Keeps 2-letter industry terms (ux/ui/ai/etc). Drops stopwords.
+ */
+function roleSlugTokens(roleTitle: string): string[] {
+  const INDUSTRY_TERMS = new Set(['ux', 'ui', 'ai', 'qa', 'pm', 'vp', 'hr', 'sr', 'cx', 'dx', 'ml'])
+  const STOPWORDS = new Set(['the', 'and', 'for', 'with', 'at', 'in', 'of', 'to', 'a', 'an'])
+  return roleTitle.toLowerCase()
+    .split(/[\s/,\-–—·•()[\]]+/)
+    .map(w => w.replace(/[^a-z0-9]/g, ''))
+    .filter(w => (w.length >= 3 || INDUSTRY_TERMS.has(w)) && !STOPWORDS.has(w))
+}
+
+/**
+ * Title-match safeguard: require that at least half the role's significant
+ * tokens (min 1) appear in the resolved URL path/query. Returns false if
+ * no tokens can be extracted or the resolved URL is invalid.
+ */
+function urlContainsRoleSlug(resolvedUrl: string, roleTitle: string): boolean {
+  if (!roleTitle || !resolvedUrl) return false
+  const tokens = roleSlugTokens(roleTitle)
+  if (tokens.length === 0) return false
+  let pathAndQuery = ''
+  try {
+    const u = new URL(resolvedUrl)
+    pathAndQuery = (u.pathname + ' ' + u.search).toLowerCase()
+  } catch {
+    pathAndQuery = resolvedUrl.toLowerCase()
+  }
+  const matches = tokens.filter(t => pathAndQuery.includes(t)).length
+  const minScore = Math.max(1, Math.ceil(tokens.length / 2))
+  return matches >= minScore
+}
+
+/**
  * Main resolution logic (mirrors resolveJobBoardUrlServerSide from job-board-redirect.ts)
  */
 async function resolveUrl(url: string, meta?: { company?: string; role?: string }): Promise<string> {
@@ -326,6 +325,13 @@ async function resolveUrl(url: string, meta?: { company?: string; role?: string 
         }
         const atsUrl = extractAtsUrlFromHtml(html)
         if (atsUrl) {
+          // SAFETY (P0, April 2026): require the extracted ATS URL to mention
+          // the original role. Some listing pages embed multiple ATS links
+          // (including links to unrelated jobs in "see also" sections).
+          if (meta?.role && !urlContainsRoleSlug(atsUrl, meta.role)) {
+            console.warn(`[resolve-url] Title-match guard REJECTED extracted ATS URL ${atsUrl} for role "${meta.role}" — returning original URL`)
+            return url
+          }
           console.log(`[resolve-url] Found ATS URL in page HTML: ${atsUrl}`)
           return atsUrl
         }
@@ -339,6 +345,11 @@ async function resolveUrl(url: string, meta?: { company?: string; role?: string 
   try {
     const resolved = await resolveRedirectChain(url)
     if (resolved && resolved !== url && !isJobBoardUrl(resolved)) {
+      // SAFETY (P0, April 2026): require resolved URL to mention the role.
+      if (meta?.role && !urlContainsRoleSlug(resolved, meta.role)) {
+        console.warn(`[resolve-url] Title-match guard REJECTED redirect-chain resolution ${resolved} for role "${meta.role}" — returning original URL`)
+        return url
+      }
       console.log(`[resolve-url] Redirect chain resolved: ${url} -> ${resolved}`)
       return resolved
     }
@@ -346,14 +357,14 @@ async function resolveUrl(url: string, meta?: { company?: string; role?: string 
     console.log(`[resolve-url] Redirect chain failed: ${err instanceof Error ? err.message : err}`)
   }
 
-  // Strategy 3: ATS probing with company name
+  // Strategy 3: ATS probing with company name — DISABLED on apply-dispatch path.
+  //
+  // HISTORICAL INCIDENT (April 2026): probeCompanyAtsPages matched unrelated
+  // roles at the right company (JumpCloud Engineer instead of Product Designer
+  // on RemoteOK, Ethena Labs similar). Until a strict title-matching scorer
+  // is written, this strategy is off. See probeCompanyAtsPages above.
   if (meta?.company && meta.company !== 'Unknown') {
-    console.log(`[resolve-url] Probing ATS platforms for "${meta.company}"`)
-    const probed = await probeCompanyAtsPages(meta.company, meta.role)
-    if (probed) {
-      console.log(`[resolve-url] ATS probe found: ${probed}`)
-      return probed
-    }
+    console.warn(`[resolve-url] ATS probing disabled on apply-dispatch path (P0 safety). Company="${meta.company}" role="${meta.role ?? ''}" — returning original URL.`)
   }
 
   // Resolution failed — return original URL

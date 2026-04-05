@@ -233,6 +233,19 @@ const SYSTEM_PROMPT = `You are a form-filling assistant. Given a user profile an
 
 CORE RULE: If the profile does not explicitly contain or directly imply the answer to a field, return {"answer": null, "confidence": "low"}. A null answer is ALWAYS preferable to a wrong or hallucinated one — the form has a separate fallback path for null answers.
 
+GEOGRAPHIC / LANGUAGE / NATIONALITY FIELDS — STRICT MODE:
+- If a field asks for country, city, nationality, language, region, or visa status, ONLY answer if an option EXACTLY matches a profile field (profile.country, profile.city, profile.nationality, profile.language, profile.languages, profile.citizenship).
+- NEVER infer by continent (e.g. if profile says Thailand, do NOT answer Afghanistan/Vietnam/Cambodia/Albania just because they are geographically or alphabetically near).
+- NEVER infer language from country (e.g. if profile says country=Thailand, do NOT answer "Thai" — the profile does not state the user speaks Thai).
+- NEVER use phonetic similarity, alphabetical proximity, or partial string overlap to pick an option. "Thai" is NOT a valid match for "Albanian". "France" is NOT a valid match for "Francophone".
+- If no exact profile match exists in the options list, return {"answer": null, "confidence": "low"}.
+
+EMPLOYMENT / COMPANY-SPECIFIC FIELDS — STRICT MODE:
+- "Are you currently employed at X?" → null unless profile has an explicit currentEmployer field equal to X.
+- "Have you worked at X before?" / "Have you previously been employed by X?" → null unless profile has an explicit work history entry matching X.
+- "Do you know anyone at X?" / "Do you have a referral at X?" → always null.
+- Any question referencing a specific company name that would require matching against a generic profile field (like profile.currentTitle or profile.skills) → null.
+
 Strict rules:
 - NEVER invent facts not in the profile. Never extract data from a profile field that is semantically unrelated to the question. Example: if the profile has "city: Bangkok" and the field asks "what is the brand of your laptop", the answer MUST be null, NOT "Bangkok". Semantic mismatch = null.
 - NEVER answer "Yes/No" questions unless the profile clearly supports one specific side. Examples:
@@ -299,27 +312,76 @@ function normalizeConfidence(raw: unknown): 'high' | 'medium' | 'low' {
 }
 
 /**
- * Match a free-form model answer to one of the allowed options.
- * Case-insensitive; returns the canonical (original-case) option if found.
+ * STRICT match of a free-form model answer to one of the allowed options.
+ *
+ * This function is intentionally conservative — it was the source of a P0 bug
+ * where a Haiku answer like "Thai" fuzzy-matched "Albanian" on a country
+ * dropdown via bidirectional substring matching. NEVER re-introduce
+ * `.includes()` bidirectional matching here. When in doubt, return null and
+ * let the extension's manual-fallback path take over.
+ *
+ * Matching rules (in order):
+ *   1. Exact case-insensitive match → return that option.
+ *   2. Known Yes/No synonyms (Yes/Oui/Sí, No/Non/Nein) → map to matching option.
+ *   3. Numeric answer matches an option that contains that number as a
+ *      standalone token (e.g. "5" → "5 years", "5-10 years"). Substring-in-text
+ *      is NOT enough — we require a word-boundary match so "5" does not
+ *      accidentally match "15+" or "50-60".
+ *   4. No match → return null.
  */
+const YES_SYNONYMS = new Set(['yes', 'y', 'oui', 'sí', 'si', 'ja', 'true'])
+const NO_SYNONYMS = new Set(['no', 'n', 'non', 'nein', 'false'])
+
 function matchOption(answer: string, options: string[]): string | null {
   const norm = answer.trim().toLowerCase()
   if (!norm) return null
-  // Exact (case-insensitive) match first
+
+  // 1. Exact case-insensitive match
   for (const opt of options) {
     if (opt.toLowerCase() === norm) return opt
   }
-  // Substring match: option appears in answer
-  for (const opt of options) {
-    const oLow = opt.toLowerCase()
-    if (oLow && norm.includes(oLow)) return opt
+
+  // 2. Yes/No synonym map — only when the answer is clearly a yes/no token
+  if (YES_SYNONYMS.has(norm)) {
+    for (const opt of options) {
+      const o = opt.trim().toLowerCase()
+      if (o === 'yes' || o === 'oui' || o === 'sí' || o === 'si' || o === 'ja' || o === 'true') {
+        return opt
+      }
+    }
   }
-  // Substring match: answer appears in option
-  for (const opt of options) {
-    const oLow = opt.toLowerCase()
-    if (oLow && oLow.includes(norm)) return opt
+  if (NO_SYNONYMS.has(norm)) {
+    for (const opt of options) {
+      const o = opt.trim().toLowerCase()
+      if (o === 'no' || o === 'non' || o === 'nein' || o === 'false') {
+        return opt
+      }
+    }
   }
+
+  // 3. Numeric answer matching an option that contains the same integer as a
+  //    standalone token. Answer must be purely numeric (possibly with a sign
+  //    or decimal). We use \b word boundaries so "5" does not match "15+".
+  const numMatch = norm.match(/^-?\d+(?:\.\d+)?$/)
+  if (numMatch) {
+    const num = numMatch[0]
+    const re = new RegExp(`(?:^|[^\\d.])${num.replace('.', '\\.')}(?:$|[^\\d.])`)
+    for (const opt of options) {
+      if (re.test(opt.toLowerCase())) return opt
+    }
+  }
+
+  // 4. No strict match — reject.
   return null
+}
+
+/**
+ * Truncate a string for log output so we never dump 300-option country lists
+ * into Vercel logs.
+ */
+function logTrunc(s: string, cap = 80): string {
+  if (s.length <= cap) return s
+  return `${s.slice(0, cap)}…`
 }
 
 function postValidateAnswer(
@@ -340,12 +402,18 @@ function postValidateAnswer(
   } else if (typeof rawAnswer === 'number' || typeof rawAnswer === 'boolean') {
     answer = String(rawAnswer)
   } else {
+    console.warn(
+      `[fill-field] reject id=${field.id} type=${field.type} reason=non-primitive-answer label="${logTrunc(field.label)}"`,
+    )
     return { id: field.id, answer: null, confidence: 'low' }
   }
 
   // Strip any HTML/scripts the model might have emitted
   answer = sanitizeText(answer)
   if (!answer) {
+    console.warn(
+      `[fill-field] reject id=${field.id} type=${field.type} reason=empty-after-sanitize label="${logTrunc(field.label)}"`,
+    )
     return { id: field.id, answer: null, confidence: 'low' }
   }
 
@@ -357,6 +425,13 @@ function postValidateAnswer(
   ) {
     const matched = matchOption(answer, field.options)
     if (!matched) {
+      // IMPORTANT: log these rejections — this is how we catch Haiku hallucinations
+      // like "Thai" answered on a country dropdown that has no Thailand option.
+      // Keep the log line parseable (key=value) for easy grep in Vercel logs.
+      const optSample = field.options.slice(0, 8).map(logTrunc).join('|')
+      console.warn(
+        `[fill-field] reject id=${field.id} type=${field.type} reason=no-option-match label="${logTrunc(field.label)}" answer="${logTrunc(answer)}" options_count=${field.options.length} options_sample="${logTrunc(optSample, 200)}"`,
+      )
       return { id: field.id, answer: null, confidence: 'low' }
     }
     return { id: field.id, answer: matched, confidence }
