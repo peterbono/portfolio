@@ -2421,12 +2421,19 @@ function ReviewQueue({
   onToggleMode: (mode: ReviewMode) => void
   applyFilter: 'all' | 'auto' | 'direct'
 }) {
-  // Apply filter to queue
+  // Hide terminal states from the review list — once a job is submitted,
+  // skipped, or marked expired (LinkedIn "already applied", form closed),
+  // the user no longer needs to see it. Keeps the queue focused on
+  // actionable items.
+  const TERMINAL_STATUSES = new Set(['submitted', 'skipped', 'expired'])
+  const visibleQueue = queue.filter(i => !TERMINAL_STATUSES.has(i.status || ''))
+
+  // Apply method filter on top of the visible queue
   const filteredQueue = applyFilter === 'all'
-    ? queue
+    ? visibleQueue
     : applyFilter === 'auto'
-      ? queue.filter(i => { const c = classifyJobUrl(i.jobUrl || ''); return c === 'auto_apply' || c === 'linkedin' })
-      : queue.filter(i => classifyJobUrl(i.jobUrl || '') === 'direct_apply')
+      ? visibleQueue.filter(i => { const c = classifyJobUrl(i.jobUrl || ''); return c === 'auto_apply' || c === 'linkedin' })
+      : visibleQueue.filter(i => classifyJobUrl(i.jobUrl || '') === 'direct_apply')
 
   // Bubble supported ATS (Greenhouse + LinkedIn Easy Apply) to the top.
   // Everything else stays visible below in its original order.
@@ -3855,6 +3862,120 @@ export function AutopilotView() {
     setReviewMode(mode)
     saveReviewMode(mode)
   }, [])
+
+  // ─── Reconciliation: sync review queue with Supabase + extension state ───
+  // The dashboard's in-flight listener for JOBTRACKER_APPLY_RESULT only fires
+  // while an apply is actively in progress. If the user closes the tab, the
+  // extension crashes and retries, or the requestId expires (3min timeout),
+  // the success result is lost and the queue item stays "pending" forever.
+  //
+  // This effect runs on mount and on window focus to reconcile local queue
+  // state with authoritative sources: Supabase (applications table — populated
+  // by Gmail sync or direct extension bridge) AND the Chrome extension's
+  // lastApplyResult from chrome.storage.local.
+  useEffect(() => {
+    let cancelled = false
+
+    const reconcile = async () => {
+      const currentQueue = loadReviewQueue()
+      if (currentQueue.length === 0) return
+      const pendingQueue = currentQueue.filter(i =>
+        i.status !== 'submitted' && i.status !== 'skipped' && i.status !== 'expired'
+      )
+      if (pendingQueue.length === 0) return
+
+      const matches = new Map<string, 'submitted'>() // jobUrl → status
+
+      // Source 1: Supabase — any application with status='submitted' whose
+      // linked job_listing.link matches a queue item's jobUrl
+      try {
+        const { data: submittedApps } = await supabase
+          .from('applications')
+          .select('job_id, status, job_listings!inner(link)')
+          .eq('status', 'submitted')
+        if (!cancelled && Array.isArray(submittedApps)) {
+          for (const app of submittedApps as Array<{ job_listings: { link: string | null } }>) {
+            const link = app.job_listings?.link
+            if (link) matches.set(link, 'submitted')
+          }
+        }
+      } catch (err) {
+        console.warn('[reconcile] Supabase fetch failed:', err)
+      }
+
+      // Source 2: Extension recent apply results via external message.
+      // We read `recentResults` (rolling list of last 50) rather than just
+      // `lastApplyResult` so we catch all applies that completed without an
+      // active listener — not just the most recent one.
+      try {
+        const EXT_ID = 'olcodghfaimcncelmmicjkipobafaafp'
+        const chromeRuntime = (window as unknown as { chrome?: { runtime?: { sendMessage?: unknown } } }).chrome?.runtime
+        if (chromeRuntime && typeof chromeRuntime.sendMessage === 'function') {
+          type ExtResultItem = { status?: string; url?: string; company?: string }
+          type ExtDiagResponse = { result?: ExtResultItem; recentResults?: ExtResultItem[] }
+          const extData = await new Promise<ExtDiagResponse | null>((resolve) => {
+            try {
+              ;(chromeRuntime.sendMessage as (id: string, msg: object, cb: (r: unknown) => void) => void)(
+                EXT_ID,
+                { action: 'getDiagnostics' },
+                (r: unknown) => resolve((r as ExtDiagResponse) || null),
+              )
+              setTimeout(() => resolve(null), 2000)
+            } catch {
+              resolve(null)
+            }
+          })
+          if (!cancelled && extData) {
+            const isSuccess = (s?: string) =>
+              s === 'applied' || s === 'applied_external' || s === 'submitted'
+            const extResults: ExtResultItem[] = Array.isArray(extData.recentResults)
+              ? extData.recentResults
+              : extData.result ? [extData.result] : []
+            for (const r of extResults) {
+              if (isSuccess(r.status) && r.url) {
+                matches.set(r.url, 'submitted')
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[reconcile] Extension message failed:', err)
+      }
+
+      if (cancelled || matches.size === 0) return
+
+      // Apply matches to the queue
+      setReviewQueue(prev => {
+        let changed = false
+        const next = prev.map(item => {
+          const url = item.jobUrl || ''
+          if (!url || item.status === 'submitted') return item
+          // Normalize both URLs (strip query params + trailing slash) for comparison
+          const normalize = (u: string) => u.split('?')[0].replace(/\/$/, '')
+          const normItem = normalize(url)
+          for (const [matchUrl, newStatus] of matches.entries()) {
+            if (normalize(matchUrl) === normItem) {
+              changed = true
+              console.log(`[reconcile] Marking "${item.company}" as ${newStatus} (was ${item.status})`)
+              return { ...item, status: newStatus }
+            }
+          }
+          return item
+        })
+        return changed ? next : prev
+      })
+    }
+
+    // Run immediately on mount
+    reconcile()
+    // Also run when the tab regains focus (user switches back from LinkedIn tab)
+    const onFocus = () => reconcile()
+    window.addEventListener('focus', onFocus)
+    return () => {
+      cancelled = true
+      window.removeEventListener('focus', onFocus)
+    }
+  }, []) // run once on mount, rely on window focus for refreshes
 
   // Preview drawer state
   const [previewItemId, setPreviewItemId] = useState<string | null>(null)

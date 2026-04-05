@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "JobTracker - Auto Apply",
   "short_name": "JobTracker",
-  "version": "4.9.1",
+  "version": "4.10.0",
   "description": "Auto-apply to jobs on LinkedIn Easy Apply and 15+ ATS platforms. Discover, review, and submit from one dashboard.",
   "author": "JobTracker",
   "homepage_url": "https://tracker-app-lyart.vercel.app",

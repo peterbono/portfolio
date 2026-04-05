@@ -2785,19 +2785,30 @@ function setResult(result) {
   }
 
   try {
-    chrome.storage.local.set({
-      lastApplyResult: {
-        success: result.success,
-        status: result.status,
-        reason: result.reason,
-        company: result.company || 'Unknown',
-        role: result.role || 'Unknown',
-        url: window.location.href,
-        timestamp: new Date().toISOString(),
-      }
-    }, function() {
+    var resultSnapshot = {
+      success: result.success,
+      status: result.status,
+      reason: result.reason,
+      company: result.company || 'Unknown',
+      role: result.role || 'Unknown',
+      url: window.location.href,
+      timestamp: new Date().toISOString(),
+    };
+    chrome.storage.local.set({ lastApplyResult: resultSnapshot }, function() {
       console.log('[JobTracker] Result saved to storage:', result.status);
     });
+    // Also append to rolling log of recent results (last 50). Dashboard reads
+    // this on mount to reconcile queue state for applies that completed without
+    // an active JOBTRACKER_APPLY_RESULT listener (tab closed, requestId expired,
+    // extension restart mid-flight, etc).
+    try {
+      chrome.storage.local.get(['recentApplyResults'], function(data) {
+        var list = Array.isArray(data.recentApplyResults) ? data.recentApplyResults : [];
+        list.push(resultSnapshot);
+        if (list.length > 50) list = list.slice(-50);
+        chrome.storage.local.set({ recentApplyResults: list });
+      });
+    } catch (rolErr) { /* ignore */ }
   } catch(e) {
     console.error('[JobTracker] Failed to save result:', e.message);
   }

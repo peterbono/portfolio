@@ -398,8 +398,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     }
 
     if (message.action === 'getDiagnostics') {
-      const data = await chrome.storage.local.get(['lastApplyDiagnostics', 'lastApplyResult', 'atsApplyDebugLog'])
-      return { diagnostics: data.lastApplyDiagnostics || null, result: data.lastApplyResult || null, debugLog: data.atsApplyDebugLog || null }
+      const data = await chrome.storage.local.get(['lastApplyDiagnostics', 'lastApplyResult', 'atsApplyDebugLog', 'recentApplyResults'])
+      return {
+        diagnostics: data.lastApplyDiagnostics || null,
+        result: data.lastApplyResult || null,
+        debugLog: data.atsApplyDebugLog || null,
+        recentResults: Array.isArray(data.recentApplyResults) ? data.recentApplyResults : [],
+      }
     }
 
     if (message.action === 'getCookie') {

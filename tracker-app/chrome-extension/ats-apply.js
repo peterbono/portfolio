@@ -5415,6 +5415,26 @@ const ATS_HANDLERS = {
   log('Final result:', result.status, result.reason)
   if (!context.standalone) {
     await chrome.storage.local.set({ lastApplyResult: result })
+    // Also append to rolling log of recent results (last 50). Dashboard reads
+    // this on mount to reconcile queue state for applies completed without an
+    // active JOBTRACKER_APPLY_RESULT listener (tab closed, requestId expired,
+    // extension restart mid-flight, etc).
+    try {
+      const prev = await chrome.storage.local.get(['recentApplyResults'])
+      const list = Array.isArray(prev.recentApplyResults) ? prev.recentApplyResults : []
+      const snapshot = {
+        success: result.success,
+        status: result.status,
+        reason: result.reason,
+        company: result.company || 'Unknown',
+        role: result.role || 'Unknown',
+        url: (context && context.url) || window.location.href,
+        timestamp: new Date().toISOString(),
+      }
+      list.push(snapshot)
+      const capped = list.length > 50 ? list.slice(-50) : list
+      await chrome.storage.local.set({ recentApplyResults: capped })
+    } catch (rolErr) { /* ignore */ }
     await chrome.storage.local.remove('atsApplyContext')
     await chrome.storage.local.remove('pendingExternalApply')
   }
