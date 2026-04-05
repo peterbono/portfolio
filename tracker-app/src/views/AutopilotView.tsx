@@ -2745,7 +2745,11 @@ const reviewStyles: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     gap: 10,
-    maxHeight: 600,
+    // Fit within viewport so the sticky submit bar stays visible above the fold.
+    // Overhead = topbar (~68) + main padding (~32) + threshold banner (~50) +
+    // queueSection padding (~40) + queueHeader (~70) + queueBottom (~80) ≈ 340px
+    maxHeight: 'min(600px, calc(100dvh - 340px))',
+    minHeight: 220,
     overflowY: 'auto',
   },
   queueBottom: {
