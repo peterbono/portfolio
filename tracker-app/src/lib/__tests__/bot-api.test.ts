@@ -853,49 +853,21 @@ describe('isJobBoardUrl (via URL pre-resolve in extension path)', () => {
     expect(LINKEDIN_URLS.length).toBe(2)
   })
 
-  it('job board URLs should trigger resolve endpoint in extension path', async () => {
+  it('job board URLs should be routed to needs_manual by safety gate', async () => {
     simulateExtensionInstalled()
     mockLocalStorage({
       tracker_v2_user_profile: VALID_USER_PROFILE,
     })
 
-    // Mock fetch: first call = resolve-url, subsequent = resolve-url or task
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
-      if (String(url) === '/api/resolve-url') {
-        return {
-          ok: true,
-          json: () => Promise.resolve({ wasResolved: false }),
-        } as Response
-      }
-      return {
-        ok: true,
-        json: () => Promise.resolve({ id: 'run-ext' }),
-        text: () => Promise.resolve(JSON.stringify({ id: 'run-ext' })),
-      } as Response
-    })
-
-    // Mock postMessage to capture calls and auto-respond to apply requests
-    const postMessageSpy = vi.spyOn(window, 'postMessage')
-
-    // Intercept apply messages and auto-respond with success
-    const messageHandler = (event: MessageEvent) => {
-      if (event.data?.type === 'JOBTRACKER_APPLY_ATS_VIA_EXTENSION') {
-        // Simulate extension responding with success
-        setTimeout(() => {
-          const responseEvt = new MessageEvent('message', {
-            data: {
-              type: 'JOBTRACKER_APPLY_RESULT',
-              requestId: event.data.requestId,
-              success: true,
-              status: 'applied',
-            },
-          })
-          Object.defineProperty(responseEvt, 'source', { value: window })
-          window.dispatchEvent(responseEvt)
-        }, 10)
+    // Track needs_manual events dispatched by the safety gate
+    const needsManualResults: Array<{ company: string; status: string }> = []
+    const resultHandler = (event: Event) => {
+      const detail = (event as CustomEvent).detail
+      if (detail?.status === 'needs_manual') {
+        needsManualResults.push({ company: detail.company, status: detail.status })
       }
     }
-    window.addEventListener('message', messageHandler)
+    window.addEventListener('jobtracker:extension-apply-result', resultHandler)
 
     const jobBoardJob: ApprovedJobInput = {
       url: 'https://remoteok.com/remote-jobs/12345',
@@ -907,13 +879,13 @@ describe('isJobBoardUrl (via URL pre-resolve in extension path)', () => {
 
     await triggerApplyJobs([jobBoardJob])
 
-    // The resolve endpoint should have been called for the job board URL
-    const resolveCall = fetchMock.mock.calls.find(
-      c => String(c[0]) === '/api/resolve-url',
-    )
-    expect(resolveCall).toBeDefined()
+    // P0 safety gate: job board URLs (direct_apply) are routed to needs_manual,
+    // NOT sent to /api/resolve-url or the extension
+    expect(needsManualResults.length).toBe(1)
+    expect(needsManualResults[0].company).toBe('RemoteOk Corp')
+    expect(needsManualResults[0].status).toBe('needs_manual')
 
-    window.removeEventListener('message', messageHandler)
+    window.removeEventListener('jobtracker:extension-apply-result', resultHandler)
   })
 
   it('direct ATS URLs should NOT trigger resolve endpoint', async () => {
