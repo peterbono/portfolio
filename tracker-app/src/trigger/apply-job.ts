@@ -4,7 +4,7 @@ import { classifyJobUrl } from "../lib/classify-job-url"
 export const applyJobTask = task({
   id: "apply-job-pipeline",
   machine: "large-1x", // 4 vCPU, 8 GB RAM — needed for 86+ JD extractions with local Chromium
-  maxDuration: 3600, // 60 minutes — scout+qualify (~15min) + triggerAndWait for apply-jobs (~30min)
+  maxDuration: 1800, // 30 minutes — scout+qualify only (~15min); apply-jobs runs as fire-and-forget child
   run: async (payload: {
     userId: string
     maxApplications?: number
@@ -136,6 +136,7 @@ export const applyJobTask = task({
       let applyResult: { applied: number; failed: number; needsManual: number } = {
         applied: 0, failed: 0, needsManual: 0
       }
+      let applyChildRunId: string | undefined
 
       if (autoApply && qualifiedJobs.length > 0) {
         console.log(`[apply-job-pipeline] Auto-applying to ${qualifiedJobs.length} qualified jobs...`)
@@ -223,20 +224,19 @@ export const applyJobTask = task({
           }
 
           // Only trigger cloud apply if there are auto_apply jobs to process
+          // OPTIMIZATION (April 2026): Fire-and-forget instead of triggerAndWait.
+          // This frees the large-1x machine (~$0.03/min) immediately after scout+qualify
+          // instead of holding it idle for 30 min while apply-jobs runs on medium-1x.
+          // The child writes its own stats to Supabase (bot_runs + bot_activity_log),
+          // and the frontend polls the child task directly via applyRunId.
           if (autoApplyJobs.length > 0) {
-            const childResult = await tasks.triggerAndWait("apply-jobs", applyJobsPayload)
-            if (childResult.ok) {
-              const output = childResult.output as import('./apply-jobs').ApplyJobsOutput
-              console.log(`[apply-job-pipeline] apply-jobs completed: ${output.applied} applied, ${output.failed} failed, ${output.needsManual} manual (run: ${childResult.id})`)
-              applyResult = {
-                applied: output.applied,
-                failed: output.failed,
-                needsManual: output.needsManual + directApplyJobs.length,
-              }
-            } else {
-              console.error(`[apply-job-pipeline] apply-jobs child task failed (run: ${childResult.id}):`, childResult.error)
-              applyResult = { applied: 0, failed: autoApplyJobs.length, needsManual: directApplyJobs.length }
-            }
+            const childHandle = await tasks.trigger("apply-jobs", applyJobsPayload)
+            applyChildRunId = childHandle.id
+            console.log(`[apply-job-pipeline] apply-jobs triggered (fire-and-forget): runId=${childHandle.id}, ${autoApplyJobs.length} auto_apply + ${directApplyJobs.length} direct_apply`)
+            // We don't wait — child writes stats to Supabase independently.
+            // applyResult stays at {0,0,0} for the parent return value.
+            // The frontend reads real apply stats from the child task or bot_runs table.
+            applyResult = { applied: 0, failed: 0, needsManual: directApplyJobs.length }
           } else {
             console.log(`[apply-job-pipeline] No auto_apply jobs — ${directApplyJobs.length} direct_apply, ${skippedLinkedIn} LinkedIn`)
             applyResult = { applied: 0, failed: 0, needsManual: directApplyJobs.length }
@@ -255,13 +255,15 @@ export const applyJobTask = task({
         jobsFound: result.jobsFound,
         jobsPreFiltered: (result.jobsFound ?? 0) - (result.jobsQualified ?? 0),
         jobsQualified: result.jobsQualified,
-        jobsApplied: applyResult.applied,
+        jobsApplied: applyResult.applied, // Always 0 now — real stats are in the child's bot_runs row
         jobsSkipped: result.jobsSkipped,
-        jobsFailed: applyResult.failed,
+        jobsFailed: applyResult.failed, // Always 0 now — real stats are in the child's bot_runs row
         duration: result.duration,
         discoveredJobs: result.discoveredJobs ?? [],
         qualifiedJobs: result.qualifiedJobs ?? [],
         autoApplyTriggered: autoApply && qualifiedJobs.length > 0,
+        // Child apply-jobs run ID — frontend can poll this directly for apply progress
+        applyChildRunId: applyChildRunId ?? null,
       }
     } finally {
       if (browserContext) {

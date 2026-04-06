@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Check, X, Shield, RotateCcw, ExternalLink, Eye } from 'lucide-react'
+import { Check, X, Shield, RotateCcw, ExternalLink, Eye, ChevronDown } from 'lucide-react'
+import type { ScoreDimensions, RoleArchetype } from '../bot/qualifier-core'
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -18,6 +19,12 @@ interface ReviewQueueItem {
   editedCoverLetter?: string
   editedAnswers?: Record<string, string>
   jobUrl?: string
+  /** Multi-dimensional score breakdown from qualifier */
+  dimensions?: ScoreDimensions
+  /** Role archetype classification */
+  archetype?: RoleArchetype
+  /** Top JD keywords for CV tailoring */
+  jdKeywords?: string[]
 }
 
 interface CardStackReviewProps {
@@ -33,6 +40,28 @@ interface CardStackReviewProps {
 /* ------------------------------------------------------------------ */
 
 type SlideDir = 'enter' | 'exit-left' | 'exit-right' | 'idle'
+
+/* ------------------------------------------------------------------ */
+/*  Scoring constants                                                  */
+/* ------------------------------------------------------------------ */
+
+const ARCHETYPE_LABELS: Record<string, { label: string; color: string }> = {
+  systems:    { label: 'Systems',    color: '#a78bfa' },
+  research:   { label: 'Research',   color: '#67e8f9' },
+  visual:     { label: 'Visual',     color: '#f9a8d4' },
+  product:    { label: 'Product',    color: '#60a5fa' },
+  leadership: { label: 'Leadership', color: '#fbbf24' },
+  strategy:   { label: 'Strategy',   color: '#34d399' },
+}
+
+const DIMENSION_META: { key: keyof ScoreDimensions; label: string; max: number }[] = [
+  { key: 'roleFit',             label: 'Role Fit',     max: 25 },
+  { key: 'industryMatch',       label: 'Industry',     max: 15 },
+  { key: 'skillOverlap',        label: 'Skills',       max: 20 },
+  { key: 'locationFit',         label: 'Location',     max: 15 },
+  { key: 'compensationSignal',  label: 'Comp Signal',  max: 10 },
+  { key: 'growthOpportunity',   label: 'Growth',       max: 15 },
+]
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
@@ -53,6 +82,7 @@ export default function CardStackReview({
   const [currentIndex, setCurrentIndex] = useState(0)
   const [slideDir, setSlideDir] = useState<SlideDir>('enter')
   const [lastAction, setLastAction] = useState<{ id: string; type: 'approve' | 'skip' } | null>(null)
+  const [dimExpanded, setDimExpanded] = useState(false)
   const animatingRef = useRef(false)
 
   // The card currently displayed
@@ -65,8 +95,9 @@ export default function CardStackReview({
     }
   }, [pendingItems.length, currentIndex])
 
-  // Trigger enter animation whenever currentItem changes
+  // Trigger enter animation whenever currentItem changes + reset dimension panel
   useEffect(() => {
+    setDimExpanded(false)
     if (currentItem) {
       setSlideDir('enter')
       const raf = requestAnimationFrame(() => {
@@ -239,21 +270,98 @@ export default function CardStackReview({
           {/* Tint overlay */}
           <div style={tintStyle()} />
 
-          {/* Score badge — prominent at top */}
+          {/* Score badge + archetype — prominent at top */}
           <div style={cs.scoreRow}>
+            {/* Archetype badge */}
+            {currentItem.archetype && ARCHETYPE_LABELS[currentItem.archetype] && (
+              <span
+                style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  padding: '4px 10px',
+                  borderRadius: 9999,
+                  color: ARCHETYPE_LABELS[currentItem.archetype].color,
+                  background: `${ARCHETYPE_LABELS[currentItem.archetype].color}18`,
+                  border: `1px solid ${ARCHETYPE_LABELS[currentItem.archetype].color}33`,
+                  whiteSpace: 'nowrap' as const,
+                  textTransform: 'uppercase' as const,
+                  letterSpacing: '0.04em',
+                }}
+              >
+                {ARCHETYPE_LABELS[currentItem.archetype].label}
+              </span>
+            )}
+            {/* Score badge — clickable when dimensions available */}
             <div
               style={{
                 ...cs.scoreBadge,
                 color: scoreColor,
                 background: scoreBg,
                 border: `1px solid ${scoreColor}33`,
+                cursor: currentItem.dimensions ? 'pointer' : 'default',
               }}
+              onClick={() => currentItem.dimensions && setDimExpanded(prev => !prev)}
+              title={currentItem.dimensions ? 'Click to expand score breakdown' : undefined}
             >
               <Shield size={16} />
               <span style={cs.scoreValue}>{currentItem.matchScore}%</span>
               <span style={cs.scoreLabel}>match</span>
+              {currentItem.dimensions && (
+                <ChevronDown
+                  size={12}
+                  style={{
+                    marginLeft: 2,
+                    transition: 'transform 0.2s',
+                    transform: dimExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                  }}
+                />
+              )}
             </div>
           </div>
+
+          {/* Score dimensions breakdown (expandable) */}
+          {currentItem.dimensions && dimExpanded && (
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column' as const,
+              gap: 4,
+              padding: '8px 10px',
+              background: 'rgba(255,255,255,0.02)',
+              borderRadius: 6,
+              border: '1px solid var(--border)',
+            }}>
+              {DIMENSION_META.map(({ key, label, max }) => {
+                const value = currentItem.dimensions![key]
+                const pct = Math.round((value / max) * 100)
+                const barColor = pct >= 70 ? '#34d399' : pct >= 40 ? '#fbbf24' : '#f43f5e'
+                return (
+                  <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 10, color: 'var(--text-secondary)', width: 72, flexShrink: 0, textAlign: 'right' as const }}>
+                      {label}
+                    </span>
+                    <div style={{
+                      flex: 1,
+                      height: 6,
+                      borderRadius: 3,
+                      background: 'rgba(255,255,255,0.06)',
+                      overflow: 'hidden',
+                    }}>
+                      <div style={{
+                        width: `${pct}%`,
+                        height: '100%',
+                        borderRadius: 3,
+                        background: barColor,
+                        transition: 'width 0.3s ease',
+                      }} />
+                    </div>
+                    <span style={{ fontSize: 10, color: 'var(--text-secondary)', width: 34, flexShrink: 0 }}>
+                      {value}/{max}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
 
           {/* Company + Role */}
           <div style={cs.mainInfo}>
@@ -275,11 +383,19 @@ export default function CardStackReview({
             </p>
           </div>
 
-          {/* Match reasons */}
+          {/* Match reasons + JD keyword tags */}
           <div style={cs.reasonsWrap}>
             {currentItem.matchReasons.map((reason, i) => (
               <span key={i} style={cs.reasonChip}>
                 {reason}
+              </span>
+            ))}
+            {currentItem.jdKeywords && currentItem.jdKeywords.length > 0 && currentItem.jdKeywords.map((kw, i) => (
+              <span
+                key={`kw-${i}`}
+                style={cs.keywordChip}
+              >
+                {kw}
               </span>
             ))}
           </div>
@@ -435,6 +551,8 @@ const cs: Record<string, React.CSSProperties> = {
   scoreRow: {
     display: 'flex',
     justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
   },
   scoreBadge: {
     display: 'inline-flex',
@@ -499,6 +617,15 @@ const cs: Record<string, React.CSSProperties> = {
     background: 'rgba(96, 165, 250, 0.10)',
     color: '#93c5fd',
     border: '1px solid rgba(96, 165, 250, 0.15)',
+    whiteSpace: 'nowrap',
+  },
+  keywordChip: {
+    fontSize: 10,
+    padding: '2px 8px',
+    borderRadius: 12,
+    background: 'rgba(167, 139, 250, 0.10)',
+    color: '#c4b5fd',
+    border: '1px solid rgba(167, 139, 250, 0.18)',
     whiteSpace: 'nowrap',
   },
 

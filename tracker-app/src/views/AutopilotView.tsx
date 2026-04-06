@@ -1844,6 +1844,27 @@ const chipStyles: Record<string, React.CSSProperties> = {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Shared score-dimension / archetype constants                       */
+/* ------------------------------------------------------------------ */
+const ARCHETYPE_LABELS: Record<string, { label: string; color: string }> = {
+  systems:    { label: 'Systems',    color: '#a78bfa' },
+  research:   { label: 'Research',   color: '#67e8f9' },
+  visual:     { label: 'Visual',     color: '#f9a8d4' },
+  product:    { label: 'Product',    color: '#60a5fa' },
+  leadership: { label: 'Leadership', color: '#fbbf24' },
+  strategy:   { label: 'Strategy',   color: '#34d399' },
+}
+
+const DIMENSION_META: { key: keyof ScoreDimensions; label: string; max: number }[] = [
+  { key: 'roleFit',             label: 'Role Fit',     max: 25 },
+  { key: 'industryMatch',       label: 'Industry',     max: 15 },
+  { key: 'skillOverlap',        label: 'Skills',       max: 20 },
+  { key: 'locationFit',         label: 'Location',     max: 15 },
+  { key: 'compensationSignal',  label: 'Comp Signal',  max: 10 },
+  { key: 'growthOpportunity',   label: 'Growth',       max: 15 },
+]
+
+/* ------------------------------------------------------------------ */
 /*  ApplicationReviewCard                                              */
 /* ------------------------------------------------------------------ */
 function ApplicationReviewCard({
@@ -1872,24 +1893,6 @@ function ApplicationReviewCard({
       : item.matchScore >= 50
         ? 'rgba(251, 191, 36, 0.12)'
         : 'rgba(244, 63, 94, 0.12)'
-
-  const ARCHETYPE_LABELS: Record<string, { label: string; color: string }> = {
-    systems:    { label: 'Systems',    color: '#a78bfa' },
-    research:   { label: 'Research',   color: '#67e8f9' },
-    visual:     { label: 'Visual',     color: '#f9a8d4' },
-    product:    { label: 'Product',    color: '#60a5fa' },
-    leadership: { label: 'Leadership', color: '#fbbf24' },
-    strategy:   { label: 'Strategy',   color: '#34d399' },
-  }
-
-  const DIMENSION_META: { key: keyof ScoreDimensions; label: string; max: number }[] = [
-    { key: 'roleFit',             label: 'Role Fit',     max: 25 },
-    { key: 'industryMatch',       label: 'Industry',     max: 15 },
-    { key: 'skillOverlap',        label: 'Skills',       max: 20 },
-    { key: 'locationFit',         label: 'Location',     max: 15 },
-    { key: 'compensationSignal',  label: 'Comp Signal',  max: 10 },
-    { key: 'growthOpportunity',   label: 'Growth',       max: 15 },
-  ]
 
   return (
     <div style={reviewStyles.card}>
@@ -2370,16 +2373,36 @@ function ApplicationPreviewDrawer({
           <div style={drawerStyles.headerInfo}>
             <div style={drawerStyles.headerTitleRow}>
               <span style={drawerStyles.headerCompany}>{item.company}</span>
-              <div
-                style={{
-                  ...drawerStyles.scoreBadge,
-                  color: scoreColor,
-                  background: scoreBg,
-                  border: `1px solid ${scoreColor}33`,
-                }}
-              >
-                <Shield size={12} />
-                <span>{item.matchScore}%</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                {item.archetype && ARCHETYPE_LABELS[item.archetype] && (
+                  <span
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 600,
+                      padding: '2px 8px',
+                      borderRadius: 9999,
+                      color: ARCHETYPE_LABELS[item.archetype].color,
+                      background: `${ARCHETYPE_LABELS[item.archetype].color}18`,
+                      border: `1px solid ${ARCHETYPE_LABELS[item.archetype].color}33`,
+                      whiteSpace: 'nowrap' as const,
+                      textTransform: 'uppercase' as const,
+                      letterSpacing: '0.04em',
+                    }}
+                  >
+                    {ARCHETYPE_LABELS[item.archetype].label}
+                  </span>
+                )}
+                <div
+                  style={{
+                    ...drawerStyles.scoreBadge,
+                    color: scoreColor,
+                    background: scoreBg,
+                    border: `1px solid ${scoreColor}33`,
+                  }}
+                >
+                  <Shield size={12} />
+                  <span>{item.matchScore}%</span>
+                </div>
               </div>
             </div>
             <span style={drawerStyles.headerRole}>{item.role}</span>
@@ -2470,11 +2493,31 @@ function ApplicationPreviewDrawer({
           {/* Section 3: Match Details */}
           <div style={drawerStyles.section}>
             <h3 style={drawerStyles.sectionTitle}>Match Details</h3>
+
+            {/* Match reason chips + JD keyword tags */}
             <div style={drawerStyles.matchReasonsWrap}>
               {item.matchReasons.map((reason, i) => (
                 <span key={i} style={drawerStyles.matchChip}>{reason}</span>
               ))}
+              {item.jdKeywords && item.jdKeywords.length > 0 && item.jdKeywords.map((kw, i) => (
+                <span
+                  key={`kw-${i}`}
+                  style={{
+                    fontSize: 12,
+                    padding: '3px 10px',
+                    borderRadius: 12,
+                    background: 'rgba(167, 139, 250, 0.10)',
+                    color: '#c4b5fd',
+                    border: '1px solid rgba(167, 139, 250, 0.18)',
+                    whiteSpace: 'nowrap' as const,
+                  }}
+                >
+                  {kw}
+                </span>
+              ))}
             </div>
+
+            {/* Overall score bar */}
             <div style={drawerStyles.scoreBreakdown}>
               <span style={drawerStyles.scoreBreakdownLabel}>Match Score</span>
               <div style={drawerStyles.scoreBar}>
@@ -2490,6 +2533,54 @@ function ApplicationPreviewDrawer({
                 {item.matchScore}%
               </span>
             </div>
+
+            {/* Dimension breakdown bars */}
+            {item.dimensions && (
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 6,
+                marginTop: 12,
+                padding: '10px 12px',
+                background: 'rgba(255,255,255,0.02)',
+                borderRadius: 6,
+                border: '1px solid var(--border)',
+              }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 2, textTransform: 'uppercase' as const, letterSpacing: '0.03em' }}>
+                  Score Breakdown
+                </span>
+                {DIMENSION_META.map(({ key, label, max }) => {
+                  const value = item.dimensions![key]
+                  const pct = Math.round((value / max) * 100)
+                  const barColor = pct >= 70 ? '#34d399' : pct >= 40 ? '#fbbf24' : '#f43f5e'
+                  return (
+                    <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 11, color: 'var(--text-secondary)', width: 80, flexShrink: 0, textAlign: 'right' as const }}>
+                        {label}
+                      </span>
+                      <div style={{
+                        flex: 1,
+                        height: 6,
+                        borderRadius: 3,
+                        background: 'rgba(255,255,255,0.06)',
+                        overflow: 'hidden',
+                      }}>
+                        <div style={{
+                          width: `${pct}%`,
+                          height: '100%',
+                          borderRadius: 3,
+                          background: barColor,
+                          transition: 'width 0.3s ease',
+                        }} />
+                      </div>
+                      <span style={{ fontSize: 11, color: 'var(--text-secondary)', width: 38, flexShrink: 0 }}>
+                        {value}/{max}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
         </div>
 
@@ -4497,6 +4588,29 @@ export function AutopilotView() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [polledRunStatus, activeRunType])
+
+  // ---- Auto-transition: if parent returned applyChildRunId, start polling the child ----
+  // The parent (apply-job-pipeline) fires apply-jobs as fire-and-forget and returns
+  // applyChildRunId. The frontend picks this up and begins polling the child directly,
+  // so apply stats flow through the child's own Trigger.dev run + Supabase writes.
+  useEffect(() => {
+    if (polledRunStatus !== 'COMPLETED') return
+    if (activeRunType !== 'search') return
+    const childRunId = polledRunOutput?.applyChildRunId as string | null | undefined
+    if (!childRunId) return
+    console.log(`[AutopilotView] Parent returned applyChildRunId=${childRunId} — auto-transitioning to poll child apply-jobs`)
+    // Mark all pending review items as 'submitting' since the child is already applying
+    setReviewQueue(prev => prev.map(item =>
+      item.status === 'pending' ? { ...item, status: 'submitting' as const, submittingStartedAt: Date.now() } : item
+    ))
+    setActiveRunId(childRunId)
+    setApplyRunId(childRunId)
+    setActiveRunType('apply')
+    setRunStartTime(Date.now())
+    setPolledRunStatus(null) // reset so polling starts fresh for the child
+    setPolledRunOutput(null)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [polledRunStatus, activeRunType, polledRunOutput])
 
   // ---- Handle apply-jobs completion: update 'submitting' items to final status ----
   useEffect(() => {
