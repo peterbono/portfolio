@@ -18,8 +18,25 @@ import type { CoverLetterVariant } from '../types/intelligence'
 import { VARIANT_PROMPTS } from '../types/intelligence'
 
 // ---------------------------------------------------------------------------
-// Types — shared output shape for all qualification paths
+// Types — multi-dimensional scoring + shared output shape
 // ---------------------------------------------------------------------------
+
+export interface ScoreDimensions {
+  roleFit: number            // 0-25
+  industryMatch: number      // 0-15
+  skillOverlap: number       // 0-20
+  locationFit: number        // 0-15
+  compensationSignal: number // 0-10
+  growthOpportunity: number  // 0-15
+}
+
+export type RoleArchetype =
+  | 'systems'      // Design Systems / Design Ops
+  | 'research'     // UX Research heavy
+  | 'visual'       // Visual / UI Design
+  | 'product'      // Generalist Product Designer
+  | 'leadership'   // Lead / Manager / Head of
+  | 'strategy'     // Strategist / Service Design
 
 export interface QualificationResult {
   score: number // 0-100
@@ -31,6 +48,9 @@ export interface QualificationResult {
   reasoning: string
   coverLetterSnippet: string
   coverLetterVariant?: CoverLetterVariant
+  dimensions?: ScoreDimensions   // optional — old cached results won't have this
+  archetype?: RoleArchetype
+  jdKeywords?: string[]          // top 5 keywords from JD for CV tailoring
 }
 
 /** Configuration for how the qualifier behaves */
@@ -236,9 +256,21 @@ STYLE DIRECTIVE: ${variantStyle}
 
 ═══════════════════════════════════════════════
 
+Also detect the role archetype (systems | research | visual | product | leadership | strategy) and extract the top 5 keywords from the JD that are most relevant for CV tailoring.
+
 Respond ONLY with valid JSON:
 {
   "score": number,
+  "dimensions": {
+    "roleFit": number,
+    "industryMatch": number,
+    "skillOverlap": number,
+    "locationFit": number,
+    "compensationSignal": number,
+    "growthOpportunity": number
+  },
+  "archetype": "systems" | "research" | "visual" | "product" | "leadership" | "strategy",
+  "jdKeywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"],
   "isDesignRole": boolean,
   "seniorityMatch": boolean,
   "locationCompatible": boolean,
@@ -246,7 +278,9 @@ Respond ONLY with valid JSON:
   "skillsMatch": boolean,
   "reasoning": "1-2 sentence explanation",
   "coverLetterSnippet": "2-3 sentences following the rules above"
-}`
+}
+
+"score" MUST equal the sum of all 6 dimension values. Each dimension must respect its max: roleFit<=25, industryMatch<=15, skillOverlap<=20, locationFit<=15, compensationSignal<=10, growthOpportunity<=15.`
 }
 
 // ---------------------------------------------------------------------------
@@ -273,6 +307,56 @@ export function parseHaikuResponse(response: Anthropic.Message): Omit<Qualificat
   }
 
   const parsed = JSON.parse(jsonStr) as QualificationResult
+
+  // Validate and clamp dimensions if present
+  if (parsed.dimensions && typeof parsed.dimensions === 'object') {
+    const d = parsed.dimensions
+    const DIMENSION_CAPS: Record<keyof ScoreDimensions, number> = {
+      roleFit: 25,
+      industryMatch: 15,
+      skillOverlap: 20,
+      locationFit: 15,
+      compensationSignal: 10,
+      growthOpportunity: 15,
+    }
+    for (const [key, max] of Object.entries(DIMENSION_CAPS) as [keyof ScoreDimensions, number][]) {
+      if (typeof d[key] === 'number') {
+        d[key] = Math.max(0, Math.min(max, d[key]))
+      } else {
+        // Dimension field missing or non-numeric — drop dimensions entirely
+        parsed.dimensions = undefined
+        break
+      }
+    }
+    // Reconcile score = sum of dimensions when dimensions are valid
+    if (parsed.dimensions) {
+      const sum = d.roleFit + d.industryMatch + d.skillOverlap
+        + d.locationFit + d.compensationSignal + d.growthOpportunity
+      parsed.score = sum
+    }
+  } else {
+    parsed.dimensions = undefined
+  }
+
+  // Validate archetype — must be one of the allowed values
+  const VALID_ARCHETYPES: RoleArchetype[] = ['systems', 'research', 'visual', 'product', 'leadership', 'strategy']
+  if (parsed.archetype && !VALID_ARCHETYPES.includes(parsed.archetype)) {
+    parsed.archetype = undefined
+  }
+
+  // Validate jdKeywords — must be an array of strings
+  if (parsed.jdKeywords) {
+    if (!Array.isArray(parsed.jdKeywords)) {
+      parsed.jdKeywords = undefined
+    } else {
+      parsed.jdKeywords = parsed.jdKeywords
+        .filter((k): k is string => typeof k === 'string')
+        .slice(0, 5)
+      if (parsed.jdKeywords.length === 0) {
+        parsed.jdKeywords = undefined
+      }
+    }
+  }
 
   // Clamp score to 0-100
   parsed.score = Math.max(0, Math.min(100, parsed.score))

@@ -41,6 +41,7 @@ import { usePlan } from '../hooks/usePlan'
 import { useUI } from '../context/UIContext'
 import { useJobs } from '../context/JobsContext'
 import type { BotActivityItem, BotRunStatus } from '../hooks/useBotActivity'
+import type { ScoreDimensions, RoleArchetype } from '../bot/qualifier-core'
 import { triggerBotRun, triggerApplyJobs, type BatchApplyProgress } from '../lib/bot-api'
 import { supabase } from '../lib/supabase'
 import { useAuthWall } from '../hooks/useAuthWall'
@@ -345,6 +346,12 @@ interface ReviewQueueItem {
   jobUrl?: string
   /** Reason for failure/skip/needs_manual — stored from extension or cloud apply results */
   failReason?: string
+  /** Multi-dimensional score breakdown from qualifier */
+  dimensions?: ScoreDimensions
+  /** Role archetype classification */
+  archetype?: RoleArchetype
+  /** Top JD keywords for CV tailoring */
+  jdKeywords?: string[]
 }
 
 interface DiscoveredJob {
@@ -365,6 +372,9 @@ interface QualifiedJob {
   matchReasons: string[]
   coverLetterSnippet: string
   coverLetterVariant?: string
+  dimensions?: ScoreDimensions
+  archetype?: RoleArchetype
+  jdKeywords?: string[]
 }
 
 const REVIEW_LS_KEY = 'tracker_v2_review_queue'
@@ -1853,6 +1863,7 @@ function ApplicationReviewCard({
   onPreview?: (id: string) => void
   onMarkSubmitted?: (id: string) => void
 }) {
+  const [dimExpanded, setDimExpanded] = useState(false)
   const scoreColor =
     item.matchScore > 70 ? '#34d399' : item.matchScore >= 50 ? '#fbbf24' : '#f43f5e'
   const scoreBg =
@@ -1862,9 +1873,27 @@ function ApplicationReviewCard({
         ? 'rgba(251, 191, 36, 0.12)'
         : 'rgba(244, 63, 94, 0.12)'
 
+  const ARCHETYPE_LABELS: Record<string, { label: string; color: string }> = {
+    systems:    { label: 'Systems',    color: '#a78bfa' },
+    research:   { label: 'Research',   color: '#67e8f9' },
+    visual:     { label: 'Visual',     color: '#f9a8d4' },
+    product:    { label: 'Product',    color: '#60a5fa' },
+    leadership: { label: 'Leadership', color: '#fbbf24' },
+    strategy:   { label: 'Strategy',   color: '#34d399' },
+  }
+
+  const DIMENSION_META: { key: keyof ScoreDimensions; label: string; max: number }[] = [
+    { key: 'roleFit',             label: 'Role Fit',     max: 25 },
+    { key: 'industryMatch',       label: 'Industry',     max: 15 },
+    { key: 'skillOverlap',        label: 'Skills',       max: 20 },
+    { key: 'locationFit',         label: 'Location',     max: 15 },
+    { key: 'compensationSignal',  label: 'Comp Signal',  max: 10 },
+    { key: 'growthOpportunity',   label: 'Growth',       max: 15 },
+  ]
+
   return (
     <div style={reviewStyles.card}>
-      {/* Top row: company + score */}
+      {/* Top row: company + score + archetype */}
       <div style={reviewStyles.cardTop}>
         <div style={reviewStyles.cardInfo}>
           <span style={reviewStyles.cardCompany}>{item.company}</span>
@@ -1886,23 +1915,118 @@ function ApplicationReviewCard({
             )}
           </span>
         </div>
-        <div
-          style={{
-            ...reviewStyles.scoreBadge,
-            color: scoreColor,
-            background: scoreBg,
-            border: `1px solid ${scoreColor}33`,
-          }}
-        >
-          <Shield size={12} />
-          <span>{item.matchScore}%</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {/* Archetype badge pill */}
+          {item.archetype && ARCHETYPE_LABELS[item.archetype] && (
+            <span
+              style={{
+                fontSize: 10,
+                fontWeight: 600,
+                padding: '2px 8px',
+                borderRadius: 9999,
+                color: ARCHETYPE_LABELS[item.archetype].color,
+                background: `${ARCHETYPE_LABELS[item.archetype].color}18`,
+                border: `1px solid ${ARCHETYPE_LABELS[item.archetype].color}33`,
+                whiteSpace: 'nowrap' as const,
+                textTransform: 'uppercase' as const,
+                letterSpacing: '0.04em',
+              }}
+            >
+              {ARCHETYPE_LABELS[item.archetype].label}
+            </span>
+          )}
+          {/* Score badge */}
+          <div
+            style={{
+              ...reviewStyles.scoreBadge,
+              color: scoreColor,
+              background: scoreBg,
+              border: `1px solid ${scoreColor}33`,
+              cursor: item.dimensions ? 'pointer' : 'default',
+            }}
+            onClick={() => item.dimensions && setDimExpanded(prev => !prev)}
+            title={item.dimensions ? 'Click to expand score breakdown' : undefined}
+          >
+            <Shield size={12} />
+            <span>{item.matchScore}%</span>
+            {item.dimensions && (
+              <ChevronDown
+                size={10}
+                style={{
+                  marginLeft: 2,
+                  transition: 'transform 0.2s',
+                  transform: dimExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                }}
+              />
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Match reasons */}
+      {/* Score dimensions breakdown (expandable) */}
+      {item.dimensions && dimExpanded && (
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 4,
+          padding: '8px 10px',
+          background: 'rgba(255,255,255,0.02)',
+          borderRadius: 6,
+          border: '1px solid var(--border)',
+        }}>
+          {DIMENSION_META.map(({ key, label, max }) => {
+            const value = item.dimensions![key]
+            const pct = Math.round((value / max) * 100)
+            const barColor = pct >= 70 ? '#34d399' : pct >= 40 ? '#fbbf24' : '#f43f5e'
+            return (
+              <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 10, color: 'var(--text-secondary)', width: 72, flexShrink: 0, textAlign: 'right' as const }}>
+                  {label}
+                </span>
+                <div style={{
+                  flex: 1,
+                  height: 6,
+                  borderRadius: 3,
+                  background: 'rgba(255,255,255,0.06)',
+                  overflow: 'hidden',
+                }}>
+                  <div style={{
+                    width: `${pct}%`,
+                    height: '100%',
+                    borderRadius: 3,
+                    background: barColor,
+                    transition: 'width 0.3s ease',
+                  }} />
+                </div>
+                <span style={{ fontSize: 10, color: 'var(--text-secondary)', width: 34, flexShrink: 0 }}>
+                  {value}/{max}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Match reasons + JD keyword tags */}
       <div style={reviewStyles.reasonsWrap}>
         {item.matchReasons.map((reason, i) => (
           <span key={i} style={reviewStyles.reasonChip}>{reason}</span>
+        ))}
+        {item.jdKeywords && item.jdKeywords.length > 0 && item.jdKeywords.map((kw, i) => (
+          <span
+            key={`kw-${i}`}
+            style={{
+              fontSize: 10,
+              padding: '2px 7px',
+              borderRadius: 12,
+              background: 'rgba(167, 139, 250, 0.10)',
+              color: '#c4b5fd',
+              border: '1px solid rgba(167, 139, 250, 0.18)',
+              whiteSpace: 'nowrap' as const,
+            }}
+          >
+            {kw}
+          </span>
         ))}
       </div>
 
@@ -4360,6 +4484,9 @@ export function AutopilotView() {
           coverLetterVariant: qJob?.coverLetterVariant,
           status: 'pending' as const,
           jobUrl: job.url,
+          dimensions: qJob?.dimensions,
+          archetype: qJob?.archetype,
+          jdKeywords: qJob?.jdKeywords,
         }
       })
 
@@ -4784,8 +4911,21 @@ export function AutopilotView() {
   }, [emitFeedbackSignal, applyFilter])
 
   const handleReviewSkipAll = useCallback(() => {
+    // P0 FIX: Only skip items that match the currently active filter pill.
+    // Previously this skipped every pending item in the queue regardless of
+    // whether the user was viewing "All", "Auto-Apply", or "Direct-Apply".
+    const matchesApplyFilter = (jobUrl: string | undefined) => {
+      if (applyFilter === 'all') return true
+      const c = classifyJobUrl(jobUrl || '')
+      if (applyFilter === 'auto') return c === 'auto_apply' || c === 'linkedin'
+      return c === 'direct_apply'
+    }
     setReviewQueue(prev => {
-      const updated = prev.map(item => item.status === 'pending' ? { ...item, status: 'skipped' as const } : item)
+      const updated = prev.map(item =>
+        item.status === 'pending' && matchesApplyFilter(item.jobUrl)
+          ? { ...item, status: 'skipped' as const }
+          : item
+      )
       // Record signals for all newly skipped items
       updated.filter(i => i.status === 'skipped').forEach(item => {
         const wasPending = prev.find(p => p.id === item.id)?.status === 'pending'
@@ -4797,7 +4937,7 @@ export function AutopilotView() {
       })
       return updated
     })
-  }, [emitFeedbackSignal])
+  }, [emitFeedbackSignal, applyFilter])
 
   const handleReviewPreview = useCallback((id: string) => {
     setPreviewItemId(id)

@@ -4,7 +4,7 @@ import { classifyJobUrl } from "../lib/classify-job-url"
 export const applyJobTask = task({
   id: "apply-job-pipeline",
   machine: "large-1x", // 4 vCPU, 8 GB RAM — needed for 86+ JD extractions with local Chromium
-  maxDuration: 1800, // 30 minutes — multi-source scout + qualify + SBR reconnect overhead
+  maxDuration: 3600, // 60 minutes — scout+qualify (~15min) + triggerAndWait for apply-jobs (~30min)
   run: async (payload: {
     userId: string
     maxApplications?: number
@@ -224,9 +224,19 @@ export const applyJobTask = task({
 
           // Only trigger cloud apply if there are auto_apply jobs to process
           if (autoApplyJobs.length > 0) {
-            const handle = await tasks.trigger("apply-jobs", applyJobsPayload)
-            console.log(`[apply-job-pipeline] Triggered apply-jobs: ${handle.id} (${autoApplyJobs.length} auto_apply jobs, ${directApplyJobs.length} direct_apply)`)
-            applyResult = { applied: -1, failed: -1, needsManual: directApplyJobs.length } // -1 = in progress
+            const childResult = await tasks.triggerAndWait("apply-jobs", applyJobsPayload)
+            if (childResult.ok) {
+              const output = childResult.output as import('./apply-jobs').ApplyJobsOutput
+              console.log(`[apply-job-pipeline] apply-jobs completed: ${output.applied} applied, ${output.failed} failed, ${output.needsManual} manual (run: ${childResult.id})`)
+              applyResult = {
+                applied: output.applied,
+                failed: output.failed,
+                needsManual: output.needsManual + directApplyJobs.length,
+              }
+            } else {
+              console.error(`[apply-job-pipeline] apply-jobs child task failed (run: ${childResult.id}):`, childResult.error)
+              applyResult = { applied: 0, failed: autoApplyJobs.length, needsManual: directApplyJobs.length }
+            }
           } else {
             console.log(`[apply-job-pipeline] No auto_apply jobs — ${directApplyJobs.length} direct_apply, ${skippedLinkedIn} LinkedIn`)
             applyResult = { applied: 0, failed: 0, needsManual: directApplyJobs.length }
