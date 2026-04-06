@@ -10,7 +10,8 @@
     "cookies",
     "storage",
     "tabs",
-    "scripting"
+    "scripting",
+    "alarms"
   ],
   "host_permissions": [
     "https://*.linkedin.com/*",

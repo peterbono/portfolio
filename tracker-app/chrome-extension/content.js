@@ -1,10 +1,11 @@
 /**
- * JobTracker LinkedIn Connect — Content Script v2.2.0
+ * JobTracker LinkedIn Connect — Content Script v2.3.0
  *
  * Injected into tracker-app-lyart.vercel.app and localhost dev servers.
  * Bridges communication between the web app and the extension's background
  * service worker via window.postMessage + chrome.runtime.sendMessage.
  *
+ * v2.3.0: Add bidirectional pipeline message relay (JOBTRACKER_PIPELINE_*).
  * v2.1.0: Guard against double-injection after extension reload re-injection.
  */
 
@@ -14,7 +15,7 @@ if (window._jobTrackerContentLoaded) {
 } else {
 window._jobTrackerContentLoaded = true
 
-console.log('[JobTracker Extension] Content script v2.2.0 loaded — batch apply with requestId')
+console.log('[JobTracker Extension] Content script v2.3.0 loaded — batch apply + pipeline relay')
 
 // ─── Listen for requests from the web app ───────────────────────────────────
 
@@ -175,6 +176,49 @@ window.addEventListener('message', (event) => {
         console.warn('[JobTracker Extension] Reload failed:', chrome.runtime.lastError.message)
       }
     })
+  }
+
+  // ─── Pipeline messages: Dashboard → Extension ──────────────────────────────
+  // Maps postMessage types to background.js action names
+  const pipelineActionMap = {
+    'JOBTRACKER_START_PIPELINE': 'startPipeline',
+    'JOBTRACKER_SUBMIT_APPROVED': 'submitApprovedJobs',
+    'JOBTRACKER_CANCEL_PIPELINE': 'cancelPipeline',
+    'JOBTRACKER_GET_PIPELINE_STATE': 'getPipelineState',
+  }
+
+  const msgType = event.data?.type
+  if (msgType && pipelineActionMap[msgType]) {
+    const { type, ...payload } = event.data
+    const action = pipelineActionMap[msgType]
+    console.log('[JobTracker Extension] Pipeline relay → background:', msgType, '→', action)
+
+    chrome.runtime.sendMessage({ action, ...payload }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.warn('[JobTracker Extension] Pipeline relay error:', chrome.runtime.lastError.message)
+        window.postMessage({ type: msgType + '_RESPONSE', success: false, error: chrome.runtime.lastError.message }, '*')
+        return
+      }
+      if (response) {
+        window.postMessage({ type: msgType + '_RESPONSE', ...response }, '*')
+      }
+    })
+  }
+})
+
+// ─── Pipeline messages: Extension → Dashboard ──────────────────────────────
+// Relay JOBTRACKER_PIPELINE_PROGRESS, JOBTRACKER_PIPELINE_COMPLETE,
+// and any future JOBTRACKER_PIPELINE_* messages from background to the page
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  const pipelineInboundTypes = [
+    'JOBTRACKER_PIPELINE_PROGRESS',
+    'JOBTRACKER_PIPELINE_COMPLETE',
+  ]
+  const msgType = message?.type
+  if (msgType && (pipelineInboundTypes.includes(msgType) || msgType.startsWith('JOBTRACKER_PIPELINE_'))) {
+    console.log('[JobTracker Extension] Pipeline relay → dashboard:', msgType)
+    window.postMessage(message, '*')
+    sendResponse({ received: true })
   }
 })
 

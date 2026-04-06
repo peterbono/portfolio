@@ -976,4 +976,130 @@ export async function triggerEnrichProfile(
   const data = await response.json()
   return { runId: data.id }
 }
+// ---------------------------------------------------------------------------
+// Extension Pipeline: full scout → qualify → review flow via Chrome extension
+// ---------------------------------------------------------------------------
+
+export type PipelinePhase = 'scouting' | 'qualifying' | 'ready_for_review' | 'applying' | 'complete' | 'error'
+
+export interface PipelineProgressEvent {
+  pipelineId: string
+  phase: PipelinePhase
+  message: string
+  jobs?: Array<{
+    title: string
+    company: string
+    location: string
+    url: string
+    isEasyApply?: boolean
+  }>
+  qualifiedJobs?: Array<{
+    title: string
+    company: string
+    location: string
+    url: string
+    isEasyApply?: boolean
+    score: number
+    matchReasons: string[]
+    coverLetterSnippet: string
+    coverLetterVariant?: string
+  }>
+  stats?: {
+    jobsFound?: number
+    jobsQualified?: number
+    jobsProcessed?: number
+    jobsPreFiltered?: number
+    phase?: string
+  }
+}
+
+/**
+ * Trigger the full extension pipeline (scout → qualify → review).
+ * Sends JOBTRACKER_START_PIPELINE via postMessage to the content script,
+ * which relays to background.js for orchestration.
+ *
+ * Requires the extension to be installed (check isExtensionInstalled() first).
+ * Returns a pipelineId that can be used to track progress via onPipelineProgress().
+ */
+export async function triggerExtensionPipeline(config: {
+  keywords: string[]
+  location: string
+  excludedCompanies: string[]
+  minScore: number
+  profile: Record<string, unknown>
+  searchProfile: Record<string, unknown>
+}): Promise<{ pipelineId: string }> {
+  const pipelineId = `ext-pipeline-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+
+  console.log(`[bot-api] Triggering extension pipeline: ${pipelineId}`, {
+    keywords: config.keywords,
+    location: config.location,
+    excludedCompanies: config.excludedCompanies.length,
+    minScore: config.minScore,
+  })
+
+  window.postMessage({
+    type: 'JOBTRACKER_START_PIPELINE',
+    pipelineId,
+    keywords: config.keywords,
+    location: config.location,
+    excludedCompanies: config.excludedCompanies,
+    minScore: config.minScore,
+    profile: config.profile,
+    searchProfile: config.searchProfile,
+  }, '*')
+
+  return { pipelineId }
+}
+
+/**
+ * Listen for JOBTRACKER_PIPELINE_PROGRESS messages from the Chrome extension.
+ * The extension sends these as it progresses through pipeline phases.
+ *
+ * Returns a cleanup function to remove the listener.
+ */
+export function onPipelineProgress(
+  callback: (event: PipelineProgressEvent) => void,
+): () => void {
+  function handler(event: MessageEvent) {
+    if (event.source !== window) return
+    if (event.data?.type !== 'JOBTRACKER_PIPELINE_PROGRESS') return
+
+    const data = event.data as {
+      type: string
+      pipelineId: string
+      phase: PipelinePhase
+      message: string
+      jobs?: PipelineProgressEvent['jobs']
+      qualifiedJobs?: PipelineProgressEvent['qualifiedJobs']
+      stats?: PipelineProgressEvent['stats']
+    }
+
+    console.log(`[bot-api] Pipeline progress: phase=${data.phase}, message=${data.message}`, {
+      pipelineId: data.pipelineId,
+      jobsCount: data.jobs?.length,
+      qualifiedCount: data.qualifiedJobs?.length,
+      stats: data.stats,
+    })
+
+    callback({
+      pipelineId: data.pipelineId,
+      phase: data.phase,
+      message: data.message,
+      jobs: data.jobs,
+      qualifiedJobs: data.qualifiedJobs,
+      stats: data.stats,
+    })
+  }
+
+  window.addEventListener('message', handler)
+  return () => window.removeEventListener('message', handler)
+}
+
+/**
+ * Check if the Chrome extension is installed and available for pipeline use.
+ * Re-exported for consumer convenience (wraps internal isExtensionInstalled).
+ */
+export { isExtensionInstalled as checkExtensionInstalled }
+
 // Build: 1775322286

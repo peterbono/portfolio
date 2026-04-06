@@ -42,7 +42,16 @@ import { useUI } from '../context/UIContext'
 import { useJobs } from '../context/JobsContext'
 import type { BotActivityItem, BotRunStatus } from '../hooks/useBotActivity'
 import type { ScoreDimensions, RoleArchetype } from '../bot/qualifier-core'
-import { triggerBotRun, triggerApplyJobs, type BatchApplyProgress } from '../lib/bot-api'
+import {
+  triggerBotRun,
+  triggerApplyJobs,
+  triggerExtensionPipeline,
+  onPipelineProgress,
+  checkExtensionInstalled,
+  type BatchApplyProgress,
+  type PipelineProgressEvent,
+  type PipelinePhase,
+} from '../lib/bot-api'
 import { supabase } from '../lib/supabase'
 import { useAuthWall } from '../hooks/useAuthWall'
 import { useSupabase } from '../context/SupabaseContext'
@@ -4072,6 +4081,13 @@ export function AutopilotView() {
   // Cycling subtitle index for rotating through recent activities
   const [subtitleCycleIdx, setSubtitleCycleIdx] = useState(0)
 
+  // Extension pipeline state — tracks whether we're using the Chrome extension or Trigger.dev cloud
+  const [pipelineMode, setPipelineMode] = useState<'extension' | 'cloud' | null>(null)
+  const [extensionPipelineId, setExtensionPipelineId] = useState<string | null>(null)
+  const [extensionPipelinePhase, setExtensionPipelinePhase] = useState<PipelinePhase | null>(null)
+  const [extensionPipelineMessage, setExtensionPipelineMessage] = useState<string | null>(null)
+  const pipelineCleanupRef = useRef<(() => void) | null>(null)
+
   // Review queue state
   const [reviewQueue, setReviewQueue] = useState<ReviewQueueItem[]>(() => loadReviewQueue())
   const [isReviewDemo] = useState(false)
@@ -4318,7 +4334,8 @@ export function AutopilotView() {
   const { requireAuth } = useAuthWall()
 
   // Core bot run logic (called after auth check)
-  // Pass 'search_config' as profileId — the backend resolves the single config
+  // Detects Chrome extension availability: if installed, routes through extension pipeline;
+  // otherwise falls back to Trigger.dev cloud.
   const doStartBot = useCallback(async () => {
     if (!hasConfig) return
     setIsTriggering(true)
@@ -4330,6 +4347,16 @@ export function AutopilotView() {
     setPolledRunStatus(null)
     setPolledRunOutput(null)
     setPolledMetadata(null)
+    // Reset extension pipeline state
+    setExtensionPipelineId(null)
+    setExtensionPipelinePhase(null)
+    setExtensionPipelineMessage(null)
+    setPipelineMode(null)
+    // Clean up previous pipeline progress listener
+    if (pipelineCleanupRef.current) {
+      pipelineCleanupRef.current()
+      pipelineCleanupRef.current = null
+    }
     // Clean up stale review queue items from previous runs:
     // - "submitting" items (stuck from a previous apply) → revert to "approved"
     // - "submitted" items → remove from queue (already done)
@@ -4341,12 +4368,156 @@ export function AutopilotView() {
         .filter(i => i.status !== 'submitted') // Remove completed items
         .map(i => i.status === 'submitting' ? { ...i, status: 'approved' as const, submittingStartedAt: undefined } : i) // Revert stuck items
     })
+
     try {
-      const result = await triggerBotRun('search_config')
-      // Start polling
-      setActiveRunId(result.runId)
-      setRunStartTime(Date.now())
-      setPolledRunStatus('QUEUED')
+      // Detect Chrome extension — if available, use extension pipeline
+      const extensionAvailable = await checkExtensionInstalled()
+
+      if (extensionAvailable) {
+        // ── Extension pipeline path ──────────────────────────────────────
+        console.log('[doStartBot] Chrome extension detected — using extension pipeline')
+        setPipelineMode('extension')
+
+        // Build location string from search config location rules
+        const locationStr = searchConfig.locationRules
+          .map(r => r.value)
+          .filter(Boolean)
+          .join(', ') || 'Remote'
+
+        // Load user profile + enriched profile for the extension
+        const userProfile = (() => {
+          try {
+            const raw = localStorage.getItem('tracker_v2_user_profile')
+            return raw ? JSON.parse(raw) : {}
+          } catch { return {} }
+        })()
+        const enrichedProfile = (() => {
+          try {
+            const raw = localStorage.getItem('tracker_v2_enriched_profile')
+            return raw ? JSON.parse(raw) : {}
+          } catch { return {} }
+        })()
+
+        const result = await triggerExtensionPipeline({
+          keywords: searchConfig.keywords,
+          location: locationStr,
+          excludedCompanies: searchConfig.excludedCompanies,
+          minScore: 50, // Default minimum qualification score
+          profile: { ...userProfile, ...enrichedProfile },
+          searchProfile: {
+            keywords: searchConfig.keywords,
+            locationRules: searchConfig.locationRules,
+            excludedCompanies: searchConfig.excludedCompanies,
+            dailyLimit: searchConfig.dailyLimit,
+          },
+        })
+
+        setExtensionPipelineId(result.pipelineId)
+        setExtensionPipelinePhase('scouting')
+        setExtensionPipelineMessage('Starting extension pipeline...')
+        setRunStartTime(Date.now())
+        // Set a synthetic run status so the progress banner shows
+        setPolledRunStatus('EXECUTING')
+        setPolledMetadata({ phase: 'scout', jobsFound: 0 })
+
+        // Register pipeline progress listener
+        const cleanup = onPipelineProgress((event: PipelineProgressEvent) => {
+          // Only process events for our pipeline
+          if (event.pipelineId !== result.pipelineId) return
+
+          setExtensionPipelinePhase(event.phase)
+          setExtensionPipelineMessage(event.message)
+
+          // Map extension phases to polledMetadata for progress banner compatibility
+          const phaseMap: Record<PipelinePhase, string> = {
+            scouting: 'scout',
+            qualifying: 'qualify',
+            ready_for_review: 'done',
+            applying: 'apply',
+            complete: 'done',
+            error: 'error',
+          }
+          setPolledMetadata(prev => ({
+            ...prev,
+            phase: phaseMap[event.phase] || event.phase,
+            jobsFound: event.stats?.jobsFound ?? prev?.jobsFound,
+            jobsProcessed: event.stats?.jobsProcessed ?? prev?.jobsProcessed,
+            jobsQualified: event.stats?.jobsQualified ?? prev?.jobsQualified,
+            jobsPreFiltered: event.stats?.jobsPreFiltered ?? prev?.jobsPreFiltered,
+          }))
+
+          // When qualifying phase sends partial results, update jobs found count
+          if (event.stats?.jobsFound != null) {
+            setPolledMetadata(prev => ({ ...prev, jobsFound: event.stats!.jobsFound }))
+          }
+
+          // When ready_for_review: populate the review queue from qualified jobs
+          if (event.phase === 'ready_for_review' && event.qualifiedJobs && event.qualifiedJobs.length > 0) {
+            console.log(`[doStartBot] Extension pipeline ready_for_review: ${event.qualifiedJobs.length} qualified jobs`)
+
+            // Build output object so the existing discoveredJobs useEffect can process them
+            setPolledRunOutput({
+              qualifiedJobs: event.qualifiedJobs.map(j => ({
+                title: j.title,
+                company: j.company,
+                location: j.location,
+                url: j.url,
+                isEasyApply: j.isEasyApply,
+                score: j.score,
+                matchReasons: j.matchReasons,
+                coverLetterSnippet: j.coverLetterSnippet,
+                coverLetterVariant: j.coverLetterVariant,
+              })),
+              jobsFound: event.stats?.jobsFound ?? event.qualifiedJobs.length,
+              jobsQualified: event.qualifiedJobs.length,
+            })
+            // Mark run as completed so the existing useEffect kicks in
+            setPolledRunStatus('COMPLETED')
+          }
+
+          // Handle completion
+          if (event.phase === 'complete') {
+            setPolledRunStatus('COMPLETED')
+            // If we got qualified jobs with the complete event, set them too
+            if (event.qualifiedJobs && event.qualifiedJobs.length > 0) {
+              setPolledRunOutput(prev => ({
+                ...prev,
+                qualifiedJobs: event.qualifiedJobs!.map(j => ({
+                  title: j.title,
+                  company: j.company,
+                  location: j.location,
+                  url: j.url,
+                  isEasyApply: j.isEasyApply,
+                  score: j.score,
+                  matchReasons: j.matchReasons,
+                  coverLetterSnippet: j.coverLetterSnippet,
+                  coverLetterVariant: j.coverLetterVariant,
+                })),
+                jobsQualified: event.qualifiedJobs!.length,
+              }))
+            }
+          }
+
+          // Handle error
+          if (event.phase === 'error') {
+            setPolledRunStatus('FAILED')
+            setTriggerError(event.message || 'Extension pipeline failed')
+            notifyBotError({ errorMessage: event.message, runId: result.pipelineId })
+          }
+        })
+
+        pipelineCleanupRef.current = cleanup
+      } else {
+        // ── Trigger.dev cloud fallback ───────────────────────────────────
+        console.log('[doStartBot] No extension detected — using Trigger.dev cloud')
+        setPipelineMode('cloud')
+
+        const result = await triggerBotRun('search_config')
+        // Start polling
+        setActiveRunId(result.runId)
+        setRunStartTime(Date.now())
+        setPolledRunStatus('QUEUED')
+      }
     } catch (err) {
       const errMsg = (err as Error).message
       setTriggerError(errMsg)
@@ -4355,9 +4526,20 @@ export function AutopilotView() {
     } finally {
       setIsTriggering(false)
     }
-  }, [hasConfig])
+  }, [hasConfig, searchConfig])
+
+  // ---- Cleanup extension pipeline listener on unmount ----
+  useEffect(() => {
+    return () => {
+      if (pipelineCleanupRef.current) {
+        pipelineCleanupRef.current()
+        pipelineCleanupRef.current = null
+      }
+    }
+  }, [])
 
   // ---- Trigger.dev run polling via Vercel proxy (every 5s) -----------
+  // Skip polling when running extension pipeline (no activeRunId needed)
   useEffect(() => {
     if (!activeRunId) return
     const TERMINAL = ['COMPLETED', 'FAILED', 'CRASHED', 'CANCELED', 'SYSTEM_FAILURE', 'TIMED_OUT']
@@ -4872,8 +5054,9 @@ export function AutopilotView() {
     return () => clearTimeout(timer)
   }, [reviewQueue])
 
-  // Derived: is a polled run actively in progress
-  const isRunPolling = activeRunId !== null
+  // Derived: is a polled run actively in progress (includes extension pipeline)
+  const isExtensionPipelineActive = extensionPipelineId !== null && extensionPipelinePhase !== null && extensionPipelinePhase !== 'complete' && extensionPipelinePhase !== 'error'
+  const isRunPolling = activeRunId !== null || isExtensionPipelineActive
   const isRunTerminal = polledRunStatus === 'COMPLETED' || polledRunStatus === 'FAILED' || polledRunStatus === 'CRASHED' || polledRunStatus === 'TIMED_OUT'
 
   // Don't show stale terminal banners on initial load — only show if run is recent (< 5 min)
@@ -5622,6 +5805,15 @@ export function AutopilotView() {
               setPolledRunOutput(null)
               setPolledMetadata(null)
               setApplyRunId(null)
+              // Clean up extension pipeline state
+              if (pipelineCleanupRef.current) {
+                pipelineCleanupRef.current()
+                pipelineCleanupRef.current = null
+              }
+              setExtensionPipelineId(null)
+              setExtensionPipelinePhase(null)
+              setExtensionPipelineMessage(null)
+              setPipelineMode(null)
               // Revert any "submitting" items back to "approved" so user can retry
               setReviewQueue(prev => prev.map(item =>
                 item.status === 'submitting' ? { ...item, status: 'approved' as const, submittingStartedAt: undefined } : item
@@ -5638,6 +5830,43 @@ export function AutopilotView() {
               <Square size={14} />
               <span>Stop</span>
             </button>
+          )}
+
+          {/* ─── Pipeline mode indicator ─── */}
+          {pipelineMode && (isRunPolling || isTriggering) && (
+            <span
+              title={pipelineMode === 'extension'
+                ? `Extension pipeline${extensionPipelinePhase ? ` (${extensionPipelinePhase})` : ''}`
+                : 'Cloud pipeline (Trigger.dev)'}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '3px 8px',
+                borderRadius: 6,
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: 0.2,
+                background: pipelineMode === 'extension'
+                  ? 'rgba(52, 211, 153, 0.10)'
+                  : 'rgba(96, 165, 250, 0.10)',
+                color: pipelineMode === 'extension' ? '#34d399' : '#60a5fa',
+                border: `1px solid ${pipelineMode === 'extension' ? 'rgba(52, 211, 153, 0.25)' : 'rgba(96, 165, 250, 0.25)'}`,
+                whiteSpace: 'nowrap' as const,
+              }}
+            >
+              {pipelineMode === 'extension' ? (
+                <>
+                  <Zap size={10} />
+                  <span>Extension</span>
+                </>
+              ) : (
+                <>
+                  <BrainCircuit size={10} />
+                  <span>Cloud</span>
+                </>
+              )}
+            </span>
           )}
 
           {/* ─── Activity + History icon buttons (visual divider) ─── */}
@@ -5879,6 +6108,9 @@ export function AutopilotView() {
                   } else {
                     subtitleText = 'Submitting applications...'
                   }
+                } else if (pipelineMode === 'extension' && extensionPipelineMessage) {
+                  // Extension pipeline: use the message from the extension progress events
+                  subtitleText = extensionPipelineMessage
                 } else if (metaActivities && metaActivities.length > 0) {
                   const recentActivities = metaActivities.slice(0, 3).filter(a => a.reason)
                   if (recentActivities.length > 0) {

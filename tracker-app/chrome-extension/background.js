@@ -46,6 +46,15 @@
  * - Stale result clearing before each job
  */
 
+// ─── Load Scout Module ───────────────────────────────────────────────
+// scout.js exposes: runScout, scoutApiBoards, scoutHtmlBoards, scoutLinkedIn, preFilterJobs
+try {
+  importScripts('scout.js');
+  console.log('[background] scout.js loaded — runScout() available on globalThis');
+} catch (e) {
+  console.warn('[background] Failed to load scout.js:', e.message);
+}
+
 // ─── ATS Domain Detection ─────────────────────────────────────────────
 
 const ATS_PATTERNS = [
@@ -1433,6 +1442,53 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       return { success: true }
     }
 
+    // ─── Pipeline Orchestrator: Start ───────────────────────────────
+    if (message.action === 'startPipeline') {
+      const config = message.payload
+      const dashboardTabId = message.dashboardTabId || _sender.tab?.id
+      if (!config) {
+        return { success: false, error: 'No pipeline config provided' }
+      }
+      if (!dashboardTabId) {
+        return { success: false, error: 'No dashboard tab ID — cannot send progress' }
+      }
+      // Launch pipeline asynchronously — return immediately so the caller is not blocked
+      runPipeline(config, dashboardTabId)
+      return { success: true, message: 'Pipeline started' }
+    }
+
+    // ─── Pipeline Orchestrator: Submit Approved Jobs ────────────────
+    if (message.action === 'submitApprovedJobs') {
+      const { pipelineId, approvedJobs } = message
+      const dashboardTabId = message.dashboardTabId || _sender.tab?.id
+      if (!approvedJobs?.length) {
+        return { success: false, error: 'No approved jobs provided' }
+      }
+      if (!dashboardTabId) {
+        return { success: false, error: 'No dashboard tab ID' }
+      }
+      // Launch apply phase asynchronously
+      runApplyPhase(pipelineId, approvedJobs, dashboardTabId)
+      return { success: true, message: 'Apply phase started for ' + approvedJobs.length + ' jobs' }
+    }
+
+    // ─── Pipeline Orchestrator: Cancel ──────────────────────────────
+    if (message.action === 'cancelPipeline') {
+      const { pipelineId } = message
+      if (pipelineId && activePipelines[pipelineId]) {
+        activePipelines[pipelineId].cancelled = true
+        console.log('[JobTracker:Pipeline] Cancelled pipeline:', pipelineId)
+        return { success: true }
+      }
+      return { success: false, error: 'Pipeline not found: ' + pipelineId }
+    }
+
+    // ─── Pipeline Orchestrator: Get State ───────────────────────────
+    if (message.action === 'getPipelineState') {
+      const data = await chrome.storage.local.get(['pipelineState'])
+      return { success: true, state: data.pipelineState || null }
+    }
+
     // ─── CDP Debugger Session Management (for React-Select dropdowns) ──
     // React-Select only responds to isTrusted:true mouse events.
     // Content scripts can only dispatch isTrusted:false synthetic events.
@@ -1684,4 +1740,466 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   })
 
   return true // keep channel open for async
+})
+
+// ═══════════════════════════════════════════════════════════════════════
+// Pipeline Orchestrator — Scout → Qualify → Review → Apply
+// ═══════════════════════════════════════════════════════════════════════
+
+const DASHBOARD_API_BASE = 'https://tracker-app-lyart.vercel.app/api'
+
+// In-memory state for active pipelines (survives within a single SW lifecycle)
+const activePipelines = {}
+
+// ─── Service Worker Keep-Alive ──────────────────────────────────────
+// Manifest V3 service workers are killed after ~30s of inactivity.
+// During a pipeline run, we need to stay alive for minutes (scouting + qualifying).
+// Strategy: use chrome.alarms as a heartbeat — the alarm event wakes the SW.
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'pipeline-keepalive') {
+    // Just being called keeps the SW alive. Log for diagnostics.
+    const activeCount = Object.keys(activePipelines).filter(k => !activePipelines[k].completed && !activePipelines[k].cancelled).length
+    if (activeCount > 0) {
+      console.log('[JobTracker:Pipeline] Keepalive tick — active pipelines:', activeCount)
+    }
+  }
+})
+
+function startKeepalive() {
+  chrome.alarms.create('pipeline-keepalive', { periodInMinutes: 0.4 }) // every 24s
+}
+
+function stopKeepaliveIfIdle() {
+  const activeCount = Object.keys(activePipelines).filter(
+    k => !activePipelines[k].completed && !activePipelines[k].cancelled
+  ).length
+  if (activeCount === 0) {
+    chrome.alarms.clear('pipeline-keepalive')
+    console.log('[JobTracker:Pipeline] All pipelines done — keepalive cleared')
+  }
+}
+
+// ─── Progress Sender ────────────────────────────────────────────────
+// Sends structured progress messages to the dashboard via content.js.
+// content.js relays them as window.postMessage to the web app.
+function sendPipelineProgress(dashboardTabId, pipelineId, phase, data) {
+  const message = {
+    type: 'JOBTRACKER_PIPELINE_PROGRESS',
+    pipelineId,
+    phase, // 'scouting' | 'qualifying' | 'ready_for_review' | 'applying' | 'applied' | 'complete' | 'error'
+    timestamp: new Date().toISOString(),
+    ...data,
+  }
+  chrome.tabs.sendMessage(dashboardTabId, message).catch((err) => {
+    console.warn('[JobTracker:Pipeline] Failed to send progress to tab', dashboardTabId, ':', err.message)
+  })
+}
+
+// ─── Persist Pipeline State ─────────────────────────────────────────
+// Stored in chrome.storage.local for crash recovery. The dashboard can
+// read this on load to resume or display the last pipeline's state.
+async function persistPipelineState(pipelineId, state) {
+  await chrome.storage.local.set({
+    pipelineState: {
+      pipelineId,
+      ...state,
+      updatedAt: new Date().toISOString(),
+    }
+  })
+}
+
+// ─── Main Pipeline Runner ───────────────────────────────────────────
+/**
+ * Runs the full scout → qualify → review pipeline.
+ *
+ * @param {Object} config Pipeline configuration from the dashboard
+ * @param {string} config.keywords      Search keywords (e.g. "Product Designer")
+ * @param {string} config.location      Location filter (e.g. "Remote")
+ * @param {string[]} config.excludedCompanies  Companies to skip
+ * @param {number} config.minScore      Minimum qualification score (0-100)
+ * @param {Object} config.profile       User profile for qualification context
+ * @param {Object} config.searchProfile Extended search profile
+ * @param {number} dashboardTabId       Tab ID of the dashboard for progress messages
+ */
+async function runPipeline(config, dashboardTabId) {
+  const pipelineId = `pipeline-${Date.now()}`
+  activePipelines[pipelineId] = { config, dashboardTabId, cancelled: false, completed: false }
+
+  startKeepalive()
+
+  function progress(phase, data) {
+    sendPipelineProgress(dashboardTabId, pipelineId, phase, data)
+    // Also persist for crash recovery
+    persistPipelineState(pipelineId, { phase, ...data }).catch(() => {})
+  }
+
+  console.log('[JobTracker:Pipeline] Starting pipeline:', pipelineId, '| Keywords:', config.keywords, '| MinScore:', config.minScore)
+
+  try {
+    // ════════════════════════════════════════════════════════════════
+    // Phase 1: SCOUT — search job boards for matching listings
+    // ════════════════════════════════════════════════════════════════
+    progress('scouting', { message: 'Searching job boards...', jobsFound: 0 })
+
+    let scoutResult
+    try {
+      // scout.js is loaded via importScripts in the service worker context.
+      // If runScout is defined (scout.js loaded), use it directly.
+      // Otherwise, fall back to the dashboard API proxy.
+      if (typeof runScout === 'function') {
+        scoutResult = await runScout(config)
+      } else {
+        // Fallback: call the dashboard API which proxies the scout operation
+        console.log('[JobTracker:Pipeline] runScout not available — falling back to API scout')
+        const scoutResp = await fetch(`${DASHBOARD_API_BASE}/scout`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            keywords: config.keywords,
+            location: config.location,
+            excludedCompanies: config.excludedCompanies || [],
+            searchProfile: config.searchProfile || {},
+          }),
+        })
+        if (!scoutResp.ok) {
+          const errText = await scoutResp.text().catch(() => scoutResp.statusText)
+          throw new Error(`Scout API error ${scoutResp.status}: ${errText}`)
+        }
+        scoutResult = await scoutResp.json()
+      }
+    } catch (scoutErr) {
+      console.error('[JobTracker:Pipeline] Scout phase failed:', scoutErr.message)
+      progress('error', { message: 'Scout failed: ' + scoutErr.message, error: scoutErr.message })
+      activePipelines[pipelineId].completed = true
+      stopKeepaliveIfIdle()
+      return
+    }
+
+    if (activePipelines[pipelineId].cancelled) {
+      progress('complete', { message: 'Pipeline cancelled during scouting', cancelled: true })
+      activePipelines[pipelineId].completed = true
+      stopKeepaliveIfIdle()
+      return
+    }
+
+    const scoutedJobs = scoutResult?.jobs || []
+    const scoutStats = scoutResult?.stats || {}
+    console.log('[JobTracker:Pipeline] Scout complete:', scoutedJobs.length, 'jobs found | Stats:', JSON.stringify(scoutStats))
+
+    progress('scouting', {
+      message: `Found ${scoutedJobs.length} jobs`,
+      jobsFound: scoutedJobs.length,
+      jobs: scoutedJobs,
+      stats: scoutStats,
+    })
+
+    if (scoutedJobs.length === 0) {
+      progress('complete', { message: 'No jobs found matching criteria', jobsFound: 0, qualifiedJobs: [] })
+      activePipelines[pipelineId].completed = true
+      stopKeepaliveIfIdle()
+      return
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // Phase 2: QUALIFY — score jobs via AI (Haiku) through API proxy
+    // ════════════════════════════════════════════════════════════════
+    progress('qualifying', { message: `Scoring ${scoutedJobs.length} jobs...`, total: scoutedJobs.length, scored: 0 })
+
+    const minScore = config.minScore || 50
+    let allQualified = []
+    let totalScored = 0
+
+    // Process in batches of 10 to avoid API timeouts and give progress updates
+    const BATCH_SIZE = 10
+    for (let i = 0; i < scoutedJobs.length; i += BATCH_SIZE) {
+      if (activePipelines[pipelineId].cancelled) {
+        progress('complete', { message: 'Pipeline cancelled during qualifying', cancelled: true })
+        activePipelines[pipelineId].completed = true
+        stopKeepaliveIfIdle()
+        return
+      }
+
+      const batch = scoutedJobs.slice(i, i + BATCH_SIZE)
+      const batchNum = Math.floor(i / BATCH_SIZE) + 1
+      const totalBatches = Math.ceil(scoutedJobs.length / BATCH_SIZE)
+
+      console.log('[JobTracker:Pipeline] Qualifying batch', batchNum + '/' + totalBatches, '(' + batch.length + ' jobs)')
+
+      try {
+        const qualifyResp = await fetch(`${DASHBOARD_API_BASE}/qualify-batch`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jobs: batch.map(j => ({
+              id: j.id || j.url,
+              title: j.title || j.role,
+              company: j.company,
+              location: j.location,
+              description: j.description || j.snippet || '',
+              url: j.url,
+              atsType: j.atsType,
+              source: j.source,
+            })),
+            profile: config.profile || {},
+            minScore,
+          }),
+        })
+
+        if (!qualifyResp.ok) {
+          const errText = await qualifyResp.text().catch(() => qualifyResp.statusText)
+          console.warn('[JobTracker:Pipeline] Qualify batch', batchNum, 'failed:', qualifyResp.status, errText)
+          // Continue with other batches — don't abort the whole pipeline
+          totalScored += batch.length
+          progress('qualifying', {
+            message: `Batch ${batchNum}/${totalBatches} failed — continuing...`,
+            total: scoutedJobs.length,
+            scored: totalScored,
+            qualifiedSoFar: allQualified.length,
+          })
+          continue
+        }
+
+        const qualifyData = await qualifyResp.json()
+        const batchResults = qualifyData.results || []
+
+        // Filter by minScore and merge with original job data
+        for (const result of batchResults) {
+          if (result.score >= minScore) {
+            // Find the original job to preserve all fields
+            const originalJob = batch.find(j => (j.id || j.url) === result.id) || {}
+            allQualified.push({
+              ...originalJob,
+              ...result,
+              qualifiedAt: new Date().toISOString(),
+            })
+          }
+        }
+
+        totalScored += batch.length
+        progress('qualifying', {
+          message: `Scored ${totalScored}/${scoutedJobs.length} — ${allQualified.length} qualified so far`,
+          total: scoutedJobs.length,
+          scored: totalScored,
+          qualifiedSoFar: allQualified.length,
+        })
+
+      } catch (batchErr) {
+        console.warn('[JobTracker:Pipeline] Qualify batch', batchNum, 'error:', batchErr.message)
+        totalScored += batch.length
+        // Continue to next batch
+      }
+    }
+
+    console.log('[JobTracker:Pipeline] Qualify complete:', allQualified.length, '/', scoutedJobs.length, 'jobs qualified (minScore:', minScore + ')')
+
+    // Sort by score descending
+    allQualified.sort((a, b) => (b.score || 0) - (a.score || 0))
+
+    // ════════════════════════════════════════════════════════════════
+    // Phase 3: READY FOR REVIEW — present qualified jobs to user
+    // ════════════════════════════════════════════════════════════════
+    // The dashboard will display a review queue. User approves/rejects
+    // each job, then clicks "Submit Approved" which triggers submitApprovedJobs.
+    progress('ready_for_review', {
+      message: `${allQualified.length} jobs ready for review`,
+      qualifiedJobs: allQualified,
+      totalScanned: scoutedJobs.length,
+      totalQualified: allQualified.length,
+      stats: {
+        ...scoutStats,
+        qualifyRate: scoutedJobs.length > 0 ? ((allQualified.length / scoutedJobs.length) * 100).toFixed(1) + '%' : '0%',
+        minScore,
+      },
+    })
+
+    // Store state for crash recovery and for the submitApprovedJobs handler
+    await persistPipelineState(pipelineId, {
+      phase: 'ready_for_review',
+      qualifiedJobs: allQualified,
+      totalScanned: scoutedJobs.length,
+      config,
+      dashboardTabId,
+    })
+
+    // Pipeline pauses here — Phase 4 (Apply) is triggered by a separate message
+    // (submitApprovedJobs) when the user approves jobs from the review queue.
+    console.log('[JobTracker:Pipeline] Waiting for user review...', pipelineId)
+
+  } catch (err) {
+    console.error('[JobTracker:Pipeline] Unexpected error:', err.message, err.stack)
+    progress('error', { message: 'Pipeline error: ' + err.message, error: err.message })
+    activePipelines[pipelineId].completed = true
+    stopKeepaliveIfIdle()
+  }
+}
+
+// ─── Apply Phase (Phase 4) ──────────────────────────────────────────
+/**
+ * Applies to approved jobs sequentially using the existing ATS apply flow.
+ * Triggered by submitApprovedJobs from the dashboard after user review.
+ *
+ * @param {string} pipelineId     Pipeline identifier
+ * @param {Object[]} approvedJobs Jobs approved by user from the review queue
+ * @param {number} dashboardTabId Tab ID of the dashboard
+ */
+async function runApplyPhase(pipelineId, approvedJobs, dashboardTabId) {
+  if (!activePipelines[pipelineId]) {
+    activePipelines[pipelineId] = { cancelled: false, completed: false }
+  }
+
+  startKeepalive()
+
+  function progress(phase, data) {
+    sendPipelineProgress(dashboardTabId, pipelineId, phase, data)
+    persistPipelineState(pipelineId, { phase, ...data }).catch(() => {})
+  }
+
+  console.log('[JobTracker:Pipeline] Apply phase starting:', approvedJobs.length, 'jobs | Pipeline:', pipelineId)
+
+  const results = []
+  let applied = 0
+  let failed = 0
+  let skipped = 0
+
+  for (let i = 0; i < approvedJobs.length; i++) {
+    if (activePipelines[pipelineId].cancelled) {
+      progress('complete', {
+        message: 'Pipeline cancelled during apply phase',
+        cancelled: true,
+        results,
+        applied,
+        failed,
+        skipped,
+      })
+      activePipelines[pipelineId].completed = true
+      stopKeepaliveIfIdle()
+      return
+    }
+
+    const job = approvedJobs[i]
+    const jobLabel = `${job.company} — ${job.title || job.role}`
+    console.log('[JobTracker:Pipeline] Applying', (i + 1) + '/' + approvedJobs.length + ':', jobLabel)
+
+    progress('applying', {
+      message: `Applying to ${jobLabel} (${i + 1}/${approvedJobs.length})...`,
+      current: i + 1,
+      total: approvedJobs.length,
+      currentJob: job,
+      applied,
+      failed,
+      skipped,
+    })
+
+    try {
+      // Determine which apply action to use based on job URL/source
+      const isLinkedIn = job.url && job.url.includes('linkedin.com')
+      const action = isLinkedIn ? 'applyViaExtension' : 'applyAtsDirectly'
+
+      // Use internal message dispatch to reuse existing apply handlers
+      const applyResult = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({
+          action,
+          jobData: {
+            company: job.company,
+            role: job.title || job.role,
+            url: job.url,
+            linkedinUrl: job.linkedinUrl || job.url,
+          },
+          requestId: `${pipelineId}-${i}`,
+        }, (response) => {
+          resolve(response || { success: false, status: 'error', error: 'No response from apply handler' })
+        })
+      })
+
+      const resultEntry = {
+        job,
+        result: applyResult,
+        index: i,
+        timestamp: new Date().toISOString(),
+      }
+      results.push(resultEntry)
+
+      if (applyResult.success || applyResult.status === 'applied_external' || applyResult.status === 'applied') {
+        applied++
+        console.log('[JobTracker:Pipeline] Applied:', jobLabel, '| Status:', applyResult.status)
+      } else if (applyResult.status === 'needs_manual') {
+        skipped++
+        console.log('[JobTracker:Pipeline] Needs manual:', jobLabel, '| Reason:', applyResult.reason)
+      } else {
+        failed++
+        console.log('[JobTracker:Pipeline] Failed:', jobLabel, '| Status:', applyResult.status, '| Error:', applyResult.error || applyResult.reason)
+      }
+
+      // Send per-job result to dashboard
+      progress('applied', {
+        message: `${jobLabel}: ${applyResult.status}`,
+        current: i + 1,
+        total: approvedJobs.length,
+        lastResult: resultEntry,
+        applied,
+        failed,
+        skipped,
+      })
+
+      // Brief pause between applications to avoid rate limiting
+      if (i < approvedJobs.length - 1) {
+        await new Promise(r => setTimeout(r, 3000))
+      }
+
+    } catch (applyErr) {
+      failed++
+      const resultEntry = {
+        job,
+        result: { success: false, status: 'error', error: applyErr.message },
+        index: i,
+        timestamp: new Date().toISOString(),
+      }
+      results.push(resultEntry)
+      console.error('[JobTracker:Pipeline] Apply error for', jobLabel + ':', applyErr.message)
+
+      progress('applied', {
+        message: `${jobLabel}: error — ${applyErr.message}`,
+        current: i + 1,
+        total: approvedJobs.length,
+        lastResult: resultEntry,
+        applied,
+        failed,
+        skipped,
+      })
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // Phase 5: COMPLETE — pipeline finished
+  // ════════════════════════════════════════════════════════════════
+  const summary = {
+    message: `Pipeline complete: ${applied} applied, ${failed} failed, ${skipped} needs manual`,
+    results,
+    applied,
+    failed,
+    skipped,
+    totalApproved: approvedJobs.length,
+  }
+
+  console.log('[JobTracker:Pipeline] Complete:', JSON.stringify({ applied, failed, skipped, total: approvedJobs.length }))
+  progress('complete', summary)
+
+  activePipelines[pipelineId].completed = true
+  stopKeepaliveIfIdle()
+}
+
+// ─── Restore pipeline state on service worker startup ───────────────
+// If the SW was killed mid-pipeline, this lets the dashboard know what happened.
+chrome.storage.local.get(['pipelineState']).then((data) => {
+  if (data.pipelineState && !data.pipelineState.phase?.includes('complete') && !data.pipelineState.phase?.includes('error')) {
+    console.log('[JobTracker:Pipeline] Found interrupted pipeline state:', data.pipelineState.pipelineId, '| Phase:', data.pipelineState.phase)
+    // Mark as interrupted — the dashboard will detect this and offer to retry
+    chrome.storage.local.set({
+      pipelineState: {
+        ...data.pipelineState,
+        interrupted: true,
+        interruptedAt: new Date().toISOString(),
+      }
+    })
+  }
 })
