@@ -164,123 +164,65 @@ export function buildSystemPrompt(
   - Maze [advanced]: 30+ unmoderated studies, mission-based testing, quantitative analysis
   - Jira [advanced]: Design backlogs, sprint planning, cross-functional workflows`
 
-  return `You are a job qualification engine for an automated job search tool.
-Your TWO jobs: (1) score the job fit accurately, (2) write a cover letter snippet that sounds like a real human who READ this specific JD and knows their own resume deeply.
+  return `Job qualification engine. TWO tasks: (1) score job fit, (2) write a human-sounding cover letter snippet referencing THIS specific JD.
 
-═══════════════════════════════════════════════
-CANDIDATE PROFILE — ${firstName} ${lastName}
-═══════════════════════════════════════════════
+CANDIDATE: ${firstName} ${lastName}
+Senior Product Designer, ${yearsExp}+ yrs | Design Systems, Design Ops, Complex Product Architecture
+Location: ${location} (${timezone}) | Acceptable: UTC+3 to UTC+11
+Work: P1 Remote APAC, P2 On-site PH/TH, P3 Remote in TZ range
+Min comp: 70k EUR on-site / 80k EUR remote | FR native, EN bilingual
+Education: ${education} | Portfolio: ${portfolio}
 
-BASICS:
-- Current role: Senior Product Designer (${yearsExp}+ years)
-- Specialization: Design Systems, Design Ops, Complex Product Architecture
-- Location: ${location} (${timezone})
-- Acceptable TZ: UTC+3 to UTC+11 (4h max difference from Bangkok)
-- Work mode: P1 Remote APAC, P2 On-site Philippines/Thailand, P3 Remote within TZ range
-- Min compensation: 70k EUR/yr (on-site) or 80k EUR/yr (remote freelance)
-- Languages: French (native), English (bilingual)
-- Education: ${education}
-- Portfolio: ${portfolio}
-
-KEY ACHIEVEMENTS (use these in cover letter — pick the most relevant to the JD):
+ACHIEVEMENTS (cite in cover letter with EXACT [company] — NEVER misattribute):
 ${achievementsList}
 
-KEY PROJECTS (reference by name when relevant):
+PROJECTS:
 ${projectsList}
 
-INDUSTRY-SPECIFIC WINS (match to the JD's industry):
+INDUSTRY WINS:
 ${industryWinsList}
 
-TOOL MASTERY (match to JD's required tools):
+TOOLS:
 ${toolsList}
 
-BLACKLISTED:
-- Companies: BetRivers, Rush Street Interactive, ClickOut Media
-- Industries: poker, unregulated gambling
-- Seniority: intern, junior, associate (too junior for ${yearsExp}+ years)
+BLACKLIST: BetRivers / Rush Street Interactive / ClickOut Media / poker / unregulated gambling / intern / junior / associate
 
-═══════════════════════════════════════════════
-SCORING (0-100) — BE GENEROUS
-═══════════════════════════════════════════════
+SCORING (0-100, generous, base 40 if no disqualifiers)
 
-HARD DISQUALIFIERS (score 0 ONLY if one of these is TRUE):
-- Company is BetRivers, Rush Street Interactive, or ClickOut Media
-- Industry is poker or unregulated gambling
-- Title is clearly intern/junior/associate level
-- Title has ZERO design relevance (e.g. "Sales Manager", "Backend Engineer")
+Score 0 ONLY if: blacklisted company/industry, clearly intern/junior, or zero design relevance.
 
-If none of the above, score on 0-100 starting from base 40:
+Dimensions (score = sum, each capped):
+| Dim | Max | Guide |
+|-----|-----|-------|
+| roleFit | 25 | Product Designer=22, UX/UI=20, Lead/Staff/Principal=23, adjacent=15, weak=8 |
+| industryMatch | 15 | B2B SaaS/iGaming=15, regulated=14, consumer=10, crypto/gambling=0, unknown=8 |
+| skillOverlap | 20 | 5+ skills=20, 3-4=15, 1-2=10, none=8. +5 bonus if JD says "design systems"/"B2B SaaS"/"iGaming" |
+| locationFit | 15 | Remote APAC=15, global async=12, hybrid SEA=10, on-site SEA=8, remote EU=5, US TZ=2, unknown=10 |
+| compensationSignal | 10 | >=70k=10, no info=6, low=2 |
+| growthOpportunity | 15 | Design system=15, leadership=14, complex/regulated=13, generic=7, unknown=8 |
 
-- Role fit (0-25): Title + JD alignment with "Senior Product Designer" / design systems / design ops / complex product architecture. Exact "Product Designer"=22, "UX/UI Designer"=20, "Design Lead/Staff/Principal"=23, adjacent design role=15, weak=8.
-- Industry match (0-15): B2B SaaS=15, regulated industries=14, iGaming=15, consumer app=10, crypto/unregulated gambling=0. Unknown=8.
-- Skill overlap (0-20): How many key skills appear in JD? 5+=20, 3-4=15, 1-2=10, none mentioned=8. BONUS: if JD mentions "design systems" or "B2B SaaS" or "iGaming" → add +5 on top.
-- Remote/location fit (0-15): Remote APAC=15, remote global async=12, hybrid SEA=10, on-site SEA=8, remote EU=5 (soft filter, not hard block), US TZ only=2 (some are flexible), unknown=10.
-- Compensation signal (0-10): In range (>=70k EUR)=10, no info=6, low signal=2.
-- Growth opportunity (0-15): Design system work=15, leadership=14, complex products=13, regulated=13. Generic=7, unknown=8.
+Floor rules: Product Designer no flags=55+, Senior PD=65+, Lead/Staff/Principal=60+, UX/UI APAC=50+.
+Missing info=partial points, never 0. No salary=6/10. Remote no TZ=10/15. TZ is soft — only 0 if JD says "must be US-based".
+Bonus cap +15: "design systems" +5, "B2B SaaS" +5, "iGaming" +5.
 
-CRITICAL SCORING RULES:
-- Missing info = partial points (benefit of the doubt), NEVER 0.
-- "Product Designer" with no red flags = 55+ MINIMUM.
-- "Senior Product Designer" with no red flags = 65+ MINIMUM.
-- "Design Lead" / "Staff Designer" / "Principal Designer" = 60+ MINIMUM.
-- "UX/UI Designer" in APAC = 50+ MINIMUM.
-- No salary listed = 6/10 (assume decent).
-- "Remote" without TZ info = 10/15 (assume flexible).
-- Timezone is a SOFT filter — some remote APAC roles have flexible hours. Only score 0 for location if the JD explicitly says "must be US-based" or similar hard requirement.
-- BONUS +15 total cap: if JD mentions "design systems" (+5), "B2B SaaS" (+5), or "iGaming" (+5).
+COVER LETTER (2-3 sentences, human tone)
 
-═══════════════════════════════════════════════
-COVER LETTER SNIPPET — THIS IS CRITICAL
-═══════════════════════════════════════════════
+ANTI-HALLUCINATION: Use ONLY the [company] from achievements above. Never swap companies. Never invent names (NOT "PokerStars" — it's "BetRivers Poker" at Rush Street Interactive). 143 templates/7 SaaS = Pernod Ricard. 90% dev feedback = Rush Street Interactive. 0-to-1 design system + Maze studies = ClickOut Media. Biometrics/airports = IDEMIA. If unsure, use generic statement.
 
-CRITICAL ANTI-HALLUCINATION RULE:
-When citing the applicant's achievements, you MUST use the EXACT company name listed in the [brackets] with each achievement above. NEVER attribute an achievement to a different company. NEVER invent product names (e.g. do NOT say "PokerStars" — the product is "BetRivers Poker" at Rush Street Interactive). The 143 templates across 7 B2B SaaS products was at PERNOD RICARD, NOT ClickOut Media. The 90% dev feedback improvement was at RUSH STREET INTERACTIVE, NOT ClickOut Media. If unsure which achievement fits a JD, use a generic statement instead of risking a wrong company attribution.
+Rules:
+1. Name the JD company + their specific product/mission — never "your team"
+2. Pick the MOST relevant achievement, cite concretely with correct [company]
+3. Show why THIS company — their industry/product/growth stage
+4. Banned phrases: "passionate about", "I believe", "excited to bring", "align with", "I am confident", "I look forward to"
 
-Write 2-3 sentences that pass the "would a human write this?" test. Rules:
+STYLE: ${variantStyle}
 
-1. REFERENCE A SPECIFIC DETAIL FROM THE JD: name the company, mention their product/tech/team/mission, quote something they said. NOT "your team" or "this role" — use the ACTUAL company name and what they do.
+Also output archetype (systems|research|visual|product|leadership|strategy) and top 5 JD keywords for CV tailoring.
 
-2. CONNECT TO A SPECIFIC ACHIEVEMENT: don't say "7+ years of experience" or "design systems expertise." Instead, pick the MOST RELEVANT achievement from the list above and cite it concretely — ALWAYS using the correct company name from the achievement. Examples:
-   - BAD: "I have extensive experience with design systems"
-   - GOOD: "At Pernod Ricard, I governed 143 component templates across 7 B2B SaaS products — the kind of multi-product consistency challenge [Company] faces with [their specific product]"
-   - BAD: "I bring strong product design skills"
-   - GOOD: "Building BetRivers Poker at Rush Street Interactive from 0-to-1 taught me how to ship complex products under compliance constraints, which directly applies to [Company]'s [specific challenge from JD]"
+Respond ONLY valid JSON:
+{"score":N,"dimensions":{"roleFit":N,"industryMatch":N,"skillOverlap":N,"locationFit":N,"compensationSignal":N,"growthOpportunity":N},"archetype":"...","jdKeywords":["k1","k2","k3","k4","k5"],"isDesignRole":bool,"seniorityMatch":bool,"locationCompatible":bool,"salaryInRange":bool,"skillsMatch":bool,"reasoning":"1-2 sentences","coverLetterSnippet":"2-3 sentences per rules above"}
 
-3. ADD A "WHY THIS COMPANY" ANGLE: show you understand what makes them different. Reference their industry, product, mission, or growth stage. If the JD mentions specific projects, teams, or technologies — name them.
-
-4. NEVER use these generic phrases: "passionate about", "I believe", "excited to bring", "align with my experience", "I am confident", "I look forward to". Write like a peer, not a cover letter bot.
-
-5. NEVER invent or substitute product/company names. Use ONLY: "BetRivers Poker" (NOT PokerStars), "Rush Street Interactive" (NOT BetRivers alone for company), "Pernod Ricard" (for 143 templates/7 SaaS products), "ClickOut Media" (for 0-to-1 design system, Maze studies), "IDEMIA" (for biometric/airport).
-
-STYLE DIRECTIVE: ${variantStyle}
-
-═══════════════════════════════════════════════
-
-Also detect the role archetype (systems | research | visual | product | leadership | strategy) and extract the top 5 keywords from the JD that are most relevant for CV tailoring.
-
-Respond ONLY with valid JSON:
-{
-  "score": number,
-  "dimensions": {
-    "roleFit": number,
-    "industryMatch": number,
-    "skillOverlap": number,
-    "locationFit": number,
-    "compensationSignal": number,
-    "growthOpportunity": number
-  },
-  "archetype": "systems" | "research" | "visual" | "product" | "leadership" | "strategy",
-  "jdKeywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"],
-  "isDesignRole": boolean,
-  "seniorityMatch": boolean,
-  "locationCompatible": boolean,
-  "salaryInRange": boolean,
-  "skillsMatch": boolean,
-  "reasoning": "1-2 sentence explanation",
-  "coverLetterSnippet": "2-3 sentences following the rules above"
-}
-
-"score" MUST equal the sum of all 6 dimension values. Each dimension must respect its max: roleFit<=25, industryMatch<=15, skillOverlap<=20, locationFit<=15, compensationSignal<=10, growthOpportunity<=15.`
+score = sum of 6 dimensions. Caps: roleFit<=25, industryMatch<=15, skillOverlap<=20, locationFit<=15, compensationSignal<=10, growthOpportunity<=15.`
 }
 
 // ---------------------------------------------------------------------------
@@ -459,6 +401,187 @@ export async function callHaikuQualifier(
   }
 
   return parseHaikuResponse(response)
+}
+
+// ---------------------------------------------------------------------------
+// Batch Haiku API call — 50% discount via Anthropic Batch API
+// ---------------------------------------------------------------------------
+
+/** Input shape for a single request in a batch qualification call */
+export interface BatchQualifyRequest {
+  id: string
+  systemPrompt: string
+  userMessage: string
+}
+
+/** Configuration for the batch qualifier */
+export interface BatchQualifierConfig {
+  /** Poll interval in ms. Default: 5000 */
+  pollIntervalMs?: number
+  /** Timeout in ms for the entire batch. Default: 300000 (5 minutes) */
+  timeoutMs?: number
+  /** Max tokens for each Haiku response. Default: 800 */
+  maxTokens?: number
+  /** Whether to fall back to individual calls on batch API failure. Default: true */
+  fallbackToIndividual?: boolean
+}
+
+const DEFAULT_BATCH_CONFIG: Required<BatchQualifierConfig> = {
+  pollIntervalMs: 5_000,
+  timeoutMs: 300_000, // 5 minutes
+  maxTokens: 800,
+  fallbackToIndividual: true,
+}
+
+/**
+ * Call Haiku to qualify multiple jobs at once using the Anthropic Batch API.
+ *
+ * The Batch API provides a 50% discount on both input and output tokens.
+ * Requests are submitted as a batch, then polled for completion.
+ *
+ * On failure, falls back to individual callHaikuQualifier() calls (configurable).
+ *
+ * @param requests - Array of { id, systemPrompt, userMessage } for each job
+ * @param config - Optional batch configuration overrides
+ * @param client - Optional pre-existing Anthropic client
+ * @returns Map of id -> QualificationResult (excludes coverLetterVariant)
+ */
+export async function callHaikuQualifierBatch(
+  requests: BatchQualifyRequest[],
+  config?: BatchQualifierConfig,
+  client?: Anthropic,
+): Promise<Map<string, Omit<QualificationResult, 'coverLetterVariant'>>> {
+  const cfg = { ...DEFAULT_BATCH_CONFIG, ...config }
+  const anthropic = client ?? getClient()
+  const results = new Map<string, Omit<QualificationResult, 'coverLetterVariant'>>()
+
+  if (requests.length === 0) return results
+
+  // For a single request, use the real-time API directly (no batch overhead)
+  if (requests.length === 1) {
+    const req = requests[0]
+    const result = await callHaikuQualifier(req.systemPrompt, req.userMessage, { maxTokens: cfg.maxTokens }, client)
+    results.set(req.id, result)
+    return results
+  }
+
+  try {
+    console.log(`[qualifier-core] Creating batch of ${requests.length} Haiku qualification requests (50% discount)`)
+
+    // Build batch request payload
+    const batchRequests = requests.map((req) => ({
+      custom_id: req.id,
+      params: {
+        model: 'claude-haiku-4-5-20251001' as const,
+        max_tokens: cfg.maxTokens,
+        system: req.systemPrompt,
+        messages: [{ role: 'user' as const, content: req.userMessage }],
+      },
+    }))
+
+    // Create the batch
+    const batch = await anthropic.messages.batches.create({
+      requests: batchRequests,
+    })
+
+    console.log(`[qualifier-core] Batch created: ${batch.id} (${requests.length} requests)`)
+
+    // Poll for completion
+    const startTime = Date.now()
+    let currentBatch = batch
+
+    while (currentBatch.processing_status !== 'ended') {
+      const elapsed = Date.now() - startTime
+      if (elapsed >= cfg.timeoutMs) {
+        console.warn(`[qualifier-core] Batch ${batch.id} timed out after ${Math.round(elapsed / 1000)}s — canceling`)
+        // Try to cancel the batch so we don't waste compute
+        try {
+          await anthropic.messages.batches.cancel(batch.id)
+        } catch (cancelErr) {
+          console.warn(`[qualifier-core] Failed to cancel batch: ${(cancelErr as Error).message}`)
+        }
+        throw new Error(`Batch qualification timed out after ${Math.round(elapsed / 1000)}s`)
+      }
+
+      await new Promise((r) => setTimeout(r, cfg.pollIntervalMs))
+      currentBatch = await anthropic.messages.batches.retrieve(batch.id)
+
+      const counts = currentBatch.request_counts
+      console.log(
+        `[qualifier-core] Batch ${batch.id}: ${counts.succeeded} succeeded, ` +
+        `${counts.errored} errored, ${counts.processing} processing ` +
+        `(${Math.round(elapsed / 1000)}s elapsed)`,
+      )
+    }
+
+    // Batch ended — retrieve results
+    const batchResults = await anthropic.messages.batches.results(batch.id)
+
+    // Track IDs that failed in the batch for fallback
+    const failedIds = new Set<string>()
+
+    for await (const entry of batchResults) {
+      const customId = entry.custom_id
+
+      if (entry.result.type === 'succeeded') {
+        try {
+          const parsed = parseHaikuResponse(entry.result.message)
+          results.set(customId, parsed)
+        } catch (parseErr) {
+          console.warn(`[qualifier-core] Failed to parse batch result for ${customId}: ${(parseErr as Error).message}`)
+          failedIds.add(customId)
+        }
+      } else {
+        // errored, canceled, or expired
+        console.warn(`[qualifier-core] Batch request ${customId} ${entry.result.type}`)
+        failedIds.add(customId)
+      }
+    }
+
+    const counts = currentBatch.request_counts
+    console.log(
+      `[qualifier-core] Batch ${batch.id} complete: ${counts.succeeded} succeeded, ` +
+      `${counts.errored} errored, ${counts.canceled} canceled, ${counts.expired} expired`,
+    )
+
+    // Fallback: retry failed individual requests with real-time API
+    if (failedIds.size > 0 && cfg.fallbackToIndividual) {
+      console.log(`[qualifier-core] Falling back to individual calls for ${failedIds.size} failed batch requests`)
+      const failedRequests = requests.filter((r) => failedIds.has(r.id))
+      for (const req of failedRequests) {
+        try {
+          const result = await callHaikuQualifier(req.systemPrompt, req.userMessage, { maxTokens: cfg.maxTokens }, client)
+          results.set(req.id, result)
+        } catch (err) {
+          console.error(`[qualifier-core] Individual fallback also failed for ${req.id}: ${(err as Error).message}`)
+          // Leave this ID absent from results — caller handles missing entries
+        }
+      }
+    }
+
+    return results
+  } catch (err) {
+    const message = (err as Error).message
+    console.error(`[qualifier-core] Batch API failed: ${message}`)
+
+    // Full fallback: process all requests individually
+    if (cfg.fallbackToIndividual) {
+      console.log(`[qualifier-core] Batch failed — falling back to ${requests.length} individual calls (no discount)`)
+      for (const req of requests) {
+        // Skip requests already successfully processed (in case batch partially succeeded)
+        if (results.has(req.id)) continue
+        try {
+          const result = await callHaikuQualifier(req.systemPrompt, req.userMessage, { maxTokens: cfg.maxTokens }, client)
+          results.set(req.id, result)
+        } catch (individualErr) {
+          console.error(`[qualifier-core] Individual call failed for ${req.id}: ${(individualErr as Error).message}`)
+        }
+      }
+      return results
+    }
+
+    throw err
+  }
 }
 
 // ---------------------------------------------------------------------------

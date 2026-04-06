@@ -271,6 +271,7 @@ export const qualifyJobsTask = task({
       buildSystemPrompt,
       buildUserMessage,
       callHaikuQualifier,
+      callHaikuQualifierBatch,
     } = await import("../bot/qualifier-core")
 
     console.log(`[qualify-jobs] Starting qualification of ${payload.jobs.length} jobs`)
@@ -405,15 +406,13 @@ export const qualifyJobsTask = task({
     }
 
     // -----------------------------------------------------------------------
-    // 3. Process jobs with concurrency control
+    // 3. Phase A: Extract JDs with concurrent browser workers
     // -----------------------------------------------------------------------
-    const qualified: QualifiedJob[] = []
-    const disqualified: QualifiedJob[] = []
-    const errors: Array<{ url: string; error: string }> = []
+    const jdMap = new Map<string, string>() // url -> JD text
+    const extractionErrors = new Map<string, string>() // url -> error message
     const queue = [...jobsToProcess]
 
-    async function worker() {
-      // Each worker gets its own page
+    async function jdExtractWorker() {
       const context = await browser.newContext({
         userAgent:
           "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -431,11 +430,10 @@ export const qualifyJobsTask = task({
           if (!job) break
 
           console.log(
-            `[qualify-jobs] Processing: ${job.company} — ${job.title} (${job.url})`,
+            `[qualify-jobs] Extracting JD: ${job.company} — ${job.title} (${job.url})`,
           )
 
           try {
-            // Extract JD text from the job page
             let jdText: string
             try {
               jdText = await extractJobDescription(page, job.url)
@@ -452,78 +450,11 @@ export const qualifyJobsTask = task({
               jdText = buildFallbackJD(job)
             }
 
-            // Build user message using shared core function
-            const userMessage = buildUserMessage(jdText, searchContext)
-
-            // Call Haiku using the shared core function (with task's own Anthropic client)
-            const result = await callHaikuQualifier(
-              systemPrompt,
-              userMessage,
-              { retryOn500: true },
-              anthropic,
-            )
-
-            const qualifiedJob: QualifiedJob = {
-              url: job.url,
-              title: job.title,
-              company: job.company,
-              location: job.location,
-              isEasyApply: job.isEasyApply,
-              score: result.score,
-              isDesignRole: result.isDesignRole,
-              seniorityMatch: result.seniorityMatch,
-              locationCompatible: result.locationCompatible,
-              salaryInRange: result.salaryInRange,
-              skillsMatch: result.skillsMatch,
-              matchReasons: buildMatchReasons(result),
-              coverLetterSnippet: result.coverLetterSnippet,
-              qualified: result.score >= QUALIFY_THRESHOLD,
-            }
-
-            if (qualifiedJob.qualified) {
-              qualified.push(qualifiedJob)
-              console.log(
-                `[qualify-jobs] QUALIFIED (${result.score}): ${job.company} — ${job.title}`,
-              )
-            } else {
-              disqualified.push(qualifiedJob)
-              console.log(
-                `[qualify-jobs] DISQUALIFIED (${result.score}): ${job.company} — ${job.title}`,
-              )
-            }
-
-            // Breathing room between API calls
-            await new Promise((r) => setTimeout(r, 200 + Math.random() * 300))
+            jdMap.set(job.url, jdText)
           } catch (err) {
             const msg = (err as Error).message
-            console.error(`[qualify-jobs] Error for ${job.url}: ${msg}`)
-
-            // Benefit of the doubt: create a partial qualification so the user
-            // can still review it. Score above QUALIFY_THRESHOLD for design roles.
-            const titleLooksRelevant = /designer|design|ux|ui/i.test(job.title)
-            const fallbackScore = titleLooksRelevant ? 42 : 25
-            const fallbackJob: QualifiedJob = {
-              url: job.url,
-              title: job.title,
-              company: job.company,
-              location: job.location,
-              isEasyApply: job.isEasyApply,
-              score: fallbackScore,
-              isDesignRole: titleLooksRelevant,
-              seniorityMatch: /senior|sr\.?|lead|staff|principal|head/i.test(job.title),
-              locationCompatible: false,
-              salaryInRange: true, // don't penalize unknown salary
-              skillsMatch: titleLooksRelevant,
-              matchReasons: [`Qualification error (${msg}) — needs manual review`],
-              coverLetterSnippet: "",
-              qualified: fallbackScore >= QUALIFY_THRESHOLD,
-              error: msg,
-            }
-            if (fallbackJob.qualified) {
-              qualified.push(fallbackJob)
-            } else {
-              disqualified.push(fallbackJob)
-            }
+            console.error(`[qualify-jobs] JD extraction error for ${job.url}: ${msg}`)
+            extractionErrors.set(job.url, msg)
           }
         }
       } finally {
@@ -533,12 +464,149 @@ export const qualifyJobsTask = task({
     }
 
     try {
-      // Launch concurrent workers
       const workerCount = Math.min(CONCURRENCY, jobsToProcess.length)
-      const workers = Array.from({ length: workerCount }, () => worker())
+      const workers = Array.from({ length: workerCount }, () => jdExtractWorker())
       await Promise.all(workers)
     } finally {
       await browser.close()
+    }
+
+    console.log(`[qualify-jobs] JD extraction complete: ${jdMap.size} extracted, ${extractionErrors.size} failed`)
+
+    // -----------------------------------------------------------------------
+    // 3. Phase B: Qualify all extracted JDs via Anthropic Batch API (50% discount)
+    // -----------------------------------------------------------------------
+    const qualified: QualifiedJob[] = []
+    const disqualified: QualifiedJob[] = []
+    const errors: Array<{ url: string; error: string }> = []
+
+    // Handle extraction errors — benefit of the doubt fallback
+    for (const job of jobsToProcess) {
+      if (extractionErrors.has(job.url)) {
+        const msg = extractionErrors.get(job.url)!
+        const titleLooksRelevant = /designer|design|ux|ui/i.test(job.title)
+        const fallbackScore = titleLooksRelevant ? 42 : 25
+        const fallbackJob: QualifiedJob = {
+          url: job.url,
+          title: job.title,
+          company: job.company,
+          location: job.location,
+          isEasyApply: job.isEasyApply,
+          score: fallbackScore,
+          isDesignRole: titleLooksRelevant,
+          seniorityMatch: /senior|sr\.?|lead|staff|principal|head/i.test(job.title),
+          locationCompatible: false,
+          salaryInRange: true,
+          skillsMatch: titleLooksRelevant,
+          matchReasons: [`JD extraction error (${msg}) — needs manual review`],
+          coverLetterSnippet: "",
+          qualified: fallbackScore >= QUALIFY_THRESHOLD,
+          error: msg,
+        }
+        if (fallbackJob.qualified) {
+          qualified.push(fallbackJob)
+        } else {
+          disqualified.push(fallbackJob)
+        }
+      }
+    }
+
+    // Build batch requests for all successfully extracted JDs
+    const batchRequests = jobsToProcess
+      .filter((job) => jdMap.has(job.url))
+      .map((job) => ({
+        id: job.url,
+        systemPrompt,
+        userMessage: buildUserMessage(jdMap.get(job.url)!, searchContext),
+      }))
+
+    if (batchRequests.length > 0) {
+      console.log(`[qualify-jobs] Sending ${batchRequests.length} jobs to Haiku Batch API (50% token discount)`)
+
+      let batchResults: Map<string, Awaited<ReturnType<typeof callHaikuQualifier>>>
+
+      try {
+        batchResults = await callHaikuQualifierBatch(
+          batchRequests,
+          {
+            pollIntervalMs: 5_000,
+            timeoutMs: 300_000, // 5 min
+            maxTokens: 800,
+            fallbackToIndividual: true, // auto-fallback if batch API fails
+          },
+          anthropic,
+        )
+      } catch (batchErr) {
+        // Last-resort: if even the fallback in callHaikuQualifierBatch fails,
+        // we still have the option to try individually here
+        console.error(`[qualify-jobs] Batch qualification completely failed: ${(batchErr as Error).message}`)
+        batchResults = new Map()
+      }
+
+      // Process batch results
+      for (const job of jobsToProcess) {
+        // Skip jobs that already got a fallback from extraction errors
+        if (extractionErrors.has(job.url)) continue
+
+        const result = batchResults.get(job.url)
+
+        if (result) {
+          const qualifiedJob: QualifiedJob = {
+            url: job.url,
+            title: job.title,
+            company: job.company,
+            location: job.location,
+            isEasyApply: job.isEasyApply,
+            score: result.score,
+            isDesignRole: result.isDesignRole,
+            seniorityMatch: result.seniorityMatch,
+            locationCompatible: result.locationCompatible,
+            salaryInRange: result.salaryInRange,
+            skillsMatch: result.skillsMatch,
+            matchReasons: buildMatchReasons(result),
+            coverLetterSnippet: result.coverLetterSnippet,
+            qualified: result.score >= QUALIFY_THRESHOLD,
+          }
+
+          if (qualifiedJob.qualified) {
+            qualified.push(qualifiedJob)
+            console.log(
+              `[qualify-jobs] QUALIFIED (${result.score}): ${job.company} — ${job.title}`,
+            )
+          } else {
+            disqualified.push(qualifiedJob)
+            console.log(
+              `[qualify-jobs] DISQUALIFIED (${result.score}): ${job.company} — ${job.title}`,
+            )
+          }
+        } else {
+          // Batch didn't return a result for this job — benefit of the doubt
+          const titleLooksRelevant = /designer|design|ux|ui/i.test(job.title)
+          const fallbackScore = titleLooksRelevant ? 42 : 25
+          const fallbackJob: QualifiedJob = {
+            url: job.url,
+            title: job.title,
+            company: job.company,
+            location: job.location,
+            isEasyApply: job.isEasyApply,
+            score: fallbackScore,
+            isDesignRole: titleLooksRelevant,
+            seniorityMatch: /senior|sr\.?|lead|staff|principal|head/i.test(job.title),
+            locationCompatible: false,
+            salaryInRange: true,
+            skillsMatch: titleLooksRelevant,
+            matchReasons: ["Batch qualification missing — needs manual review"],
+            coverLetterSnippet: "",
+            qualified: fallbackScore >= QUALIFY_THRESHOLD,
+            error: "No result from batch API",
+          }
+          if (fallbackJob.qualified) {
+            qualified.push(fallbackJob)
+          } else {
+            disqualified.push(fallbackJob)
+          }
+        }
+      }
     }
 
     // -----------------------------------------------------------------------

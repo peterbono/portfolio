@@ -19,14 +19,17 @@ import {
   buildSystemPrompt,
   buildUserMessage,
   callHaikuQualifier,
+  callHaikuQualifierBatch,
   buildErrorFallback,
   type QualificationResult,
   type QualifierConfig,
+  type BatchQualifyRequest,
+  type BatchQualifierConfig,
 } from './qualifier-core'
 
 // Re-export shared types so existing imports from './qualifier' still work
-export type { QualificationResult, QualifierConfig } from './qualifier-core'
-export { buildSystemPrompt, buildUserMessage, callHaikuQualifier, buildErrorFallback } from './qualifier-core'
+export type { QualificationResult, QualifierConfig, BatchQualifyRequest, BatchQualifierConfig } from './qualifier-core'
+export { buildSystemPrompt, buildUserMessage, callHaikuQualifier, callHaikuQualifierBatch, buildErrorFallback } from './qualifier-core'
 
 // ---------------------------------------------------------------------------
 // Types — orchestrator-specific
@@ -662,8 +665,10 @@ export async function qualifyJob(
 const MAX_QUALIFY_PER_RUN = 50 // Cap to control Haiku API costs (~$0.003/job, ~$0.15/run max)
 
 /**
- * Qualify multiple job descriptions in parallel with a concurrency limit.
- * Default concurrency: 10 (Haiku handles high throughput well).
+ * Qualify multiple job descriptions using the Anthropic Batch API (50% discount).
+ * Falls back to concurrent individual calls if the batch API fails.
+ *
+ * Default concurrency for fallback: 10 (Haiku handles high throughput well).
  */
 export async function qualifyJobsBatch(
   jobs: Array<{ jobDescription: string; url: string }>,
@@ -677,24 +682,84 @@ export async function qualifyJobsBatch(
   if (jobs.length > MAX_QUALIFY_PER_RUN) {
     console.log(`[qualifier] Capped at ${MAX_QUALIFY_PER_RUN} jobs (${jobs.length} found)`)
   }
-  const queue = [...capped]
 
-  async function worker() {
-    while (queue.length > 0) {
-      const job = queue.shift()
-      if (!job) break
-
-      const result = await qualifyJob(job.jobDescription, searchProfile, applicantProfile)
-      results.set(job.url, result)
-
-      // Small breathing room between API calls (reduced from 200-500ms to 50-150ms)
-      await new Promise(r => setTimeout(r, 50 + Math.random() * 100))
+  // Check cache first — separate cached from uncached jobs
+  const uncachedJobs: Array<{ jobDescription: string; url: string }> = []
+  for (const job of capped) {
+    const key = cacheKey(job.jobDescription)
+    const cached = qualificationCache.get(key)
+    if (cached) {
+      console.log(`[qualifier] Cache hit for ${job.url}`)
+      results.set(job.url, cached)
+    } else {
+      uncachedJobs.push(job)
     }
   }
 
-  // Launch concurrency workers
-  const workers = Array.from({ length: Math.min(concurrency, jobs.length) }, () => worker())
-  await Promise.all(workers)
+  if (uncachedJobs.length === 0) {
+    console.log('[qualifier] All jobs served from cache')
+    return results
+  }
+
+  // Select cover letter variant via Thompson Sampling (same variant for the batch)
+  const variant = selectCoverLetterVariant()
+  console.log(`[qualifier] Batch using cover letter variant: ${variant}`)
+
+  // Build batch requests using shared core functions
+  const batchRequests: BatchQualifyRequest[] = uncachedJobs.map((job) => ({
+    id: job.url,
+    systemPrompt: buildSystemPrompt(applicantProfile, variant),
+    userMessage: buildUserMessage(job.jobDescription, {
+      keywords: searchProfile.keywords ?? undefined,
+      location: searchProfile.location ?? undefined,
+      minSalary: searchProfile.min_salary ?? undefined,
+      remoteOnly: searchProfile.remote_only ?? undefined,
+    }),
+  }))
+
+  console.log(`[qualifier] Sending ${batchRequests.length} jobs to Haiku Batch API (50% discount)`)
+
+  try {
+    const batchResults = await callHaikuQualifierBatch(batchRequests, {
+      fallbackToIndividual: true,
+    })
+
+    // Process results — add variant tag, cache, and categorize
+    for (const job of uncachedJobs) {
+      const result = batchResults.get(job.url)
+      if (result) {
+        const fullResult: QualificationResult = {
+          ...result,
+          coverLetterVariant: variant,
+        }
+        // Cache it
+        qualificationCache.set(cacheKey(job.jobDescription), fullResult)
+        results.set(job.url, fullResult)
+        console.log(`[qualifier] Score: ${fullResult.score} — ${fullResult.reasoning.slice(0, 80)}...`)
+      } else {
+        // No result from batch — use error fallback
+        const fallback = buildErrorFallback('No result from batch API')
+        results.set(job.url, fallback)
+      }
+    }
+  } catch (err) {
+    // Complete batch failure with fallback disabled — fall back to sequential
+    console.error(`[qualifier] Batch failed, falling back to sequential: ${(err as Error).message}`)
+    const queue = [...uncachedJobs]
+
+    async function worker() {
+      while (queue.length > 0) {
+        const job = queue.shift()
+        if (!job) break
+        const result = await qualifyJob(job.jobDescription, searchProfile, applicantProfile)
+        results.set(job.url, result)
+        await new Promise(r => setTimeout(r, 50 + Math.random() * 100))
+      }
+    }
+
+    const workers = Array.from({ length: Math.min(concurrency, uncachedJobs.length) }, () => worker())
+    await Promise.all(workers)
+  }
 
   return results
 }

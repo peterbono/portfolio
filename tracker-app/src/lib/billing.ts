@@ -4,7 +4,7 @@
 export type PlanTier = 'free' | 'starter' | 'pro' | 'boost'
 
 export interface PlanLimits {
-  botAppliesPerMonth: number // 0, 25, 100, Infinity
+  botAppliesPerMonth: number // 0, 150, 500, 1500
   atsAdapters: string[] // which adapters available
   coverLettersPerMonth: number // 0, 0, 50, Infinity
   hasAICoach: boolean
@@ -22,20 +22,59 @@ export interface PlanLimits {
 export interface PlatformLimits {
   linkedInPerDay: number
   atsPerDay: number
+  runsPerDay: number
 }
 
 /** Platform limits per plan tier (+ trial) */
 export const PLATFORM_LIMITS: Record<PlanTier | 'trial', PlatformLimits> = {
-  trial:   { linkedInPerDay: 5,   atsPerDay: 15  },
-  free:    { linkedInPerDay: 0,   atsPerDay: 0   },
-  starter: { linkedInPerDay: 10,  atsPerDay: 999 },
-  pro:     { linkedInPerDay: 20,  atsPerDay: 999 },
-  boost:   { linkedInPerDay: 999, atsPerDay: 999 },
+  trial:   { linkedInPerDay: 5,   atsPerDay: 15,  runsPerDay: 1 },
+  free:    { linkedInPerDay: 0,   atsPerDay: 0,   runsPerDay: 0 },
+  starter: { linkedInPerDay: 10,  atsPerDay: 999, runsPerDay: 1 },
+  pro:     { linkedInPerDay: 20,  atsPerDay: 999, runsPerDay: 2 },
+  boost:   { linkedInPerDay: 999, atsPerDay: 999, runsPerDay: 3 },
 }
 
 export function getPlatformLimits(plan: PlanTier, isTrialActive: boolean): PlatformLimits {
   if (isTrialActive && plan === 'free') return PLATFORM_LIMITS.trial
   return PLATFORM_LIMITS[plan]
+}
+
+// ─── Daily Run Cap ──────────────────────────────────────────────────
+
+export interface CanRunBotResult {
+  allowed: boolean
+  reason?: string
+  limit: number
+}
+
+/**
+ * Check whether the user can trigger another bot run today.
+ *
+ * @param plan     - The user's effective plan tier (use getEffectivePlan first)
+ * @param runsToday - Number of bot runs already consumed today (UTC day)
+ * @returns { allowed, reason?, limit }
+ */
+export function canRunBot(plan: PlanTier | 'trial', runsToday: number): CanRunBotResult {
+  const limits = PLATFORM_LIMITS[plan] ?? PLATFORM_LIMITS.free
+  const limit = limits.runsPerDay
+
+  if (limit === 0) {
+    return {
+      allowed: false,
+      reason: 'Your plan does not include bot runs. Upgrade to Starter or higher.',
+      limit,
+    }
+  }
+
+  if (runsToday >= limit) {
+    return {
+      allowed: false,
+      reason: `Daily run limit reached (${runsToday}/${limit}). Resets at midnight UTC.`,
+      limit,
+    }
+  }
+
+  return { allowed: true, limit }
 }
 
 // ─── Trial System ───────────────────────────────────────────────────
@@ -172,7 +211,7 @@ const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
     hasStealth: false,
   },
   starter: {
-    botAppliesPerMonth: 100,
+    botAppliesPerMonth: 150,
     atsAdapters: ['Greenhouse', 'Lever', 'Workable', 'Teamtailor'],
     coverLettersPerMonth: 20,
     hasAICoach: true,
@@ -186,7 +225,7 @@ const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
     hasStealth: true,
   },
   pro: {
-    botAppliesPerMonth: Infinity,
+    botAppliesPerMonth: 500,
     atsAdapters: [...ALL_ATS],
     coverLettersPerMonth: Infinity,
     hasAICoach: true,
@@ -200,7 +239,7 @@ const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
     hasStealth: true,
   },
   boost: {
-    botAppliesPerMonth: Infinity,
+    botAppliesPerMonth: 1500,
     atsAdapters: [...ALL_ATS],
     coverLettersPerMonth: Infinity,
     hasAICoach: true,

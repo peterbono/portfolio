@@ -5,7 +5,9 @@ import {
   canUseFeature,
   getMinimumPlan,
   getRemainingQuota,
+  canRunBot,
   PLAN_CONFIGS,
+  PLATFORM_LIMITS,
   redirectToCheckout,
   handleCheckoutSuccess,
 } from '../billing'
@@ -41,7 +43,7 @@ describe('getPlanLimits', () => {
 
   it('returns correct limits for starter tier', () => {
     const limits = getPlanLimits('starter')
-    expect(limits.botAppliesPerMonth).toBe(100)
+    expect(limits.botAppliesPerMonth).toBe(150)
     expect(limits.coverLettersPerMonth).toBe(20)
     expect(limits.hasGhostDetection).toBe(true)
     expect(limits.hasFullAnalytics).toBe(true)
@@ -52,7 +54,7 @@ describe('getPlanLimits', () => {
 
   it('returns correct limits for pro tier', () => {
     const limits = getPlanLimits('pro')
-    expect(limits.botAppliesPerMonth).toBe(Infinity)
+    expect(limits.botAppliesPerMonth).toBe(500)
     expect(limits.coverLettersPerMonth).toBe(Infinity)
     expect(limits.hasGhostDetection).toBe(true)
     expect(limits.hasFeedbackLoop).toBe(true)
@@ -64,7 +66,7 @@ describe('getPlanLimits', () => {
 
   it('returns correct limits for boost tier', () => {
     const limits = getPlanLimits('boost')
-    expect(limits.botAppliesPerMonth).toBe(Infinity)
+    expect(limits.botAppliesPerMonth).toBe(1500)
     expect(limits.coverLettersPerMonth).toBe(Infinity)
     expect(limits.hasGhostDetection).toBe(true)
     expect(limits.hasFeedbackLoop).toBe(true)
@@ -267,16 +269,16 @@ describe('getRemainingQuota', () => {
     expect(getRemainingQuota('free', 30, 'bot-apply')).toBe(0)
   })
 
-  it('bot-apply: starter tier has 100 total', () => {
-    expect(getRemainingQuota('starter', 20, 'bot-apply')).toBe(80)
+  it('bot-apply: starter tier has 150 total', () => {
+    expect(getRemainingQuota('starter', 20, 'bot-apply')).toBe(130)
   })
 
-  it('bot-apply: pro tier returns Infinity', () => {
-    expect(getRemainingQuota('pro', 150, 'bot-apply')).toBe(Infinity)
+  it('bot-apply: pro tier has 500 total', () => {
+    expect(getRemainingQuota('pro', 150, 'bot-apply')).toBe(350)
   })
 
-  it('bot-apply: boost tier returns Infinity', () => {
-    expect(getRemainingQuota('boost', 9999, 'bot-apply')).toBe(Infinity)
+  it('bot-apply: boost tier has 1500 total', () => {
+    expect(getRemainingQuota('boost', 1500, 'bot-apply')).toBe(0)
   })
 
   it('cover-letter: free tier has 0 total', () => {
@@ -298,7 +300,7 @@ describe('getRemainingQuota', () => {
   it('0 used returns full quota', () => {
     expect(getRemainingQuota('free', 0, 'bot-apply')).toBe(0)
     expect(getRemainingQuota('free', 0, 'cover-letter')).toBe(0)
-    expect(getRemainingQuota('starter', 0, 'bot-apply')).toBe(100)
+    expect(getRemainingQuota('starter', 0, 'bot-apply')).toBe(150)
     expect(getRemainingQuota('starter', 0, 'cover-letter')).toBe(20)
   })
 
@@ -385,21 +387,21 @@ describe('Plan feature limits', () => {
     expect(limits.coverLettersPerMonth).toBe(0)
   })
 
-  it('Starter: 100 applies, 20 cover letters', () => {
+  it('Starter: 150 applies, 20 cover letters', () => {
     const limits = getPlanLimits('starter')
-    expect(limits.botAppliesPerMonth).toBe(100)
+    expect(limits.botAppliesPerMonth).toBe(150)
     expect(limits.coverLettersPerMonth).toBe(20)
   })
 
-  it('Pro: Infinity applies, Infinity cover letters', () => {
+  it('Pro: 500 applies, Infinity cover letters', () => {
     const limits = getPlanLimits('pro')
-    expect(limits.botAppliesPerMonth).toBe(Infinity)
+    expect(limits.botAppliesPerMonth).toBe(500)
     expect(limits.coverLettersPerMonth).toBe(Infinity)
   })
 
-  it('Boost: Infinity applies, Infinity cover letters', () => {
+  it('Boost: 1500 applies, Infinity cover letters', () => {
     const limits = getPlanLimits('boost')
-    expect(limits.botAppliesPerMonth).toBe(Infinity)
+    expect(limits.botAppliesPerMonth).toBe(1500)
     expect(limits.coverLettersPerMonth).toBe(Infinity)
   })
 })
@@ -653,5 +655,86 @@ describe('handleCheckoutSuccess', () => {
     handleCheckoutSuccess()
     // Should remain unchanged
     expect(localStorage.getItem('tracker_user_plan')).toBe('free')
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════
+//  PLATFORM_LIMITS — runsPerDay
+// ═══════════════════════════════════════════════════════════════════════
+
+describe('PLATFORM_LIMITS runsPerDay', () => {
+  it('trial allows 1 run/day', () => {
+    expect(PLATFORM_LIMITS.trial.runsPerDay).toBe(1)
+  })
+
+  it('free allows 0 runs/day', () => {
+    expect(PLATFORM_LIMITS.free.runsPerDay).toBe(0)
+  })
+
+  it('starter allows 1 run/day', () => {
+    expect(PLATFORM_LIMITS.starter.runsPerDay).toBe(1)
+  })
+
+  it('pro allows 2 runs/day', () => {
+    expect(PLATFORM_LIMITS.pro.runsPerDay).toBe(2)
+  })
+
+  it('boost allows 3 runs/day', () => {
+    expect(PLATFORM_LIMITS.boost.runsPerDay).toBe(3)
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════
+//  canRunBot
+// ═══════════════════════════════════════════════════════════════════════
+
+describe('canRunBot', () => {
+  it('allows first run on starter (0 runs today)', () => {
+    const result = canRunBot('starter', 0)
+    expect(result.allowed).toBe(true)
+    expect(result.limit).toBe(1)
+    expect(result.reason).toBeUndefined()
+  })
+
+  it('blocks second run on starter (1 run today)', () => {
+    const result = canRunBot('starter', 1)
+    expect(result.allowed).toBe(false)
+    expect(result.limit).toBe(1)
+    expect(result.reason).toContain('Daily run limit reached')
+  })
+
+  it('allows first two runs on pro', () => {
+    expect(canRunBot('pro', 0).allowed).toBe(true)
+    expect(canRunBot('pro', 1).allowed).toBe(true)
+  })
+
+  it('blocks third run on pro', () => {
+    const result = canRunBot('pro', 2)
+    expect(result.allowed).toBe(false)
+    expect(result.limit).toBe(2)
+  })
+
+  it('allows up to 3 runs on boost', () => {
+    expect(canRunBot('boost', 0).allowed).toBe(true)
+    expect(canRunBot('boost', 1).allowed).toBe(true)
+    expect(canRunBot('boost', 2).allowed).toBe(true)
+  })
+
+  it('blocks fourth run on boost', () => {
+    const result = canRunBot('boost', 3)
+    expect(result.allowed).toBe(false)
+    expect(result.limit).toBe(3)
+  })
+
+  it('always blocks free plan', () => {
+    const result = canRunBot('free', 0)
+    expect(result.allowed).toBe(false)
+    expect(result.reason).toContain('does not include bot runs')
+    expect(result.limit).toBe(0)
+  })
+
+  it('allows trial users 1 run/day', () => {
+    expect(canRunBot('trial', 0).allowed).toBe(true)
+    expect(canRunBot('trial', 1).allowed).toBe(false)
   })
 })
