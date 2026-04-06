@@ -1102,4 +1102,33 @@ export function onPipelineProgress(
  */
 export { isExtensionInstalled as checkExtensionInstalled }
 
+// ---------------------------------------------------------------------------
+// Pipeline Mode: user preference for extension vs cloud routing
+// ---------------------------------------------------------------------------
+
+export type PipelineModePreference = 'auto' | 'extension' | 'server'
+
+const LS_PIPELINE_MODE = 'tracker_v2_pipeline_mode'
+
+/**
+ * Get the user's preferred pipeline mode from localStorage.
+ * Defaults to 'auto' if not set or invalid.
+ */
+export function getPipelineMode(): PipelineModePreference {
+  try {
+    const raw = localStorage.getItem(LS_PIPELINE_MODE)
+    if (raw === 'auto' || raw === 'extension' || raw === 'server') return raw
+  } catch { /* ignore */ }
+  return 'auto'
+}
+
+/**
+ * Set the user's preferred pipeline mode in localStorage.
+ */
+export function setPipelineModePreference(mode: PipelineModePreference): void {
+  try {
+    localStorage.setItem(LS_PIPELINE_MODE, mode)
+  } catch { /* ignore */ }
+}
+
 // Build: 1775322286

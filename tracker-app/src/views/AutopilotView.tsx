@@ -48,6 +48,7 @@ import {
   triggerExtensionPipeline,
   onPipelineProgress,
   checkExtensionInstalled,
+  getPipelineMode,
   type BatchApplyProgress,
   type PipelineProgressEvent,
   type PipelinePhase,
@@ -4370,10 +4371,19 @@ export function AutopilotView() {
     })
 
     try {
-      // Detect Chrome extension — if available, use extension pipeline
-      const extensionAvailable = await checkExtensionInstalled()
+      // Read user's pipeline mode preference from Settings
+      const modePref = getPipelineMode() // 'auto' | 'extension' | 'server'
+      const extensionAvailable = modePref === 'server' ? false : await checkExtensionInstalled()
 
-      if (extensionAvailable) {
+      // Enforce 'extension' mode — fail fast if extension not installed
+      if (modePref === 'extension' && !extensionAvailable) {
+        throw new Error('Pipeline mode is set to "Extension Only" but the Chrome extension is not installed. Install the extension or switch to Auto/Cloud in Settings.')
+      }
+
+      // Decide whether to use extension: 'extension' always, 'auto' if available, 'server' never
+      const useExtension = modePref === 'extension' || (modePref === 'auto' && extensionAvailable)
+
+      if (useExtension) {
         // ── Extension pipeline path ──────────────────────────────────────
         console.log('[doStartBot] Chrome extension detected — using extension pipeline')
         setPipelineMode('extension')
