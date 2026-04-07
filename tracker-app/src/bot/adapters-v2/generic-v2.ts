@@ -85,13 +85,25 @@ export const genericV2: StagehandAdapter = {
       await page.goto(jobUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 })
       await page.waitForTimeout(2500)
 
-      // ── Step 2: Dismiss cookie banners / overlays ──
-      try {
-        await stagehand.act('If there is a cookie consent banner, privacy notice, or overlay popup visible, click "Accept", "Accept all", or "OK" to dismiss it. If none visible, do nothing.')
-        await page.waitForTimeout(1000)
-        console.log(`[${ADAPTER_NAME}] Cookie/overlay check done`)
-      } catch {
-        // No banner — continue
+      // ── Step 2: Dismiss cookie banners / overlays (Playwright direct, not AI) ──
+      const cookieSelectors = [
+        'button:has-text("Accept all")', 'button:has-text("Accept All")',
+        'button:has-text("ACCEPT")', 'button:has-text("Accept")',
+        'button:has-text("OK")', 'button:has-text("Got it")',
+        'button:has-text("I agree")', 'button:has-text("Allow all")',
+        '[data-testid="cookie-accept"]', '#onetrust-accept-btn-handler',
+        '.cookie-accept', '.cc-accept', '.js-accept-cookies',
+      ]
+      for (const sel of cookieSelectors) {
+        try {
+          const btn = page.locator(sel).first()
+          if (await btn.isVisible({ timeout: 1000 })) {
+            await btn.click()
+            await page.waitForTimeout(500)
+            console.log(`[${ADAPTER_NAME}] Cookie banner dismissed via: ${sel}`)
+            break
+          }
+        } catch { /* not found, try next */ }
       }
 
       // ── Step 3: Find and click the Apply button ──
@@ -239,11 +251,30 @@ export const genericV2: StagehandAdapter = {
         // No checkboxes
       }
 
-      // ── Step 9: Submit ──
+      // ── Step 9: Submit (AI first, then Playwright fallback) ──
       try {
-        await stagehand.act('Click the final "Submit", "Submit Application", "Apply", or "Send Application" button to submit the form')
-        console.log(`[${ADAPTER_NAME}] Submit clicked`)
-        await page.waitForTimeout(5000)
+        await stagehand.act('Scroll down to the submit button and click the "Submit", "Submit Application", "SUBMIT APPLICATION", "Apply", or "Send Application" button')
+        console.log(`[${ADAPTER_NAME}] Submit clicked via AI`)
+        await page.waitForTimeout(3000)
+
+        // Playwright fallback: if the submit button is still visible, click it directly
+        const submitSelectors = [
+          'button[type="submit"]', 'button:has-text("Submit")',
+          'button:has-text("SUBMIT")', 'button:has-text("Apply")',
+          'button:has-text("Send Application")', 'input[type="submit"]',
+          '.postings-btn-submit', '.application-submit',
+        ]
+        for (const sel of submitSelectors) {
+          try {
+            const btn = page.locator(sel).first()
+            if (await btn.isVisible({ timeout: 1000 })) {
+              await btn.click()
+              console.log(`[${ADAPTER_NAME}] Submit clicked via Playwright fallback: ${sel}`)
+              await page.waitForTimeout(5000)
+              break
+            }
+          } catch { /* try next */ }
+        }
       } catch (err) {
         const screenshot = await page.screenshot({ type: 'jpeg', quality: 60 }).catch(() => null)
         return {
