@@ -249,40 +249,57 @@ export const genericV2: StagehandAdapter = {
       }
 
       // ── Step 10: Check for confirmation ──
-      try {
-        const result = await stagehand.extract('Check if the page shows a success/confirmation message after form submission. Look for "thank you", "application received", "successfully submitted", or similar messages. Also check if there are any error messages visible. Return JSON with isSuccess (boolean), isError (boolean), and message (string).')
+      // Many ATS (especially Greenhouse) redirect to the careers page after
+      // successful submission. Detect this as a success signal.
+      const currentUrl = page.url()
+      const pageText = await page.textContent('body').catch(() => '') || ''
+      const pageLower = pageText.toLowerCase()
 
-        const extracted = result as any
-        if (extracted?.isSuccess) {
-          return {
-            url: jobUrl,
-            company,
-            role,
-            ats: ADAPTER_NAME,
-            status: 'applied',
-            reason: extracted.message || 'Application submitted successfully',
-            durationMs: Date.now() - start,
-          }
-        }
+      // Success signals: explicit confirmation text OR redirect away from job URL
+      const hasConfirmationText = [
+        'thank you', 'application received', 'successfully submitted',
+        'application has been', 'we have received', 'thanks for applying',
+        'application complete', 'submitted your application',
+      ].some(phrase => pageLower.includes(phrase))
 
-        if (extracted?.isError) {
-          const screenshot = await page.screenshot({ type: 'jpeg', quality: 60 }).catch(() => null)
-          return {
-            url: jobUrl,
-            company,
-            role,
-            ats: ADAPTER_NAME,
-            status: 'failed',
-            reason: `Form error: ${extracted.message || 'Validation error detected'}`,
-            screenshotBase64: screenshot?.toString('base64'),
-            durationMs: Date.now() - start,
-          }
+      const hasRedirected = currentUrl !== jobUrl && !currentUrl.includes('/apply')
+      const hasErrorText = [
+        'required field', 'please fill', 'is required', 'error',
+        'invalid', 'please correct',
+      ].some(phrase => pageLower.includes(phrase))
+
+      // If we see explicit errors, it's a failure
+      if (hasErrorText && !hasConfirmationText) {
+        const screenshot = await page.screenshot({ type: 'jpeg', quality: 60 }).catch(() => null)
+        return {
+          url: jobUrl,
+          company,
+          role,
+          ats: ADAPTER_NAME,
+          status: 'failed',
+          reason: 'Form validation errors detected after submit',
+          screenshotBase64: screenshot?.toString('base64'),
+          durationMs: Date.now() - start,
         }
-      } catch {
-        // Could not extract — ambiguous result
       }
 
-      // Ambiguous: submit was clicked but no clear confirmation or error
+      // Confirmation text or redirect = success
+      if (hasConfirmationText || hasRedirected) {
+        console.log(`[${ADAPTER_NAME}] Confirmation detected: text=${hasConfirmationText}, redirect=${hasRedirected}, url=${currentUrl}`)
+        return {
+          url: jobUrl,
+          company,
+          role,
+          ats: ADAPTER_NAME,
+          status: 'applied',
+          reason: hasConfirmationText
+            ? 'Confirmation message detected'
+            : `Redirected to ${currentUrl} after submit`,
+          durationMs: Date.now() - start,
+        }
+      }
+
+      // No clear signal — screenshot and mark needs_manual
       const screenshot = await page.screenshot({ type: 'jpeg', quality: 60 }).catch(() => null)
       return {
         url: jobUrl,
@@ -290,7 +307,7 @@ export const genericV2: StagehandAdapter = {
         role,
         ats: ADAPTER_NAME,
         status: 'needs_manual',
-        reason: 'Submit clicked but confirmation unclear — verify manually',
+        reason: 'Submit clicked but no confirmation or redirect detected',
         screenshotBase64: screenshot?.toString('base64'),
         durationMs: Date.now() - start,
       }
