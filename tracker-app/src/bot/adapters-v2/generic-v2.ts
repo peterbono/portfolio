@@ -86,29 +86,51 @@ export const genericV2: StagehandAdapter = {
       await page.waitForTimeout(2500)
 
       // ── Step 2: Dismiss cookie banners / overlays (Playwright direct, not AI) ──
+      // Try multiple rounds: Playwright selectors first, then AI fallback
       const cookieSelectors = [
         'button:has-text("Accept all")', 'button:has-text("Accept All")',
         'button:has-text("ACCEPT")', 'button:has-text("Accept")',
-        'button:has-text("OK")', 'button:has-text("Got it")',
-        'button:has-text("I agree")', 'button:has-text("Allow all")',
+        'button:has-text("Decline all")', 'button:has-text("OK")',
+        'button:has-text("Got it")', 'button:has-text("I agree")',
+        'button:has-text("Allow all")', 'button:has-text("Agree")',
         '[data-testid="cookie-accept"]', '#onetrust-accept-btn-handler',
         '.cookie-accept', '.cc-accept', '.js-accept-cookies',
+        '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll',
       ]
+      let cookieDismissed = false
       for (const sel of cookieSelectors) {
         try {
           const btn = page.locator(sel).first()
-          if (await btn.isVisible({ timeout: 1000 })) {
+          if (await btn.isVisible({ timeout: 800 })) {
             await btn.click()
             await page.waitForTimeout(500)
             console.log(`[${ADAPTER_NAME}] Cookie banner dismissed via: ${sel}`)
+            cookieDismissed = true
             break
           }
         } catch { /* not found, try next */ }
       }
+      // AI fallback for custom cookie modals
+      if (!cookieDismissed) {
+        try {
+          await stagehand.act('If there is a visible cookie consent popup, banner, or modal, click the accept/close button to dismiss it')
+          await page.waitForTimeout(500)
+        } catch { /* no banner */ }
+      }
 
-      // ── Step 3: Find and click the Apply button ──
+      // ── Step 3: Find and click the Apply button / Application tab ──
+      // Some ATS (Workable) have an "APPLICATION" tab that must be clicked first
       try {
-        await stagehand.act('Find and click the primary "Apply", "Apply now", "Apply for this job", or "Submit application" button on this job posting page. Do NOT click cookie or privacy buttons.')
+        const appTab = page.locator('a:has-text("APPLICATION"), button:has-text("APPLICATION"), [data-ui="tab"]:has-text("Application")').first()
+        if (await appTab.isVisible({ timeout: 2000 })) {
+          await appTab.click()
+          await page.waitForTimeout(2000)
+          console.log(`[${ADAPTER_NAME}] Application tab clicked`)
+        }
+      } catch { /* no tab */ }
+
+      try {
+        await stagehand.act('Find and click the primary "Apply", "Apply now", "Apply for this job", or "Submit application" button on this page. Do NOT click cookie, privacy, or navigation buttons.')
         await page.waitForTimeout(2500)
         console.log(`[${ADAPTER_NAME}] Apply button clicked`)
       } catch {
