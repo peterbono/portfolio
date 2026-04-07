@@ -205,7 +205,7 @@ export const headlessApplyTask = task({
           // Initialize Stagehand with timeout
           stagehand = await Promise.race([
             createStagehand({
-              useBrowserbase: payload.useBrowserbase ?? false,
+              // undefined = auto-detect from BROWSERBASE_API_KEY env var
               timeout: 30_000,
             }),
             new Promise<never>((_, reject) =>
