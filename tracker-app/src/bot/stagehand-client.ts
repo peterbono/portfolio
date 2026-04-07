@@ -97,6 +97,22 @@ export async function createStagehand(config?: StagehandConfig): Promise<Stageha
   }
 
   // ── Local Playwright mode ──
+  // Auto-detect Playwright Chromium path in Trigger.dev containers
+  if (!process.env.CHROME_PATH && process.env.PLAYWRIGHT_BROWSERS_PATH) {
+    const fs = await import('fs')
+    const browsersDir = process.env.PLAYWRIGHT_BROWSERS_PATH
+    try {
+      const entries = fs.readdirSync(browsersDir).filter((e: string) => e.startsWith('chromium'))
+      if (entries.length > 0) {
+        const chromePath = `${browsersDir}/${entries[entries.length - 1]}/chrome-linux/chrome`
+        if (fs.existsSync(chromePath)) {
+          process.env.CHROME_PATH = chromePath
+          console.log(`[stagehand] Auto-detected CHROME_PATH: ${chromePath}`)
+        }
+      }
+    } catch { /* ignore — will fail at Stagehand init if Chrome not found */ }
+  }
+
   console.log('[stagehand] Initializing in LOCAL mode (Playwright Chromium)')
 
   const stagehand = new Stagehand({
