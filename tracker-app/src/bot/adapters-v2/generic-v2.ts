@@ -85,9 +85,18 @@ export const genericV2: StagehandAdapter = {
       await page.goto(jobUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 })
       await page.waitForTimeout(2500)
 
-      // ── Step 2: Find and click the Apply button ──
+      // ── Step 2: Dismiss cookie banners / overlays ──
       try {
-        await stagehand.act('Find and click the primary "Apply", "Apply now", "Apply for this job", or "Submit application" button on this job posting page')
+        await stagehand.act('If there is a cookie consent banner, privacy notice, or overlay popup visible, click "Accept", "Accept all", or "OK" to dismiss it. If none visible, do nothing.')
+        await page.waitForTimeout(1000)
+        console.log(`[${ADAPTER_NAME}] Cookie/overlay check done`)
+      } catch {
+        // No banner — continue
+      }
+
+      // ── Step 3: Find and click the Apply button ──
+      try {
+        await stagehand.act('Find and click the primary "Apply", "Apply now", "Apply for this job", or "Submit application" button on this job posting page. Do NOT click cookie or privacy buttons.')
         await page.waitForTimeout(2500)
         console.log(`[${ADAPTER_NAME}] Apply button clicked`)
       } catch {
@@ -136,8 +145,9 @@ export const genericV2: StagehandAdapter = {
 
       for (const field of profileFields) {
         try {
-          await stagehand.act(`Find the input field for "${field.description}" and type "${field.value}" into it. If no such field exists, do nothing.`)
+          await stagehand.act(`Click on the EMPTY input field labeled "${field.description}" (or similar label), clear it, then type exactly: ${field.value} — do NOT type this value into a field that already has content. If no field with this label exists, do nothing.`)
           fieldsFilled++
+          await page.waitForTimeout(500)
         } catch {
           // Field does not exist on this form — expected for many ATS platforms
           if (field.priority <= 2) {
@@ -252,7 +262,7 @@ export const genericV2: StagehandAdapter = {
       // Many ATS (especially Greenhouse) redirect to the careers page after
       // successful submission. Detect this as a success signal.
       const currentUrl = page.url()
-      const pageText = await page.textContent('body').catch(() => '') || ''
+      const pageText = await page.evaluate(() => document.body?.innerText || '').catch(() => '')
       const pageLower = pageText.toLowerCase()
 
       // Success signals: explicit confirmation text OR redirect away from job URL
