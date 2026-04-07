@@ -49,8 +49,9 @@ const DEFAULT_TIMEOUT = 30_000
  * The caller MUST call closeStagehand() when done to release resources.
  */
 export async function createStagehand(config?: StagehandConfig): Promise<Stagehand> {
+  // Auto-detect: use Browserbase when API key is available (unless explicitly disabled)
   const useBrowserbase =
-    config?.useBrowserbase === true &&
+    config?.useBrowserbase !== false &&
     !!process.env.BROWSERBASE_API_KEY
 
   const modelName = config?.model

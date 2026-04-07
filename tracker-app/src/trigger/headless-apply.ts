@@ -72,7 +72,7 @@ async function sendServerNotification(
 
 export const headlessApplyTask = task({
   id: 'headless-apply',
-  machine: 'small-2x', // 2 vCPU, 2 GB — Stagehand local needs Chromium
+  machine: 'small-1x', // 0.5 vCPU, 0.5 GB — Browserbase runs browser remotely
   maxDuration: 1800, // 30 minutes
 
   run: async (payload: {
