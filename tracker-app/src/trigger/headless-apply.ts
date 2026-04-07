@@ -85,7 +85,7 @@ export const headlessApplyTask = task({
     const runStart = Date.now()
 
     // ── Dynamic imports (only available in Trigger.dev worker) ──
-    const { createStagehand, closeStagehand } = await import('../bot/stagehand-client')
+    const { createStagehand, closeStagehand, getPlaywrightPage } = await import('../bot/stagehand-client')
     const { detectAdapterV2 } = await import('../bot/adapters-v2')
     const { APPLICANT } = await import('../bot/types')
     const {
@@ -305,12 +305,13 @@ export const headlessApplyTask = task({
           const errMsg = err instanceof Error ? err.message : String(err)
           console.error(`[headless-apply]   Error: ${errMsg}`)
 
-          // Try to capture screenshot from Stagehand's page
+          // Try to capture screenshot from Stagehand's underlying Playwright page
           let screenshotBase64: string | undefined
           if (stagehand) {
             try {
+              const page = getPlaywrightPage(stagehand)
               const buf = await Promise.race([
-                stagehand.page.screenshot({ type: 'jpeg', quality: 60 }),
+                page.screenshot({ type: 'jpeg', quality: 60 }),
                 new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 5_000)),
               ])
               if (buf) screenshotBase64 = buf.toString('base64')

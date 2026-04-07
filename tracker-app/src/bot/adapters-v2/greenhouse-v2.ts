@@ -11,6 +11,7 @@
  */
 
 import type { Stagehand } from '@browserbasehq/stagehand'
+import { z } from 'zod'
 import type { ApplicantProfile } from '../types'
 import type { ApplyJobResult } from '../../trigger/apply-jobs'
 import type { StagehandAdapter } from './index'
@@ -89,9 +90,7 @@ export const greenhouseV2: StagehandAdapter = {
 
       // ── Step 2: Click Apply button (if form is behind a CTA) ──
       try {
-        await stagehand.act({
-          action: 'Click the "Apply for this job" or "Apply now" button if visible',
-        })
+        await stagehand.act('Click the "Apply for this job" or "Apply now" button if visible')
         await page.waitForTimeout(2000)
       } catch {
         // Form might be inline — continue
@@ -112,9 +111,7 @@ export const greenhouseV2: StagehandAdapter = {
 
       for (const field of fieldsToFill) {
         try {
-          await stagehand.act({
-            action: `${field.instruction} with the value "${field.value}"`,
-          })
+          await stagehand.act(`${field.instruction} with the value "${field.value}"`)
           console.log(`[${ADAPTER_NAME}] Filled: ${field.instruction.slice(0, 50)}...`)
         } catch {
           // Field might not exist on this particular Greenhouse form — continue
@@ -143,9 +140,7 @@ export const greenhouseV2: StagehandAdapter = {
         } else {
           // Some Greenhouse forms use a dropzone — try clicking upload area
           try {
-            await stagehand.act({
-              action: 'Click the "Attach" or "Upload" or "Choose file" button for resume/CV upload',
-            })
+            await stagehand.act('Click the "Attach" or "Upload" or "Choose file" button for resume/CV upload')
             // After click, the file dialog should have triggered the file input
             const hiddenInput = page.locator('input[type="file"]').first()
             await hiddenInput.setInputFiles(cvTmpPath)
@@ -162,9 +157,7 @@ export const greenhouseV2: StagehandAdapter = {
       // ── Step 5: Fill cover letter ──
       if (coverLetter) {
         try {
-          await stagehand.act({
-            action: `Fill the "Cover letter" or "Cover Letter" textarea with the following text: "${coverLetter.slice(0, 2000)}"`,
-          })
+          await stagehand.act(`Fill the "Cover letter" or "Cover Letter" textarea with the following text: "${coverLetter.slice(0, 2000)}"`)
           console.log(`[${ADAPTER_NAME}] Cover letter filled`)
         } catch {
           console.log(`[${ADAPTER_NAME}] No cover letter field found (skipping)`)
@@ -174,9 +167,7 @@ export const greenhouseV2: StagehandAdapter = {
       // ── Step 6: Handle screening questions ──
       // Use observe() to find any additional questions, then act() to answer them
       try {
-        const questions = await stagehand.observe({
-          instruction: 'Find all screening or custom questions on this application form (dropdowns, radio buttons, text fields) that have not been filled yet. Do not include name, email, phone, or resume fields.',
-        })
+        const questions = await stagehand.observe('Find all screening or custom questions on this application form (dropdowns, radio buttons, text fields) that have not been filled yet. Do not include name, email, phone, or resume fields.')
 
         if (questions && questions.length > 0) {
           console.log(`[${ADAPTER_NAME}] Found ${questions.length} screening question(s)`)
@@ -193,9 +184,7 @@ export const greenhouseV2: StagehandAdapter = {
                 `Timezone: ${profile.timezone}`,
               ].join('. ')
 
-              await stagehand.act({
-                action: `Answer the question or field described as "${q.description}" using these facts about the applicant: ${answerContext}. For Yes/No questions about legal right to work in EU, answer Yes. For salary expectations, answer 80000 EUR per year. For questions you cannot answer from these facts, select "Prefer not to say" or leave blank if possible.`,
-              })
+              await stagehand.act(`Answer the question or field described as "${q.description}" using these facts about the applicant: ${answerContext}. For Yes/No questions about legal right to work in EU, answer Yes. For salary expectations, answer 80000 EUR per year. For questions you cannot answer from these facts, select "Prefer not to say" or leave blank if possible.`)
             } catch {
               console.log(`[${ADAPTER_NAME}] Could not answer screening question: ${q.description?.slice(0, 60)}`)
             }
@@ -207,9 +196,7 @@ export const greenhouseV2: StagehandAdapter = {
 
       // ── Step 7: Check consent / agreement boxes ──
       try {
-        await stagehand.act({
-          action: 'Check any consent, privacy policy, or terms checkboxes if they are unchecked. Do not uncheck anything that is already checked.',
-        })
+        await stagehand.act('Check any consent, privacy policy, or terms checkboxes if they are unchecked. Do not uncheck anything that is already checked.')
         console.log(`[${ADAPTER_NAME}] Consent checkboxes handled`)
       } catch {
         console.log(`[${ADAPTER_NAME}] No consent checkboxes found`)
@@ -217,9 +204,7 @@ export const greenhouseV2: StagehandAdapter = {
 
       // ── Step 8: Submit the application ──
       try {
-        await stagehand.act({
-          action: 'Click the "Submit Application" or "Submit" or "Apply" button to submit the job application form',
-        })
+        await stagehand.act('Click the "Submit Application" or "Submit" or "Apply" button to submit the job application form')
         console.log(`[${ADAPTER_NAME}] Submit button clicked`)
         await page.waitForTimeout(5000)
       } catch (err) {
@@ -239,23 +224,15 @@ export const greenhouseV2: StagehandAdapter = {
       // ── Step 9: Extract confirmation ──
       let confirmationText = ''
       try {
-        const result = await stagehand.extract({
-          instruction: 'Extract any confirmation message visible on the page after form submission. Look for text like "Thank you", "Application submitted", "received your application", or similar success messages.',
-          schema: {
-            type: 'object' as const,
-            properties: {
-              confirmationMessage: {
-                type: 'string' as const,
-                description: 'The confirmation or thank-you message displayed after submission',
-              },
-              isSuccess: {
-                type: 'boolean' as const,
-                description: 'Whether the page shows a successful submission confirmation',
-              },
-            },
-            required: ['isSuccess'] as const,
+        const result = await stagehand.extract(
+          'Extract any confirmation message visible on the page after form submission. Look for text like "Thank you", "Application submitted", "received your application", or similar success messages.',
+          {
+            schema: z.object({
+              confirmationMessage: z.string().optional().describe('The confirmation or thank-you message displayed after submission'),
+              isSuccess: z.boolean().describe('Whether the page shows a successful submission confirmation'),
+            }),
           },
-        })
+        )
 
         confirmationText = (result as any)?.confirmationMessage ?? ''
         const isSuccess = (result as any)?.isSuccess ?? false

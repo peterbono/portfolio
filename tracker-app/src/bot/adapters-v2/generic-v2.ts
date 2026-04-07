@@ -87,9 +87,7 @@ export const genericV2: StagehandAdapter = {
 
       // ── Step 2: Find and click the Apply button ──
       try {
-        await stagehand.act({
-          action: 'Find and click the primary "Apply", "Apply now", "Apply for this job", or "Submit application" button on this job posting page',
-        })
+        await stagehand.act('Find and click the primary "Apply", "Apply now", "Apply for this job", or "Submit application" button on this job posting page')
         await page.waitForTimeout(2500)
         console.log(`[${ADAPTER_NAME}] Apply button clicked`)
       } catch {
@@ -100,9 +98,7 @@ export const genericV2: StagehandAdapter = {
       // Use observe() to understand what fields exist before filling
       let formFields: Awaited<ReturnType<typeof stagehand.observe>> = []
       try {
-        formFields = await stagehand.observe({
-          instruction: 'Identify all visible form input fields on this page, including text inputs, textareas, select dropdowns, radio buttons, checkboxes, and file upload areas. For each field, describe what information it expects (e.g. "First name text input", "Resume file upload", "Country dropdown").',
-        })
+        formFields = await stagehand.observe('Identify all visible form input fields on this page, including text inputs, textareas, select dropdowns, radio buttons, checkboxes, and file upload areas. For each field, describe what information it expects (e.g. "First name text input", "Resume file upload", "Country dropdown").')
         console.log(`[${ADAPTER_NAME}] Observed ${formFields.length} form element(s)`)
       } catch {
         console.log(`[${ADAPTER_NAME}] observe() found no form fields`)
@@ -140,9 +136,7 @@ export const genericV2: StagehandAdapter = {
 
       for (const field of profileFields) {
         try {
-          await stagehand.act({
-            action: `Find the input field for "${field.description}" and type "${field.value}" into it. If no such field exists, do nothing.`,
-          })
+          await stagehand.act(`Find the input field for "${field.description}" and type "${field.value}" into it. If no such field exists, do nothing.`)
           fieldsFilled++
         } catch {
           // Field does not exist on this form — expected for many ATS platforms
@@ -183,9 +177,7 @@ export const genericV2: StagehandAdapter = {
         } else {
           // Try clicking an upload button, then finding the file input
           try {
-            await stagehand.act({
-              action: 'Click the resume, CV, or file upload button or area',
-            })
+            await stagehand.act('Click the resume, CV, or file upload button or area')
             await page.waitForTimeout(1000)
 
             const hiddenInput = page.locator('input[type="file"]').first()
@@ -205,9 +197,8 @@ export const genericV2: StagehandAdapter = {
       // ── Step 6: Fill cover letter ──
       if (coverLetter) {
         try {
-          await stagehand.act({
-            action: `Find the cover letter textarea or "additional information" text area and type the following: "${coverLetter.slice(0, 2000)}"`,
-          })
+          await stagehand.act(`Find the cover letter textarea or "additional information" text area and type the following: "${coverLetter.slice(0, 2000)}"`)
+
           console.log(`[${ADAPTER_NAME}] Cover letter filled`)
         } catch {
           // Many forms don't have a cover letter field
@@ -225,9 +216,7 @@ export const genericV2: StagehandAdapter = {
           `Education: ${profile.education}`,
         ].join('. ')
 
-        await stagehand.act({
-          action: `Look for any remaining unfilled required fields or screening questions on this form. Answer them using these facts: ${answerContext}. For salary questions, use 80000 EUR per year. For sensitive questions (gender, race, disability), select "Prefer not to say" or "Decline to answer". For unknown questions, skip them or select "Other" if available.`,
-        })
+        await stagehand.act(`Look for any remaining unfilled required fields or screening questions on this form. Answer them using these facts: ${answerContext}. For salary questions, use 80000 EUR per year. For sensitive questions (gender, race, disability), select "Prefer not to say" or "Decline to answer". For unknown questions, skip them or select "Other" if available.`)
         console.log(`[${ADAPTER_NAME}] Screening questions handled`)
       } catch {
         // No additional questions
@@ -235,18 +224,14 @@ export const genericV2: StagehandAdapter = {
 
       // ── Step 8: Check consent boxes ──
       try {
-        await stagehand.act({
-          action: 'Check any unchecked consent, privacy, or terms checkboxes',
-        })
+        await stagehand.act('Check any unchecked consent, privacy, or terms checkboxes')
       } catch {
         // No checkboxes
       }
 
       // ── Step 9: Submit ──
       try {
-        await stagehand.act({
-          action: 'Click the final "Submit", "Submit Application", "Apply", or "Send Application" button to submit the form',
-        })
+        await stagehand.act('Click the final "Submit", "Submit Application", "Apply", or "Send Application" button to submit the form')
         console.log(`[${ADAPTER_NAME}] Submit clicked`)
         await page.waitForTimeout(5000)
       } catch (err) {
@@ -265,27 +250,7 @@ export const genericV2: StagehandAdapter = {
 
       // ── Step 10: Check for confirmation ──
       try {
-        const result = await stagehand.extract({
-          instruction: 'Check if the page shows a success/confirmation message after form submission. Look for "thank you", "application received", "successfully submitted", or similar messages. Also check if there are any error messages visible.',
-          schema: {
-            type: 'object' as const,
-            properties: {
-              isSuccess: {
-                type: 'boolean' as const,
-                description: 'True if a success/confirmation message is visible',
-              },
-              isError: {
-                type: 'boolean' as const,
-                description: 'True if an error message is visible',
-              },
-              message: {
-                type: 'string' as const,
-                description: 'The confirmation or error message text',
-              },
-            },
-            required: ['isSuccess'] as const,
-          },
-        })
+        const result = await stagehand.extract('Check if the page shows a success/confirmation message after form submission. Look for "thank you", "application received", "successfully submitted", or similar messages. Also check if there are any error messages visible. Return JSON with isSuccess (boolean), isError (boolean), and message (string).')
 
         const extracted = result as any
         if (extracted?.isSuccess) {
