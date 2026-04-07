@@ -1106,7 +1106,7 @@ export { isExtensionInstalled as checkExtensionInstalled }
 // Pipeline Mode: user preference for extension vs cloud routing
 // ---------------------------------------------------------------------------
 
-export type PipelineModePreference = 'auto' | 'extension' | 'server'
+export type PipelineModePreference = 'auto' | 'extension' | 'server' | 'headless'
 
 const LS_PIPELINE_MODE = 'tracker_v2_pipeline_mode'
 
@@ -1117,7 +1117,7 @@ const LS_PIPELINE_MODE = 'tracker_v2_pipeline_mode'
 export function getPipelineMode(): PipelineModePreference {
   try {
     const raw = localStorage.getItem(LS_PIPELINE_MODE)
-    if (raw === 'auto' || raw === 'extension' || raw === 'server') return raw
+    if (raw === 'auto' || raw === 'extension' || raw === 'server' || raw === 'headless') return raw
   } catch { /* ignore */ }
   return 'auto'
 }
@@ -1129,6 +1129,95 @@ export function setPipelineModePreference(mode: PipelineModePreference): void {
   try {
     localStorage.setItem(LS_PIPELINE_MODE, mode)
   } catch { /* ignore */ }
+}
+
+// ---------------------------------------------------------------------------
+// Headless autopilot pipeline (Pro/Boost tier — Stagehand cloud)
+// ---------------------------------------------------------------------------
+
+export interface HeadlessPipelineConfig {
+  keywords: string[]
+  location: string
+  excludedCompanies: string[]
+  minScore: number
+  profile: Record<string, unknown>
+  /** If true, skip review queue and auto-apply all qualified jobs */
+  autopilot?: boolean
+}
+
+/**
+ * Trigger the headless cloud autopilot pipeline (Stagehand).
+ * Available for Pro/Boost tiers. Runs entirely server-side with a headless browser.
+ * Returns a runId that can be polled via the existing Trigger.dev polling mechanism.
+ */
+export async function triggerHeadlessPipeline(
+  config: HeadlessPipelineConfig,
+): Promise<TriggerBotResponse> {
+  const userId = await getCurrentUserId()
+
+  const payload: Record<string, unknown> = {
+    userId,
+    mode: 'headless',
+    autopilot: config.autopilot ?? false,
+    keywords: config.keywords,
+    location: config.location,
+    excludedCompanies: config.excludedCompanies,
+    minScore: config.minScore,
+    profile: config.profile,
+  }
+
+  const response = await fetch(PROXY_TASK_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ taskId: 'headless-autopilot-pipeline', payload }),
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error')
+    throw new Error(`Failed to start headless autopilot: ${response.status} ${errorText}`)
+  }
+
+  const data = await response.json()
+  return { runId: data.id }
+}
+
+/**
+ * Trigger headless fallback for jobs that failed via the Chrome extension.
+ * Used by Starter tier: extension is primary, headless retries failures.
+ * Sends the specific failed jobs to be retried server-side via Stagehand.
+ */
+export async function triggerHeadlessFallback(
+  failedJobs: ApprovedJobInput[],
+): Promise<TriggerBotResponse> {
+  if (failedJobs.length === 0) {
+    throw new Error('No failed jobs provided for headless fallback.')
+  }
+
+  const userId = await getCurrentUserId()
+  const userProfile = getUserProfile()
+  const enrichedProfile = getEnrichedProfile()
+
+  const payload: Record<string, unknown> = {
+    userId,
+    jobs: failedJobs,
+    userProfile: userProfile || {},
+    enrichedProfile: enrichedProfile || undefined,
+    isFallback: true,
+  }
+
+  const response = await fetch(PROXY_TASK_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ taskId: 'headless-apply', payload }),
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error')
+    throw new Error(`Failed to start headless fallback: ${response.status} ${errorText}`)
+  }
+
+  const data = await response.json()
+  return { runId: data.id }
 }
 
 // Build: 1775322286

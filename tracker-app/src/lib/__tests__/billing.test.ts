@@ -78,6 +78,35 @@ describe('getPlanLimits', () => {
     expect(limits.atsAdapters).toHaveLength(10)
   })
 
+  // ── Headless / Autopilot fields ──────────────────────────
+  it('free has no headless, no autopilot', () => {
+    const limits = getPlanLimits('free')
+    expect(limits.hasHeadless).toBe(false)
+    expect(limits.headlessAppliesPerMonth).toBe(0)
+    expect(limits.hasAutopilot).toBe(false)
+  })
+
+  it('starter has headless (30/month) but no autopilot', () => {
+    const limits = getPlanLimits('starter')
+    expect(limits.hasHeadless).toBe(true)
+    expect(limits.headlessAppliesPerMonth).toBe(30)
+    expect(limits.hasAutopilot).toBe(false)
+  })
+
+  it('pro has headless (500/month) and autopilot', () => {
+    const limits = getPlanLimits('pro')
+    expect(limits.hasHeadless).toBe(true)
+    expect(limits.headlessAppliesPerMonth).toBe(500)
+    expect(limits.hasAutopilot).toBe(true)
+  })
+
+  it('boost has headless (1500/month) and autopilot', () => {
+    const limits = getPlanLimits('boost')
+    expect(limits.hasHeadless).toBe(true)
+    expect(limits.headlessAppliesPerMonth).toBe(1500)
+    expect(limits.hasAutopilot).toBe(true)
+  })
+
   it('falls back to free tier for unknown plan', () => {
     const limits = getPlanLimits('nonexistent' as PlanTier)
     expect(limits.botAppliesPerMonth).toBe(0)
@@ -213,6 +242,22 @@ describe('canUseFeature', () => {
     expect(canUseFeature('boost', 'priority-support')).toBe(true)
   })
 
+  // headless: starter, pro, boost
+  it('headless is NOT on free, IS on starter+', () => {
+    expect(canUseFeature('free', 'headless')).toBe(false)
+    expect(canUseFeature('starter', 'headless')).toBe(true)
+    expect(canUseFeature('pro', 'headless')).toBe(true)
+    expect(canUseFeature('boost', 'headless')).toBe(true)
+  })
+
+  // autopilot: pro and boost only
+  it('autopilot is NOT on free/starter, IS on pro+', () => {
+    expect(canUseFeature('free', 'autopilot')).toBe(false)
+    expect(canUseFeature('starter', 'autopilot')).toBe(false)
+    expect(canUseFeature('pro', 'autopilot')).toBe(true)
+    expect(canUseFeature('boost', 'autopilot')).toBe(true)
+  })
+
   it('returns false for unknown feature', () => {
     expect(canUseFeature('boost', 'nonexistent' as any)).toBe(false)
   })
@@ -249,6 +294,14 @@ describe('getMinimumPlan', () => {
 
   it('priority-support minimum is boost', () => {
     expect(getMinimumPlan('priority-support')).toBe('boost')
+  })
+
+  it('headless minimum is starter', () => {
+    expect(getMinimumPlan('headless')).toBe('starter')
+  })
+
+  it('autopilot minimum is pro', () => {
+    expect(getMinimumPlan('autopilot')).toBe('pro')
   })
 })
 
@@ -681,6 +734,24 @@ describe('PLATFORM_LIMITS runsPerDay', () => {
 
   it('boost allows 3 runs/day', () => {
     expect(PLATFORM_LIMITS.boost.runsPerDay).toBe(3)
+  })
+
+  // headlessPerDay
+  it('free/trial have 0 headless/day', () => {
+    expect(PLATFORM_LIMITS.free.headlessPerDay).toBe(0)
+    expect(PLATFORM_LIMITS.trial.headlessPerDay).toBe(0)
+  })
+
+  it('starter allows 3 headless/day', () => {
+    expect(PLATFORM_LIMITS.starter.headlessPerDay).toBe(3)
+  })
+
+  it('pro allows 30 headless/day', () => {
+    expect(PLATFORM_LIMITS.pro.headlessPerDay).toBe(30)
+  })
+
+  it('boost allows 50 headless/day', () => {
+    expect(PLATFORM_LIMITS.boost.headlessPerDay).toBe(50)
   })
 })
 

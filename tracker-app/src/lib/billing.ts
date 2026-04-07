@@ -16,6 +16,9 @@ export interface PlanLimits {
   hasPhoneSupport: boolean
   hasPriorityATS: boolean
   hasStealth: boolean
+  hasHeadless: boolean // Stagehand headless browser applies
+  headlessAppliesPerMonth: number // 0, 30, 500, 1500
+  hasAutopilot: boolean // true = "set and forget" (no browser needed)
 }
 
 // ─── Platform-Based Apply Limits ────────────────────────────────────
@@ -23,15 +26,16 @@ export interface PlatformLimits {
   linkedInPerDay: number
   atsPerDay: number
   runsPerDay: number
+  headlessPerDay: number
 }
 
 /** Platform limits per plan tier (+ trial) */
 export const PLATFORM_LIMITS: Record<PlanTier | 'trial', PlatformLimits> = {
-  trial:   { linkedInPerDay: 5,   atsPerDay: 15,  runsPerDay: 1 },
-  free:    { linkedInPerDay: 0,   atsPerDay: 0,   runsPerDay: 0 },
-  starter: { linkedInPerDay: 10,  atsPerDay: 999, runsPerDay: 1 },
-  pro:     { linkedInPerDay: 20,  atsPerDay: 999, runsPerDay: 2 },
-  boost:   { linkedInPerDay: 999, atsPerDay: 999, runsPerDay: 3 },
+  trial:   { linkedInPerDay: 5,   atsPerDay: 15,  runsPerDay: 1, headlessPerDay: 0 },
+  free:    { linkedInPerDay: 0,   atsPerDay: 0,   runsPerDay: 0, headlessPerDay: 0 },
+  starter: { linkedInPerDay: 10,  atsPerDay: 999, runsPerDay: 1, headlessPerDay: 3 },
+  pro:     { linkedInPerDay: 20,  atsPerDay: 999, runsPerDay: 2, headlessPerDay: 30 },
+  boost:   { linkedInPerDay: 999, atsPerDay: 999, runsPerDay: 3, headlessPerDay: 50 },
 }
 
 export function getPlatformLimits(plan: PlanTier, isTrialActive: boolean): PlatformLimits {
@@ -209,6 +213,9 @@ const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
     hasPhoneSupport: false,
     hasPriorityATS: false,
     hasStealth: false,
+    hasHeadless: false,
+    headlessAppliesPerMonth: 0,
+    hasAutopilot: false,
   },
   starter: {
     botAppliesPerMonth: 150,
@@ -223,6 +230,9 @@ const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
     hasPhoneSupport: false,
     hasPriorityATS: false,
     hasStealth: true,
+    hasHeadless: true,
+    headlessAppliesPerMonth: 30,
+    hasAutopilot: false,
   },
   pro: {
     botAppliesPerMonth: 500,
@@ -237,6 +247,9 @@ const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
     hasPhoneSupport: false,
     hasPriorityATS: false,
     hasStealth: true,
+    hasHeadless: true,
+    headlessAppliesPerMonth: 500,
+    hasAutopilot: true,
   },
   boost: {
     botAppliesPerMonth: 1500,
@@ -251,6 +264,9 @@ const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
     hasPhoneSupport: true,
     hasPriorityATS: true,
     hasStealth: true,
+    hasHeadless: true,
+    headlessAppliesPerMonth: 1500,
+    hasAutopilot: true,
   },
 }
 
@@ -268,6 +284,8 @@ export const PLAN_CONFIGS: PlanConfig[] = [
       { label: 'AI Coach', included: true, detail: 'Forever' },
       { label: 'Gmail sync', included: true, detail: 'Forever' },
       { label: 'Auto-apply bot', included: false, detail: 'Trial only' },
+      { label: 'Headless applies', included: false, detail: 'Paid only' },
+      { label: 'Autopilot mode', included: false, detail: 'Pro+ only' },
       { label: 'Stealth Mode', included: false, detail: 'Paid only' },
       { label: 'LinkedIn access', included: false, detail: 'Paid only' },
     ],
@@ -287,6 +305,8 @@ export const PLAN_CONFIGS: PlanConfig[] = [
       { label: 'Stealth Mode', included: true },
       { label: 'Ghost detection', included: true },
       { label: 'Cover letter AI', included: true, detail: '20/month' },
+      { label: 'Headless applies', included: true, detail: '30/month fallback' },
+      { label: 'Autopilot mode', included: false, detail: 'Pro+ only' },
       { label: 'Feedback loop', included: false },
       { label: 'Priority support', included: false },
     ],
@@ -306,6 +326,8 @@ export const PLAN_CONFIGS: PlanConfig[] = [
       { label: 'Stealth Mode', included: true },
       { label: 'Ghost detection', included: true },
       { label: 'Cover letter AI', included: true, detail: 'Unlimited' },
+      { label: 'Headless applies', included: true, detail: '500/month' },
+      { label: 'Autopilot mode', included: true, detail: 'Set & forget' },
       { label: 'Feedback loop', included: true },
       { label: 'AI insights & recommendations', included: true },
       { label: 'Priority support', included: false },
@@ -322,6 +344,8 @@ export const PLAN_CONFIGS: PlanConfig[] = [
       { label: 'Unlimited LinkedIn applies', included: true },
       { label: 'Unlimited ATS applies', included: true },
       { label: 'Everything in Pro', included: true },
+      { label: 'Headless applies', included: true, detail: '1500/month' },
+      { label: 'Autopilot mode', included: true, detail: 'Set & forget' },
       { label: 'Priority Stealth Mode', included: true, detail: 'Priority queue' },
       { label: 'Priority ATS submission', included: true },
       { label: 'AI cover letters', included: true, detail: 'Unlimited' },
@@ -352,6 +376,8 @@ type GatableFeature =
   | 'priority-support'
   | 'stealth'
   | 'linkedin-access'
+  | 'headless'
+  | 'autopilot'
 
 /** Check if a feature is available on the given plan */
 export function canUseFeature(plan: PlanTier, feature: GatableFeature): boolean {
@@ -376,6 +402,10 @@ export function canUseFeature(plan: PlanTier, feature: GatableFeature): boolean 
       return limits.hasStealth
     case 'linkedin-access':
       return limits.hasStealth // same gating as stealth — requires paid plan
+    case 'headless':
+      return limits.hasHeadless
+    case 'autopilot':
+      return limits.hasAutopilot
     default:
       return false
   }

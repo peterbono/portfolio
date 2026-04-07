@@ -62,6 +62,8 @@ type GatableFeature =
   | 'priority-support'
   | 'stealth'
   | 'linkedin-access'
+  | 'headless'
+  | 'autopilot'
 
 interface UsePlanReturn {
   /** Base plan tier stored in localStorage / from Stripe */
