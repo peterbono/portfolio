@@ -1541,291 +1541,10 @@ describe('triggerApplyJobs — mixed batch (LinkedIn + ATS) with extension', () 
 })
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  triggerExtensionPipeline — Extension-first pipeline pivot
-//  These tests cover the NEW functions that will be added to bot-api.ts
-//  as part of the extension-first architecture pivot:
-//    - triggerExtensionPipeline(config): triggers scout->qualify->apply via extension
-//    - onPipelineProgress(callback): subscribes to pipeline progress events
-//    - Fallback to Trigger.dev when extension is not available
+//  Server fallback — triggerBotRun / triggerQualifyJobs still work
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('triggerExtensionPipeline — extension pipeline orchestration', () => {
-  // ─── Test double for the not-yet-existing functions ──────────────────
-  // These tests define the expected API contract. They will be activated
-  // once triggerExtensionPipeline and onPipelineProgress are exported from
-  // bot-api.ts. Until then, this describe block documents the contract.
-
-  /** Expected shape of the pipeline config */
-  interface PipelineConfig {
-    maxJobs?: number
-    qualifyMinScore?: number
-    dryRun?: boolean
-    sources?: string[]
-  }
-
-  /** Expected shape of pipeline progress events */
-  interface PipelineProgressEvent {
-    phase: 'scout' | 'qualify' | 'apply' | 'complete' | 'error'
-    progress: number // 0-100
-    message: string
-    data?: Record<string, unknown>
-  }
-
-  // Simulated implementation for testing the expected contract
-  // (These will be replaced by real imports once the functions exist)
-  function triggerExtensionPipelineStub(config: PipelineConfig): Promise<{ pipelineId: string }> {
-    return new Promise((resolve, reject) => {
-      // Check extension availability
-      const extensionCheck = new Promise<boolean>((res) => {
-        const handler = (event: MessageEvent) => {
-          if (event.source === window && event.data?.type === 'JOBTRACKER_COOKIE_RESPONSE') {
-            window.removeEventListener('message', handler)
-            res(true)
-          }
-        }
-        window.addEventListener('message', handler)
-        window.postMessage({ type: 'JOBTRACKER_REQUEST_COOKIE' }, '*')
-        setTimeout(() => {
-          window.removeEventListener('message', handler)
-          res(false)
-        }, 500)
-      })
-
-      extensionCheck.then((hasExtension) => {
-        if (!hasExtension) {
-          reject(new Error('Chrome extension not available. Install the JobTracker extension to use autopilot.'))
-          return
-        }
-
-        const pipelineId = `pipeline_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
-
-        window.postMessage({
-          type: 'JOBTRACKER_START_PIPELINE',
-          pipelineId,
-          config: {
-            maxJobs: config.maxJobs ?? 20,
-            qualifyMinScore: config.qualifyMinScore ?? 60,
-            dryRun: config.dryRun ?? false,
-            sources: config.sources ?? ['linkedin'],
-          },
-        }, '*')
-
-        resolve({ pipelineId })
-      })
-    })
-  }
-
-  function onPipelineProgressStub(
-    callback: (event: PipelineProgressEvent) => void,
-  ): () => void {
-    const handler = (event: Event) => {
-      const detail = (event as CustomEvent<PipelineProgressEvent>).detail
-      callback(detail)
-    }
-    window.addEventListener('jobtracker:pipeline-progress', handler)
-    return () => window.removeEventListener('jobtracker:pipeline-progress', handler)
-  }
-
-  beforeEach(() => {
-    vi.restoreAllMocks()
-    mockAuthenticated()
-  })
-
-  it('rejects when extension is not installed', async () => {
-    // No extension installed — cookie probe will time out
-    // This verifies the contract: extension is REQUIRED for pipeline
-    await expect(
-      triggerExtensionPipelineStub({ maxJobs: 10 }),
-    ).rejects.toThrow('Chrome extension not available')
-  })
-
-  it('resolves with pipelineId when extension is available', async () => {
-    // Simulate extension responding to cookie probe
-    const cookieHandler = (event: MessageEvent) => {
-      if (event.data?.type === 'JOBTRACKER_REQUEST_COOKIE') {
-        setTimeout(() => {
-          const response = new MessageEvent('message', {
-            data: { type: 'JOBTRACKER_COOKIE_RESPONSE', cookie: 'test' },
-          })
-          Object.defineProperty(response, 'source', { value: window })
-          window.dispatchEvent(response)
-        }, 10)
-      }
-    }
-    window.addEventListener('message', cookieHandler)
-
-    const result = await triggerExtensionPipelineStub({ maxJobs: 15 })
-
-    expect(result.pipelineId).toMatch(/^pipeline_\d+_[a-z0-9]+$/)
-
-    window.removeEventListener('message', cookieHandler)
-  })
-
-  it('sends correct config via postMessage to extension', async () => {
-    const postMessageSpy = vi.spyOn(window, 'postMessage')
-
-    // Simulate extension availability
-    const cookieHandler = (event: MessageEvent) => {
-      if (event.data?.type === 'JOBTRACKER_REQUEST_COOKIE') {
-        setTimeout(() => {
-          const response = new MessageEvent('message', {
-            data: { type: 'JOBTRACKER_COOKIE_RESPONSE', cookie: 'test' },
-          })
-          Object.defineProperty(response, 'source', { value: window })
-          window.dispatchEvent(response)
-        }, 10)
-      }
-    }
-    window.addEventListener('message', cookieHandler)
-
-    await triggerExtensionPipelineStub({
-      maxJobs: 25,
-      qualifyMinScore: 70,
-      dryRun: true,
-      sources: ['linkedin', 'remoteok', 'himalayas'],
-    })
-
-    const pipelineMsg = postMessageSpy.mock.calls.find(
-      c => c[0]?.type === 'JOBTRACKER_START_PIPELINE',
-    )
-    expect(pipelineMsg).toBeDefined()
-    expect(pipelineMsg![0].config.maxJobs).toBe(25)
-    expect(pipelineMsg![0].config.qualifyMinScore).toBe(70)
-    expect(pipelineMsg![0].config.dryRun).toBe(true)
-    expect(pipelineMsg![0].config.sources).toEqual(['linkedin', 'remoteok', 'himalayas'])
-
-    window.removeEventListener('message', cookieHandler)
-  })
-
-  it('applies default config values when not specified', async () => {
-    const postMessageSpy = vi.spyOn(window, 'postMessage')
-
-    const cookieHandler = (event: MessageEvent) => {
-      if (event.data?.type === 'JOBTRACKER_REQUEST_COOKIE') {
-        setTimeout(() => {
-          const response = new MessageEvent('message', {
-            data: { type: 'JOBTRACKER_COOKIE_RESPONSE', cookie: 'test' },
-          })
-          Object.defineProperty(response, 'source', { value: window })
-          window.dispatchEvent(response)
-        }, 10)
-      }
-    }
-    window.addEventListener('message', cookieHandler)
-
-    await triggerExtensionPipelineStub({})
-
-    const pipelineMsg = postMessageSpy.mock.calls.find(
-      c => c[0]?.type === 'JOBTRACKER_START_PIPELINE',
-    )
-    expect(pipelineMsg).toBeDefined()
-    expect(pipelineMsg![0].config.maxJobs).toBe(20)
-    expect(pipelineMsg![0].config.qualifyMinScore).toBe(60)
-    expect(pipelineMsg![0].config.dryRun).toBe(false)
-    expect(pipelineMsg![0].config.sources).toEqual(['linkedin'])
-
-    window.removeEventListener('message', cookieHandler)
-  })
-})
-
-describe('onPipelineProgress — subscribe to pipeline events', () => {
-  interface PipelineProgressEvent {
-    phase: 'scout' | 'qualify' | 'apply' | 'complete' | 'error'
-    progress: number
-    message: string
-    data?: Record<string, unknown>
-  }
-
-  function onPipelineProgressStub(
-    callback: (event: PipelineProgressEvent) => void,
-  ): () => void {
-    const handler = (event: Event) => {
-      const detail = (event as CustomEvent<PipelineProgressEvent>).detail
-      callback(detail)
-    }
-    window.addEventListener('jobtracker:pipeline-progress', handler)
-    return () => window.removeEventListener('jobtracker:pipeline-progress', handler)
-  }
-
-  it('receives progress events for each pipeline phase', () => {
-    const events: PipelineProgressEvent[] = []
-    const unsubscribe = onPipelineProgressStub((event) => events.push(event))
-
-    // Simulate pipeline phases
-    const phases: PipelineProgressEvent[] = [
-      { phase: 'scout', progress: 10, message: 'Scanning LinkedIn...', data: { source: 'linkedin' } },
-      { phase: 'scout', progress: 30, message: 'Found 42 jobs', data: { found: 42 } },
-      { phase: 'qualify', progress: 50, message: 'Qualifying 42 jobs with Haiku...', data: { total: 42 } },
-      { phase: 'qualify', progress: 70, message: '18 jobs qualified (score >= 60)', data: { qualified: 18, total: 42 } },
-      { phase: 'apply', progress: 80, message: 'Applying to 18 jobs...', data: { total: 18 } },
-      { phase: 'apply', progress: 95, message: 'Applied: 15/18', data: { applied: 15, failed: 3 } },
-      { phase: 'complete', progress: 100, message: 'Pipeline complete: 15 applied, 3 failed', data: { applied: 15, failed: 3 } },
-    ]
-
-    for (const phase of phases) {
-      window.dispatchEvent(new CustomEvent<PipelineProgressEvent>('jobtracker:pipeline-progress', {
-        detail: phase,
-      }))
-    }
-
-    expect(events).toHaveLength(7)
-    expect(events[0].phase).toBe('scout')
-    expect(events[0].progress).toBe(10)
-    expect(events[3].phase).toBe('qualify')
-    expect(events[3].data?.qualified).toBe(18)
-    expect(events[6].phase).toBe('complete')
-    expect(events[6].progress).toBe(100)
-
-    unsubscribe()
-  })
-
-  it('unsubscribe stops receiving events', () => {
-    const events: PipelineProgressEvent[] = []
-    const unsubscribe = onPipelineProgressStub((event) => events.push(event))
-
-    window.dispatchEvent(new CustomEvent<PipelineProgressEvent>('jobtracker:pipeline-progress', {
-      detail: { phase: 'scout', progress: 10, message: 'Scanning...' },
-    }))
-
-    expect(events).toHaveLength(1)
-
-    unsubscribe()
-
-    window.dispatchEvent(new CustomEvent<PipelineProgressEvent>('jobtracker:pipeline-progress', {
-      detail: { phase: 'qualify', progress: 50, message: 'Qualifying...' },
-    }))
-
-    // Should still be 1 after unsubscribe
-    expect(events).toHaveLength(1)
-  })
-
-  it('handles error phase events', () => {
-    const events: PipelineProgressEvent[] = []
-    const unsubscribe = onPipelineProgressStub((event) => events.push(event))
-
-    window.dispatchEvent(new CustomEvent<PipelineProgressEvent>('jobtracker:pipeline-progress', {
-      detail: {
-        phase: 'error',
-        progress: 45,
-        message: 'LinkedIn session expired',
-        data: { errorCode: 'LINKEDIN_SESSION_EXPIRED' },
-      },
-    }))
-
-    expect(events).toHaveLength(1)
-    expect(events[0].phase).toBe('error')
-    expect(events[0].message).toContain('LinkedIn session expired')
-    expect(events[0].data?.errorCode).toBe('LINKEDIN_SESSION_EXPIRED')
-
-    unsubscribe()
-  })
-})
-
-describe('Extension pipeline — fallback to Trigger.dev', () => {
-  // When extension is not available, triggerExtensionPipeline should reject.
-  // The caller (AutopilotView) should then fall back to triggerBotRun (Trigger.dev).
-  // This test documents the expected fallback flow.
-
+describe('Server pipeline functions', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
     mockAuthenticated()
@@ -1835,18 +1554,17 @@ describe('Extension pipeline — fallback to Trigger.dev', () => {
     })
   })
 
-  it('triggerBotRun still works as Trigger.dev fallback when extension unavailable', async () => {
+  it('triggerBotRun sends to server-side proxy', async () => {
     mockFetchOk({ id: 'fallback-run-1' })
 
     const result = await triggerBotRun('profile-1')
     expect(result.runId).toBe('fallback-run-1')
 
-    // Verify it went to the server-side proxy, not the extension
     const [url] = vi.mocked(globalThis.fetch).mock.calls[0]
     expect(url).toBe('/api/trigger-task')
   })
 
-  it('triggerQualifyJobs still works as server fallback', async () => {
+  it('triggerQualifyJobs sends to server-side proxy', async () => {
     mockFetchOk({ id: 'qualify-fallback-1' })
 
     const result = await triggerQualifyJobs(SAMPLE_DISCOVERED_JOBS)
@@ -1856,25 +1574,5 @@ describe('Extension pipeline — fallback to Trigger.dev', () => {
       vi.mocked(globalThis.fetch).mock.calls[0][1]!.body as string,
     )
     expect(body.taskId).toBe('qualify-jobs')
-  })
-
-  it('triggerApplyJobs uses server path via fetch when called with server-side flow', async () => {
-    // Note: _extensionDetected is module-level state that persists across tests.
-    // Earlier tests in this file call simulateExtensionInstalled(), so the module
-    // has already set _extensionDetected = true. We cannot reset it without
-    // vi.resetModules() + dynamic re-import.
-    //
-    // Instead, we verify that the server-side triggerApplyJobs path still works
-    // correctly by checking that triggerBotRun (which always uses the server path)
-    // sends the correct request shape.
-    mockFetchOk({ id: 'apply-fallback-1' })
-
-    const result = await triggerBotRun('profile-1')
-
-    // triggerBotRun always goes server-side (Trigger.dev), confirming the
-    // server fallback path is intact regardless of extension detection state
-    const [url] = vi.mocked(globalThis.fetch).mock.calls[0]
-    expect(url).toBe('/api/trigger-task')
-    expect(result.runId).toBe('apply-fallback-1')
   })
 })

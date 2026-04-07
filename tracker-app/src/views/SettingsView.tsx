@@ -36,7 +36,7 @@ import { useAuthWall } from '../hooks/useAuthWall'
 import { clearGoogleRefreshToken } from '../lib/google-token'
 import { getPlanConfig, createPortalSession } from '../lib/billing'
 import { ProfileSetupModal, isProfileComplete } from '../components/ProfileSetupModal'
-import { triggerEnrichProfile, getPipelineMode, setPipelineModePreference, type PipelineModePreference } from '../lib/bot-api'
+import { triggerEnrichProfile } from '../lib/bot-api'
 import { LS_ENRICHED_PROFILE } from '../types/enriched-profile'
 import type { EnrichedProfile } from '../types/enriched-profile'
 import type { Job } from '../types/job'
@@ -314,13 +314,6 @@ export function SettingsView() {
       saveJSON(LS_BOT_PREFS, next)
       return next
     })
-  }, [])
-
-  // ---------- Pipeline Mode state ----------
-  const [pipelineModePref, setPipelineModePref] = useState<PipelineModePreference>(() => getPipelineMode())
-  const handlePipelineModeChange = useCallback((mode: PipelineModePreference) => {
-    setPipelineModePref(mode)
-    setPipelineModePreference(mode)
   }, [])
 
   // ---------- Gmail handlers ----------
@@ -757,34 +750,6 @@ export function SettingsView() {
                   ...(botPrefs.autonomy === opt.value ? s.radioCardActive : {}),
                 }}
                 onClick={() => updateBotPrefs({ autonomy: opt.value })}
-              >
-                <div style={s.radioCardIcon}>{opt.icon}</div>
-                <div>
-                  <div style={s.radioCardLabel}>{opt.label}</div>
-                  <div style={s.radioCardDesc}>{opt.desc}</div>
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Pipeline Mode */}
-        <div style={s.fieldGroup}>
-          <label style={s.label}>Pipeline Mode</label>
-          <p style={s.hint}>Auto uses the Chrome extension when available for faster, cheaper runs. Cloud uses server-side processing.</p>
-          <div style={s.radioGroup}>
-            {([
-              { value: 'auto' as const, icon: <Sparkles size={14} />, label: 'Auto (recommended)', desc: 'Uses extension if installed, otherwise falls back to cloud' },
-              { value: 'extension' as const, icon: <Zap size={14} />, label: 'Extension Only', desc: 'Force Chrome extension — fails if not installed' },
-              { value: 'server' as const, icon: <Database size={14} />, label: 'Cloud Only', desc: 'Force Trigger.dev server-side processing' },
-            ]).map(opt => (
-              <button
-                key={opt.value}
-                style={{
-                  ...s.radioCard,
-                  ...(pipelineModePref === opt.value ? s.radioCardActive : {}),
-                }}
-                onClick={() => handlePipelineModeChange(opt.value)}
               >
                 <div style={s.radioCardIcon}>{opt.icon}</div>
                 <div>

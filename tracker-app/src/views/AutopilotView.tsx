@@ -46,16 +46,9 @@ import type { ScoreDimensions, RoleArchetype } from '../bot/qualifier-core'
 import {
   triggerBotRun,
   triggerApplyJobs,
-  triggerExtensionPipeline,
   triggerHeadlessPipeline,
-  onPipelineProgress,
-  checkExtensionInstalled,
-  getPipelineMode,
   type BatchApplyProgress,
-  type PipelineProgressEvent,
-  type PipelinePhase,
 } from '../lib/bot-api'
-import { decidePipeline, type PipelineDecision, type PipelineBackend } from '../lib/pipeline-dispatcher'
 import { supabase } from '../lib/supabase'
 import { useAuthWall } from '../hooks/useAuthWall'
 import { useSupabase } from '../context/SupabaseContext'
@@ -63,7 +56,6 @@ import { useAuthWallContext } from '../context/AuthWallContext'
 import CompanyChipInput from '../components/CompanyChipInput'
 import { ProfileSetupModal, isProfileComplete } from '../components/ProfileSetupModal'
 import CardStackReview from '../components/CardStackReview'
-import { ExtensionBanner } from '../components/ExtensionBanner'
 import CalibrationExercise from '../components/CalibrationExercise'
 import {
   recordSignal,
@@ -4086,25 +4078,12 @@ export function AutopilotView() {
   // Cycling subtitle index for rotating through recent activities
   const [subtitleCycleIdx, setSubtitleCycleIdx] = useState(0)
 
-  // Extension pipeline state — tracks whether we're using the Chrome extension or Trigger.dev cloud
-  const [pipelineMode, setPipelineMode] = useState<'extension' | 'cloud' | 'headless' | null>(null)
-  const [extensionPipelineId, setExtensionPipelineId] = useState<string | null>(null)
-  const [extensionPipelinePhase, setExtensionPipelinePhase] = useState<PipelinePhase | null>(null)
-  const [extensionPipelineMessage, setExtensionPipelineMessage] = useState<string | null>(null)
-  const pipelineCleanupRef = useRef<(() => void) | null>(null)
   // Autopilot toggle (Pro/Boost): skip review queue, auto-apply everything
   const [autopilotEnabled, setAutopilotEnabled] = useState<boolean>(() => {
     try {
       return localStorage.getItem('tracker_v2_autopilot_mode') === 'true'
     } catch { return false }
   })
-  // Last pipeline decision (for fallback logic)
-  const lastDecisionRef = useRef<PipelineDecision | null>(null)
-  // Ref to access current searchConfig inside event listeners (avoids stale closure)
-  const searchConfigRef = useRef(searchConfig)
-  searchConfigRef.current = searchConfig
-  // Headless fallback message after extension failures (Starter tier)
-  const [headlessFallbackMsg, setHeadlessFallbackMsg] = useState<string | null>(null)
 
   // Review queue state
   const [reviewQueue, setReviewQueue] = useState<ReviewQueueItem[]>(() => loadReviewQueue())
@@ -4117,16 +4096,10 @@ export function AutopilotView() {
     saveReviewMode(mode)
   }, [])
 
-  // ─── Reconciliation: sync review queue with Supabase + extension state ───
-  // The dashboard's in-flight listener for JOBTRACKER_APPLY_RESULT only fires
-  // while an apply is actively in progress. If the user closes the tab, the
-  // extension crashes and retries, or the requestId expires (3min timeout),
-  // the success result is lost and the queue item stays "pending" forever.
-  //
+  // ─── Reconciliation: sync review queue with Supabase ───
   // This effect runs on mount and on window focus to reconcile local queue
-  // state with authoritative sources: Supabase (applications table — populated
-  // by Gmail sync or direct extension bridge) AND the Chrome extension's
-  // lastApplyResult from chrome.storage.local.
+  // state with Supabase (applications table — populated by Gmail sync or
+  // headless pipeline results).
   useEffect(() => {
     let cancelled = false
 
@@ -4155,45 +4128,6 @@ export function AutopilotView() {
         }
       } catch (err) {
         console.warn('[reconcile] Supabase fetch failed:', err)
-      }
-
-      // Source 2: Extension recent apply results via external message.
-      // We read `recentResults` (rolling list of last 50) rather than just
-      // `lastApplyResult` so we catch all applies that completed without an
-      // active listener — not just the most recent one.
-      try {
-        const EXT_ID = 'olcodghfaimcncelmmicjkipobafaafp'
-        const chromeRuntime = (window as unknown as { chrome?: { runtime?: { sendMessage?: unknown } } }).chrome?.runtime
-        if (chromeRuntime && typeof chromeRuntime.sendMessage === 'function') {
-          type ExtResultItem = { status?: string; url?: string; company?: string }
-          type ExtDiagResponse = { result?: ExtResultItem; recentResults?: ExtResultItem[] }
-          const extData = await new Promise<ExtDiagResponse | null>((resolve) => {
-            try {
-              ;(chromeRuntime.sendMessage as (id: string, msg: object, cb: (r: unknown) => void) => void)(
-                EXT_ID,
-                { action: 'getDiagnostics' },
-                (r: unknown) => resolve((r as ExtDiagResponse) || null),
-              )
-              setTimeout(() => resolve(null), 2000)
-            } catch {
-              resolve(null)
-            }
-          })
-          if (!cancelled && extData) {
-            const isSuccess = (s?: string) =>
-              s === 'applied' || s === 'applied_external' || s === 'submitted'
-            const extResults: ExtResultItem[] = Array.isArray(extData.recentResults)
-              ? extData.recentResults
-              : extData.result ? [extData.result] : []
-            for (const r of extResults) {
-              if (isSuccess(r.status) && r.url) {
-                matches.set(r.url, 'submitted')
-              }
-            }
-          }
-        }
-      } catch (err) {
-        console.warn('[reconcile] Extension message failed:', err)
       }
 
       if (cancelled || matches.size === 0) return
@@ -4352,8 +4286,7 @@ export function AutopilotView() {
   const { requireAuth } = useAuthWall()
 
   // Core bot run logic (called after auth check)
-  // Detects Chrome extension availability: if installed, routes through extension pipeline;
-  // otherwise falls back to Trigger.dev cloud.
+  // Headless-only pipeline: always uses Stagehand on Trigger.dev
   const doStartBot = useCallback(async () => {
     if (!hasConfig) return
     setIsTriggering(true)
@@ -4365,16 +4298,6 @@ export function AutopilotView() {
     setPolledRunStatus(null)
     setPolledRunOutput(null)
     setPolledMetadata(null)
-    // Reset extension pipeline state
-    setExtensionPipelineId(null)
-    setExtensionPipelinePhase(null)
-    setExtensionPipelineMessage(null)
-    setPipelineMode(null)
-    // Clean up previous pipeline progress listener
-    if (pipelineCleanupRef.current) {
-      pipelineCleanupRef.current()
-      pipelineCleanupRef.current = null
-    }
     // Clean up stale review queue items from previous runs:
     // - "submitting" items (stuck from a previous apply) → revert to "approved"
     // - "submitted" items → remove from queue (already done)
@@ -4388,30 +4311,7 @@ export function AutopilotView() {
     })
 
     try {
-      // ── Tier-aware pipeline routing via dispatcher ────────────────────
-      const modePref = getPipelineMode()
-      const extensionAvailable = modePref === 'server' ? false : await checkExtensionInstalled()
-      // Headless infra is available when env var is set (always true in production for paid tiers)
-      const headlessAvailable = true
-
-      const decision = decidePipeline(
-        effectivePlan,
-        modePref,
-        extensionAvailable,
-        headlessAvailable,
-      )
-      lastDecisionRef.current = decision
-      console.log(`[doStartBot] Pipeline decision: apply=${decision.apply}, scout=${decision.scout}, fallback=${decision.fallbackApply ?? 'none'} — ${decision.reason}`)
-
-      // Enforce 'extension' mode — fail fast if extension not installed
-      if (modePref === 'extension' && !extensionAvailable) {
-        throw new Error('Pipeline mode is set to "Extension Only" but the Chrome extension is not installed. Install the extension or switch to Auto/Cloud in Settings.')
-      }
-
-      // Clear headless fallback message from previous runs
-      setHeadlessFallbackMsg(null)
-
-      // Build shared config
+      // Build config
       const locationStr = searchConfig.locationRules
         .map(r => r.value)
         .filter(Boolean)
@@ -4430,140 +4330,23 @@ export function AutopilotView() {
         } catch { return {} }
       })()
 
-      if (decision.apply === 'headless') {
-        // ── Headless autopilot path (Pro/Boost) ────────────────────────
-        console.log('[doStartBot] Using headless Cloud Autopilot (Stagehand)')
-        setPipelineMode('headless')
+      // ── Headless Cloud Autopilot (Stagehand) ────────────────────────
+      console.log('[doStartBot] Using headless Cloud Autopilot (Stagehand)')
 
-        const { runId } = await triggerHeadlessPipeline({
-          keywords: searchConfig.keywords,
-          location: locationStr,
-          excludedCompanies: searchConfig.excludedCompanies,
-          minScore: 50,
-          profile: { ...userProfile, ...enrichedProfile },
-          autopilot: autopilotEnabled,
-        })
+      const { runId } = await triggerHeadlessPipeline({
+        keywords: searchConfig.keywords,
+        location: locationStr,
+        excludedCompanies: searchConfig.excludedCompanies,
+        minScore: 50,
+        profile: { ...userProfile, ...enrichedProfile },
+        autopilot: autopilotEnabled,
+      })
 
-        // Start polling via existing Trigger.dev mechanism
-        setActiveRunId(runId)
-        setRunStartTime(Date.now())
-        setPolledRunStatus('QUEUED')
-        setPolledMetadata({ phase: 'scout', jobsFound: 0 })
-
-      } else if (decision.apply === 'extension') {
-        // ── Extension pipeline path (Free/Starter/explicit) ────────────
-        console.log('[doStartBot] Chrome extension detected — using extension pipeline')
-        setPipelineMode('extension')
-
-        const result = await triggerExtensionPipeline({
-          keywords: searchConfig.keywords,
-          location: locationStr,
-          excludedCompanies: searchConfig.excludedCompanies,
-          minScore: 50,
-          profile: { ...userProfile, ...enrichedProfile },
-          searchProfile: {
-            keywords: searchConfig.keywords,
-            locationRules: searchConfig.locationRules,
-            excludedCompanies: searchConfig.excludedCompanies,
-            dailyLimit: searchConfig.dailyLimit,
-          },
-        })
-
-        setExtensionPipelineId(result.pipelineId)
-        setExtensionPipelinePhase('scouting')
-        setExtensionPipelineMessage('Starting extension pipeline...')
-        setRunStartTime(Date.now())
-        setPolledRunStatus('EXECUTING')
-        setPolledMetadata({ phase: 'scout', jobsFound: 0 })
-
-        // Register pipeline progress listener
-        const cleanup = onPipelineProgress((event: PipelineProgressEvent) => {
-          if (event.pipelineId !== result.pipelineId) return
-
-          setExtensionPipelinePhase(event.phase)
-          setExtensionPipelineMessage(event.message)
-
-          const phaseMap: Record<PipelinePhase, string> = {
-            scouting: 'scout',
-            qualifying: 'qualify',
-            ready_for_review: 'done',
-            applying: 'apply',
-            complete: 'done',
-            error: 'error',
-          }
-          setPolledMetadata(prev => ({
-            ...prev,
-            phase: phaseMap[event.phase] || event.phase,
-            jobsFound: event.stats?.jobsFound ?? prev?.jobsFound,
-            jobsProcessed: event.stats?.jobsProcessed ?? prev?.jobsProcessed,
-            jobsQualified: event.stats?.jobsQualified ?? prev?.jobsQualified,
-            jobsPreFiltered: event.stats?.jobsPreFiltered ?? prev?.jobsPreFiltered,
-          }))
-
-          if (event.stats?.jobsFound != null) {
-            setPolledMetadata(prev => ({ ...prev, jobsFound: event.stats!.jobsFound }))
-          }
-
-          if (event.phase === 'ready_for_review' && event.qualifiedJobs && event.qualifiedJobs.length > 0) {
-            console.log(`[doStartBot] Extension pipeline ready_for_review: ${event.qualifiedJobs.length} qualified jobs`)
-            setPolledRunOutput({
-              qualifiedJobs: event.qualifiedJobs.map(j => ({
-                title: j.title,
-                company: j.company,
-                location: j.location,
-                url: j.url,
-                isEasyApply: j.isEasyApply,
-                score: j.score,
-                matchReasons: j.matchReasons,
-                coverLetterSnippet: j.coverLetterSnippet,
-                coverLetterVariant: j.coverLetterVariant,
-              })),
-              jobsFound: event.stats?.jobsFound ?? event.qualifiedJobs.length,
-              jobsQualified: event.qualifiedJobs.length,
-            })
-            setPolledRunStatus('COMPLETED')
-          }
-
-          if (event.phase === 'complete') {
-            setPolledRunStatus('COMPLETED')
-            if (event.qualifiedJobs && event.qualifiedJobs.length > 0) {
-              setPolledRunOutput(prev => ({
-                ...prev,
-                qualifiedJobs: event.qualifiedJobs!.map(j => ({
-                  title: j.title,
-                  company: j.company,
-                  location: j.location,
-                  url: j.url,
-                  isEasyApply: j.isEasyApply,
-                  score: j.score,
-                  matchReasons: j.matchReasons,
-                  coverLetterSnippet: j.coverLetterSnippet,
-                  coverLetterVariant: j.coverLetterVariant,
-                })),
-                jobsQualified: event.qualifiedJobs!.length,
-              }))
-            }
-          }
-
-          if (event.phase === 'error') {
-            setPolledRunStatus('FAILED')
-            setTriggerError(event.message || 'Extension pipeline failed')
-            notifyBotError({ errorMessage: event.message, runId: result.pipelineId })
-          }
-        })
-
-        pipelineCleanupRef.current = cleanup
-
-      } else {
-        // ── Trigger.dev cloud/server fallback ───────────────────────────
-        console.log('[doStartBot] Using Trigger.dev cloud pipeline')
-        setPipelineMode('cloud')
-
-        const result = await triggerBotRun('search_config')
-        setActiveRunId(result.runId)
-        setRunStartTime(Date.now())
-        setPolledRunStatus('QUEUED')
-      }
+      // Start polling via existing Trigger.dev mechanism
+      setActiveRunId(runId)
+      setRunStartTime(Date.now())
+      setPolledRunStatus('QUEUED')
+      setPolledMetadata({ phase: 'scout', jobsFound: 0 })
     } catch (err) {
       const errMsg = (err as Error).message
       setTriggerError(errMsg)
@@ -4571,17 +4354,8 @@ export function AutopilotView() {
     } finally {
       setIsTriggering(false)
     }
-  }, [hasConfig, searchConfig, effectivePlan, autopilotEnabled])
+  }, [hasConfig, searchConfig, autopilotEnabled])
 
-  // ---- Cleanup extension pipeline listener on unmount ----
-  useEffect(() => {
-    return () => {
-      if (pipelineCleanupRef.current) {
-        pipelineCleanupRef.current()
-        pipelineCleanupRef.current = null
-      }
-    }
-  }, [])
 
   // ---- Trigger.dev run polling via Vercel proxy (every 5s) -----------
   // Skip polling when running extension pipeline (no activeRunId needed)
@@ -4965,150 +4739,6 @@ export function AutopilotView() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [polledRunStatus, applyRunId])
 
-  // ---- Handle Chrome extension apply results (per-job, real-time) ----
-  // Listens for jobtracker:extension-apply-result events dispatched by bot-api.ts
-  // when LinkedIn jobs are processed via the Chrome extension.
-  useEffect(() => {
-    function handleExtensionResult(event: Event) {
-      const detail = (event as CustomEvent).detail
-      if (!detail) return
-
-      const { company, role, status, url, success, reason } = detail
-      console.log(`[AutopilotView] Extension result: ${company} — ${status}${reason ? ` — ${reason}` : ''}`)
-
-      // Update the matching item in the review queue
-      setReviewQueue(prev => prev.map(item => {
-        if (item.status !== 'submitting') return item
-
-        // Match by normalized URL (primary) or fuzzy company+role (fallback)
-        const urlMatch = url && item.jobUrl &&
-          normalizeUrlForMatch(url) === normalizeUrlForMatch(item.jobUrl)
-        const nameMatch = fuzzyCompanyMatch(company, item.company) &&
-          role?.toLowerCase().trim() === item.role.toLowerCase().trim()
-
-        if (!urlMatch && !nameMatch) return item
-
-        if (status === 'applied' || status === 'applied_external' || status === 'confirmed' || success) {
-          return { ...item, status: 'submitted' as const, submittingStartedAt: undefined }
-        }
-        if (status === 'pending_external') {
-          // ATS form fill in progress — keep showing as submitting (don't mark as final)
-          return item
-        }
-        if (status === 'expired' || status === 'already_applied') {
-          return { ...item, status: 'expired' as const, submittingStartedAt: undefined, failReason: reason || status }
-        }
-        if (status === 'needs_manual' || status === 'auth_wall') {
-          // Add to main job tracker as "manual" (To Submit) instead of keeping in autopilot
-          const manualId = `autopilot-manual-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
-          addJob({
-            id: manualId,
-            date: new Date().toISOString().split('T')[0],
-            status: 'manual',
-            role: item.role,
-            company: item.company,
-            location: '',
-            salary: '',
-            ats: '',
-            cv: item.cvName || '',
-            portfolio: '',
-            link: item.jobUrl || '',
-            notes: reason || 'Needs manual application',
-            source: 'auto',
-          })
-          // Mark as submitted in autopilot queue so it disappears from the review list
-          return { ...item, status: 'submitted' as const, submittingStartedAt: undefined }
-        }
-        // Map 'skipped' to 'skipped' (not 'failed')
-        if (status === 'skipped') {
-          return { ...item, status: 'skipped' as const, submittingStartedAt: undefined, failReason: reason || 'Skipped' }
-        }
-        return { ...item, status: 'failed' as const, submittingStartedAt: undefined, failReason: reason || 'Apply failed (no details from extension)' }
-      }))
-    }
-
-    function handleBatchComplete(event: Event) {
-      const detail = (event as CustomEvent).detail
-      if (!detail) return
-
-      const { total, applied, failed } = detail
-      console.log(`[AutopilotView] Extension batch complete: ${applied}/${total} applied, ${failed} failed`)
-
-      if (applied > 0) {
-        notifyApplicationsSubmitted({
-          company: 'Chrome Extension',
-          role: `${applied} jobs`,
-          count: applied,
-        })
-      }
-      if (failed > 0 && applied === 0) {
-        setTriggerError(`Extension apply: ${failed}/${total} jobs failed. Check browser session.`)
-      }
-
-      // Starter tier headless fallback: auto-retry failed jobs via cloud
-      if (failed > 0 && lastDecisionRef.current?.fallbackApply === 'headless') {
-        // Use functional updater to get current review queue state (avoids stale closure)
-        setReviewQueue(prev => {
-          const failedItems = prev.filter(i => i.status === 'failed')
-          if (failedItems.length === 0) return prev
-
-          setHeadlessFallbackMsg(`${failedItems.length} job${failedItems.length > 1 ? 's' : ''} failed — Cloud bot retrying automatically`)
-          console.log(`[doStartBot] Starter fallback: retrying ${failedItems.length} failed jobs via headless`)
-
-          // Read current config from ref (avoids stale closure in [] deps useEffect)
-          const cfg = searchConfigRef.current
-          const locationStr = cfg.locationRules
-            .map(r => r.value)
-            .filter(Boolean)
-            .join(', ') || 'Remote'
-          const userProfile = (() => {
-            try { return JSON.parse(localStorage.getItem('tracker_v2_user_profile') || '{}') } catch { return {} }
-          })()
-          const enrichedProfile = (() => {
-            try { return JSON.parse(localStorage.getItem('tracker_v2_enriched_profile') || '{}') } catch { return {} }
-          })()
-
-          triggerHeadlessPipeline({
-            keywords: cfg.keywords,
-            location: locationStr,
-            excludedCompanies: cfg.excludedCompanies,
-            minScore: 50,
-            profile: { ...userProfile, ...enrichedProfile },
-          }).then(({ runId }) => {
-            console.log(`[doStartBot] Headless fallback started: runId=${runId}`)
-            setActiveRunId(runId)
-            setPipelineMode('headless')
-            setPolledRunStatus('QUEUED')
-          }).catch(err => {
-            console.error('[doStartBot] Headless fallback failed:', err)
-            setHeadlessFallbackMsg(null)
-            // Revert items back to failed
-            setReviewQueue(prev2 => prev2.map(item =>
-              item.status === 'submitting'
-                ? { ...item, status: 'failed' as const, submittingStartedAt: undefined }
-                : item
-            ))
-          })
-
-          // Mark failed items as retrying (back to submitting)
-          return prev.map(item =>
-            item.status === 'failed'
-              ? { ...item, status: 'submitting' as const, submittingStartedAt: Date.now(), failReason: undefined }
-              : item
-          )
-        })
-      }
-    }
-
-    window.addEventListener('jobtracker:extension-apply-result', handleExtensionResult)
-    window.addEventListener('jobtracker:extension-batch-complete', handleBatchComplete)
-
-    return () => {
-      window.removeEventListener('jobtracker:extension-apply-result', handleExtensionResult)
-      window.removeEventListener('jobtracker:extension-batch-complete', handleBatchComplete)
-    }
-  }, [])
-
   // ---- Timeout: auto-revert stuck "submitting" items after 10 minutes ----
   // Also catches legacy items with no submittingStartedAt (treated as immediately expired)
   useEffect(() => {
@@ -5154,8 +4784,7 @@ export function AutopilotView() {
   }, [reviewQueue])
 
   // Derived: is a polled run actively in progress (includes extension pipeline)
-  const isExtensionPipelineActive = extensionPipelineId !== null && extensionPipelinePhase !== null && extensionPipelinePhase !== 'complete' && extensionPipelinePhase !== 'error'
-  const isRunPolling = activeRunId !== null || isExtensionPipelineActive
+  const isRunPolling = activeRunId !== null
   const isRunTerminal = polledRunStatus === 'COMPLETED' || polledRunStatus === 'FAILED' || polledRunStatus === 'CRASHED' || polledRunStatus === 'TIMED_OUT'
 
   // Don't show stale terminal banners on initial load — only show if run is recent (< 5 min)
@@ -5959,15 +5588,6 @@ export function AutopilotView() {
               setPolledRunOutput(null)
               setPolledMetadata(null)
               setApplyRunId(null)
-              // Clean up extension pipeline state
-              if (pipelineCleanupRef.current) {
-                pipelineCleanupRef.current()
-                pipelineCleanupRef.current = null
-              }
-              setExtensionPipelineId(null)
-              setExtensionPipelinePhase(null)
-              setExtensionPipelineMessage(null)
-              setPipelineMode(null)
               // Revert any "submitting" items back to "approved" so user can retry
               setReviewQueue(prev => prev.map(item =>
                 item.status === 'submitting' ? { ...item, status: 'approved' as const, submittingStartedAt: undefined } : item
@@ -5986,40 +5606,29 @@ export function AutopilotView() {
             </button>
           )}
 
-          {/* ─── Pipeline mode indicator ─── */}
-          {pipelineMode && (isRunPolling || isTriggering) && (() => {
-            const badgeConfig = pipelineMode === 'headless'
-              ? { label: 'Cloud Autopilot', color: '#a78bfa', bg: 'rgba(167, 139, 250, 0.10)', border: 'rgba(167, 139, 250, 0.25)', icon: <Cloud size={10} /> }
-              : pipelineMode === 'extension'
-                ? { label: 'Extension', color: '#34d399', bg: 'rgba(52, 211, 153, 0.10)', border: 'rgba(52, 211, 153, 0.25)', icon: <Zap size={10} /> }
-                : { label: 'Cloud', color: '#60a5fa', bg: 'rgba(96, 165, 250, 0.10)', border: 'rgba(96, 165, 250, 0.25)', icon: <BrainCircuit size={10} /> }
-            return (
-              <span
-                title={pipelineMode === 'headless'
-                  ? 'Cloud Autopilot (Stagehand headless)'
-                  : pipelineMode === 'extension'
-                    ? `Extension pipeline${extensionPipelinePhase ? ` (${extensionPipelinePhase})` : ''}`
-                    : 'Cloud pipeline (Trigger.dev)'}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 4,
-                  padding: '3px 8px',
-                  borderRadius: 6,
-                  fontSize: 11,
-                  fontWeight: 600,
-                  letterSpacing: 0.2,
-                  background: badgeConfig.bg,
-                  color: badgeConfig.color,
-                  border: `1px solid ${badgeConfig.border}`,
-                  whiteSpace: 'nowrap' as const,
-                }}
-              >
-                {badgeConfig.icon}
-                <span>{badgeConfig.label}</span>
-              </span>
-            )
-          })()}
+          {/* ─── Cloud Autopilot badge ─── */}
+          {(isRunPolling || isTriggering) && (
+            <span
+              title="Cloud Autopilot (Stagehand headless)"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '3px 8px',
+                borderRadius: 6,
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: 0.2,
+                background: 'rgba(167, 139, 250, 0.10)',
+                color: '#a78bfa',
+                border: '1px solid rgba(167, 139, 250, 0.25)',
+                whiteSpace: 'nowrap' as const,
+              }}
+            >
+              <Cloud size={10} />
+              <span>Cloud Autopilot</span>
+            </span>
+          )}
 
           {/* ─── Activity + History icon buttons (visual divider) ─── */}
           <div style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 4px' }} />
@@ -6110,8 +5719,6 @@ export function AutopilotView() {
 
         {/* RIGHT: Main content */}
         <div className="autopilot-main-panel" style={layoutStyles.main}>
-          {/* Chrome extension install banner */}
-          <ExtensionBanner />
           {/* Trial expired banner */}
           {trialIsExpired && basePlan === 'free' && (
             <div style={{
@@ -6163,24 +5770,6 @@ export function AutopilotView() {
             </div>
           )}
 
-          {/* ─── Headless fallback banner (Starter tier: cloud retrying failed jobs) ─── */}
-          {headlessFallbackMsg && (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '10px 14px',
-              borderRadius: 'var(--radius-md)',
-              background: 'rgba(167, 139, 250, 0.08)',
-              border: '1px solid rgba(167, 139, 250, 0.20)',
-              fontSize: 13,
-              color: '#a78bfa',
-            }}>
-              <Cloud size={14} />
-              <span style={{ flex: 1 }}>{headlessFallbackMsg}</span>
-              <Loader2 size={14} style={{ animation: 'spin 1s linear infinite', opacity: 0.7 }} />
-            </div>
-          )}
 
           {/* Progress Banner — shows during and after bot runs */}
           {!isStaleTerminalRun && (isRunPolling || isRunTerminal || isTriggering || isBotActive || currentRun?.status === 'completed' || currentRun?.status === 'failed') && (
@@ -6279,9 +5868,6 @@ export function AutopilotView() {
                   } else {
                     subtitleText = 'Submitting applications...'
                   }
-                } else if (pipelineMode === 'extension' && extensionPipelineMessage) {
-                  // Extension pipeline: use the message from the extension progress events
-                  subtitleText = extensionPipelineMessage
                 } else if (metaActivities && metaActivities.length > 0) {
                   const recentActivities = metaActivities.slice(0, 3).filter(a => a.reason)
                   if (recentActivities.length > 0) {
