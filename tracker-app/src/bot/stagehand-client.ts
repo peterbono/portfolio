@@ -32,7 +32,7 @@ export interface StagehandConfig {
 // Constants
 // ---------------------------------------------------------------------------
 
-const DEFAULT_MODEL = 'claude-haiku-4-5-20251001'
+const DEFAULT_MODEL_NAME = 'anthropic/claude-haiku-4-5-20251001'
 const DEFAULT_TIMEOUT = 30_000
 
 // ---------------------------------------------------------------------------
@@ -53,7 +53,9 @@ export async function createStagehand(config?: StagehandConfig): Promise<Stageha
     config?.useBrowserbase === true &&
     !!process.env.BROWSERBASE_API_KEY
 
-  const model = config?.model ?? DEFAULT_MODEL
+  const modelName = config?.model
+    ? (config.model.includes('/') ? config.model : `anthropic/${config.model}`)
+    : DEFAULT_MODEL_NAME
   const timeout = config?.timeout ?? DEFAULT_TIMEOUT
 
   const anthropicApiKey = process.env.ANTHROPIC_API_KEY
@@ -62,6 +64,10 @@ export async function createStagehand(config?: StagehandConfig): Promise<Stageha
       '[stagehand] ANTHROPIC_API_KEY is required for Stagehand AI operations (act/observe/extract)',
     )
   }
+
+  // Stagehand v3 uses AI Gateway-style model strings ("provider/model")
+  // and reads ANTHROPIC_API_KEY from env automatically via @ai-sdk/anthropic
+  const modelConfig = { modelName, apiKey: anthropicApiKey }
 
   if (useBrowserbase) {
     // ── Browserbase cloud mode ──
@@ -74,10 +80,7 @@ export async function createStagehand(config?: StagehandConfig): Promise<Stageha
       env: 'BROWSERBASE',
       apiKey: browserbaseApiKey,
       projectId: browserbaseProjectId,
-      modelName: model,
-      modelClientOptions: {
-        apiKey: anthropicApiKey,
-      },
+      model: modelConfig,
       enableCaching: false,
       verbose: config?.verbose ? 1 : 0,
       browserbaseSessionCreateParams: {
@@ -98,10 +101,7 @@ export async function createStagehand(config?: StagehandConfig): Promise<Stageha
 
   const stagehand = new Stagehand({
     env: 'LOCAL',
-    modelName: model,
-    modelClientOptions: {
-      apiKey: anthropicApiKey,
-    },
+    model: modelConfig,
     enableCaching: false,
     verbose: config?.verbose ? 1 : 0,
     localBrowserLaunchOptions: {
@@ -118,10 +118,6 @@ export async function createStagehand(config?: StagehandConfig): Promise<Stageha
   })
 
   await stagehand.init()
-
-  // Set default navigation timeout on the underlying Playwright page
-  stagehand.page.setDefaultNavigationTimeout(timeout)
-  stagehand.page.setDefaultTimeout(timeout)
 
   console.log('[stagehand] Local Chromium session initialized')
   return stagehand
@@ -156,11 +152,14 @@ export async function closeStagehand(stagehand: Stagehand): Promise<void> {
 
 /**
  * Extract the raw Playwright Page from a Stagehand instance.
+ * In Stagehand v3, there's no .page property — use context.pages()[0].
  * Useful for operations that require direct Playwright APIs:
  *   - page.setInputFiles() for CV upload
  *   - page.waitForSelector() for explicit waits
  *   - page.screenshot() for debug captures
  */
 export function getPlaywrightPage(stagehand: Stagehand) {
-  return stagehand.page
+  const pages = stagehand.context.pages()
+  if (!pages.length) throw new Error('[stagehand] No pages available in context')
+  return pages[0]
 }
