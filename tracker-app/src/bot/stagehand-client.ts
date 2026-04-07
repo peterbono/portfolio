@@ -97,42 +97,31 @@ export async function createStagehand(config?: StagehandConfig): Promise<Stageha
   }
 
   // ── Local Playwright mode ──
-  // Auto-detect Chromium path for Stagehand in Trigger.dev containers
+  // Auto-detect Chromium for Stagehand in Trigger.dev containers
+  // Use Playwright's own API to find the installed Chromium
   let executablePath: string | undefined
-  if (process.env.PLAYWRIGHT_BROWSERS_PATH) {
-    const fs = await import('fs')
-    const browsersDir = process.env.PLAYWRIGHT_BROWSERS_PATH
-    try {
-      const entries = fs.readdirSync(browsersDir).filter((e: string) => e.startsWith('chromium')).sort()
-      for (const entry of entries.reverse()) {
-        const candidates = [
-          `${browsersDir}/${entry}/chrome-linux/chrome`,
-          `${browsersDir}/${entry}/chrome`,
-          `${browsersDir}/${entry}/chromium`,
-        ]
-        for (const p of candidates) {
-          if (fs.existsSync(p)) {
-            executablePath = p
-            process.env.CHROME_PATH = p
-            console.log(`[stagehand] Found Chromium at: ${p}`)
-            break
+  try {
+    const { chromium } = await import('playwright')
+    executablePath = chromium.executablePath()
+    process.env.CHROME_PATH = executablePath
+    console.log(`[stagehand] Playwright Chromium at: ${executablePath}`)
+  } catch (e) {
+    console.log(`[stagehand] Playwright chromium detection failed: ${(e as Error).message}`)
+    // Fallback: manual scan
+    if (process.env.PLAYWRIGHT_BROWSERS_PATH) {
+      const fs = await import('fs')
+      const browsersDir = process.env.PLAYWRIGHT_BROWSERS_PATH
+      try {
+        const entries = fs.readdirSync(browsersDir).sort()
+        console.log(`[stagehand] Browsers dir contents: ${entries.join(', ')}`)
+        for (const entry of entries.reverse()) {
+          for (const sub of ['chrome-linux/chrome', 'chrome', 'chromium']) {
+            const p = `${browsersDir}/${entry}/${sub}`
+            if (fs.existsSync(p)) { executablePath = p; process.env.CHROME_PATH = p; break }
           }
+          if (executablePath) break
         }
-        if (executablePath) break
-      }
-      if (!executablePath) {
-        // List what's actually in the browsers dir for debugging
-        const contents = fs.readdirSync(browsersDir)
-        console.log(`[stagehand] PLAYWRIGHT_BROWSERS_PATH=${browsersDir}, contents: ${contents.join(', ')}`)
-        for (const c of contents.slice(0, 3)) {
-          try {
-            const sub = fs.readdirSync(`${browsersDir}/${c}`)
-            console.log(`[stagehand]   ${c}/ → ${sub.join(', ')}`)
-          } catch { /* not a dir */ }
-        }
-      }
-    } catch (e) {
-      console.log(`[stagehand] Chrome path detection error: ${(e as Error).message}`)
+      } catch { /* ignore */ }
     }
   }
 
