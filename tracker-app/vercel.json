@@ -1,4 +1,12 @@
 {
+  "functions": {
+    "api/apply-worker.ts": {
+      "maxDuration": 300,
+      "experimentalTriggers": [
+        { "type": "queue/v2beta", "topic": "apply-jobs" }
+      ]
+    }
+  },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/(.*)", "destination": "/index.html" }

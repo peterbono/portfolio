@@ -107,6 +107,12 @@ export interface TriggerBotResponse {
   runId: string
 }
 
+/** Response from /api/queue-apply (headless cloud pipeline) */
+export interface HeadlessQueueResponse {
+  runId: string
+  queued: number
+}
+
 // Batch apply progress event detail
 export interface BatchApplyProgress {
   current: number
@@ -992,13 +998,14 @@ export interface HeadlessPipelineConfig {
 }
 
 /**
- * Trigger the headless cloud autopilot pipeline (Stagehand).
+ * Trigger the headless cloud autopilot pipeline via /api/queue-apply.
  * Available for Pro/Boost tiers. Runs entirely server-side with a headless browser.
- * Returns a runId that can be polled via the existing Trigger.dev polling mechanism.
+ * Returns { runId, queued }. Progress is tracked via Supabase realtime (bot_activity_log),
+ * NOT via Trigger.dev polling.
  */
 export async function triggerHeadlessPipeline(
   config: HeadlessPipelineConfig,
-): Promise<TriggerBotResponse> {
+): Promise<HeadlessQueueResponse> {
   const userId = await getCurrentUserId()
 
   const payload: Record<string, unknown> = {
@@ -1012,10 +1019,10 @@ export async function triggerHeadlessPipeline(
     profile: config.profile,
   }
 
-  const response = await fetch(PROXY_TASK_URL, {
+  const response = await fetch('/api/queue-apply', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ taskId: 'headless-autopilot-pipeline', payload }),
+    body: JSON.stringify(payload),
   })
 
   if (!response.ok) {
@@ -1024,7 +1031,7 @@ export async function triggerHeadlessPipeline(
   }
 
   const data = await response.json()
-  return { runId: data.id }
+  return { runId: data.runId, queued: data.queued }
 }
 
 /**

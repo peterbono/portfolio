@@ -4064,6 +4064,9 @@ export function AutopilotView() {
   const [activeRunType, setActiveRunType] = useState<'search' | 'apply' | null>(null)
   // Store the FULL raw output from Trigger.dev so both find-jobs and apply-jobs handlers can read their fields
   const [polledRunOutput, setPolledRunOutput] = useState<Record<string, unknown> | null>(null)
+  // Headless queue state (Supabase realtime progress, no Trigger.dev polling)
+  const [headlessQueued, setHeadlessQueued] = useState<number>(0)
+  const [headlessRunId, setHeadlessRunId] = useState<string | null>(null)
   // Live metadata from Trigger.dev (updated during execution, not just at completion)
   const [polledMetadata, setPolledMetadata] = useState<{
     phase?: string
@@ -4331,9 +4334,9 @@ export function AutopilotView() {
       })()
 
       // ── Headless Cloud Autopilot (Stagehand) ────────────────────────
-      console.log('[doStartBot] Using headless Cloud Autopilot (Stagehand)')
+      console.log('[doStartBot] Using headless Cloud Autopilot (queue-apply)')
 
-      const { runId } = await triggerHeadlessPipeline({
+      const { runId, queued } = await triggerHeadlessPipeline({
         keywords: searchConfig.keywords,
         location: locationStr,
         excludedCompanies: searchConfig.excludedCompanies,
@@ -4342,11 +4345,12 @@ export function AutopilotView() {
         autopilot: autopilotEnabled,
       })
 
-      // Start polling via existing Trigger.dev mechanism
-      setActiveRunId(runId)
+      // Store headless queue state — progress tracked via Supabase realtime (useBotActivity),
+      // NOT via Trigger.dev polling. No setActiveRunId here.
+      setHeadlessRunId(runId)
+      setHeadlessQueued(queued)
       setRunStartTime(Date.now())
-      setPolledRunStatus('QUEUED')
-      setPolledMetadata({ phase: 'scout', jobsFound: 0 })
+      console.log(`[doStartBot] ${queued} jobs queued for cloud apply (runId: ${runId})`)
     } catch (err) {
       const errMsg = (err as Error).message
       setTriggerError(errMsg)
@@ -4429,17 +4433,31 @@ export function AutopilotView() {
 
   // ---- Subtitle cycling timer: rotate through recent activities every 4s ----
   useEffect(() => {
-    if (!activeRunId) return // Only cycle when a run is active
+    if (!activeRunId && !headlessRunId) return // Only cycle when a run is active
     const timer = setInterval(() => {
       setSubtitleCycleIdx(prev => prev + 1)
     }, 4000)
     return () => clearInterval(timer)
-  }, [activeRunId])
+  }, [activeRunId, headlessRunId])
 
   // Reset cycle index when new metadata arrives (so we start from the newest)
   useEffect(() => {
     setSubtitleCycleIdx(0)
   }, [polledMetadata?.activities?.length])
+
+  // ---- Clear headless state when Supabase realtime reports run complete/failed ----
+  useEffect(() => {
+    if (!headlessRunId) return
+    if (currentRun?.status === 'completed' || currentRun?.status === 'failed') {
+      // Keep headlessRunId set for 5s so the progress banner shows final state,
+      // then clear it to stop showing the banner.
+      const timer = setTimeout(() => {
+        setHeadlessRunId(null)
+        setHeadlessQueued(0)
+      }, 5000)
+      return () => clearTimeout(timer)
+    }
+  }, [headlessRunId, currentRun?.status])
 
   // ---- Convert discoveredJobs/qualifiedJobs into ReviewQueueItems when run completes ---
   // IMPORTANT: Only process find-jobs output when the active run is a search, not an apply.
@@ -4786,6 +4804,8 @@ export function AutopilotView() {
   // Derived: is a polled run actively in progress (includes extension pipeline)
   const isRunPolling = activeRunId !== null
   const isRunTerminal = polledRunStatus === 'COMPLETED' || polledRunStatus === 'FAILED' || polledRunStatus === 'CRASHED' || polledRunStatus === 'TIMED_OUT'
+  // Headless queue-apply: progress comes from Supabase realtime, not Trigger.dev polling
+  const isHeadlessActive = headlessRunId !== null && headlessQueued > 0
 
   // Don't show stale terminal banners on initial load — only show if run is recent (< 5 min)
   const isStaleTerminalRun = !isRunPolling && !isTriggering && !isBotActive && currentRun != null &&
@@ -5607,7 +5627,7 @@ export function AutopilotView() {
           )}
 
           {/* ─── Cloud Autopilot badge ─── */}
-          {(isRunPolling || isTriggering) && (
+          {(isRunPolling || isTriggering || isHeadlessActive) && (
             <span
               title="Cloud Autopilot (Stagehand headless)"
               style={{
@@ -5772,7 +5792,7 @@ export function AutopilotView() {
 
 
           {/* Progress Banner — shows during and after bot runs */}
-          {!isStaleTerminalRun && (isRunPolling || isRunTerminal || isTriggering || isBotActive || currentRun?.status === 'completed' || currentRun?.status === 'failed') && (
+          {!isStaleTerminalRun && (isRunPolling || isRunTerminal || isTriggering || isBotActive || isHeadlessActive || currentRun?.status === 'completed' || currentRun?.status === 'failed') && (
             <section style={progressBannerStyles.container}>
               {/* Top row: status + live job count */}
               {(() => {
@@ -5780,7 +5800,7 @@ export function AutopilotView() {
                 const metaJf = polledMetadata?.jobsFound
                 const jf = metaJf ?? (polledRunOutput?.jobsFound as number | undefined) ?? currentRun?.jobsFound ?? 0
                 const discovered = (polledRunOutput?.discoveredJobs ?? polledRunOutput?.discovered_jobs ?? []) as DiscoveredJob[]
-                const isRunning = (isTriggering || isRunPolling || isBotActive) && !(polledRunStatus === 'COMPLETED' || polledRunStatus === 'FAILED' || polledRunStatus === 'CRASHED' || polledRunStatus === 'TIMED_OUT')
+                const isRunning = (isTriggering || isRunPolling || isBotActive || isHeadlessActive) && !(polledRunStatus === 'COMPLETED' || polledRunStatus === 'FAILED' || polledRunStatus === 'CRASHED' || polledRunStatus === 'TIMED_OUT')
                 const isComplete = polledRunStatus === 'COMPLETED' || (!isRunPolling && !isTriggering && currentRun?.status === 'completed')
                 const isFailed = polledRunStatus === 'FAILED' || polledRunStatus === 'CRASHED' || polledRunStatus === 'TIMED_OUT' || (!isRunPolling && !isTriggering && currentRun?.status === 'failed')
 
@@ -5789,8 +5809,20 @@ export function AutopilotView() {
                 const metaProcessed = polledMetadata?.jobsProcessed ?? 0
                 const metaTotal = jf || 10 // avoid divide by zero
                 const scoutSearchesTotal = polledMetadata?.scoutSearchesTotal ?? 0
+                // Headless queue-apply: derive applied count from Supabase realtime
+                const headlessApplied = isHeadlessActive ? (currentRun?.jobsApplied ?? 0) : 0
+                const headlessFailed = isHeadlessActive ? (currentRun?.jobsFailed ?? 0) : 0
+                const headlessDone = headlessApplied + headlessFailed + (currentRun?.jobsSkipped ?? 0) + (currentRun?.jobsNeedsManual ?? 0)
+                const headlessComplete = isHeadlessActive && currentRun?.status === 'completed'
+                const headlessFailedRun = isHeadlessActive && currentRun?.status === 'failed'
+
                 let progressPct: number
-                if (isComplete) progressPct = 100
+                if (headlessComplete) progressPct = 100
+                else if (headlessFailedRun) progressPct = 0
+                else if (isHeadlessActive && headlessQueued > 0) {
+                  progressPct = Math.round((headlessDone / headlessQueued) * 95) + 5
+                }
+                else if (isComplete) progressPct = 100
                 else if (isFailed) progressPct = 0
                 else if (activeRunType === 'apply') {
                   // Apply run: progress based on submitted/total items
@@ -5828,7 +5860,13 @@ export function AutopilotView() {
                 const failedTotal = reviewQueue.filter(i => i.status === 'failed').length
                 const unmatchedTotal = reviewQueue.filter(i => i.status === 'unmatched').length
                 const applyAllFailed = isComplete && isApplyRun && appliedTotal === 0
-                const statusText = isApplyRun
+
+                // Headless queue-apply status text
+                const statusText = isHeadlessActive
+                  ? (headlessFailedRun ? 'Cloud apply failed'
+                    : headlessComplete ? `${headlessApplied}/${headlessQueued} applied`
+                    : `Applying... ${headlessDone}/${headlessQueued}`)
+                  : isApplyRun
                   ? (isFailed ? 'Application failed'
                     : applyAllFailed ? 'No applications submitted'
                     : isComplete ? `${appliedTotal} application${appliedTotal !== 1 ? 's' : ''} submitted`
@@ -5849,7 +5887,18 @@ export function AutopilotView() {
 
                 // Build subtitle by cycling through the last 3 activities
                 let subtitleText: string
-                if (isApplyRun) {
+                if (isHeadlessActive) {
+                  // Headless queue-apply: show latest Supabase realtime activity
+                  if (headlessComplete) {
+                    subtitleText = `Cloud apply complete: ${headlessApplied} applied, ${headlessFailed} failed`
+                  } else if (headlessFailedRun) {
+                    subtitleText = currentRun?.errorMessage ?? 'Cloud apply encountered an error'
+                  } else if (latestActivity) {
+                    subtitleText = formatActivityText(latestActivity)
+                  } else {
+                    subtitleText = `${headlessQueued} jobs queued for cloud apply`
+                  }
+                } else if (isApplyRun) {
                   // Apply run: show apply-specific subtitle
                   const submittingItems = reviewQueue.filter(i => i.status === 'submitting')
                   const currentJob = polledMetadata?.currentJob

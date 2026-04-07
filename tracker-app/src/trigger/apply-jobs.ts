@@ -1,11 +1,11 @@
 import { task, metadata } from "@trigger.dev/sdk/v3"
 
 /**
- * Phase 3 — Apply Jobs Task
+ * Phase 3 — Apply Jobs Task (LEGACY)
  *
- * Receives a batch of qualified/approved jobs and submits applications
- * using the appropriate ATS adapter for each (Greenhouse, Lever, LinkedIn
- * Easy Apply, or Generic fallback).
+ * This task is the legacy apply-jobs path. The primary apply flow now goes
+ * through headless-apply.ts (Browserbase). This file is kept for its type
+ * exports and as a fallback task stub.
  *
  * Key constraints:
  * - Max 20 applications per run (handles dashboard batches of 16+)
@@ -13,8 +13,8 @@ import { task, metadata } from "@trigger.dev/sdk/v3"
  * - LinkedIn Easy Apply: 60s gap (anti-detection needed)
  * - maxDuration: 1800s (30 min) — enough for 20 jobs with mixed gaps
  * - Screenshot on failure for debugging
- * - LinkedIn Easy Apply: local Chromium + cookie (Bright Data blocks cookies)
- * - ATS (Greenhouse/Lever/Generic): Bright Data Scraping Browser works fine
+ * - LinkedIn Easy Apply: local Chromium + cookie
+ * - ATS: local Chromium (Browserbase via headless-apply.ts is the primary path)
  */
 
 export interface ApplyJobPayload {
@@ -88,7 +88,7 @@ async function sendServerNotification(
 
 export const applyJobsTask = task({
   id: "apply-jobs",
-  machine: "medium-1x", // 1 vCPU, 2 GB RAM — local Chromium for LinkedIn needs it
+  machine: "medium-1x", // 1 vCPU, 2 GB RAM — local Chromium
   maxDuration: 1800, // 30 minutes — 20 jobs with variable gaps
   run: async (payload: {
     userId: string
@@ -286,9 +286,6 @@ export const applyJobsTask = task({
 
     console.log(`[apply-jobs] ${atsJobs.length} ATS jobs, ${linkedInJobs.length} LinkedIn jobs, ${ashbyJobs.length} Ashby (pre-filtered)`)
 
-    // ---------- Launch browsers ----------
-    const SBR_AUTH = (process.env.BRIGHTDATA_SBR_AUTH || '').trim() || undefined
-
     // ---------- Wrap entire job processing in try/finally ----------
     // Ensures updateBotRun ALWAYS executes even if browsers crash or unhandled errors occur.
     // Without this, a browser crash leaves the run stuck in "running" status forever.
@@ -303,94 +300,21 @@ export const applyJobsTask = task({
         "--js-flags=--max-old-space-size=256",
       ]
 
-      // ── SBR domain limit & proxy error detection ──
-      // Bright Data SBR enforces a per-session domain navigation limit (~3-5 cross-domain navs).
-      // After that, CDP throws "Page.navigate domain limit reached".
-      // We detect this and similar errors to trigger session recycling.
-      const isSbrProxyError = (msg: string) =>
-        msg.includes('502') || msg.includes('no_peer') ||
-        msg.includes('probe_timeout') || msg.includes('proxy_error') ||
-        msg.includes('domain limit') || msg.includes('domain_limit') ||
-        msg.includes('ERR_CONNECTION_REFUSED') ||
-        msg.includes('ERR_NAME_NOT_RESOLVED') || /net::ERR_/.test(msg) ||
-        msg.includes('Target closed') || msg.includes('Browser closed') ||
-        msg.includes('Timeout') || msg.includes('timeout')
-
-      // Timeout errors should skip SBR retries entirely and go straight to local fallback.
-      // Lever (and similar sites) block SBR proxy — retrying SBR just wastes 20s × N.
-      const isTimeoutError = (msg: string) =>
-        msg.includes('Timeout') || msg.includes('timeout')
-
-      const isDomainLimitError = (msg: string) =>
-        msg.includes('domain limit') || msg.includes('domain_limit')
-
-      // Proactively recycle SBR session every N jobs to avoid hitting the domain limit
-      const SBR_RECYCLE_EVERY = 3
-
-      // ── Helper: connect to SBR or fall back to local Chromium ──
-      // Returns a bundle with browser, context, and whether SBR is in use.
-      // This is called at startup and again each time we need to recycle.
-      type BrowserBundle = {
-        browser: Awaited<ReturnType<typeof chromium.connectOverCDP>>
-        context: Awaited<ReturnType<Awaited<ReturnType<typeof chromium.connectOverCDP>>['newContext']>>
-        usingSBR: boolean
-      }
-
-      const connectAtsBrowser = async (): Promise<BrowserBundle> => {
-        if (SBR_AUTH) {
-          try {
-            const sbrBrowser = await Promise.race([
-              chromium.connectOverCDP(`wss://${SBR_AUTH}@brd.superproxy.io:9222`),
-              new Promise<never>((_, reject) =>
-                setTimeout(() => reject(new Error('SBR connection timeout (30s)')), 30_000)
-              ),
-            ])
-            // Health check: verify CDP is responsive (not a zombie session)
-            const testCtx = await Promise.race([
-              sbrBrowser.newContext(),
-              new Promise<never>((_, reject) =>
-                setTimeout(() => reject(new Error('SBR health check timeout (10s)')), 10_000)
-              ),
-            ])
-            await testCtx.close()
-
-            // SBR via CDP doesn't support newContext() — use default context
-            const ctx = sbrBrowser.contexts()[0] || await sbrBrowser.newContext({
-              viewport: { width: 1280, height: 900 },
-              ignoreHTTPSErrors: true,
-            })
-            await blockUnnecessaryResources(ctx, 'moderate')
-            console.log('[apply-jobs] Connected to Bright Data SBR (health check passed)')
-            return { browser: sbrBrowser, context: ctx, usingSBR: true }
-          } catch (sbrErr) {
-            console.warn(`[apply-jobs] SBR connect failed: ${(sbrErr as Error).message} — falling back to local Chromium`)
-          }
-        }
-        // Local Chromium fallback — with 20s timeout to prevent hang on OOM/corrupt binary
-        const localBrowser = await Promise.race([
-          chromium.launch({ headless: true, args: LOCAL_ARGS }),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('Local Chromium launch timeout (20s)')), 20_000)
-          ),
-        ]) as unknown as Awaited<ReturnType<typeof chromium.connectOverCDP>>
-        const ctx = await localBrowser.newContext({
-          viewport: { width: 1280, height: 900 },
-          userAgent:
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-          ignoreHTTPSErrors: true,
-        })
-        await blockUnnecessaryResources(ctx, 'moderate')
-        return { browser: localBrowser, context: ctx, usingSBR: false }
-      }
-
-      const closeAtsBrowser = async (bundle: BrowserBundle): Promise<void> => {
-        await bundle.context.close().catch((err) => console.warn('[apply-jobs] Context close failed:', err))
-        await bundle.browser.close().catch((err) => console.warn('[apply-jobs] Browser close failed:', err))
-      }
-
-      // ── Initial connection ──
-      let ats = await connectAtsBrowser()
-      let jobsSinceRecycle = 0
+      // Launch local Chromium with timeout to prevent hang on OOM/corrupt binary
+      const atsBrowser = await Promise.race([
+        chromium.launch({ headless: true, args: LOCAL_ARGS }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Local Chromium launch timeout (20s)')), 20_000)
+        ),
+      ])
+      const atsContext = await atsBrowser.newContext({
+        viewport: { width: 1280, height: 900 },
+        userAgent:
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        ignoreHTTPSErrors: true,
+      })
+      await blockUnnecessaryResources(atsContext, 'moderate')
+      console.log('[apply-jobs] Local Chromium launched for ATS jobs')
 
       try {
         for (let i = 0; i < atsJobs.length; i++) {
@@ -414,189 +338,26 @@ export const applyJobsTask = task({
             startedAt: new Date().toISOString(),
           })
 
-          // ── Proactive SBR session recycling every N jobs ──
-          // This prevents hitting the domain limit before it occurs.
-          if (ats.usingSBR && jobsSinceRecycle >= SBR_RECYCLE_EVERY) {
-            console.log(`[apply-jobs]   Proactive SBR recycle after ${jobsSinceRecycle} jobs (limit: ${SBR_RECYCLE_EVERY})`)
-            await closeAtsBrowser(ats)
-            await new Promise(r => setTimeout(r, 2_000)) // brief cooldown
-            ats = await connectAtsBrowser()
-            jobsSinceRecycle = 0
-          }
+          const page = await atsContext.newPage()
 
-          // SBR proxy can intermittently return 502 (no_peer, probe_timeout, domain limit).
-          // Retry up to 2 times with SBR, then fall back to local Chromium + 2Captcha.
-          // Strategy: SBR is PRIMARY (solves hCaptcha natively), 2Captcha is FALLBACK for local Chromium.
-          const MAX_SBR_RETRIES = 2
-          let attempt = 0
-          let applyResult: ApplyResult | null = null
-          let usedLocalFallback = false
-          let needsSbrRecycle = false
+          try {
+            const adapter = detectAdapter(job.url)
+            console.log(`[apply-jobs]   Adapter: ${adapter.name}`)
 
-          while (attempt <= MAX_SBR_RETRIES) {
-            attempt++
+            // Thread the per-job cover letter snippet + metadata into the profile
+            profile.coverLetterSnippet = job.coverLetterSnippet || undefined
+            profile.jobMeta = { company: job.company, role: job.role }
 
-            // On final retry with SBR, or if SBR already failed twice:
-            // try local Chromium as fallback (Greenhouse/Lever don't need residential proxy)
-            // For Lever: MAX_SBR_RETRIES=0, so attempt 1 > 0 → always goes local
-            let pageContext = ats.context
-            let localBrowser: Awaited<ReturnType<typeof chromium.launch>> | null = null
+            // Per-job timeout: Greenhouse needs longer (security code polling)
+            const isGreenhouse = /greenhouse/i.test(job.url) || job.ats === 'greenhouse'
+            const JOB_TIMEOUT_MS = isGreenhouse ? 300_000 : 180_000
+            const applyResult = await Promise.race([
+              adapter.apply(page, job.url, profile),
+              new Promise<ApplyResult>((_, reject) =>
+                setTimeout(() => reject(new Error(`Job timeout: adapter did not complete within ${JOB_TIMEOUT_MS / 1000}s`)), JOB_TIMEOUT_MS)
+              ),
+            ])
 
-            if (attempt > MAX_SBR_RETRIES && ats.usingSBR) {
-              console.log(`[apply-jobs]   SBR failed ${MAX_SBR_RETRIES} times, falling back to local Chromium`)
-              try {
-                localBrowser = await Promise.race([
-                  chromium.launch({ headless: true, args: LOCAL_ARGS }),
-                  new Promise<never>((_, reject) =>
-                    setTimeout(() => reject(new Error('Local Chromium fallback launch timeout (20s)')), 20_000)
-                  ),
-                ]) as Awaited<ReturnType<typeof chromium.launch>>
-                pageContext = await localBrowser.newContext({
-                  viewport: { width: 1280, height: 900 },
-                  userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-                  ignoreHTTPSErrors: true,
-                })
-                await blockUnnecessaryResources(pageContext, 'moderate')
-                usedLocalFallback = true
-              } catch (localErr) {
-                console.error(`[apply-jobs]   Local Chromium fallback failed: ${(localErr as Error).message}`)
-                break
-              }
-            }
-
-            const page = await pageContext.newPage()
-
-            try {
-              const adapter = detectAdapter(job.url)
-              if (attempt === 1) console.log(`[apply-jobs]   Adapter: ${adapter.name}`)
-
-              // Thread the per-job cover letter snippet + metadata into the profile
-              profile.coverLetterSnippet = job.coverLetterSnippet || undefined
-              profile.jobMeta = { company: job.company, role: job.role }
-
-              // Per-job timeout: Greenhouse needs longer (security code polling + reCAPTCHA solve)
-              const isGreenhouse = /greenhouse/i.test(job.url) || job.ats === 'greenhouse'
-              const JOB_TIMEOUT_MS = isGreenhouse ? 300_000 : 180_000
-              applyResult = await Promise.race([
-                adapter.apply(page, job.url, profile),
-                new Promise<ApplyResult>((_, reject) =>
-                  setTimeout(() => reject(new Error(`Job timeout: adapter did not complete within ${JOB_TIMEOUT_MS / 1000}s`)), JOB_TIMEOUT_MS)
-                ),
-              ])
-
-              // Check if the result is a proxy error that should be retried
-              const isProxyErr = applyResult.status === 'failed' &&
-                applyResult.reason && isSbrProxyError(applyResult.reason)
-
-              // Domain limit errors need full session recycle, not just page retry
-              if (applyResult.status === 'failed' && applyResult.reason &&
-                  isDomainLimitError(applyResult.reason) && ats.usingSBR) {
-                console.log(`[apply-jobs]   SBR domain limit hit (result) — will recycle session and retry this job`)
-                await page.close().catch(() => {})
-                if (localBrowser) await localBrowser.close().catch(() => {})
-                needsSbrRecycle = true
-                applyResult = null // will retry with fresh session
-                break
-              }
-
-              // Timeout errors: skip remaining SBR retries, jump straight to local fallback.
-              // Sites like Lever block SBR proxy — retrying just wastes 20s per attempt.
-              if (isProxyErr && applyResult.reason && isTimeoutError(applyResult.reason) && ats.usingSBR && attempt <= MAX_SBR_RETRIES) {
-                console.log(`[apply-jobs]   SBR timeout detected (attempt ${attempt}) — skipping remaining SBR retries, forcing local fallback`)
-                await page.close().catch(() => {})
-                if (localBrowser) await localBrowser.close().catch(() => {})
-                attempt = MAX_SBR_RETRIES // next iteration will be attempt > MAX_SBR_RETRIES → local fallback
-                continue
-              }
-
-              if (isProxyErr && attempt <= MAX_SBR_RETRIES) {
-                const delay = attempt * 8_000
-                console.log(`[apply-jobs]   SBR proxy error (attempt ${attempt}/${MAX_SBR_RETRIES + 1}), retrying in ${delay / 1000}s...`)
-                await page.close().catch(() => {})
-                if (localBrowser) await localBrowser.close().catch(() => {})
-                await new Promise(r => setTimeout(r, delay))
-                continue
-              }
-
-              break // Success or non-retryable failure
-
-            } catch (err) {
-              const errMsg = err instanceof Error ? err.message : String(err)
-
-              // Domain limit exception: recycle entire SBR session
-              if (isDomainLimitError(errMsg) && ats.usingSBR) {
-                console.log(`[apply-jobs]   SBR domain limit exception — will recycle session and retry this job`)
-                await page.close().catch(() => {})
-                if (localBrowser) await localBrowser.close().catch(() => {})
-                needsSbrRecycle = true
-                break
-              }
-
-              // Timeout exceptions: skip remaining SBR retries, jump straight to local fallback
-              if (isSbrProxyError(errMsg) && isTimeoutError(errMsg) && ats.usingSBR && attempt <= MAX_SBR_RETRIES) {
-                console.log(`[apply-jobs]   SBR timeout exception (attempt ${attempt}) — skipping remaining SBR retries, forcing local fallback`)
-                await page.close().catch(() => {})
-                if (localBrowser) await localBrowser.close().catch(() => {})
-                attempt = MAX_SBR_RETRIES // next iteration will be attempt > MAX_SBR_RETRIES → local fallback
-                continue
-              }
-
-              if (isSbrProxyError(errMsg) && attempt <= MAX_SBR_RETRIES) {
-                const delay = attempt * 8_000
-                console.log(`[apply-jobs]   SBR proxy exception (attempt ${attempt}/${MAX_SBR_RETRIES + 1}), retrying in ${delay / 1000}s...`)
-                await page.close().catch(() => {})
-                if (localBrowser) await localBrowser.close().catch(() => {})
-                await new Promise(r => setTimeout(r, delay))
-                continue
-              }
-
-              // Non-retryable error — screenshot with 5s timeout to avoid hanging on crashed pages
-              let screenshotBase64: string | undefined
-              try {
-                screenshotBase64 = await Promise.race([
-                  takeScreenshot(page),
-                  new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 5_000)),
-                ])
-              } catch { /* screenshot failed */ }
-              await page.close().catch(() => {})
-              if (localBrowser) await localBrowser.close().catch(() => {})
-
-              const result: ApplyJobResult = {
-                url: job.url,
-                company: job.company,
-                role: job.role,
-                ats: "Unknown",
-                status: "failed",
-                reason: errMsg,
-                screenshotBase64,
-                durationMs: Date.now() - jobStart,
-              }
-              results.push(result)
-              failed++
-              console.error(`[apply-jobs]   Error: ${result.reason}`)
-              break
-            } finally {
-              await page.close().catch(() => {})
-              if (localBrowser) await localBrowser.close().catch(() => {})
-            }
-          }
-
-          // ── SBR domain limit recovery: recycle session and retry this job ──
-          if (needsSbrRecycle) {
-            console.log(`[apply-jobs]   Closing stale SBR session and reconnecting...`)
-            await closeAtsBrowser(ats)
-            await new Promise(r => setTimeout(r, 3_000)) // cooldown before reconnect
-            ats = await connectAtsBrowser()
-            jobsSinceRecycle = 0
-            // Decrement i so the current job is retried with the fresh session
-            i--
-            continue
-          }
-
-          jobsSinceRecycle++
-
-          // Process the final applyResult (if we got one from the retry loop)
-          if (applyResult) {
             const result: ApplyJobResult = {
               url: job.url,
               company: applyResult.company || job.company,
@@ -648,36 +409,47 @@ export const applyJobsTask = task({
             }
 
             console.log(
-              `[apply-jobs]   Result: ${applyResult.status}${applyResult.reason ? ` — ${applyResult.reason}` : ""} (attempt ${attempt})`,
+              `[apply-jobs]   Result: ${applyResult.status}${applyResult.reason ? ` — ${applyResult.reason}` : ""}`,
             )
+
+          } catch (err) {
+            const errMsg = err instanceof Error ? err.message : String(err)
+
+            // Non-retryable error — screenshot with 5s timeout to avoid hanging on crashed pages
+            let screenshotBase64: string | undefined
+            try {
+              screenshotBase64 = await Promise.race([
+                takeScreenshot(page),
+                new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 5_000)),
+              ])
+            } catch { /* screenshot failed */ }
+
+            const result: ApplyJobResult = {
+              url: job.url,
+              company: job.company,
+              role: job.role,
+              ats: "Unknown",
+              status: "failed",
+              reason: errMsg,
+              screenshotBase64,
+              durationMs: Date.now() - jobStart,
+            }
+            results.push(result)
+            failed++
+            console.error(`[apply-jobs]   Error: ${result.reason}`)
+          } finally {
+            await page.close().catch(() => {})
           }
 
-          // Rate limiting: 15s gap for ATS jobs (no bot detection) — skip for last if no LinkedIn follows
+          // Rate limiting: 15s gap for ATS jobs — skip for last if no LinkedIn follows
           if (i < atsJobs.length - 1 || linkedInJobs.length > 0) {
             console.log(`[apply-jobs]   Waiting ${ATS_GAP_MS / 1000}s before next application...`)
             await humanDelay(ATS_GAP_MS, ATS_GAP_MS + 5000)
           }
         }
       } finally {
-        await closeAtsBrowser(ats)
-      }
-
-      // ---------- SBR total failure detection ----------
-      // If ALL ATS jobs failed and most errors look like proxy/browser issues,
-      // log a clear summary so the root cause is immediately visible.
-      const atsResults = results.filter(r => r.ats !== 'LinkedIn Easy Apply')
-      const atsFailed = atsResults.filter(r => r.status === 'failed')
-      if (atsResults.length > 0 && atsFailed.length === atsResults.length) {
-        const sbrErrorPattern = /502|no_peer|probe_timeout|proxy_error|domain limit|domain_limit|ERR_CONNECTION_REFUSED|ERR_NAME_NOT_RESOLVED|net::ERR_|Target closed|Browser closed|[Tt]imeout/
-        const sbrFailures = atsFailed.filter(r => r.reason && sbrErrorPattern.test(r.reason))
-        if (sbrFailures.length >= Math.ceil(atsResults.length * 0.8)) {
-          const uniqueReasons = Array.from(new Set(sbrFailures.map(r => r.reason))).slice(0, 3).join('; ')
-          console.error(
-            `[apply-jobs] SBR TOTAL FAILURE: All ${atsResults.length} ATS jobs failed due to proxy/browser errors. ` +
-            `Reasons: ${uniqueReasons}. ` +
-            `Action required: check Bright Data SBR status, quota, or switch to local Chromium.`
-          )
-        }
+        await atsContext.close().catch((err) => console.warn('[apply-jobs] Context close failed:', err))
+        await atsBrowser.close().catch((err) => console.warn('[apply-jobs] Browser close failed:', err))
       }
     }
 
@@ -704,9 +476,7 @@ export const applyJobsTask = task({
         }
       } else {
         // LinkedIn Easy Apply: local Chromium with cookie injection.
-        // Known limitation: SBR blocks cookie injection, residential proxy
-        // tunnel fails from Trigger.dev cloud. Direct connection works but
-        // LinkedIn may block cloud IPs. When auth fails → needs_manual.
+        // Known limitation: LinkedIn may block cloud IPs. When auth fails → needs_manual.
         console.log('[apply-jobs] Launching local Chromium for LinkedIn Easy Apply')
         const linkedInBrowser = await Promise.race([
           chromium.launch({

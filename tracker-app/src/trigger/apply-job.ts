@@ -3,7 +3,7 @@ import { classifyJobUrl } from "../lib/classify-job-url"
 
 export const applyJobTask = task({
   id: "apply-job-pipeline",
-  machine: "large-1x", // 4 vCPU, 8 GB RAM — needed for 86+ JD extractions with local Chromium
+  machine: "large-1x", // 4 vCPU, 8 GB RAM — needed for JD extractions with local Chromium
   maxDuration: 1800, // 30 minutes — scout+qualify only (~15min); apply-jobs runs as fire-and-forget child
   run: async (payload: {
     userId: string
@@ -55,53 +55,14 @@ export const applyJobTask = task({
       }],
     })
 
-    // Bright Data blocks ALL LinkedIn cookie injection (Storage + Network).
-    // Strategy: use Bright Data for scouting (public LinkedIn job search
-    // doesn't require auth). Use local Chromium + cookie for Easy Apply.
-    const SBR_AUTH = (process.env.BRIGHTDATA_SBR_AUTH || '').trim() || undefined
-
-    // SBR connectOverCDP can hang indefinitely OR return a zombie browser.
-    // Strategy: 30s connect timeout + health check (newContext + close) + local fallback.
+    // Launch local Chromium for scout + qualify phases.
+    // Apply phase runs separately via headless-apply.ts (Browserbase).
     const LOCAL_ARGS = ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
-    let browser: Awaited<ReturnType<typeof chromium.connectOverCDP>>
-    let usingSBR = false
+    console.log('[apply-job] Launching local Chromium')
+    const browser = await chromium.launch({ headless: true, args: LOCAL_ARGS }) as unknown as Awaited<ReturnType<typeof chromium.connectOverCDP>>
 
-    const launchLocal = async () => {
-      console.log('[apply-job] Launching local Chromium')
-      return await chromium.launch({ headless: true, args: LOCAL_ARGS })
-    }
-
-    if (SBR_AUTH) {
-      try {
-        const sbrBrowser = await Promise.race([
-          chromium.connectOverCDP(`wss://${SBR_AUTH}@brd.superproxy.io:9222`),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('SBR connection timeout (30s)')), 30_000)
-          ),
-        ])
-        // Health check: verify browser is actually responsive (not a zombie CDP session)
-        const testCtx = await Promise.race([
-          sbrBrowser.newContext(),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('SBR health check timeout (10s)')), 10_000)
-          ),
-        ])
-        await testCtx.close()
-        browser = sbrBrowser
-        usingSBR = true
-        console.log('[apply-job] Connected to Bright Data SBR (health check passed)')
-      } catch (sbrErr) {
-        console.warn(`[apply-job] SBR failed: ${(sbrErr as Error).message} — falling back to local Chromium`)
-        browser = await launchLocal() as unknown as typeof browser
-      }
-    } else {
-      browser = await launchLocal() as unknown as typeof browser
-    }
-
-    // No cookie injection on Bright Data — scout uses public LinkedIn search
-    // The linkedInCookie will be used later for Easy Apply via local Chromium
     let browserContext: Awaited<ReturnType<typeof browser.newContext>> | undefined
-    console.log(`[apply-job] Using ${usingSBR ? 'Bright Data' : 'local Chromium'}, cookie: ${payload.linkedInCookie ? 'provided' : 'none'}`)
+    console.log(`[apply-job] Using local Chromium, cookie: ${payload.linkedInCookie ? 'provided' : 'none'}`)
 
     try {
       const result = await runPipelineFromInline({
