@@ -50,9 +50,10 @@ const DEFAULT_TIMEOUT = 30_000
  */
 export async function createStagehand(config?: StagehandConfig): Promise<Stagehand> {
   // Auto-detect: use Browserbase when API key is available (unless explicitly disabled)
-  const useBrowserbase =
-    config?.useBrowserbase !== false &&
-    !!process.env.BROWSERBASE_API_KEY
+  const bbKey = process.env.BROWSERBASE_API_KEY
+  const bbProject = process.env.BROWSERBASE_PROJECT_ID
+  console.log(`[stagehand] ENV check: BROWSERBASE_API_KEY=${bbKey ? bbKey.slice(0, 10) + '...' : 'NOT SET'}, PROJECT_ID=${bbProject ? bbProject.slice(0, 8) + '...' : 'NOT SET'}`)
+  const useBrowserbase = config?.useBrowserbase !== false && !!bbKey
 
   const modelName = config?.model
     ? (config.model.includes('/') ? config.model : `anthropic/${config.model}`)
