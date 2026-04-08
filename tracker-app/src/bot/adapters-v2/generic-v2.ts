@@ -117,6 +117,17 @@ export const genericV2: StagehandAdapter = {
           await page.waitForTimeout(500)
         } catch { /* no banner */ }
       }
+      // Nuclear option: force-remove common cookie overlays from DOM
+      await page.evaluate(() => {
+        const selectors = ['#onetrust-banner-sdk', '#CybotCookiebotDialog', '.cookie-banner',
+          '.cookie-consent', '[class*="cookie"]', '[id*="cookie-banner"]',
+          '[class*="privacy-notice"]', '.cc-window', '#gdpr-consent']
+        for (const sel of selectors) {
+          document.querySelectorAll(sel).forEach(el => {
+            if (el instanceof HTMLElement && el.offsetHeight > 0) el.remove()
+          })
+        }
+      }).catch(() => {})
 
       // ── Step 3: Find and click the Apply button / Application tab ──
       // Some ATS (Workable) have an "APPLICATION" tab that must be clicked first
@@ -168,11 +179,13 @@ export const genericV2: StagehandAdapter = {
       const profileFields: Array<{ description: string; value: string; priority: number }> = [
         { description: 'first name', value: profile.firstName, priority: 1 },
         { description: 'last name', value: profile.lastName, priority: 1 },
+        { description: 'full name', value: `${profile.firstName} ${profile.lastName}`, priority: 1 },
         { description: 'email address', value: profile.email, priority: 1 },
         { description: 'phone number', value: profile.phone, priority: 2 },
         { description: 'LinkedIn URL or profile', value: profile.linkedin, priority: 2 },
         { description: 'website or portfolio URL', value: profile.portfolio, priority: 2 },
-        { description: 'location or city', value: profile.location, priority: 3 },
+        { description: 'location, city, or address', value: profile.location, priority: 3 },
+        { description: 'headline, title, or current role', value: `Senior Product Designer — ${profile.yearsExperience}+ years`, priority: 3 },
       ]
 
       let fieldsFilled = 0
@@ -281,10 +294,13 @@ export const genericV2: StagehandAdapter = {
 
         // Playwright fallback: if the submit button is still visible, click it directly
         const submitSelectors = [
-          'button[type="submit"]', 'button:has-text("Submit")',
-          'button:has-text("SUBMIT")', 'button:has-text("Apply")',
-          'button:has-text("Send Application")', 'input[type="submit"]',
+          'button[type="submit"]',
+          'button:has-text("Submit Application")', 'button:has-text("SUBMIT APPLICATION")',
+          'button:has-text("Submit")', 'button:has-text("SUBMIT")',
+          'button:has-text("Apply")', 'button:has-text("Send Application")',
+          'input[type="submit"]', 'input[value="Submit"]', 'input[value="Apply"]',
           '.postings-btn-submit', '.application-submit',
+          'a.postings-btn', // Lever uses <a> styled as button
         ]
         for (const sel of submitSelectors) {
           try {
@@ -326,10 +342,26 @@ export const genericV2: StagehandAdapter = {
       ].some(phrase => pageLower.includes(phrase))
 
       const hasRedirected = currentUrl !== jobUrl && !currentUrl.includes('/apply')
-      const hasErrorText = [
-        'required field', 'please fill', 'is required', 'error',
-        'invalid', 'please correct',
+      // Check for real validation errors (NOT security code prompts)
+      const hasSecurityCode = ['verification code', 'security code', 'confirm you\'re human', 'enter the code'].some(p => pageLower.includes(p))
+      const hasErrorText = !hasSecurityCode && [
+        'required field', 'please fill out this field', 'is required', 'please correct',
+        'invalid email', 'invalid phone',
       ].some(phrase => pageLower.includes(phrase))
+
+      // Security code prompt = form was submitted, waiting for OTP verification
+      if (hasSecurityCode) {
+        console.log(`[${ADAPTER_NAME}] Security/verification code detected — form submitted, needs OTP`)
+        return {
+          url: jobUrl,
+          company,
+          role,
+          ats: ADAPTER_NAME,
+          status: 'needs_manual',
+          reason: 'Application submitted but requires email verification code (OTP)',
+          durationMs: Date.now() - start,
+        }
+      }
 
       // If we see explicit errors, it's a failure
       if (hasErrorText && !hasConfirmationText) {
