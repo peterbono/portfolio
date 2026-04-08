@@ -448,9 +448,27 @@ export const genericV2: StagehandAdapter = {
         }
       }
 
-      // ── Step 10: Check for confirmation ──
-      // Many ATS (especially Greenhouse) redirect to the careers page after
-      // successful submission. Detect this as a success signal.
+      // ── Step 10: Wait for CAPTCHA resolution + page change ──
+      // Browserbase auto-solves CAPTCHAs (hCaptcha, reCAPTCHA) in 5-30s.
+      // Poll for URL change or confirmation text up to 30s after submit.
+      let finalUrl = page.url()
+      for (let wait = 0; wait < 6; wait++) {
+        await page.waitForTimeout(5000)
+        const newUrl = page.url()
+        if (newUrl !== finalUrl) {
+          finalUrl = newUrl
+          console.log(`[${ADAPTER_NAME}] Page navigated to: ${newUrl}`)
+          break
+        }
+        // Check for confirmation text early
+        const text = await page.evaluate(() => document.body?.innerText?.toLowerCase() || '').catch(() => '')
+        if (['thank you', 'application received', 'successfully submitted'].some(p => text.includes(p))) {
+          console.log(`[${ADAPTER_NAME}] Confirmation text detected after ${(wait + 1) * 5}s`)
+          break
+        }
+      }
+
+      // ── Step 11: Check for confirmation ──
       const currentUrl = page.url()
       const pageText = await page.evaluate(() => document.body?.innerText || '').catch(() => '')
       const pageLower = pageText.toLowerCase()
@@ -460,6 +478,8 @@ export const genericV2: StagehandAdapter = {
         'thank you', 'application received', 'successfully submitted',
         'application has been', 'we have received', 'thanks for applying',
         'application complete', 'submitted your application',
+        'thanks!', 'your application has been received',
+        'we appreciate your interest', 'application was submitted',
       ].some(phrase => pageLower.includes(phrase))
 
       const hasRedirected = currentUrl !== jobUrl && !currentUrl.includes('/apply')
