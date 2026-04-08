@@ -190,7 +190,29 @@ export const genericV2: StagehandAdapter = {
 
       for (const field of profileFields) {
         try {
-          await stagehand.act(`Find the input field labeled "${field.label}" (or similar). Click it, select all text (Ctrl+A), then type: ${field.value}`)
+          // Try Playwright fill() first (handles React controlled inputs correctly)
+          const selectors = [
+            `input[name*="${field.label.split(' ')[0].toLowerCase()}" i]`,
+            `input[id*="${field.label.split(' ')[0].toLowerCase()}" i]`,
+            `input[placeholder*="${field.label}" i]`,
+            `textarea[name*="${field.label.split(' ')[0].toLowerCase()}" i]`,
+          ]
+          let filled = false
+          for (const sel of selectors) {
+            try {
+              const el = page.locator(sel).first()
+              if (await el.isVisible({ timeout: 500 })) {
+                await el.click()
+                await el.fill(field.value)
+                filled = true
+                break
+              }
+            } catch { /* try next */ }
+          }
+          // Fallback to AI act() if no Playwright selector matched
+          if (!filled) {
+            await stagehand.act(`Find the input field labeled "${field.label}" (or similar). Click it, select all (Ctrl+A), then type: ${field.value}`)
+          }
           fieldsFilled++
           await page.waitForTimeout(400)
         } catch {
@@ -198,14 +220,21 @@ export const genericV2: StagehandAdapter = {
         }
       }
 
-      // 4b: Phone — handle country code + number separately
+      // 4b: Phone — try Playwright direct first (more reliable for controlled inputs)
       try {
-        // First try typing full number in a single phone field
-        await stagehand.act(`Find the phone number input field (NOT the country code dropdown). Click it, clear it, then type: ${profile.phone}`)
-        fieldsFilled++
+        const phoneInput = page.locator('input[name*="phone" i], input[type="tel"], input[placeholder*="phone" i], input[id*="phone" i]').first()
+        if (await phoneInput.isVisible({ timeout: 2000 })) {
+          await phoneInput.click()
+          await phoneInput.fill(profile.phone)
+          fieldsFilled++
+          console.log(`[${ADAPTER_NAME}] Phone filled via Playwright locator`)
+        } else {
+          await stagehand.act(`Find the phone number input (NOT the country code dropdown). Click it, select all, type: ${profile.phone}`)
+          fieldsFilled++
+        }
         await page.waitForTimeout(400)
       } catch {
-        console.log(`[${ADAPTER_NAME}] Phone field not found or failed`)
+        console.log(`[${ADAPTER_NAME}] Phone field not found`)
       }
 
       // 4c: Location/Address — type without triggering autocomplete
@@ -240,25 +269,29 @@ export const genericV2: StagehandAdapter = {
       try {
         cvTmpPath = await downloadCVToTemp()
 
-        // Try direct file input first
-        const fileInput = page.locator('input[type="file"]').first()
-        const hasFileInput = (await fileInput.count()) > 0
+        // Find ALL file inputs (visible or hidden)
+        const allFileInputs = page.locator('input[type="file"]')
+        const fileInputCount = await allFileInputs.count()
 
-        if (hasFileInput) {
-          await fileInput.setInputFiles(cvTmpPath)
-          console.log(`[${ADAPTER_NAME}] CV uploaded via setInputFiles`)
+        if (fileInputCount > 0) {
+          // Use the first file input — even if hidden, setInputFiles works
+          await allFileInputs.first().setInputFiles(cvTmpPath)
+          console.log(`[${ADAPTER_NAME}] CV uploaded via setInputFiles (${fileInputCount} input(s) found)`)
           await page.waitForTimeout(2000)
         } else {
-          // Try clicking an upload button, then finding the file input
+          // No file input yet — click upload button to reveal it (Lever pattern)
           try {
-            await stagehand.act('Click the resume, CV, or file upload button or area')
-            await page.waitForTimeout(1000)
+            await stagehand.act('Click the "Attach Resume/CV", "Upload Resume", "Upload CV", or file upload button')
+            await page.waitForTimeout(1500)
 
-            const hiddenInput = page.locator('input[type="file"]').first()
-            if ((await hiddenInput.count()) > 0) {
-              await hiddenInput.setInputFiles(cvTmpPath)
-              console.log(`[${ADAPTER_NAME}] CV uploaded after clicking upload area`)
+            // Check again after button click
+            const revealedInput = page.locator('input[type="file"]').first()
+            if ((await revealedInput.count()) > 0) {
+              await revealedInput.setInputFiles(cvTmpPath)
+              console.log(`[${ADAPTER_NAME}] CV uploaded after revealing file input`)
               await page.waitForTimeout(2000)
+            } else {
+              console.warn(`[${ADAPTER_NAME}] Upload button clicked but no file input appeared`)
             }
           } catch {
             console.warn(`[${ADAPTER_NAME}] No file upload found`)
