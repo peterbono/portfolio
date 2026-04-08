@@ -274,10 +274,21 @@ export const genericV2: StagehandAdapter = {
         const fileInputCount = await allFileInputs.count()
 
         if (fileInputCount > 0) {
-          // Use the first file input — even if hidden, setInputFiles works
-          await allFileInputs.first().setInputFiles(cvTmpPath)
-          console.log(`[${ADAPTER_NAME}] CV uploaded via setInputFiles (${fileInputCount} input(s) found)`)
-          await page.waitForTimeout(2000)
+          // Try fileChooser first (most reliable for custom upload widgets)
+          try {
+            const [fileChooser] = await Promise.all([
+              page.waitForEvent('filechooser', { timeout: 3000 }),
+              allFileInputs.first().click(),
+            ])
+            await fileChooser.setFiles(cvTmpPath)
+            console.log(`[${ADAPTER_NAME}] CV uploaded via fileChooser on existing input`)
+            await page.waitForTimeout(2000)
+          } catch {
+            // Fallback: direct setInputFiles (works for standard file inputs)
+            await allFileInputs.first().setInputFiles(cvTmpPath)
+            console.log(`[${ADAPTER_NAME}] CV uploaded via setInputFiles (${fileInputCount} input(s))`)
+            await page.waitForTimeout(2000)
+          }
         } else {
           // No visible file input — try multiple strategies
           let cvUploaded = false
@@ -422,6 +433,7 @@ export const genericV2: StagehandAdapter = {
           'input[type="submit"]', 'input[value="Submit"]', 'input[value="Apply"]',
           '.postings-btn-submit', '.application-submit',
           'a.postings-btn', // Lever uses <a> styled as button
+          '.postings-btn--submit', 'a[data-qa="btn-submit"]',
         ]
         for (const sel of submitSelectors) {
           try {
@@ -434,6 +446,17 @@ export const genericV2: StagehandAdapter = {
             }
           } catch { /* try next */ }
         }
+
+        // Nuclear: JS click on any visible submit-like element
+        try {
+          await page.evaluate(() => {
+            const btns = Array.from(document.querySelectorAll('button, a, input[type="submit"]'))
+            const submit = btns.find(b => /submit|apply|send/i.test(b.textContent || '') || /submit/i.test((b as HTMLInputElement).value || ''))
+            if (submit) (submit as HTMLElement).click()
+          })
+          console.log(`[${ADAPTER_NAME}] Submit via JS evaluate`)
+          await page.waitForTimeout(5000)
+        } catch { /* last resort failed */ }
       } catch (err) {
         const screenshot = await page.screenshot({ type: 'jpeg', quality: 60 }).catch(() => null)
         return {
