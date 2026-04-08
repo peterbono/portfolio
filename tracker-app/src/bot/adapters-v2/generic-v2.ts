@@ -173,34 +173,51 @@ export const genericV2: StagehandAdapter = {
         }
       }
 
-      // ── Step 4: Fill profile fields using act() ──
-      // Map profile data to natural-language fill instructions.
+      // ── Step 4: Fill profile fields ──
       // ANTI-HALLUCINATION: exact values from profile, AI only identifies WHERE to type.
-      const profileFields: Array<{ description: string; value: string; priority: number }> = [
-        { description: 'first name', value: profile.firstName, priority: 1 },
-        { description: 'last name', value: profile.lastName, priority: 1 },
-        { description: 'full name', value: `${profile.firstName} ${profile.lastName}`, priority: 1 },
-        { description: 'email address', value: profile.email, priority: 1 },
-        { description: 'phone number', value: profile.phone, priority: 2 },
-        { description: 'LinkedIn URL or profile', value: profile.linkedin, priority: 2 },
-        { description: 'website or portfolio URL', value: profile.portfolio, priority: 2 },
-        { description: 'location, city, or address', value: profile.location, priority: 3 },
-        { description: 'headline, title, or current role', value: `Senior Product Designer — ${profile.yearsExperience}+ years`, priority: 3 },
-      ]
-
       let fieldsFilled = 0
+
+      // 4a: Standard text fields via act()
+      const profileFields: Array<{ label: string; value: string; priority: number }> = [
+        { label: 'first name', value: profile.firstName, priority: 1 },
+        { label: 'last name', value: profile.lastName, priority: 1 },
+        { label: 'full name', value: `${profile.firstName} ${profile.lastName}`, priority: 1 },
+        { label: 'email', value: profile.email, priority: 1 },
+        { label: 'LinkedIn', value: profile.linkedin, priority: 2 },
+        { label: 'website or portfolio', value: profile.portfolio, priority: 2 },
+        { label: 'headline or current title', value: `Senior Product Designer — ${profile.yearsExperience}+ years`, priority: 3 },
+      ]
 
       for (const field of profileFields) {
         try {
-          await stagehand.act(`Click on the EMPTY input field labeled "${field.description}" (or similar label), clear it, then type exactly: ${field.value} — do NOT type this value into a field that already has content. If no field with this label exists, do nothing.`)
+          await stagehand.act(`Find the input field labeled "${field.label}" (or similar). Click it, select all text (Ctrl+A), then type: ${field.value}`)
           fieldsFilled++
-          await page.waitForTimeout(500)
+          await page.waitForTimeout(400)
         } catch {
-          // Field does not exist on this form — expected for many ATS platforms
-          if (field.priority <= 2) {
-            console.log(`[${ADAPTER_NAME}] Field not found: ${field.description}`)
-          }
+          if (field.priority <= 2) console.log(`[${ADAPTER_NAME}] Not found: ${field.label}`)
         }
+      }
+
+      // 4b: Phone — handle country code + number separately
+      try {
+        // First try typing full number in a single phone field
+        await stagehand.act(`Find the phone number input field (NOT the country code dropdown). Click it, clear it, then type: ${profile.phone}`)
+        fieldsFilled++
+        await page.waitForTimeout(400)
+      } catch {
+        console.log(`[${ADAPTER_NAME}] Phone field not found or failed`)
+      }
+
+      // 4c: Location/Address — type without triggering autocomplete
+      try {
+        await stagehand.act(`Find the location, city, or address input field. Click it, select all, then type: ${profile.location}`)
+        fieldsFilled++
+        await page.waitForTimeout(1000)
+        // Dismiss any autocomplete dropdown by pressing Escape
+        await page.keyboard.press('Escape')
+        await page.waitForTimeout(300)
+      } catch {
+        console.log(`[${ADAPTER_NAME}] Location field not found`)
       }
 
       console.log(`[${ADAPTER_NAME}] Filled ${fieldsFilled}/${profileFields.length} profile fields`)
