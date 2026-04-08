@@ -4,7 +4,7 @@ import type { GhostResult, ATSStats, IntelligenceSummary, WeeklyTrendPoint } fro
 
 // Statuses that indicate the company responded in some way
 const RESPONSE_STATUSES = new Set([
-  'screening', 'interviewing', 'challenge', 'offer', 'negotiation', 'rejected',
+  'screening', 'interviewing', 'challenge', 'offer', 'rejected',
 ])
 
 // Statuses where ghost detection is relevant (still waiting)
@@ -50,11 +50,11 @@ export function detectGhosts(jobs: Job[]): GhostResult[] {
 
 /**
  * Compute response rate, ghost rate, and avg response time per ATS platform.
- * Only considers jobs that were actually submitted (status !== 'manual' | 'saved' | 'skipped').
+ * Only considers jobs that were actually submitted.
  */
 export function computeATSStats(jobs: Job[]): ATSStats[] {
   const submitted = jobs.filter(
-    (j) => j.ats && !['manual', 'saved', 'skipped'].includes(j.status),
+    (j) => j.ats,
   )
 
   const grouped = new Map<string, Job[]>()
@@ -163,9 +163,7 @@ export function computeIntelligenceSummary(jobs: Job[]): IntelligenceSummary {
   const atsStats = computeATSStats(jobs)
 
   // Only consider submitted/active jobs for ghost rate denominator
-  const submittedJobs = jobs.filter(
-    (j) => !['manual', 'saved', 'skipped'].includes(j.status),
-  )
+  const submittedJobs = jobs
 
   const ghostRate = submittedJobs.length > 0
     ? Math.round((ghosts.length / submittedJobs.length) * 1000) / 1000
@@ -265,9 +263,7 @@ function computeWeeklyTrend(jobs: Job[], weeks: number): WeeklyTrendPoint[] {
       return d >= weekStartDate && d < weekEndDate
     })
 
-    const applied = weekJobs.filter(
-      (j) => !['manual', 'saved', 'skipped'].includes(j.status),
-    ).length
+    const applied = weekJobs.length
 
     const responses = weekJobs.filter((j) => RESPONSE_STATUSES.has(j.status)).length
 

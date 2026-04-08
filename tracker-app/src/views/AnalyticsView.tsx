@@ -170,11 +170,11 @@ function ResponseRate() {
   const { jobs } = useJobs()
 
   const stats = useMemo(() => {
-    const applied = ['submitted','screening','interviewing','challenge','offer','negotiation','rejected','withdrawn','ghosted']
+    const applied = ['submitted','screening','interviewing','challenge','offer','rejected','ghosted']
     const totalApplied = jobs.filter(j => applied.includes(j.status)).length
 
     const gotResponse = jobs.filter(
-      j => ['screening','interviewing','offer','rejected','challenge','negotiation','withdrawn'].includes(j.status)
+      j => ['screening','interviewing','offer','rejected','challenge'].includes(j.status)
     ).length
 
     const rejected = jobs.filter(j => j.status === 'rejected').length
@@ -231,7 +231,7 @@ function WorkModeDistribution() {
   const [expandedMode, setExpandedMode] = useState<string | null>(null)
 
   const data = useMemo(() => {
-    const applied = jobs.filter(j => ['submitted','screening','interviewing','challenge','offer','negotiation','rejected','withdrawn','ghosted'].includes(j.status))
+    const applied = jobs.filter(j => ['submitted','screening','interviewing','challenge','offer','rejected','ghosted'].includes(j.status))
 
     type ModeKey = 'remote' | 'onsite' | 'hybrid'
     const modeJobs: Record<ModeKey, { company: string; location: string; area: string }[]> = { remote: [], onsite: [], hybrid: [] }
@@ -433,9 +433,7 @@ function IntelligenceCards() {
 
   // Ghost rate display
   const ghostPct = Math.round(intel.ghostRate * 100)
-  const submittedCount = allJobs.filter(
-    (j) => !['manual', 'saved', 'skipped'].includes(j.status),
-  ).length
+  const submittedCount = allJobs.length
   const ghostColor = ghostPct > 30 ? '#fb923c' : ghostPct < 15 ? '#34d399' : '#fbbf24'
 
   // Completeness score (formerly "Avg Quality")
@@ -443,7 +441,7 @@ function IntelligenceCards() {
   const qualityColor = avgQ > 70 ? '#34d399' : avgQ >= 50 ? '#fbbf24' : '#f43f5e'
 
   // Response rate
-  const responseStatuses = ['screening', 'interviewing', 'challenge', 'offer', 'negotiation', 'rejected', 'withdrawn']
+  const responseStatuses = ['screening', 'interviewing', 'challenge', 'offer', 'rejected']
   const gotResponse = allJobs.filter(j => responseStatuses.includes(j.status)).length
   const responseRate = submittedCount > 0 ? Math.round((gotResponse / submittedCount) * 100) : 0
   const responseColor = responseRate > 20 ? '#34d399' : responseRate >= 10 ? '#fbbf24' : '#f43f5e'
@@ -521,29 +519,16 @@ const intelStyles: Record<string, React.CSSProperties> = {
 /* ------------------------------------------------------------------ */
 /*  AnalyticsView                                                      */
 /* ------------------------------------------------------------------ */
-// Import new chart components
-import { ManualVsBotFunnel, TimeToResponse, PipelineHealth, VelocityVsQuality } from './AnalyticsCharts'
-import { WeeklyCadenceHeatmap, RoleCategoryPerformance, GeographicPerformance } from './AnalyticsCharts2'
-
-/** Inner analytics content — used by InsightsView for the Deep Dive section */
+/** Inner analytics content */
 export function AnalyticsContent() {
   return (
     <>
       <IntelligenceCards />
       <div style={styles.grid}>
         <ResponseRate />
-        <ManualVsBotFunnel />
         <StatusDistribution />
         <ApplicationsOverTime />
-        <VelocityVsQuality />
-        <TimeToResponse />
-        <PipelineHealth />
         <TopRejectors />
-        <WeeklyCadenceHeatmap />
-        <RoleCategoryPerformance />
-        <div style={{ gridColumn: '1 / -1' }}>
-          <GeographicPerformance />
-        </div>
       </div>
     </>
   )

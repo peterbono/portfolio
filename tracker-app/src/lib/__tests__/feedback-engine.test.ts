@@ -188,11 +188,11 @@ describe('analyzeTimingPatterns', () => {
     expect(timing.data).toHaveLength(0)
   })
 
-  it('excludes non-submitted statuses (manual, saved, skipped)', () => {
+  it('excludes non-active statuses (expired)', () => {
     const jobs: Job[] = [
-      makeJob({ status: 'manual', date: daysAgo(5) }),
-      makeJob({ status: 'saved', date: daysAgo(3) }),
-      makeJob({ status: 'skipped', date: daysAgo(1) }),
+      makeJob({ status: 'expired', date: daysAgo(5) }),
+      makeJob({ status: 'expired', date: daysAgo(3) }),
+      makeJob({ status: 'expired', date: daysAgo(1) }),
     ]
     const timing = analyzeTimingPatterns(jobs)
     expect(timing.data).toHaveLength(0)
@@ -237,11 +237,11 @@ describe('analyzeQualityImpact', () => {
     expect(analyzeQualityImpact([])).toEqual([])
   })
 
-  it('returns empty array when all jobs are non-submitted statuses', () => {
+  it('returns empty array when all jobs are non-active statuses', () => {
     const jobs = [
-      makeJob({ status: 'manual' }),
-      makeJob({ status: 'saved' }),
-      makeJob({ status: 'skipped' }),
+      makeJob({ status: 'expired' }),
+      makeJob({ status: 'expired' }),
+      makeJob({ status: 'expired' }),
     ]
     expect(analyzeQualityImpact(jobs)).toEqual([])
   })
@@ -432,16 +432,15 @@ describe('computeWeeklyReport', () => {
     expect(report.sentDelta).toBeLessThanOrEqual(0)
   })
 
-  it('counts interviews correctly (interviewing, challenge, offer, negotiation)', () => {
+  it('counts interviews correctly (interviewing, challenge, offer)', () => {
     const jobs: Job[] = [
       makeJob({ status: 'interviewing', date: daysAgo(3) }),
       makeJob({ status: 'challenge', date: daysAgo(2) }),
       makeJob({ status: 'offer', date: daysAgo(1) }),
-      makeJob({ status: 'negotiation', date: daysAgo(1) }),
       makeJob({ status: 'submitted', date: daysAgo(2) }),
     ]
     const report = computeWeeklyReport(jobs)
-    expect(report.interviews).toBe(4) // all except submitted
+    expect(report.interviews).toBe(3) // all except submitted
   })
 })
 
@@ -465,8 +464,8 @@ describe('updateATSArms', () => {
     expect(updateATSArms([])).toEqual([])
   })
 
-  it('returns empty array when no submitted jobs have ATS', () => {
-    const jobs = [makeJob({ status: 'manual', ats: 'Greenhouse' })]
+  it('returns empty array when no jobs have ATS', () => {
+    const jobs = [makeJob({ status: 'submitted', ats: '' })]
     expect(updateATSArms(jobs)).toEqual([])
   })
 })

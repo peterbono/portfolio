@@ -6,16 +6,12 @@ import { useJobs } from '../context/JobsContext'
 import { useSupabase } from '../context/SupabaseContext'
 const LazyApplicationsView = React.lazy(() => import('../views/ApplicationsView').then(m => ({ default: m.ApplicationsView })))
 const LazySettingsView = React.lazy(() => import('../views/SettingsView').then(m => ({ default: m.SettingsView })))
-// AnalyticsView merged into InsightsView (Intelligence page)
-const LazyInsightsView = React.lazy(() => import('../views/InsightsView').then(m => ({ default: m.InsightsView })))
 const LazyPricingView = React.lazy(() => import('../views/PricingView').then(m => ({ default: m.PricingViewWithResponsive })))
 const LazyAutopilotView = React.lazy(() => import('../views/AutopilotView').then(m => ({ default: m.AutopilotView })))
-import { TrustIndicator } from '../components/TrustIndicator'
-import { DemoBanner } from '../components/DemoBanner'
-import { SunkCostNudge } from '../components/SunkCostNudge'
+const LazyOpenJobsView = React.lazy(() => import('../views/OpenJobsView').then(m => ({ default: m.OpenJobsView })))
 import { EmptyState } from '../components/EmptyState'
 import { SkeletonForView } from '../components/SkeletonView'
-import { LayoutList, FolderKanban, Brain, Bot } from 'lucide-react'
+import { LayoutList, FolderKanban, Bot } from 'lucide-react'
 
 // Mobile responsive CSS
 const appShellResponsiveCSS = `
@@ -111,7 +107,8 @@ const VIEWS_WITH_FILTERS = new Set(['applications'])
 
 export function AppShell({ onBackToLanding }: { onBackToLanding?: () => void }) {
   const { activeView, drawerOpen, selectedJobId } = useUI()
-  const { isDemo, clearDemoData } = useJobs()
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { isDemo } = useJobs()
   const { session } = useSupabase()
   const isAnonymous = !session
   const isGatedView = activeView in EMPTY_STATES
@@ -120,17 +117,10 @@ export function AppShell({ onBackToLanding }: { onBackToLanding?: () => void }) 
     <div style={styles.container}>
       <Sidebar onBackToLanding={onBackToLanding} />
       <main style={styles.main}>
-        {isDemo && (
-          <div style={{ padding: '12px 20px 0' }}>
-            <DemoBanner onClearDemo={clearDemoData} />
-          </div>
-        )}
         {VIEWS_WITH_FILTERS.has(activeView) && !(isAnonymous && isGatedView) && <GlobalFilters />}
         <ActiveViewContent view={activeView} />
       </main>
       {drawerOpen && selectedJobId && <Suspense fallback={null}><LazyDetailDrawer /></Suspense>}
-      <TrustIndicator />
-      <SunkCostNudge />
     </div>
   )
 }
@@ -138,7 +128,6 @@ export function AppShell({ onBackToLanding }: { onBackToLanding?: () => void }) 
 const EMPTY_STATES: Record<string, { icon: typeof LayoutList; title: string; description: string; ctaLabel: string }> = {
   autopilot: { icon: Bot, title: 'Auto-apply on autopilot', description: 'Sign up to configure search profiles and let the bot apply to jobs while you sleep.', ctaLabel: 'Sign up to get started' },
   applications: { icon: FolderKanban, title: 'No applications yet', description: 'Start the auto-apply bot or add jobs manually to begin tracking your job search.', ctaLabel: 'Set up Autopilot' },
-  insights: { icon: Brain, title: 'The AI brain is waiting', description: 'The feedback engine learns from your applications — response rates, best ATS platforms, ghost detection.', ctaLabel: 'Configure Autopilot' },
 }
 
 function ActiveViewContent({ view }: { view: string }) {
@@ -169,8 +158,8 @@ function ActiveViewContent({ view }: { view: string }) {
 
   switch (view) {
     case 'applications': return <Suspense fallback={fallback}><LazyApplicationsView /></Suspense>
-    case 'insights': return <Suspense fallback={fallback}><LazyInsightsView /></Suspense>
     case 'autopilot': return <Suspense fallback={fallback}><LazyAutopilotView /></Suspense>
+    case 'open-jobs': return <Suspense fallback={fallback}><LazyOpenJobsView /></Suspense>
     case 'settings': return <Suspense fallback={fallback}><LazySettingsView /></Suspense>
     case 'pricing': return <Suspense fallback={fallback}><LazyPricingView /></Suspense>
     default: return null

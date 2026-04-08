@@ -41,7 +41,6 @@ import { LS_ENRICHED_PROFILE } from '../types/enriched-profile'
 import type { EnrichedProfile } from '../types/enriched-profile'
 import type { Job } from '../types/job'
 import { exportAsCSV, exportAsJSON } from '../utils/export'
-import { ScheduleConfig as ScheduleConfigComponent } from '../components/ScheduleConfig'
 
 /* ------------------------------------------------------------------ */
 /*  Mobile responsive CSS injection                                     */
@@ -1070,18 +1069,6 @@ export function SettingsView() {
             </div>
           </div>
         </div>
-      </AccordionSection>
-
-      {/* ─────────────── 6b. Scheduled Scans ─────────────── */}
-      <AccordionSection
-        id="schedule"
-        icon={<Clock size={18} color="#34d399" />}
-        title="Scheduled Scans"
-        description="Automatically scan for new jobs on a schedule"
-        openSections={openSections}
-        toggle={toggleSection}
-      >
-        <ScheduleConfigComponent />
       </AccordionSection>
 
       {/* ─────────────── 7. Data Management ─────────────── */}

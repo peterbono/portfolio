@@ -1,15 +1,10 @@
 export type JobStatus =
   | 'submitted'
-  | 'manual'
-  | 'skipped'
-  | 'saved'
   | 'rejected'
   | 'screening'
   | 'interviewing'
   | 'challenge'
   | 'offer'
-  | 'negotiation'
-  | 'withdrawn'
   | 'ghosted'
   | 'expired'
 
@@ -60,20 +55,36 @@ export interface Job {
 
 export const STATUS_CONFIG: Record<JobStatus, { label: string; color: string; bg: string; border: string; icon: string }> = {
   submitted:    { label: 'Submitted',    color: '#34d399', bg: '#052e1f', border: '#064e3b', icon: '✓' },
-  manual:       { label: 'To Submit',    color: '#fb923c', bg: '#2a1505', border: '#422006', icon: '✎' },
-  skipped:      { label: 'Skipped',      color: '#52525b', bg: '#131316', border: '#1e1e24', icon: '→' },
-  saved:        { label: 'Easy Apply',   color: '#38bdf8', bg: '#0c2844', border: '#1e3a5f', icon: '⚡' },
   rejected:     { label: 'Rejected',     color: '#a855f7', bg: '#1a0a2e', border: '#3b0764', icon: '💀' },
   screening:    { label: 'Screening',    color: '#60a5fa', bg: '#0c2844', border: '#1e3a5f', icon: '📞' },
   interviewing: { label: 'Interviewing', color: '#fb923c', bg: '#2a1505', border: '#422006', icon: '🎤' },
   challenge:    { label: 'Challenge',    color: '#c084fc', bg: '#1a0a2e', border: '#4c1d95', icon: '🎨' },
   offer:        { label: 'Offer',        color: '#fbbf24', bg: '#2a1a05', border: '#78350f', icon: '⭐' },
-  negotiation:  { label: 'Negotiation',  color: '#f59e0b', bg: '#2a1a05', border: '#78350f', icon: '💰' },
-  withdrawn:    { label: 'Withdrawn',    color: '#52525b', bg: '#131316', border: '#1e1e24', icon: '🚪' },
   ghosted:      { label: 'Ghosted',      color: '#3f3f46', bg: '#131316', border: '#1e1e24', icon: '👻' },
   expired:      { label: 'Expired',      color: '#71717a', bg: '#18181b', border: '#27272a', icon: '⏰' },
 }
 
-export const ACTIVE_STATUSES: JobStatus[] = ['submitted', 'screening', 'interviewing', 'challenge', 'offer', 'negotiation']
-export const INACTIVE_STATUSES: JobStatus[] = ['rejected', 'withdrawn', 'ghosted', 'skipped', 'expired']
-export const PENDING_STATUSES: JobStatus[] = ['manual', 'saved']
+/** Legacy status config for backwards compatibility with existing data */
+export const LEGACY_STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; border: string; icon: string }> = {
+  manual:       { label: 'To Submit',    color: '#fb923c', bg: '#2a1505', border: '#422006', icon: '✎' },
+  skipped:      { label: 'Skipped',      color: '#52525b', bg: '#131316', border: '#1e1e24', icon: '→' },
+  saved:        { label: 'Easy Apply',   color: '#38bdf8', bg: '#0c2844', border: '#1e3a5f', icon: '⚡' },
+  negotiation:  { label: 'Negotiation',  color: '#f59e0b', bg: '#2a1a05', border: '#78350f', icon: '💰' },
+  withdrawn:    { label: 'Withdrawn',    color: '#52525b', bg: '#131316', border: '#1e1e24', icon: '🚪' },
+}
+
+export const ACTIVE_STATUSES: JobStatus[] = ['submitted', 'screening', 'interviewing', 'challenge', 'offer']
+export const INACTIVE_STATUSES: JobStatus[] = ['rejected', 'ghosted', 'expired']
+export const PENDING_STATUSES: JobStatus[] = []
+
+/** Maps legacy status strings to their replacement JobStatus */
+export function migrateLegacyStatus(status: string): JobStatus {
+  switch (status) {
+    case 'manual': return 'submitted'
+    case 'saved': return 'submitted'
+    case 'negotiation': return 'offer'
+    case 'withdrawn': return 'rejected'
+    case 'skipped': return 'expired'
+    default: return status as JobStatus
+  }
+}

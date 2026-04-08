@@ -198,7 +198,7 @@ export const MOCK_JOBS: Job[] = [
   {
     id: 'job-009',
     date: daysAgo(5),
-    status: 'manual',
+    status: 'submitted',
     role: 'Visual Designer',
     company: 'ManualCo',
     location: 'Remote',
@@ -215,7 +215,7 @@ export const MOCK_JOBS: Job[] = [
   {
     id: 'job-010',
     date: daysAgo(3),
-    status: 'saved',
+    status: 'submitted',
     role: 'UX Researcher',
     company: 'SavedInc',
     location: 'Remote',
@@ -232,7 +232,7 @@ export const MOCK_JOBS: Job[] = [
   {
     id: 'job-011',
     date: daysAgo(12),
-    status: 'skipped',
+    status: 'expired',
     role: 'Interaction Designer',
     company: 'SkipLtd',
     location: 'Remote',
@@ -282,7 +282,7 @@ export const MOCK_JOBS: Job[] = [
   {
     id: 'job-014',
     date: daysAgo(18),
-    status: 'withdrawn',
+    status: 'rejected',
     role: 'UX Designer',
     company: 'WithdrawnInc',
     location: 'Manila',
@@ -344,7 +344,7 @@ export const MOCK_JOBS: Job[] = [
   {
     id: 'job-017',
     date: daysAgo(45),
-    status: 'negotiation',
+    status: 'offer',
     role: 'Lead Designer',
     company: 'NegotiateCo',
     location: 'Kuala Lumpur',

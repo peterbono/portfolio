@@ -11,8 +11,7 @@ const STAGE_EVENT_MAP: Partial<Record<JobStatus, EventType[]>> = {
   screening: ['call', 'email', 'linkedin_dm'],
   interviewing: ['interview'],
   challenge: ['design_challenge', 'portfolio_review'],
-  offer: ['offer'],
-  negotiation: ['negotiation'],
+  offer: ['offer', 'negotiation'],
 }
 
 type StageProgress = {
@@ -184,17 +183,16 @@ function getStageProgress(job: Job): StageProgress | null {
   }
 }
 
-/** Fixed columns for the pipeline view -- no saved, skipped, ghosted */
+/** Fixed columns for the pipeline view */
 const PIPELINE_COLUMNS: JobStatus[] = [
-  'manual',
   'submitted',
   'screening',
   'interviewing',
   'challenge',
   'offer',
-  'negotiation',
   'rejected',
-  'withdrawn',
+  'ghosted',
+  'expired',
 ]
 
 export function PipelineView() {
@@ -726,8 +724,8 @@ function TouchStatusDropdown({ job, onStatusChange, onClose }: {
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const statuses: JobStatus[] = [
-    'manual', 'submitted', 'screening', 'interviewing', 'challenge',
-    'offer', 'negotiation', 'rejected', 'withdrawn', 'expired',
+    'submitted', 'screening', 'interviewing', 'challenge',
+    'offer', 'rejected', 'ghosted', 'expired',
   ]
 
   useEffect(() => {

@@ -67,14 +67,14 @@ export interface WeeklyReport {
 // ---------------------------------------------------------------------------
 
 const RESPONSE_STATUSES = new Set([
-  'screening', 'interviewing', 'challenge', 'offer', 'negotiation', 'rejected',
+  'screening', 'interviewing', 'challenge', 'offer', 'rejected',
 ])
 
-const INTERVIEW_STATUSES = new Set(['interviewing', 'challenge', 'offer', 'negotiation'])
+const INTERVIEW_STATUSES = new Set(['interviewing', 'challenge', 'offer'])
 
 const SUBMITTED_ACTIVE = new Set([
-  'submitted', 'screening', 'interviewing', 'challenge', 'offer', 'negotiation',
-  'rejected', 'withdrawn', 'ghosted',
+  'submitted', 'screening', 'interviewing', 'challenge', 'offer',
+  'rejected', 'ghosted',
 ])
 
 // ---------------------------------------------------------------------------
@@ -336,7 +336,7 @@ export function computeBotIQ(jobs: Job[], arms: ArmStats[]): number {
   // What fraction of submitted apps have a resolved status?
   const submitted = jobs.filter((j) => SUBMITTED_ACTIVE.has(j.status))
   const resolved = jobs.filter(
-    (j) => RESPONSE_STATUSES.has(j.status) || j.status === 'ghosted' || j.status === 'withdrawn',
+    (j) => RESPONSE_STATUSES.has(j.status) || j.status === 'ghosted',
   )
   const completeness = submitted.length > 0 ? resolved.length / submitted.length : 0
   score += Math.round(completeness * 25)

@@ -1,20 +1,17 @@
 import { useEffect, useState } from 'react'
 import {
   LayoutList,
-  Kanban,
-  BarChart3,
   Settings,
   PanelLeftClose,
   PanelLeft,
-  Briefcase,
-  Flame,
-  Brain,
+  Search,
   Bot,
   LogOut,
   CreditCard,
   Lock,
   ArrowLeft,
   FolderKanban,
+  User,
 } from 'lucide-react'
 import { useUI, type ActiveView } from '../context/UIContext'
 import { useJobs } from '../context/JobsContext'
@@ -34,19 +31,19 @@ type NavEntry =
   | { kind: 'separator'; label?: string }
 
 const NAV_ITEMS: NavEntry[] = [
-  // --- PRIMARY (Core Loop) ---
+  // --- APPLY ---
+  { kind: 'item', view: 'open-jobs', label: 'Open Jobs', icon: Search },
   { kind: 'item', view: 'autopilot', label: 'Autopilot', icon: Bot },
+  // --- TRACK ---
   { kind: 'item', view: 'applications', label: 'Applications', icon: FolderKanban },
-  // --- INTELLIGENCE (merged) ---
-  { kind: 'item', view: 'insights', label: 'Intelligence', icon: Brain },
   { kind: 'separator' },
-  // --- SYSTEM ---
-  { kind: 'item', view: 'settings', label: 'Settings', icon: Settings },
-  { kind: 'item', view: 'pricing', label: 'Pricing', icon: CreditCard },
+  // --- ACCOUNT ---
+  { kind: 'item', view: 'settings', label: 'Profile', icon: User },
+  { kind: 'item', view: 'pricing', label: 'Account', icon: CreditCard },
 ]
 
 /** Views that require auth — show lock icon for anonymous users */
-const LOCKED_VIEWS = new Set<ActiveView>(['autopilot', 'applications', 'insights'])
+const LOCKED_VIEWS = new Set<ActiveView>(['autopilot', 'applications'])
 
 export function Sidebar({ onBackToLanding }: { onBackToLanding?: () => void }) {
   const { activeView, setActiveView, sidebarCollapsed, toggleSidebar } = useUI()

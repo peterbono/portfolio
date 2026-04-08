@@ -54,7 +54,7 @@ export function mergeJobs(
       let result = override ? { ...job, ...override } : { ...job }
       // Apply known rejections ONLY if user hasn't manually set a different status
       const userSetStatus = override?.status
-      if (!userSetStatus && rejectedSet.has(result.company.toLowerCase()) && (result.status === 'submitted' || result.status === 'manual')) {
+      if (!userSetStatus && rejectedSet.has(result.company.toLowerCase()) && (result.status === 'submitted')) {
         result = { ...result, status: 'rejected' as JobStatus }
       }
       return result
@@ -89,13 +89,13 @@ export function computeMarkSubmitted(
   const next = { ...prev }
   const matchedCompanies = new Set<string>()
 
-  // Check seed jobs — upgrade 'manual' to 'submitted'
+  // Check seed jobs — mark as submitted if not already
   for (const job of seedJobs) {
     const companyLower = job.company.toLowerCase()
     if (!appMap.has(companyLower)) continue
     matchedCompanies.add(companyLower)
     const effectiveStatus = (next[job.id]?.status || job.status) as string
-    if (effectiveStatus === 'manual') {
+    if (effectiveStatus !== 'submitted') {
       next[job.id] = { ...next[job.id], status: 'submitted' as JobStatus }
     }
   }
@@ -107,7 +107,7 @@ export function computeMarkSubmitted(
     const companyLower = company.toLowerCase()
     if (!appMap.has(companyLower)) continue
     matchedCompanies.add(companyLower)
-    if (status === 'manual') {
+    if (status !== 'submitted') {
       next[id] = { ...next[id], status: 'submitted' as JobStatus }
     }
   }
@@ -180,7 +180,7 @@ export function computeMarkRejected(
     if (!rejMap.has(companyLower)) continue
     matchedCompanies.add(companyLower)
     const { date: rejDate } = rejMap.get(companyLower)!
-    if (job.status === 'submitted' || job.status === 'manual') {
+    if (job.status === 'submitted') {
       next[job.id] = {
         ...next[job.id],
         status: 'rejected' as JobStatus,
@@ -202,7 +202,7 @@ export function computeMarkRejected(
     if (!rejMap.has(companyLower)) continue
     matchedCompanies.add(companyLower)
     const { date: rejDate } = rejMap.get(companyLower)!
-    if (status === 'submitted' || status === 'manual') {
+    if (status === 'submitted') {
       next[id] = {
         ...next[id],
         status: 'rejected' as JobStatus,
@@ -251,12 +251,10 @@ export function computeMarkRejected(
 
 /** Statuses that should never be auto-expired (active pipeline stages) */
 const PROTECTED_STATUSES: Set<JobStatus> = new Set([
-  'screening', 'interviewing', 'challenge', 'offer', 'negotiation',
-  'rejected', 'withdrawn', 'ghosted', 'expired', 'skipped',
+  'screening', 'interviewing', 'challenge', 'offer',
+  'rejected', 'ghosted', 'expired',
 ])
 
-/** Days after which a 'manual' (to-submit) job is considered expired */
-const MANUAL_EXPIRE_DAYS = 30
 /** Days after which a 'submitted' job with no activity is considered ghosted */
 const SUBMITTED_GHOST_DAYS = 45
 
@@ -277,7 +275,6 @@ function getLatestActivityDate(job: Job): string {
 
 /**
  * Pure function: computes override patches for auto-expiration.
- * - 'manual'/'saved' jobs older than 30 days -> 'expired'
  * - 'submitted' jobs older than 45 days with no activity -> 'ghosted'
  * Only applies to jobs where the user has NOT manually set a status override.
  *
@@ -312,16 +309,6 @@ export function computeAutoExpiration(
     )
 
     if (
-      (effectiveStatus === 'manual' || effectiveStatus === 'saved') &&
-      daysSinceActivity >= MANUAL_EXPIRE_DAYS
-    ) {
-      next[job.id] = {
-        ...next[job.id],
-        status: 'expired' as JobStatus,
-        _autoExpired: true,
-      } as Partial<Job> & { _autoExpired?: boolean }
-      changed = true
-    } else if (
       effectiveStatus === 'submitted' &&
       daysSinceActivity >= SUBMITTED_GHOST_DAYS
     ) {

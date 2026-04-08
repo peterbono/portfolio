@@ -61,12 +61,14 @@ describe('detectGhosts', () => {
     expect(ghostIds).not.toContain('job-012')
   })
 
-  it('does NOT detect manual/saved/skipped statuses', () => {
+  it('does NOT detect recently submitted or expired statuses', () => {
     const ghosts = detectGhosts(MOCK_JOBS)
     const ghostIds = ghosts.map((g) => g.jobId)
 
+    // job-009 (submitted, 5 days ago) and job-010 (submitted, 3 days ago) are too recent
     expect(ghostIds).not.toContain('job-009')
     expect(ghostIds).not.toContain('job-010')
+    // job-011 (expired) is not a ghost candidate
     expect(ghostIds).not.toContain('job-011')
   })
 
@@ -125,11 +127,12 @@ describe('computeATSStats', () => {
     expect(atsNames).toContain('workable')
   })
 
-  it('excludes manual, saved, and skipped jobs', () => {
+  it('includes all jobs with ATS regardless of status', () => {
     const stats = computeATSStats(MOCK_JOBS)
-    // Teamtailor only has job-009 (manual) so it should not appear
+    // Teamtailor has job-009 (submitted) so it should appear
     const teamtailor = stats.find((s) => s.ats === 'teamtailor')
-    expect(teamtailor).toBeUndefined()
+    expect(teamtailor).toBeDefined()
+    expect(teamtailor!.totalApplied).toBe(1)
   })
 
   it('sorts by responseRate descending', () => {
@@ -143,11 +146,11 @@ describe('computeATSStats', () => {
     expect(computeATSStats([])).toEqual([])
   })
 
-  it('returns empty array when all jobs are manual/saved/skipped', () => {
+  it('returns empty array when all jobs have empty ATS', () => {
     const jobs = [
-      makeJob({ status: 'manual', ats: 'Greenhouse' }),
-      makeJob({ status: 'saved', ats: 'Lever' }),
-      makeJob({ status: 'skipped', ats: 'Workable' }),
+      makeJob({ status: 'submitted', ats: '' }),
+      makeJob({ status: 'rejected', ats: '' }),
+      makeJob({ status: 'expired', ats: '' }),
     ]
     expect(computeATSStats(jobs)).toEqual([])
   })

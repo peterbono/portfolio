@@ -406,9 +406,9 @@ export async function createApplicationFromBot(
   // 4. Create the application record
   const statusMap: Record<ApplyResult['status'], string> = {
     applied: 'submitted',
-    skipped: 'skipped',
-    failed: 'manual',
-    needs_manual: 'manual',
+    skipped: 'expired',
+    failed: 'submitted',
+    needs_manual: 'submitted',
   }
 
   const { error: appErr } = await insertRowNoReturn('applications', {

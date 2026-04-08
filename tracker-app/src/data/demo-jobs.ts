@@ -116,7 +116,7 @@ export const DEMO_JOBS: Job[] = [
   {
     id: 'demo-005',
     date: daysAgo(1),
-    status: 'skipped',
+    status: 'expired',
     role: 'UI Lead',
     company: 'NovaTech',
     location: 'San Francisco, CA (Onsite)',
@@ -133,7 +133,7 @@ export const DEMO_JOBS: Job[] = [
   {
     id: 'demo-006',
     date: daysAgo(0),
-    status: 'saved',
+    status: 'submitted',
     role: 'Design Systems Lead',
     company: 'Pixel Labs',
     location: 'Remote (APAC)',

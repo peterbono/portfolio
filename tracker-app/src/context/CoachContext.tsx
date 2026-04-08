@@ -177,7 +177,7 @@ function countActionsForDate(jobs: Job[], date: string): number {
   let count = 0
   for (const job of jobs) {
     // Job applied/submitted today
-    if (job.date === date && (job.status === 'submitted' || job.status === 'manual')) count++
+    if (job.date === date && job.status === 'submitted') count++
     // Events today (screening, interview, follow-up, etc.)
     if (job.events) {
       for (const ev of job.events) {
@@ -195,7 +195,7 @@ function generateInsights(allJobs: Job[]): string[] {
   // ATS conversion
   const atsCounts: Record<string, { total: number; responded: number }> = {}
   for (const j of allJobs) {
-    if (!j.ats || j.ats === '—' || j.status === 'skipped' || j.status === 'saved') continue
+    if (!j.ats || j.ats === '—') continue
     const ats = j.ats.toLowerCase().trim()
     // Filter non-ATS values
     const nonAts = ['soumise', 'à soumettre', 'submitted', 'manual', 'easy apply', 'email', 'direct', 'referral', 'unknown', 'custom', 'recruiter', '-', 'n/a', 'skip', 'trop long', 'external', 'various', 'aggregator']
@@ -203,7 +203,7 @@ function generateInsights(allJobs: Job[]): string[] {
     if (ats.includes(' hq') || ats.includes('skip') || ats.includes('trop') || ats.length < 3 || ats.length > 30) continue
     if (!atsCounts[ats]) atsCounts[ats] = { total: 0, responded: 0 }
     atsCounts[ats].total++
-    if (['screening', 'interviewing', 'challenge', 'offer', 'negotiation', 'rejected'].includes(j.status)) {
+    if (['screening', 'interviewing', 'challenge', 'offer', 'rejected'].includes(j.status)) {
       atsCounts[ats].responded++
     }
   }
@@ -223,7 +223,6 @@ function generateInsights(allJobs: Job[]): string[] {
   // Area performance
   const areaStats: Record<string, { total: number; responded: number }> = {}
   for (const j of allJobs) {
-    if (j.status === 'skipped' || j.status === 'saved') continue
     const loc = (j.location || '').toLowerCase()
     let area = 'unknown'
     if (['bangkok', 'singapore', 'india', 'tokyo', 'manila', 'philippines', 'thailand', 'apac'].some(k => loc.includes(k))) area = 'APAC'
@@ -232,7 +231,7 @@ function generateInsights(allJobs: Job[]): string[] {
     if (area === 'unknown') continue
     if (!areaStats[area]) areaStats[area] = { total: 0, responded: 0 }
     areaStats[area].total++
-    if (['screening', 'interviewing', 'challenge', 'offer', 'negotiation'].includes(j.status)) {
+    if (['screening', 'interviewing', 'challenge', 'offer'].includes(j.status)) {
       areaStats[area].responded++
     }
   }
@@ -262,12 +261,12 @@ function getAtsStats(allJobs: Job[]): { bestAts: string; bestRate: number; worst
   const atsCounts: Record<string, { total: number; responded: number }> = {}
   const nonAts = ['soumise', 'à soumettre', 'submitted', 'manual', 'easy apply', 'email', 'direct', 'referral', 'unknown', 'custom', 'recruiter', '-', 'n/a', 'skip', 'trop long', 'external', 'various', 'aggregator', '—']
   for (const j of allJobs) {
-    if (!j.ats || j.status === 'skipped' || j.status === 'saved') continue
+    if (!j.ats) continue
     const ats = j.ats.toLowerCase().trim()
     if (nonAts.includes(ats) || ats.length < 3 || ats.length > 30) continue
     if (!atsCounts[ats]) atsCounts[ats] = { total: 0, responded: 0 }
     atsCounts[ats].total++
-    if (['screening', 'interviewing', 'challenge', 'offer', 'negotiation', 'rejected'].includes(j.status)) {
+    if (['screening', 'interviewing', 'challenge', 'offer', 'rejected'].includes(j.status)) {
       atsCounts[ats].responded++
     }
   }
@@ -341,27 +340,13 @@ function generateFocusTasks(allJobs: Job[], dismissedIds: Set<string> = new Set(
     })
   }
 
-  // 3. To Submit jobs — prioritize by best ATS
-  const toSubmit = allJobs.filter(j => j.status === 'manual' || j.status === 'saved')
-  if (toSubmit.length > 0) {
-    if (atsStats) {
-      const bestAtsJobs = toSubmit.filter(j => (j.ats || '').toLowerCase() === atsStats.bestAts.toLowerCase())
-      if (bestAtsJobs.length > 0) {
-        pool.push({
-          id: 'apply-priority',
-          label: `Submit ${Math.min(bestAtsJobs.length, 3)} ${atsStats.bestAts} apps first (${atsStats.bestRate}% response rate)`,
-          type: 'apply',
-          done: false,
-        })
-      }
-    }
-    pool.push({
-      id: 'apply-batch',
-      label: `Submit ${Math.min(toSubmit.length, 3)} pending application${toSubmit.length > 1 ? 's' : ''}`,
-      type: 'apply',
-      done: false,
-    })
-  }
+  // 3. Apply more jobs
+  pool.push({
+    id: 'apply-batch',
+    label: 'Apply to 3 new jobs today',
+    type: 'apply',
+    done: false,
+  })
 
   // 4. Data-driven apply suggestions
   if (atsStats) {
@@ -393,10 +378,10 @@ function generateFocusTasks(allJobs: Job[], dismissedIds: Set<string> = new Set(
 
 /* ── Milestones ── */
 function computeMilestones(allJobs: Job[], streak: StreakData): Milestone[] {
-  const submitted = allJobs.filter(j => !['skipped', 'saved'].includes(j.status))
-  const screenings = allJobs.filter(j => ['screening', 'interviewing', 'challenge', 'offer', 'negotiation'].includes(j.status))
-  const interviews = allJobs.filter(j => ['interviewing', 'challenge', 'offer', 'negotiation'].includes(j.status))
-  const offers = allJobs.filter(j => j.status === 'offer' || j.status === 'negotiation')
+  const submitted = allJobs
+  const screenings = allJobs.filter(j => ['screening', 'interviewing', 'challenge', 'offer'].includes(j.status))
+  const interviews = allJobs.filter(j => ['interviewing', 'challenge', 'offer'].includes(j.status))
+  const offers = allJobs.filter(j => j.status === 'offer')
 
   return [
     { id: 'sub100', label: '100 applications', icon: '💯', achieved: submitted.length >= 100, achievedDate: submitted.length >= 100 ? submitted[99]?.date : undefined },
@@ -515,7 +500,7 @@ export function CoachProvider({ children }: { children: ReactNode }) {
     // Find the most recent active date from jobs
     let mostRecent = ''
     for (const j of allJobs) {
-      if (j.date && j.date > mostRecent && !['skipped', 'saved'].includes(j.status)) {
+      if (j.date && j.date > mostRecent) {
         mostRecent = j.date
       }
     }
@@ -575,7 +560,7 @@ export function CoachProvider({ children }: { children: ReactNode }) {
   const bestWeek = useMemo(() => {
     const weekMap = new Map<string, number>()
     for (const j of allJobs) {
-      if (!j.date || j.status === 'skipped' || j.status === 'saved') continue
+      if (!j.date) continue
       const d = new Date(j.date)
       const ws = getWeekStart(d)
       weekMap.set(ws, (weekMap.get(ws) || 0) + 1)
@@ -598,7 +583,7 @@ export function CoachProvider({ children }: { children: ReactNode }) {
     // Bootstrap: find most recent job date
     let mostRecent = ''
     for (const j of allJobs) {
-      if (j.date && j.date > mostRecent && !['skipped', 'saved'].includes(j.status)) {
+      if (j.date && j.date > mostRecent) {
         mostRecent = j.date
       }
     }

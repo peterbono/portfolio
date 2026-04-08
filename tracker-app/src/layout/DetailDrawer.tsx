@@ -3,7 +3,6 @@ import { X, ExternalLink, ChevronRight } from 'lucide-react'
 import { useUI } from '../context/UIContext'
 import { useJobs } from '../context/JobsContext'
 import { StatusBadge } from '../components/StatusBadge'
-import { EventTimeline } from '../components/EventTimeline'
 import { EventForm } from '../components/EventForm'
 import { useJobEvents } from '../hooks/useJobEvents'
 import type { JobStatus, JobEvent } from '../types/job'
@@ -44,10 +43,10 @@ function getRejectionDate(job: { lastContactDate?: string; date: string; events?
   return null
 }
 
-// Only statuses that appear in the pipeline — no Easy Apply, no saved
+// Only statuses that appear in the pipeline
 const ALLOWED_STATUSES: JobStatus[] = [
-  'manual', 'submitted', 'screening', 'interviewing', 'challenge',
-  'offer', 'negotiation', 'rejected', 'withdrawn', 'ghosted', 'expired', 'skipped',
+  'submitted', 'screening', 'interviewing', 'challenge',
+  'offer', 'rejected', 'ghosted', 'expired',
 ]
 
 export function DetailDrawer() {
@@ -297,9 +296,9 @@ export function DetailDrawer() {
           </select>
 
           <ActionButton
-            label="Withdraw"
-            color="#ef4444"
-            onClick={() => updateJobStatus(job.id, 'withdrawn')}
+            label="Ghost"
+            color="#3f3f46"
+            onClick={() => updateJobStatus(job.id, 'ghosted')}
           />
           <ActionButton
             label="Reject"
@@ -384,11 +383,24 @@ export function DetailDrawer() {
                 </span>
               )}
             </h3>
-            <EventTimeline
-              events={allEvents}
-              onDelete={handleDeleteEvent}
-              onEdit={handleEditEvent}
-            />
+            {allEvents.length === 0 ? (
+              <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontStyle: 'italic' }}>No events yet</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {allEvents.map((evt) => (
+                  <div key={evt.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 8px', borderRadius: 6, background: 'rgba(255,255,255,0.02)' }}>
+                    <div>
+                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{evt.type}</span>
+                      {evt.notes && <span style={{ fontSize: 11, color: 'var(--text-tertiary)', marginLeft: 8 }}>{evt.notes}</span>}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{evt.date?.split('T')[0]}</span>
+                      <button onClick={() => handleDeleteEvent(evt.id)} style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: 11 }}>x</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* ── Event Form ── */}

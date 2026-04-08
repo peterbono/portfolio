@@ -49,8 +49,8 @@ const EMPTY_REJECTED_SET = new Set<string>()
 
 describe('mergeJobs', () => {
   const seedA = makeJob({ id: 'a1', company: 'Acme Corp', status: 'submitted' })
-  const seedB = makeJob({ id: 'b1', company: 'Beta Inc', status: 'manual' })
-  const seedC = makeJob({ id: 'c1', company: 'Gamma Ltd', status: 'skipped' })
+  const seedB = makeJob({ id: 'b1', company: 'Beta Inc', status: 'submitted' })
+  const seedC = makeJob({ id: 'c1', company: 'Gamma Ltd', status: 'expired' })
 
   it('returns seed as-is when overrides are empty', () => {
     const result = mergeJobs([seedA, seedB], {}, EMPTY_REJECTED_SET)
@@ -83,7 +83,7 @@ describe('mergeJobs', () => {
 
   it('includes override-only jobs when they have company + role', () => {
     const overrides: Overrides = {
-      custom1: { company: 'NewCo', role: 'UX Lead', status: 'manual' },
+      custom1: { company: 'NewCo', role: 'UX Lead', status: 'submitted' },
     }
     const result = mergeJobs([], overrides, EMPTY_REJECTED_SET)
     expect(result).toHaveLength(1)
@@ -93,7 +93,7 @@ describe('mergeJobs', () => {
 
   it('excludes override-only jobs missing company', () => {
     const overrides: Overrides = {
-      custom1: { role: 'UX Lead', status: 'manual' },
+      custom1: { role: 'UX Lead', status: 'submitted' },
     }
     const result = mergeJobs([], overrides, EMPTY_REJECTED_SET)
     expect(result).toHaveLength(0)
@@ -101,7 +101,7 @@ describe('mergeJobs', () => {
 
   it('excludes override-only jobs missing role', () => {
     const overrides: Overrides = {
-      custom1: { company: 'NewCo', status: 'manual' },
+      custom1: { company: 'NewCo', status: 'submitted' },
     }
     const result = mergeJobs([], overrides, EMPTY_REJECTED_SET)
     expect(result).toHaveLength(0)
@@ -122,7 +122,7 @@ describe('mergeJobs', () => {
     expect(result[0].status).toBe('rejected')
   })
 
-  it('applies known rejection to manual job without user override', () => {
+  it('applies known rejection to submitted job (Beta Inc) without user override', () => {
     const rejSet = new Set(['beta inc'])
     const result = mergeJobs([seedB], {}, rejSet)
     expect(result[0].status).toBe('rejected')
@@ -135,10 +135,10 @@ describe('mergeJobs', () => {
     expect(result[0].status).toBe('interviewing')
   })
 
-  it('does NOT apply known rejection to non-submitted/non-manual status', () => {
+  it('does NOT apply known rejection to non-submitted status', () => {
     const rejSet = new Set(['gamma ltd'])
     const result = mergeJobs([seedC], {}, rejSet)
-    expect(result[0].status).toBe('skipped') // unchanged
+    expect(result[0].status).toBe('expired') // unchanged
   })
 
   it('handles case-insensitive rejection matching', () => {
@@ -157,7 +157,7 @@ describe('mergeJobs', () => {
     expect(result).toHaveLength(3)
     expect(result.find(j => j.id === 'a1')!.status).toBe('screening')
     expect(result.find(j => j.id === 'b1')!.notes).toBe('Contact recruiter')
-    expect(result.find(j => j.id === 'c1')!.status).toBe('skipped')
+    expect(result.find(j => j.id === 'c1')!.status).toBe('expired')
   })
 })
 
@@ -166,19 +166,19 @@ describe('mergeJobs', () => {
 // ═══════════════════════════════════════════════════════════════════════
 
 describe('computeMarkSubmitted', () => {
-  const seedManual = makeJob({ id: 's1', company: 'Netflix', status: 'manual' })
+  const seedExpired = makeJob({ id: 's1', company: 'Netflix', status: 'expired' })
   const seedSubmitted = makeJob({ id: 's2', company: 'Spotify', status: 'submitted' })
-  const seedSkipped = makeJob({ id: 's3', company: 'Apple', status: 'skipped' })
+  const seedGhosted = makeJob({ id: 's3', company: 'Apple', status: 'ghosted' })
 
-  it('upgrades manual seed job to submitted on exact company match', () => {
-    const result = computeMarkSubmitted({}, [seedManual], [
+  it('upgrades expired seed job to submitted on exact company match', () => {
+    const result = computeMarkSubmitted({}, [seedExpired], [
       { company: 'Netflix', date: '2026-03-15' },
     ])
     expect(result.s1?.status).toBe('submitted')
   })
 
   it('is case-insensitive for company matching', () => {
-    const result = computeMarkSubmitted({}, [seedManual], [
+    const result = computeMarkSubmitted({}, [seedExpired], [
       { company: 'netflix', date: '2026-03-15' },
     ])
     expect(result.s1?.status).toBe('submitted')
@@ -192,16 +192,9 @@ describe('computeMarkSubmitted', () => {
     expect(result.s2?.status).toBeUndefined()
   })
 
-  it('does not upgrade skipped job', () => {
-    const result = computeMarkSubmitted({}, [seedSkipped], [
-      { company: 'Apple', date: '2026-03-15' },
-    ])
-    expect(result.s3?.status).toBeUndefined()
-  })
-
-  it('upgrades override-only manual job to submitted', () => {
+  it('upgrades override-only expired job to submitted', () => {
     const prev: Overrides = {
-      o1: { company: 'Figma', role: 'Designer', status: 'manual' },
+      o1: { company: 'Figma', role: 'Designer', status: 'expired' },
     }
     const result = computeMarkSubmitted(prev, [], [
       { company: 'Figma', date: '2026-03-15' },
@@ -254,12 +247,12 @@ describe('computeMarkSubmitted', () => {
   })
 
   it('processes multiple applications at once', () => {
-    const result = computeMarkSubmitted({}, [seedManual], [
+    const result = computeMarkSubmitted({}, [seedExpired], [
       { company: 'Netflix', date: '2026-03-15' },
       { company: 'Stripe', role: 'Lead Designer', date: '2026-03-16' },
       { company: 'Linear', role: 'Product Designer', date: '2026-03-17' },
     ])
-    // Netflix: upgraded from manual
+    // Netflix: upgraded from expired
     expect(result.s1?.status).toBe('submitted')
     // Stripe + Linear: auto-created
     const autoKeys = Object.keys(result).filter(k => k.startsWith('auto-app'))
@@ -275,11 +268,11 @@ describe('computeMarkSubmitted', () => {
   })
 
   it('uses override status over seed status for effective status check', () => {
-    const prev: Overrides = { s2: { status: 'manual' } }
+    const prev: Overrides = { s2: { status: 'expired' } }
     const result = computeMarkSubmitted(prev, [seedSubmitted], [
       { company: 'Spotify', date: '2026-03-15' },
     ])
-    // Seed says 'submitted' but override says 'manual', so effective = 'manual' -> should upgrade
+    // Seed says 'submitted' but override says 'expired', so effective = 'expired' -> should upgrade
     expect(result.s2?.status).toBe('submitted')
   })
 })
@@ -290,9 +283,9 @@ describe('computeMarkSubmitted', () => {
 
 describe('computeMarkRejected', () => {
   const seedSubmitted = makeJob({ id: 'r1', company: 'Deel', status: 'submitted' })
-  const seedManual = makeJob({ id: 'r2', company: 'Primer', status: 'manual' })
+  const seedScreening = makeJob({ id: 'r2', company: 'Primer', status: 'screening' })
   const seedRejected = makeJob({ id: 'r3', company: 'Sinch', status: 'rejected' })
-  const seedSkipped = makeJob({ id: 'r4', company: 'Coder', status: 'skipped' })
+  const seedExpired = makeJob({ id: 'r4', company: 'Coder', status: 'expired' })
 
   it('marks submitted seed job as rejected', () => {
     const result = computeMarkRejected({}, [seedSubmitted], [
@@ -301,8 +294,9 @@ describe('computeMarkRejected', () => {
     expect(result.r1?.status).toBe('rejected')
   })
 
-  it('marks manual seed job as rejected', () => {
-    const result = computeMarkRejected({}, [seedManual], [
+  it('marks submitted seed job (Primer) as rejected', () => {
+    const primerSubmitted = makeJob({ id: 'r2', company: 'Primer', status: 'submitted' })
+    const result = computeMarkRejected({}, [primerSubmitted], [
       { company: 'Primer', date: '2026-03-15' },
     ])
     expect(result.r2?.status).toBe('rejected')
@@ -346,8 +340,8 @@ describe('computeMarkRejected', () => {
     expect(rejEvent).toBeDefined()
   })
 
-  it('does not change status of skipped job', () => {
-    const result = computeMarkRejected({}, [seedSkipped], [
+  it('does not change status of expired job', () => {
+    const result = computeMarkRejected({}, [seedExpired], [
       { company: 'Coder', date: '2026-03-15' },
     ])
     expect(result.r4?.status).toBeUndefined()
@@ -444,7 +438,8 @@ describe('computeMarkRejected', () => {
   })
 
   it('processes multiple rejections at once', () => {
-    const result = computeMarkRejected({}, [seedSubmitted, seedManual], [
+    const primerSubmitted = makeJob({ id: 'r2', company: 'Primer', status: 'submitted' })
+    const result = computeMarkRejected({}, [seedSubmitted, primerSubmitted], [
       { company: 'Deel', date: '2026-03-15' },
       { company: 'Primer', date: '2026-03-16' },
       { company: 'Unknown Corp', role: 'Lead', date: '2026-03-17' },
