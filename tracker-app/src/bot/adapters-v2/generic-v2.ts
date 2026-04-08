@@ -318,7 +318,23 @@ export const genericV2: StagehandAdapter = {
             } catch { /* strategy 2 failed */ }
           }
 
-          if (!cvUploaded) console.warn(`[${ADAPTER_NAME}] CV upload failed — no file input found`)
+          // Strategy 3: Use Playwright fileChooser event (handles Lever, custom upload widgets)
+          if (!cvUploaded) {
+            try {
+              const [fileChooser] = await Promise.all([
+                page.waitForEvent('filechooser', { timeout: 5000 }),
+                stagehand.act('Click the "Attach Resume/CV", "Upload Resume", "Choose file", or any file upload button'),
+              ])
+              await fileChooser.setFiles(cvTmpPath)
+              console.log(`[${ADAPTER_NAME}] CV uploaded via fileChooser event`)
+              cvUploaded = true
+              await page.waitForTimeout(2000)
+            } catch {
+              console.warn(`[${ADAPTER_NAME}] fileChooser strategy failed`)
+            }
+          }
+
+          if (!cvUploaded) console.warn(`[${ADAPTER_NAME}] CV upload failed — all strategies exhausted`)
         }
       } catch (err) {
         console.warn(`[${ADAPTER_NAME}] CV upload failed: ${err instanceof Error ? err.message : err}`)
@@ -335,20 +351,36 @@ export const genericV2: StagehandAdapter = {
         }
       }
 
-      // ── Step 7: Handle education dropdowns (Greenhouse pattern) ──
-      try {
-        // School dropdown
-        await stagehand.act('If there is a "School" dropdown or select field, click it and select the option that best matches "ESD" or "Ecole Superieure du Digital" or type it in if searchable. If no match, select "Other".')
-        await page.waitForTimeout(500)
-        // Degree dropdown
-        await stagehand.act('If there is a "Degree" dropdown, click it and select "Master" or "Master\'s Degree" or the closest match.')
-        await page.waitForTimeout(500)
-        // Discipline dropdown
-        await stagehand.act('If there is a "Discipline" dropdown, click it and select "Design" or "UX Design" or "Human-Computer Interaction" or the closest match.')
-        await page.waitForTimeout(500)
-        console.log(`[${ADAPTER_NAME}] Education dropdowns handled`)
-      } catch {
-        // No education fields — expected on most forms
+      // ── Step 7: Handle education dropdowns (Greenhouse searchable selects) ──
+      // Greenhouse uses react-select dropdowns — must click to open, type to search, then click result
+      const educationFields = [
+        { label: 'School', search: 'Other', fallback: 'Other' },
+        { label: 'Degree', search: 'Master', fallback: "Master's Degree" },
+        { label: 'Discipline', search: 'Design', fallback: 'Design' },
+      ]
+      for (const edu of educationFields) {
+        try {
+          // Check if this dropdown exists
+          const dropdown = page.locator(`[class*="select"]:near(:text("${edu.label}"))`).first()
+          if (await dropdown.isVisible({ timeout: 1500 })) {
+            // Click to open the dropdown
+            await dropdown.click()
+            await page.waitForTimeout(300)
+            // Type to search
+            await page.keyboard.type(edu.search, { delay: 50 })
+            await page.waitForTimeout(800)
+            // Press Enter to select first match, or click the first option
+            await page.keyboard.press('Enter')
+            await page.waitForTimeout(300)
+            console.log(`[${ADAPTER_NAME}] Education "${edu.label}" → "${edu.search}"`)
+          }
+        } catch {
+          // Try AI fallback for this specific dropdown
+          try {
+            await stagehand.act(`If there is a "${edu.label}" dropdown, click it, type "${edu.search}", and select the first matching option. If no match, select "${edu.fallback}".`)
+            await page.waitForTimeout(500)
+          } catch { /* field doesn't exist */ }
+        }
       }
 
       // ── Step 8: Handle remaining screening questions ──
