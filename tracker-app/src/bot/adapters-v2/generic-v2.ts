@@ -273,22 +273,35 @@ export const genericV2: StagehandAdapter = {
         const allFileInputs = page.locator('input[type="file"]')
         const fileInputCount = await allFileInputs.count()
 
-        if (fileInputCount > 0) {
-          // Try fileChooser first (most reliable for custom upload widgets)
+        // Strategy 0: fileChooser via AI click on the visible upload button (most universal)
+        let cvUploaded = false
+        try {
+          const [fileChooser] = await Promise.all([
+            page.waitForEvent('filechooser', { timeout: 8000 }),
+            stagehand.act('Click the "Attach Resume/CV", "Upload Resume", "Choose file", or resume upload button'),
+          ])
+          await fileChooser.setFiles(cvTmpPath)
+          console.log(`[${ADAPTER_NAME}] CV uploaded via fileChooser + AI click`)
+          cvUploaded = true
+          await page.waitForTimeout(2000)
+        } catch {
+          console.log(`[${ADAPTER_NAME}] fileChooser+AI failed, trying direct setInputFiles`)
+        }
+
+        // Strategy 1: direct setInputFiles on existing input[type=file]
+        if (!cvUploaded && fileInputCount > 0) {
           try {
-            const [fileChooser] = await Promise.all([
-              page.waitForEvent('filechooser', { timeout: 3000 }),
-              allFileInputs.first().click(),
-            ])
-            await fileChooser.setFiles(cvTmpPath)
-            console.log(`[${ADAPTER_NAME}] CV uploaded via fileChooser on existing input`)
-            await page.waitForTimeout(2000)
-          } catch {
-            // Fallback: direct setInputFiles (works for standard file inputs)
             await allFileInputs.first().setInputFiles(cvTmpPath)
             console.log(`[${ADAPTER_NAME}] CV uploaded via setInputFiles (${fileInputCount} input(s))`)
+            cvUploaded = true
             await page.waitForTimeout(2000)
+          } catch {
+            console.log(`[${ADAPTER_NAME}] setInputFiles failed`)
           }
+        }
+
+        if (cvUploaded) {
+          // Skip remaining strategies
         } else {
           // No visible file input — try multiple strategies
           let cvUploaded = false
