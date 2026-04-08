@@ -52,7 +52,7 @@ export function OpenJobsView() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [search, setSearch] = useState('')
   const [titleFilter, setTitleFilter] = useState('All')
-  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [detailJob, setDetailJob] = useState<OpenJob | null>(null)
   const firstName = 'Florian'
 
   // Filter jobs
@@ -148,7 +148,6 @@ export function OpenJobsView() {
       <div style={s.grid} data-open-jobs-grid>
         {filtered.map(job => {
           const isSelected = selected.has(job.id)
-          const isExpanded = expandedId === job.id
           return (
             <div
               key={job.id}
@@ -156,7 +155,7 @@ export function OpenJobsView() {
                 ...s.card,
                 ...(isSelected ? s.cardSelected : {}),
               }}
-              onClick={() => setExpandedId(isExpanded ? null : job.id)}
+              onClick={() => setDetailJob(job)}
             >
               {/* Checkbox */}
               <div
@@ -196,21 +195,6 @@ export function OpenJobsView() {
                   <Clock size={11} />
                   <span>Posted {timeAgo(job.postedAt)}</span>
                 </div>
-
-                {/* Expanded area */}
-                {isExpanded && (
-                  <div style={s.expanded}>
-                    <p style={s.expandedText}>
-                      Full job description will load here from Supabase.
-                      For now this is a placeholder showing the expanded card state.
-                    </p>
-                    {job.link && (
-                      <a href={job.link} target="_blank" rel="noopener noreferrer" style={s.viewLink}>
-                        View original posting
-                      </a>
-                    )}
-                  </div>
-                )}
               </div>
             </div>
           )
@@ -224,12 +208,72 @@ export function OpenJobsView() {
         )}
       </div>
 
-      {/* ---- Sticky CTA ---- */}
-      {selected.size > 0 && (
-        <div style={s.stickyBar}>
-          <button style={s.ctaButton} data-open-jobs-cta>
-            Apply for me ({selected.size} selected)
+      {/* ---- Selection bottom bar (Jack-style) ---- */}
+      {selected.size > 0 && !detailJob && (
+        <div style={s.selectionBar} data-open-jobs-bar>
+          <span style={s.selectionText}>{selected.size} job{selected.size > 1 ? 's' : ''} selected</span>
+          <button style={s.selectionCta}>Apply to All Selected</button>
+          <button style={s.selectionClose} onClick={() => setSelected(new Set())}>
+            <X size={16} />
           </button>
+        </div>
+      )}
+
+      {/* ---- Job Detail Panel (Jack-style overlay) ---- */}
+      {detailJob && (
+        <div style={s.panelOverlay} onClick={() => setDetailJob(null)}>
+          <div style={s.panel} onClick={e => e.stopPropagation()}>
+            {/* Close */}
+            <button style={s.panelClose} onClick={() => setDetailJob(null)}>
+              <X size={20} />
+            </button>
+
+            {/* Header */}
+            <h2 style={s.panelTitle}>{detailJob.company} | {detailJob.role}</h2>
+            <div style={{ ...s.tags, marginBottom: 20 }}>
+              {detailJob.location && <span style={s.tag}><MapPin size={10} /> {detailJob.location}</span>}
+              {detailJob.tags.map(t => <span key={t} style={s.tag}>{t}</span>)}
+              {detailJob.salary && <span style={s.tagSalary}>{detailJob.salary}</span>}
+              {detailJob.link && (
+                <a href={detailJob.link} target="_blank" rel="noopener noreferrer" style={s.tag}>
+                  View on Employer Site
+                </a>
+              )}
+            </div>
+
+            {/* JD Content */}
+            <div style={s.panelBody}>
+              <h3 style={s.panelSection}>About the role</h3>
+              <p style={s.panelText}>
+                This is a {detailJob.role} position at {detailJob.company}.
+                Full job description will be loaded from Supabase when connected to real data.
+              </p>
+
+              <h3 style={s.panelSection}>Responsibilities</h3>
+              <ul style={s.panelList}>
+                <li>Lead end-to-end product design for key features</li>
+                <li>Collaborate with product managers and engineers</li>
+                <li>Contribute to and evolve the design system</li>
+                <li>Conduct user research and usability testing</li>
+                <li>Present design decisions to stakeholders</li>
+              </ul>
+
+              <h3 style={s.panelSection}>Qualifications</h3>
+              <ul style={s.panelList}>
+                <li>5+ years of product design experience</li>
+                <li>Strong portfolio demonstrating end-to-end design process</li>
+                <li>Proficiency in Figma and prototyping tools</li>
+                <li>Experience with design systems at scale</li>
+              </ul>
+            </div>
+
+            {/* Apply CTA — sticky bottom */}
+            <div style={s.panelCta}>
+              <button style={s.ctaButton} data-open-jobs-cta>
+                Apply for me
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -446,16 +490,124 @@ const s: Record<string, React.CSSProperties> = {
     gap: 12,
     padding: '60px 0',
   },
-  stickyBar: {
+  // Selection bottom bar (Jack-style dark pill)
+  selectionBar: {
+    position: 'absolute',
+    bottom: 24,
+    left: '50%',
+    transform: 'translateX(-50%)',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 16,
+    padding: '14px 20px 14px 24px',
+    background: '#1c1c1e',
+    borderRadius: 16,
+    boxShadow: '0 8px 40px rgba(0,0,0,0.5)',
+    zIndex: 50,
+  },
+  selectionText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 500,
+    whiteSpace: 'nowrap',
+  },
+  selectionCta: {
+    padding: '10px 24px',
+    borderRadius: 12,
+    border: 'none',
+    background: '#F5C518',
+    color: '#000',
+    fontSize: 14,
+    fontWeight: 700,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    whiteSpace: 'nowrap',
+  },
+  selectionClose: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    border: 'none',
+    background: 'rgba(255,255,255,0.1)',
+    color: '#999',
+    cursor: 'pointer',
+    flexShrink: 0,
+  },
+  // Detail panel overlay (Jack-style)
+  panelOverlay: {
+    position: 'fixed',
+    inset: 0,
+    background: 'rgba(0,0,0,0.6)',
+    zIndex: 100,
+    display: 'flex',
+    justifyContent: 'center',
+    overflowY: 'auto',
+    padding: '40px 20px',
+  },
+  panel: {
+    position: 'relative',
+    width: '100%',
+    maxWidth: 800,
+    background: 'var(--bg-surface)',
+    borderRadius: 16,
+    padding: '32px 40px 100px',
+    alignSelf: 'flex-start',
+    minHeight: 400,
+  },
+  panelClose: {
+    position: 'absolute',
+    top: 16,
+    left: 16,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    border: 'none',
+    background: 'var(--bg-elevated)',
+    color: 'var(--text-secondary)',
+    cursor: 'pointer',
+  },
+  panelTitle: {
+    fontSize: 22,
+    fontWeight: 700,
+    color: 'var(--text-primary)',
+    margin: '0 0 16px',
+    paddingTop: 8,
+  },
+  panelBody: {
+    color: 'var(--text-secondary)',
+    fontSize: 14,
+    lineHeight: 1.7,
+  },
+  panelSection: {
+    fontSize: 16,
+    fontWeight: 700,
+    color: 'var(--text-primary)',
+    margin: '24px 0 8px',
+  },
+  panelText: {
+    margin: '0 0 8px',
+  },
+  panelList: {
+    margin: '0 0 8px',
+    paddingLeft: 20,
+  },
+  panelCta: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    padding: '16px 24px',
-    background: 'linear-gradient(transparent, var(--bg-base) 30%)',
+    padding: '20px 40px',
     display: 'flex',
-    justifyContent: 'center',
-    pointerEvents: 'none',
+    justifyContent: 'flex-end',
+    background: 'var(--bg-surface)',
+    borderTop: '1px solid var(--border)',
+    borderRadius: '0 0 16px 16px',
   },
   ctaButton: {
     padding: '14px 32px',
@@ -466,7 +618,6 @@ const s: Record<string, React.CSSProperties> = {
     fontSize: 15,
     fontWeight: 700,
     cursor: 'pointer',
-    pointerEvents: 'auto',
     boxShadow: '0 4px 24px rgba(245, 197, 24, 0.3)',
     transition: 'transform 0.1s, box-shadow 0.15s',
     fontFamily: 'inherit',
