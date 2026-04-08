@@ -279,23 +279,46 @@ export const genericV2: StagehandAdapter = {
           console.log(`[${ADAPTER_NAME}] CV uploaded via setInputFiles (${fileInputCount} input(s) found)`)
           await page.waitForTimeout(2000)
         } else {
-          // No file input yet — click upload button to reveal it (Lever pattern)
-          try {
-            await stagehand.act('Click the "Attach Resume/CV", "Upload Resume", "Upload CV", or file upload button')
-            await page.waitForTimeout(1500)
+          // No visible file input — try multiple strategies
+          let cvUploaded = false
 
-            // Check again after button click
-            const revealedInput = page.locator('input[type="file"]').first()
-            if ((await revealedInput.count()) > 0) {
-              await revealedInput.setInputFiles(cvTmpPath)
-              console.log(`[${ADAPTER_NAME}] CV uploaded after revealing file input`)
+          // Strategy 1: Lever-style — find hidden file input via page.evaluate
+          try {
+            const hasHiddenInput = await page.evaluate(() => {
+              const input = document.querySelector('input[type="file"]') as HTMLInputElement
+              return !!input
+            })
+            if (hasHiddenInput) {
+              // Force the hidden input to be accessible
+              await page.evaluate(() => {
+                const input = document.querySelector('input[type="file"]') as HTMLInputElement
+                if (input) { input.style.display = 'block'; input.style.opacity = '1'; input.style.position = 'fixed'; input.style.top = '0'; input.style.left = '0'; input.style.zIndex = '99999' }
+              })
+              await page.waitForTimeout(300)
+              const visibleInput = page.locator('input[type="file"]').first()
+              await visibleInput.setInputFiles(cvTmpPath)
+              console.log(`[${ADAPTER_NAME}] CV uploaded via unhidden file input`)
+              cvUploaded = true
               await page.waitForTimeout(2000)
-            } else {
-              console.warn(`[${ADAPTER_NAME}] Upload button clicked but no file input appeared`)
             }
-          } catch {
-            console.warn(`[${ADAPTER_NAME}] No file upload found`)
+          } catch { /* strategy 1 failed */ }
+
+          // Strategy 2: Click upload button/area, then try file input
+          if (!cvUploaded) {
+            try {
+              await stagehand.act('Click the "Attach Resume/CV", "Upload Resume", "Upload CV", or file upload button or area')
+              await page.waitForTimeout(1500)
+              const revealedInput = page.locator('input[type="file"]').first()
+              if ((await revealedInput.count()) > 0) {
+                await revealedInput.setInputFiles(cvTmpPath)
+                console.log(`[${ADAPTER_NAME}] CV uploaded after clicking upload area`)
+                cvUploaded = true
+                await page.waitForTimeout(2000)
+              }
+            } catch { /* strategy 2 failed */ }
           }
+
+          if (!cvUploaded) console.warn(`[${ADAPTER_NAME}] CV upload failed — no file input found`)
         }
       } catch (err) {
         console.warn(`[${ADAPTER_NAME}] CV upload failed: ${err instanceof Error ? err.message : err}`)
@@ -312,7 +335,23 @@ export const genericV2: StagehandAdapter = {
         }
       }
 
-      // ── Step 7: Handle remaining questions with profile context ──
+      // ── Step 7: Handle education dropdowns (Greenhouse pattern) ──
+      try {
+        // School dropdown
+        await stagehand.act('If there is a "School" dropdown or select field, click it and select the option that best matches "ESD" or "Ecole Superieure du Digital" or type it in if searchable. If no match, select "Other".')
+        await page.waitForTimeout(500)
+        // Degree dropdown
+        await stagehand.act('If there is a "Degree" dropdown, click it and select "Master" or "Master\'s Degree" or the closest match.')
+        await page.waitForTimeout(500)
+        // Discipline dropdown
+        await stagehand.act('If there is a "Discipline" dropdown, click it and select "Design" or "UX Design" or "Human-Computer Interaction" or the closest match.')
+        await page.waitForTimeout(500)
+        console.log(`[${ADAPTER_NAME}] Education dropdowns handled`)
+      } catch {
+        // No education fields — expected on most forms
+      }
+
+      // ── Step 8: Handle remaining screening questions ──
       try {
         const answerContext = [
           `Years of experience: ${profile.yearsExperience}`,
@@ -323,7 +362,7 @@ export const genericV2: StagehandAdapter = {
           `Education: ${profile.education}`,
         ].join('. ')
 
-        await stagehand.act(`Look for any remaining unfilled required fields or screening questions on this form. Answer them using these facts: ${answerContext}. For salary questions, use 80000 EUR per year. For sensitive questions (gender, race, disability), select "Prefer not to say" or "Decline to answer". For unknown questions, skip them or select "Other" if available.`)
+        await stagehand.act(`Look for any remaining unfilled required fields, screening questions, or "How did you hear about this job" dropdowns. Answer using: ${answerContext}. For salary: 80000 EUR/year. For sensitive/EEO questions: "Prefer not to say". For "How did you hear": select "Other" or "Job Board".`)
         console.log(`[${ADAPTER_NAME}] Screening questions handled`)
       } catch {
         // No additional questions
