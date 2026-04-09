@@ -83,7 +83,6 @@ export async function createStagehand(config?: StagehandConfig): Promise<Stageha
       apiKey: browserbaseApiKey,
       projectId: browserbaseProjectId,
       model: modelConfig,
-      enableCaching: false,
       verbose: config?.verbose ? 1 : 0,
       browserbaseSessionCreateParams: {
         projectId: browserbaseProjectId!,
@@ -132,7 +131,6 @@ export async function createStagehand(config?: StagehandConfig): Promise<Stageha
   const stagehand = new Stagehand({
     env: 'LOCAL',
     model: modelConfig,
-    enableCaching: false,
     verbose: config?.verbose ? 1 : 0,
     localBrowserLaunchOptions: {
       headless: true,
