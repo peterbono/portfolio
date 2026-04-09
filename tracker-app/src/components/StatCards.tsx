@@ -22,13 +22,10 @@ interface StatCardsProps {
 const CARD_ORDER: Array<{ key: StatusFilterValue; label?: string; icon?: string; color?: string; bg?: string; border?: string }> = [
   { key: 'all', label: 'All', icon: '◉', color: '#e0e0e0', bg: '#1a1a1f', border: '#2a2a35' },
   { key: 'submitted' },
-  { key: 'screening' },
   { key: 'interviewing' },
   { key: 'challenge' },
   { key: 'offer' },
   { key: 'rejected' },
-  { key: 'ghosted' },
-  { key: 'expired' },
 ]
 
 export function StatCards({ counts, totalJobs, activeFilter, onFilterChange }: StatCardsProps) {

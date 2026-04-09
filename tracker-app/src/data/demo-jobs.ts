@@ -24,7 +24,7 @@ export const DEMO_JOBS: Job[] = [
   {
     id: 'demo-001',
     date: daysAgo(3),
-    status: 'screening',
+    status: 'interviewing',
     role: 'Senior Product Designer',
     company: 'TechFlow',
     location: 'Remote (Singapore)',
@@ -116,7 +116,7 @@ export const DEMO_JOBS: Job[] = [
   {
     id: 'demo-005',
     date: daysAgo(1),
-    status: 'expired',
+    status: 'rejected',
     role: 'UI Lead',
     company: 'NovaTech',
     location: 'San Francisco, CA (Onsite)',

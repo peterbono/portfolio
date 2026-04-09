@@ -170,11 +170,11 @@ function ResponseRate() {
   const { jobs } = useJobs()
 
   const stats = useMemo(() => {
-    const applied = ['submitted','screening','interviewing','challenge','offer','rejected','ghosted']
+    const applied = ['submitted','interviewing','challenge','offer','rejected']
     const totalApplied = jobs.filter(j => applied.includes(j.status)).length
 
     const gotResponse = jobs.filter(
-      j => ['screening','interviewing','offer','rejected','challenge'].includes(j.status)
+      j => ['interviewing','offer','rejected','challenge'].includes(j.status)
     ).length
 
     const rejected = jobs.filter(j => j.status === 'rejected').length
@@ -231,7 +231,7 @@ function WorkModeDistribution() {
   const [expandedMode, setExpandedMode] = useState<string | null>(null)
 
   const data = useMemo(() => {
-    const applied = jobs.filter(j => ['submitted','screening','interviewing','challenge','offer','rejected','ghosted'].includes(j.status))
+    const applied = jobs.filter(j => ['submitted','interviewing','challenge','offer','rejected'].includes(j.status))
 
     type ModeKey = 'remote' | 'onsite' | 'hybrid'
     const modeJobs: Record<ModeKey, { company: string; location: string; area: string }[]> = { remote: [], onsite: [], hybrid: [] }
@@ -441,7 +441,7 @@ function IntelligenceCards() {
   const qualityColor = avgQ > 70 ? '#34d399' : avgQ >= 50 ? '#fbbf24' : '#f43f5e'
 
   // Response rate
-  const responseStatuses = ['screening', 'interviewing', 'challenge', 'offer', 'rejected']
+  const responseStatuses = ['interviewing', 'challenge', 'offer', 'rejected']
   const gotResponse = allJobs.filter(j => responseStatuses.includes(j.status)).length
   const responseRate = submittedCount > 0 ? Math.round((gotResponse / submittedCount) * 100) : 0
   const responseColor = responseRate > 20 ? '#34d399' : responseRate >= 10 ? '#fbbf24' : '#f43f5e'

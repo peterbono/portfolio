@@ -119,7 +119,7 @@ describe('detectGhostCompanies', () => {
 
   it('returns empty array when no ghosts detected', () => {
     const jobs: Job[] = [
-      makeJob({ status: 'screening', date: daysAgo(30) }),
+      makeJob({ status: 'interviewing', date: daysAgo(30) }),
       makeJob({ status: 'rejected', date: daysAgo(40) }),
     ]
     expect(detectGhostCompanies(jobs)).toEqual([])
@@ -188,14 +188,14 @@ describe('analyzeTimingPatterns', () => {
     expect(timing.data).toHaveLength(0)
   })
 
-  it('excludes non-active statuses (expired)', () => {
+  it('includes all valid statuses in analysis', () => {
     const jobs: Job[] = [
-      makeJob({ status: 'expired', date: daysAgo(5) }),
-      makeJob({ status: 'expired', date: daysAgo(3) }),
-      makeJob({ status: 'expired', date: daysAgo(1) }),
+      makeJob({ status: 'rejected', date: daysAgo(5) }),
+      makeJob({ status: 'rejected', date: daysAgo(3) }),
+      makeJob({ status: 'rejected', date: daysAgo(1) }),
     ]
     const timing = analyzeTimingPatterns(jobs)
-    expect(timing.data).toHaveLength(0)
+    expect(timing.data.length).toBeGreaterThan(0)
   })
 
   it('rate is a percentage (0-100 scale)', () => {
@@ -237,13 +237,14 @@ describe('analyzeQualityImpact', () => {
     expect(analyzeQualityImpact([])).toEqual([])
   })
 
-  it('returns empty array when all jobs are non-active statuses', () => {
+  it('processes all valid statuses including rejected', () => {
     const jobs = [
-      makeJob({ status: 'expired' }),
-      makeJob({ status: 'expired' }),
-      makeJob({ status: 'expired' }),
+      makeJob({ status: 'rejected' }),
+      makeJob({ status: 'rejected' }),
+      makeJob({ status: 'rejected' }),
     ]
-    expect(analyzeQualityImpact(jobs)).toEqual([])
+    // All 5 statuses are now active, so rejected jobs are included
+    expect(analyzeQualityImpact(jobs).length).toBeGreaterThan(0)
   })
 
   it('sorts by multiplier descending', () => {

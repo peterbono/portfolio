@@ -251,8 +251,8 @@ export function computeMarkRejected(
 
 /** Statuses that should never be auto-expired (active pipeline stages) */
 const PROTECTED_STATUSES: Set<JobStatus> = new Set([
-  'screening', 'interviewing', 'challenge', 'offer',
-  'rejected', 'ghosted', 'expired',
+  'interviewing', 'challenge', 'offer',
+  'rejected',
 ])
 
 /** Days after which a 'submitted' job with no activity is considered ghosted */
@@ -275,7 +275,7 @@ function getLatestActivityDate(job: Job): string {
 
 /**
  * Pure function: computes override patches for auto-expiration.
- * - 'submitted' jobs older than 45 days with no activity -> 'ghosted'
+ * - 'submitted' jobs older than 45 days with no activity -> 'rejected'
  * Only applies to jobs where the user has NOT manually set a status override.
  *
  * The `_autoExpired` flag is stored alongside each auto-transition so we
@@ -314,7 +314,7 @@ export function computeAutoExpiration(
     ) {
       next[job.id] = {
         ...next[job.id],
-        status: 'ghosted' as JobStatus,
+        status: 'rejected' as JobStatus,
         _autoExpired: true,
       } as Partial<Job> & { _autoExpired?: boolean }
       changed = true

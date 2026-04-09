@@ -93,11 +93,11 @@ export const MOCK_JOBS: Job[] = [
       },
     ],
   },
-  // 5. Screening status — responded, not ghost
+  // 5. Interviewing status — responded, not ghost
   {
     id: 'job-005',
     date: daysAgo(15),
-    status: 'screening',
+    status: 'interviewing',
     role: 'Design Lead',
     company: 'ScreeningInc',
     location: 'Remote',
@@ -232,7 +232,7 @@ export const MOCK_JOBS: Job[] = [
   {
     id: 'job-011',
     date: daysAgo(12),
-    status: 'expired',
+    status: 'rejected',
     role: 'Interaction Designer',
     company: 'SkipLtd',
     location: 'Remote',
@@ -248,7 +248,7 @@ export const MOCK_JOBS: Job[] = [
   {
     id: 'job-012',
     date: daysAgo(60),
-    status: 'ghosted',
+    status: 'rejected',
     role: 'Design Systems Lead',
     company: 'SilentCorp',
     location: 'Remote',

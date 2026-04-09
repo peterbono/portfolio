@@ -246,8 +246,8 @@ export function JobsProvider({ children }: { children: ReactNode }) {
   const counts = useMemo(() => {
     const c = {} as Record<JobStatus, number>
     const allStatuses: JobStatus[] = [
-      'submitted', 'rejected', 'screening', 'interviewing', 'challenge',
-      'offer', 'ghosted', 'expired',
+      'submitted', 'rejected', 'interviewing', 'challenge',
+      'offer',
     ]
     for (const s of allStatuses) c[s] = 0
     for (const job of jobs) {

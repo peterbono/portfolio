@@ -4,9 +4,6 @@ export type JobStatus =
   | 'interviewing'
   | 'challenge'
   | 'offer'
-  | 'screening'
-  | 'ghosted'
-  | 'expired'
 
 export type EventType =
   | 'email'
@@ -59,9 +56,6 @@ export const STATUS_CONFIG: Record<JobStatus, { label: string; color: string; bg
   interviewing: { label: 'Interviewing', color: '#fb923c', bg: '#2a1505', border: '#422006', icon: '🎤' },
   challenge:    { label: 'Challenge',    color: '#c084fc', bg: '#1a0a2e', border: '#4c1d95', icon: '🎨' },
   offer:        { label: 'Offer',        color: '#fbbf24', bg: '#2a1a05', border: '#78350f', icon: '⭐' },
-  screening:    { label: 'Screening',    color: '#60a5fa', bg: '#0c2844', border: '#1e3a5f', icon: '📞' },
-  ghosted:      { label: 'Ghosted',      color: '#3f3f46', bg: '#131316', border: '#1e1e24', icon: '👻' },
-  expired:      { label: 'Expired',      color: '#71717a', bg: '#18181b', border: '#27272a', icon: '⏰' },
 }
 
 /** Legacy status config for backwards compatibility with existing data */
@@ -73,8 +67,8 @@ export const LEGACY_STATUS_CONFIG: Record<string, { label: string; color: string
   withdrawn:    { label: 'Withdrawn',    color: '#52525b', bg: '#131316', border: '#1e1e24', icon: '🚪' },
 }
 
-export const ACTIVE_STATUSES: JobStatus[] = ['submitted', 'interviewing', 'challenge', 'offer', 'screening']
-export const INACTIVE_STATUSES: JobStatus[] = ['rejected', 'ghosted', 'expired']
+export const ACTIVE_STATUSES: JobStatus[] = ['submitted', 'interviewing', 'challenge', 'offer']
+export const INACTIVE_STATUSES: JobStatus[] = ['rejected']
 export const PENDING_STATUSES: JobStatus[] = []
 
 /** Maps legacy status strings to their replacement JobStatus */

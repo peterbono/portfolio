@@ -50,7 +50,7 @@ const EMPTY_REJECTED_SET = new Set<string>()
 describe('mergeJobs', () => {
   const seedA = makeJob({ id: 'a1', company: 'Acme Corp', status: 'submitted' })
   const seedB = makeJob({ id: 'b1', company: 'Beta Inc', status: 'submitted' })
-  const seedC = makeJob({ id: 'c1', company: 'Gamma Ltd', status: 'expired' })
+  const seedC = makeJob({ id: 'c1', company: 'Gamma Ltd', status: 'rejected' })
 
   it('returns seed as-is when overrides are empty', () => {
     const result = mergeJobs([seedA, seedB], {}, EMPTY_REJECTED_SET)
@@ -138,7 +138,7 @@ describe('mergeJobs', () => {
   it('does NOT apply known rejection to non-submitted status', () => {
     const rejSet = new Set(['gamma ltd'])
     const result = mergeJobs([seedC], {}, rejSet)
-    expect(result[0].status).toBe('expired') // unchanged
+    expect(result[0].status).toBe('rejected') // unchanged
   })
 
   it('handles case-insensitive rejection matching', () => {
@@ -150,14 +150,14 @@ describe('mergeJobs', () => {
 
   it('handles multiple overrides across different jobs', () => {
     const overrides: Overrides = {
-      a1: { status: 'screening' },
+      a1: { status: 'interviewing' },
       b1: { notes: 'Contact recruiter' },
     }
     const result = mergeJobs([seedA, seedB, seedC], overrides, EMPTY_REJECTED_SET)
     expect(result).toHaveLength(3)
-    expect(result.find(j => j.id === 'a1')!.status).toBe('screening')
+    expect(result.find(j => j.id === 'a1')!.status).toBe('interviewing')
     expect(result.find(j => j.id === 'b1')!.notes).toBe('Contact recruiter')
-    expect(result.find(j => j.id === 'c1')!.status).toBe('expired')
+    expect(result.find(j => j.id === 'c1')!.status).toBe('rejected')
   })
 })
 
@@ -166,19 +166,19 @@ describe('mergeJobs', () => {
 // ═══════════════════════════════════════════════════════════════════════
 
 describe('computeMarkSubmitted', () => {
-  const seedExpired = makeJob({ id: 's1', company: 'Netflix', status: 'expired' })
+  const seedExpiredAsRejected = makeJob({ id: 's1', company: 'Netflix', status: 'rejected' })
   const seedSubmitted = makeJob({ id: 's2', company: 'Spotify', status: 'submitted' })
-  const seedGhosted = makeJob({ id: 's3', company: 'Apple', status: 'ghosted' })
+  const seedRejectedApple = makeJob({ id: 's3', company: 'Apple', status: 'rejected' })
 
-  it('upgrades expired seed job to submitted on exact company match', () => {
-    const result = computeMarkSubmitted({}, [seedExpired], [
+  it('upgrades rejected seed job to submitted on exact company match', () => {
+    const result = computeMarkSubmitted({}, [seedExpiredAsRejected], [
       { company: 'Netflix', date: '2026-03-15' },
     ])
     expect(result.s1?.status).toBe('submitted')
   })
 
   it('is case-insensitive for company matching', () => {
-    const result = computeMarkSubmitted({}, [seedExpired], [
+    const result = computeMarkSubmitted({}, [seedExpiredAsRejected], [
       { company: 'netflix', date: '2026-03-15' },
     ])
     expect(result.s1?.status).toBe('submitted')
@@ -192,9 +192,9 @@ describe('computeMarkSubmitted', () => {
     expect(result.s2?.status).toBeUndefined()
   })
 
-  it('upgrades override-only expired job to submitted', () => {
+  it('upgrades override-only rejected job to submitted', () => {
     const prev: Overrides = {
-      o1: { company: 'Figma', role: 'Designer', status: 'expired' },
+      o1: { company: 'Figma', role: 'Designer', status: 'rejected' },
     }
     const result = computeMarkSubmitted(prev, [], [
       { company: 'Figma', date: '2026-03-15' },
@@ -247,12 +247,12 @@ describe('computeMarkSubmitted', () => {
   })
 
   it('processes multiple applications at once', () => {
-    const result = computeMarkSubmitted({}, [seedExpired], [
+    const result = computeMarkSubmitted({}, [seedExpiredAsRejected], [
       { company: 'Netflix', date: '2026-03-15' },
       { company: 'Stripe', role: 'Lead Designer', date: '2026-03-16' },
       { company: 'Linear', role: 'Product Designer', date: '2026-03-17' },
     ])
-    // Netflix: upgraded from expired
+    // Netflix: upgraded from rejected
     expect(result.s1?.status).toBe('submitted')
     // Stripe + Linear: auto-created
     const autoKeys = Object.keys(result).filter(k => k.startsWith('auto-app'))
@@ -268,11 +268,11 @@ describe('computeMarkSubmitted', () => {
   })
 
   it('uses override status over seed status for effective status check', () => {
-    const prev: Overrides = { s2: { status: 'expired' } }
+    const prev: Overrides = { s2: { status: 'rejected' } }
     const result = computeMarkSubmitted(prev, [seedSubmitted], [
       { company: 'Spotify', date: '2026-03-15' },
     ])
-    // Seed says 'submitted' but override says 'expired', so effective = 'expired' -> should upgrade
+    // Seed says 'submitted' but override says 'rejected', so effective = 'rejected' -> should upgrade
     expect(result.s2?.status).toBe('submitted')
   })
 })
@@ -283,9 +283,9 @@ describe('computeMarkSubmitted', () => {
 
 describe('computeMarkRejected', () => {
   const seedSubmitted = makeJob({ id: 'r1', company: 'Deel', status: 'submitted' })
-  const seedScreening = makeJob({ id: 'r2', company: 'Primer', status: 'screening' })
+  const seedInterviewing = makeJob({ id: 'r2', company: 'Primer', status: 'interviewing' })
   const seedRejected = makeJob({ id: 'r3', company: 'Sinch', status: 'rejected' })
-  const seedExpired = makeJob({ id: 'r4', company: 'Coder', status: 'expired' })
+  const seedRejectedCoder = makeJob({ id: 'r4', company: 'Coder', status: 'rejected' })
 
   it('marks submitted seed job as rejected', () => {
     const result = computeMarkRejected({}, [seedSubmitted], [
@@ -340,8 +340,8 @@ describe('computeMarkRejected', () => {
     expect(rejEvent).toBeDefined()
   })
 
-  it('does not change status of expired job', () => {
-    const result = computeMarkRejected({}, [seedExpired], [
+  it('does not change status of already-rejected job', () => {
+    const result = computeMarkRejected({}, [seedRejectedCoder], [
       { company: 'Coder', date: '2026-03-15' },
     ])
     expect(result.r4?.status).toBeUndefined()

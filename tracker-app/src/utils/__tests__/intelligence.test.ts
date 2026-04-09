@@ -150,7 +150,7 @@ describe('computeATSStats', () => {
     const jobs = [
       makeJob({ status: 'submitted', ats: '' }),
       makeJob({ status: 'rejected', ats: '' }),
-      makeJob({ status: 'expired', ats: '' }),
+      makeJob({ status: 'rejected', ats: '' }),
     ]
     expect(computeATSStats(jobs)).toEqual([])
   })
@@ -158,7 +158,7 @@ describe('computeATSStats', () => {
   it('correctly counts responses for screening/interviewing/rejected statuses', () => {
     const jobs: Job[] = [
       makeJob({ status: 'submitted', ats: 'TestATS' }),
-      makeJob({ status: 'screening', ats: 'TestATS' }),
+      makeJob({ status: 'interviewing', ats: 'TestATS' }),
       makeJob({ status: 'rejected', ats: 'TestATS' }),
       makeJob({ status: 'submitted', ats: 'TestATS' }),
     ]
@@ -186,7 +186,7 @@ describe('computeATSStats', () => {
     const jobs: Job[] = [
       makeJob({ status: 'submitted', ats: 'GhostATS', date: daysAgo(30), events: undefined }),
       makeJob({ status: 'submitted', ats: 'GhostATS', date: daysAgo(5), events: [] }),
-      makeJob({ status: 'screening', ats: 'GhostATS', date: daysAgo(15) }),
+      makeJob({ status: 'interviewing', ats: 'GhostATS', date: daysAgo(15) }),
     ]
     const stats = computeATSStats(jobs)
     const ghostAts = stats.find((s) => s.ats === 'ghostats')

@@ -203,7 +203,7 @@ function generateInsights(allJobs: Job[]): string[] {
     if (ats.includes(' hq') || ats.includes('skip') || ats.includes('trop') || ats.length < 3 || ats.length > 30) continue
     if (!atsCounts[ats]) atsCounts[ats] = { total: 0, responded: 0 }
     atsCounts[ats].total++
-    if (['screening', 'interviewing', 'challenge', 'offer', 'rejected'].includes(j.status)) {
+    if (['interviewing', 'challenge', 'offer', 'rejected'].includes(j.status)) {
       atsCounts[ats].responded++
     }
   }
@@ -231,7 +231,7 @@ function generateInsights(allJobs: Job[]): string[] {
     if (area === 'unknown') continue
     if (!areaStats[area]) areaStats[area] = { total: 0, responded: 0 }
     areaStats[area].total++
-    if (['screening', 'interviewing', 'challenge', 'offer'].includes(j.status)) {
+    if (['interviewing', 'challenge', 'offer'].includes(j.status)) {
       areaStats[area].responded++
     }
   }
@@ -266,7 +266,7 @@ function getAtsStats(allJobs: Job[]): { bestAts: string; bestRate: number; worst
     if (nonAts.includes(ats) || ats.length < 3 || ats.length > 30) continue
     if (!atsCounts[ats]) atsCounts[ats] = { total: 0, responded: 0 }
     atsCounts[ats].total++
-    if (['screening', 'interviewing', 'challenge', 'offer', 'rejected'].includes(j.status)) {
+    if (['interviewing', 'challenge', 'offer', 'rejected'].includes(j.status)) {
       atsCounts[ats].responded++
     }
   }
@@ -379,7 +379,7 @@ function generateFocusTasks(allJobs: Job[], dismissedIds: Set<string> = new Set(
 /* ── Milestones ── */
 function computeMilestones(allJobs: Job[], streak: StreakData): Milestone[] {
   const submitted = allJobs
-  const screenings = allJobs.filter(j => ['screening', 'interviewing', 'challenge', 'offer'].includes(j.status))
+  const screenings = allJobs.filter(j => ['interviewing', 'challenge', 'offer'].includes(j.status))
   const interviews = allJobs.filter(j => ['interviewing', 'challenge', 'offer'].includes(j.status))
   const offers = allJobs.filter(j => j.status === 'offer')
 

@@ -21,10 +21,10 @@ import { notifyApplicationsSubmitted } from '../lib/notifications'
 function toJobStatus(dbStatus: string | null): JobStatus {
   switch (dbStatus) {
     case 'submitted': return 'submitted'
-    case 'skipped': return 'expired'
+    case 'skipped': return 'rejected'
     case 'manual': return 'submitted'
     case 'rejected': return 'rejected'
-    case 'screening': return 'screening'
+    case 'screening': return 'interviewing'
     case 'interviewing': return 'interviewing'
     case 'offer': return 'offer'
     case 'negotiation': return 'offer'

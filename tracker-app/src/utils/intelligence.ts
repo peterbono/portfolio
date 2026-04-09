@@ -4,7 +4,7 @@ import type { GhostResult, ATSStats, IntelligenceSummary, WeeklyTrendPoint } fro
 
 // Statuses that indicate the company responded in some way
 const RESPONSE_STATUSES = new Set([
-  'screening', 'interviewing', 'challenge', 'offer', 'rejected',
+  'interviewing', 'challenge', 'offer', 'rejected',
 ])
 
 // Statuses where ghost detection is relevant (still waiting)
@@ -89,8 +89,6 @@ export function computeATSStats(jobs: Job[]): ATSStats[] {
             responseWithDateCount++
           }
         }
-      } else if (job.status === 'ghosted') {
-        ghostCount++
       } else if (job.status === 'submitted' && job.date) {
         const daysSince = differenceInDays(now, parseISO(job.date))
         if (daysSince > GHOST_THRESHOLD_DAYS && (!job.events || job.events.length === 0)) {

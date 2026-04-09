@@ -45,8 +45,8 @@ function getRejectionDate(job: { lastContactDate?: string; date: string; events?
 
 // Only statuses that appear in the pipeline
 const ALLOWED_STATUSES: JobStatus[] = [
-  'submitted', 'screening', 'interviewing', 'challenge',
-  'offer', 'rejected', 'ghosted', 'expired',
+  'submitted', 'interviewing', 'challenge',
+  'offer', 'rejected',
 ]
 
 export function DetailDrawer() {
@@ -295,11 +295,6 @@ export function DetailDrawer() {
             ))}
           </select>
 
-          <ActionButton
-            label="Ghost"
-            color="#3f3f46"
-            onClick={() => updateJobStatus(job.id, 'ghosted')}
-          />
           <ActionButton
             label="Reject"
             color="#a855f7"
