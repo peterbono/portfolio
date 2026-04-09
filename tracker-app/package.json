@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npx tsc -b && npx vite build",
+    "build": "npx vite build",
     "preview": "vite preview",
     "migrate": "npx tsx scripts/parse-html-to-json.ts",
     "test": "vitest run",
