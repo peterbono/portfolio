@@ -31,14 +31,15 @@ type NavEntry =
   | { kind: 'separator'; label?: string }
 
 const NAV_ITEMS: NavEntry[] = [
+  // --- SET UP (first, like Jack) ---
+  { kind: 'item', view: 'profile', label: 'Profile', icon: User },
+  { kind: 'separator' },
   // --- APPLY ---
   { kind: 'item', view: 'open-jobs', label: 'Open Jobs', icon: Search },
   { kind: 'item', view: 'autopilot', label: 'Autopilot', icon: Bot },
   // --- TRACK ---
   { kind: 'item', view: 'applications', label: 'Applications', icon: FolderKanban },
   { kind: 'separator' },
-  // --- ACCOUNT ---
-  { kind: 'item', view: 'profile', label: 'Profile', icon: User },
   { kind: 'item', view: 'pricing', label: 'Account', icon: CreditCard },
 ]
 

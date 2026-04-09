@@ -134,11 +134,18 @@ const EMPTY_STATES: Record<string, { icon: typeof LayoutList; title: string; des
 function ProfileViewWrapper() {
   const { setActiveView } = useUI()
   return (
-    <LazyProfileSetupModal
-      editMode
-      onComplete={() => setActiveView('autopilot')}
-      onDismiss={() => setActiveView('autopilot')}
-    />
+    <div style={{ height: '100%', overflow: 'auto' }}>
+      <div style={{ maxWidth: 800, margin: '0 auto', padding: '24px 24px 0' }}>
+        <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>Profile</h1>
+        <p style={{ fontSize: 13, color: 'var(--text-tertiary)', marginBottom: 24 }}>Complete your profile so the bot can apply to jobs for you.</p>
+      </div>
+      <LazyProfileSetupModal
+        editMode
+        inline
+        onComplete={() => setActiveView('open-jobs')}
+        onDismiss={() => setActiveView('open-jobs')}
+      />
+    </div>
   )
 }
 

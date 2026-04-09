@@ -606,6 +606,8 @@ interface ProfileSetupModalProps {
   editMode?: boolean
   /** Optional: start on a specific step (0-3) in edit mode */
   initialStep?: number
+  /** When true, renders inline (no overlay/backdrop) — for use as a page view */
+  inline?: boolean
 }
 
 export function ProfileSetupModal({
@@ -616,6 +618,7 @@ export function ProfileSetupModal({
   locationRules,
   editMode = false,
   initialStep = 0,
+  inline = false,
 }: ProfileSetupModalProps) {
   const [step, setStep] = useState(editMode ? initialStep : 0)
   const [profile, setProfile] = useState<UserProfile>(loadProfile)
@@ -1527,12 +1530,13 @@ export function ProfileSetupModal({
   const currentMeta = STEP_META[step]
 
   return (
-    <div className="profile-modal-overlay" style={ms.overlay} onClick={onDismiss}>
-      <div className="profile-modal" style={ms.modal} onClick={(e) => e.stopPropagation()}>
-        {/* Close button */}
-        <button type="button" style={ms.closeBtn} onClick={onDismiss}>
-          <X size={18} />
-        </button>
+    <div className="profile-modal-overlay" style={inline ? { ...ms.overlay, position: 'relative', background: 'transparent', backdropFilter: 'none', animation: 'none' } : ms.overlay} onClick={inline ? undefined : onDismiss}>
+      <div className="profile-modal" style={inline ? { ...ms.modal, boxShadow: 'none', animation: 'none', maxWidth: 800, margin: '0 auto' } : ms.modal} onClick={(e) => e.stopPropagation()}>
+        {!inline && (
+          <button type="button" style={ms.closeBtn} onClick={onDismiss}>
+            <X size={18} />
+          </button>
+        )}
 
         {/* Header — dynamic per step */}
         <div className="profile-modal-header" style={ms.header}>
