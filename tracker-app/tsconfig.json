@@ -20,5 +20,5 @@
     "allowJs": true
   },
   "include": ["src"],
-  "exclude": ["src/trigger", "src/bot", "src/**/__tests__", "src/**/*.test.ts", "src/**/*.test.tsx"]
+  "exclude": ["src/trigger", "src/bot", "src/**/__tests__", "src/**/*.test.ts", "src/**/*.test.tsx", "api"]
 }
