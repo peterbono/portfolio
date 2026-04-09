@@ -24,6 +24,134 @@ const ADAPTER_NAME = 'Generic-v2'
 const CV_GITHUB_URL = 'https://raw.githubusercontent.com/peterbono/portfolio/main/cvflo.pdf'
 
 // ---------------------------------------------------------------------------
+// Gmail OTP Polling Helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Poll Gmail for a recent verification/security code email from a company.
+ * Uses OAuth2 refresh token flow with GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET,
+ * GOOGLE_REFRESH_TOKEN from environment.
+ *
+ * Returns the extracted code string (typically 6-8 chars) or null if not found.
+ */
+async function pollGmailForOTP(
+  company: string,
+  maxAttempts: number = 6,
+  intervalMs: number = 5000,
+): Promise<string | null> {
+  const clientId = process.env.GOOGLE_CLIENT_ID
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET
+  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN
+
+  if (!clientId || !clientSecret || !refreshToken) {
+    console.warn(`[${ADAPTER_NAME}] Gmail OTP: missing OAuth credentials in env`)
+    return null
+  }
+
+  // Step 1: Get access token via refresh token
+  let accessToken: string
+  try {
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        refresh_token: refreshToken,
+        grant_type: 'refresh_token',
+      }),
+      signal: AbortSignal.timeout(10_000),
+    })
+    const tokenData = await tokenRes.json() as { access_token?: string }
+    if (!tokenData.access_token) {
+      console.warn(`[${ADAPTER_NAME}] Gmail OTP: failed to get access token`)
+      return null
+    }
+    accessToken = tokenData.access_token
+  } catch (err) {
+    console.warn(`[${ADAPTER_NAME}] Gmail OTP: token refresh error:`, err)
+    return null
+  }
+
+  // Step 2: Poll for recent verification emails
+  const companyLower = company.toLowerCase().replace(/[^a-z0-9]/g, ' ').trim()
+  // Search for emails from last 5 minutes with verification-related subjects
+  const query = `newer_than:5m (subject:verification OR subject:verify OR subject:code OR subject:confirm OR subject:security) ${companyLower}`
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const listRes = await fetch(
+        `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=3`,
+        {
+          headers: { Authorization: `Bearer ${accessToken}` },
+          signal: AbortSignal.timeout(10_000),
+        },
+      )
+      const listData = await listRes.json() as { messages?: Array<{ id: string }> }
+
+      if (listData.messages && listData.messages.length > 0) {
+        // Read the most recent message
+        const msgId = listData.messages[0].id
+        const msgRes = await fetch(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}?format=full`,
+          {
+            headers: { Authorization: `Bearer ${accessToken}` },
+            signal: AbortSignal.timeout(10_000),
+          },
+        )
+        const msgData = await msgRes.json() as {
+          snippet?: string
+          payload?: { body?: { data?: string }; parts?: Array<{ body?: { data?: string } }> }
+        }
+
+        // Try snippet first, then decode body
+        const snippet = msgData.snippet || ''
+        let bodyText = snippet
+
+        // Decode base64url body if available
+        const rawBody = msgData.payload?.body?.data || msgData.payload?.parts?.[0]?.body?.data
+        if (rawBody) {
+          try {
+            bodyText += ' ' + Buffer.from(rawBody, 'base64url').toString('utf-8')
+          } catch { /* keep snippet */ }
+        }
+
+        // Extract verification code: look for 4-8 digit/alphanumeric codes
+        // Common patterns: "Your code is 12345678", "Code: ABCD1234", "verification code: 123456"
+        const codePatterns = [
+          /(?:verification|security|confirm(?:ation)?|one[- ]?time)\s*(?:code|pin|number)\s*(?:is|:)\s*([A-Z0-9]{4,8})/i,
+          /\b([A-Z0-9]{6,8})\b(?=\s*(?:to verify|to confirm|is your|expires))/i,
+          /(?:enter|use|type)\s*(?:the\s*)?(?:code\s*)?:?\s*([A-Z0-9]{4,8})\b/i,
+          /\b(\d{6,8})\b/,  // Fallback: any 6-8 digit number
+        ]
+
+        for (const pattern of codePatterns) {
+          const match = bodyText.match(pattern)
+          if (match && match[1]) {
+            console.log(`[${ADAPTER_NAME}] Gmail OTP: found code "${match[1]}" from email (attempt ${attempt + 1})`)
+            return match[1]
+          }
+        }
+
+        console.log(`[${ADAPTER_NAME}] Gmail OTP: found email but no code pattern matched (attempt ${attempt + 1})`)
+      } else {
+        console.log(`[${ADAPTER_NAME}] Gmail OTP: no matching emails (attempt ${attempt + 1}/${maxAttempts})`)
+      }
+    } catch (err) {
+      console.warn(`[${ADAPTER_NAME}] Gmail OTP: poll error (attempt ${attempt + 1}):`, err)
+    }
+
+    // Wait before next attempt
+    if (attempt < maxAttempts - 1) {
+      await new Promise(r => setTimeout(r, intervalMs))
+    }
+  }
+
+  console.log(`[${ADAPTER_NAME}] Gmail OTP: exhausted ${maxAttempts} attempts, no code found`)
+  return null
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -110,6 +238,27 @@ export const genericV2: StagehandAdapter = {
           }
         } catch { /* not found, try next */ }
       }
+      // Lever-specific: "Privacy Notice" bar with close/dismiss button
+      if (!cookieDismissed) {
+        const leverPrivacySelectors = [
+          '[class*="privacy-notice"] button', '[class*="PrivacyNotice"] button',
+          '[class*="privacy-notice"] [class*="close"]', '[class*="PrivacyNotice"] [class*="close"]',
+          '[id*="privacy"] button[class*="close"]', '[id*="privacy"] button[aria-label="Close"]',
+          'button:has-text("Dismiss")', 'button:has-text("Close")',
+        ]
+        for (const sel of leverPrivacySelectors) {
+          try {
+            const btn = page.locator(sel).first()
+            if (await btn.isVisible({ timeout: 800 })) {
+              await btn.click()
+              await page.waitForTimeout(500)
+              console.log(`[${ADAPTER_NAME}] Lever privacy notice dismissed via: ${sel}`)
+              cookieDismissed = true
+              break
+            }
+          } catch { /* not found, try next */ }
+        }
+      }
       // AI fallback for custom cookie modals
       if (!cookieDismissed) {
         try {
@@ -117,16 +266,40 @@ export const genericV2: StagehandAdapter = {
           await page.waitForTimeout(500)
         } catch { /* no banner */ }
       }
-      // Nuclear option: force-remove common cookie overlays from DOM
+      // Nuclear option: force-remove common cookie overlays + Lever privacy bar from DOM
       await page.evaluate(() => {
-        const selectors = ['#onetrust-banner-sdk', '#CybotCookiebotDialog', '.cookie-banner',
+        // Standard cookie/privacy selectors
+        const selectors = [
+          '#onetrust-banner-sdk', '#CybotCookiebotDialog', '.cookie-banner',
           '.cookie-consent', '[class*="cookie"]', '[id*="cookie-banner"]',
-          '[class*="privacy-notice"]', '.cc-window', '#gdpr-consent']
+          '[class*="privacy-notice"]', '[class*="PrivacyNotice"]',
+          '[id*="privacy"]', '[id*="Privacy"]',
+          '.cc-window', '#gdpr-consent',
+        ]
         for (const sel of selectors) {
           document.querySelectorAll(sel).forEach(el => {
             if (el instanceof HTMLElement && el.offsetHeight > 0) el.remove()
           })
         }
+        // Remove fixed/sticky bottom bars (Lever "Privacy Notice" and similar)
+        // Only remove if height < 200px to avoid nuking the entire page
+        document.querySelectorAll('*').forEach(el => {
+          if (!(el instanceof HTMLElement)) return
+          const style = window.getComputedStyle(el)
+          const isFixed = style.position === 'fixed' || style.position === 'sticky'
+          const isBottom = style.bottom === '0px' || style.bottom === '0'
+          const isSmall = el.offsetHeight > 0 && el.offsetHeight < 200
+          if (isFixed && isBottom && isSmall) {
+            // Double-check it's a banner-like element (has text content, not a chat widget button)
+            const text = el.innerText?.toLowerCase() || ''
+            const isBannerLike = text.includes('privacy') || text.includes('cookie') ||
+              text.includes('consent') || text.includes('accept') || text.includes('notice') ||
+              (el.offsetHeight < 80 && el.querySelectorAll('a, button').length > 0)
+            if (isBannerLike) {
+              el.remove()
+            }
+          }
+        })
       }).catch(() => {})
 
       // ── Step 3: Find and click the Apply button / Application tab ──
@@ -527,15 +700,143 @@ export const genericV2: StagehandAdapter = {
       ].some(phrase => pageLower.includes(phrase))
 
       // Security code prompt = form was submitted, waiting for OTP verification
+      // Try to auto-resolve via Gmail polling before falling back to needs_manual
       if (hasSecurityCode) {
-        console.log(`[${ADAPTER_NAME}] Security/verification code detected — form submitted, needs OTP`)
+        console.log(`[${ADAPTER_NAME}] Security/verification code detected — attempting Gmail OTP polling...`)
+
+        const otpCode = await pollGmailForOTP(company, 6, 5000) // 6 attempts, 5s apart = 30s max
+
+        if (otpCode) {
+          console.log(`[${ADAPTER_NAME}] OTP code retrieved: ${otpCode} — entering into form`)
+
+          // Try to find and fill the security code input field
+          let codeFilled = false
+
+          // Strategy 1: Playwright selectors for code inputs
+          const codeSelectors = [
+            'input[name*="code" i]', 'input[name*="verification" i]', 'input[name*="security" i]',
+            'input[name*="otp" i]', 'input[name*="token" i]', 'input[name*="pin" i]',
+            'input[id*="code" i]', 'input[id*="verification" i]', 'input[id*="security" i]',
+            'input[placeholder*="code" i]', 'input[placeholder*="verification" i]',
+            'input[autocomplete="one-time-code"]',
+            // Greenhouse uses multiple single-char inputs for OTP
+            'input[data-testid*="code" i]', 'input[aria-label*="code" i]',
+          ]
+
+          for (const sel of codeSelectors) {
+            try {
+              const input = page.locator(sel).first()
+              if (await input.isVisible({ timeout: 1000 })) {
+                await input.click()
+                await input.fill(otpCode)
+                codeFilled = true
+                console.log(`[${ADAPTER_NAME}] OTP filled via selector: ${sel}`)
+                break
+              }
+            } catch { /* try next */ }
+          }
+
+          // Strategy 2: Check for multi-digit split inputs (e.g., 8 separate <input> fields)
+          if (!codeFilled) {
+            try {
+              const digitInputs = page.locator('input[maxlength="1"]')
+              const count = await digitInputs.count()
+              if (count >= 4 && count <= 10 && otpCode.length === count) {
+                for (let d = 0; d < count; d++) {
+                  await digitInputs.nth(d).fill(otpCode[d])
+                  await page.waitForTimeout(100)
+                }
+                codeFilled = true
+                console.log(`[${ADAPTER_NAME}] OTP filled via ${count} split digit inputs`)
+              }
+            } catch { /* split inputs not found */ }
+          }
+
+          // Strategy 3: AI fallback
+          if (!codeFilled) {
+            try {
+              await stagehand.act(`Find the verification code / security code input field and type: ${otpCode}`)
+              codeFilled = true
+              console.log(`[${ADAPTER_NAME}] OTP filled via AI act()`)
+            } catch {
+              console.warn(`[${ADAPTER_NAME}] AI could not fill OTP field`)
+            }
+          }
+
+          if (codeFilled) {
+            // Click verify/submit button
+            await page.waitForTimeout(500)
+            try {
+              await stagehand.act('Click the "Verify", "Confirm", "Submit", or "Continue" button to confirm the verification code')
+              await page.waitForTimeout(5000)
+            } catch {
+              // Try Playwright fallback for verify button
+              const verifySelectors = [
+                'button:has-text("Verify")', 'button:has-text("Confirm")',
+                'button:has-text("Submit")', 'button:has-text("Continue")',
+                'button[type="submit"]',
+              ]
+              for (const sel of verifySelectors) {
+                try {
+                  const btn = page.locator(sel).first()
+                  if (await btn.isVisible({ timeout: 1000 })) {
+                    await btn.click()
+                    await page.waitForTimeout(5000)
+                    break
+                  }
+                } catch { /* try next */ }
+              }
+            }
+
+            // Check for confirmation after OTP submit
+            const postOtpText = await page.evaluate(() => document.body?.innerText?.toLowerCase() || '').catch(() => '')
+            const otpConfirmed = [
+              'thank you', 'application received', 'successfully submitted',
+              'application has been', 'we have received', 'thanks for applying',
+              'application complete', 'submitted your application',
+            ].some(phrase => postOtpText.includes(phrase))
+
+            if (otpConfirmed) {
+              console.log(`[${ADAPTER_NAME}] OTP verified — application confirmed!`)
+              return {
+                url: jobUrl,
+                company,
+                role,
+                ats: ADAPTER_NAME,
+                status: 'applied',
+                reason: 'Application confirmed after email OTP verification',
+                durationMs: Date.now() - start,
+              }
+            }
+
+            // Check if page redirected (also a success signal)
+            const postOtpUrl = page.url()
+            if (postOtpUrl !== jobUrl && !postOtpUrl.includes('/apply')) {
+              console.log(`[${ADAPTER_NAME}] OTP verified — redirected to ${postOtpUrl}`)
+              return {
+                url: jobUrl,
+                company,
+                role,
+                ats: ADAPTER_NAME,
+                status: 'applied',
+                reason: `Application confirmed after OTP — redirected to ${postOtpUrl}`,
+                durationMs: Date.now() - start,
+              }
+            }
+          }
+        }
+
+        // OTP not found or fill failed — return needs_manual with clear instructions
+        console.log(`[${ADAPTER_NAME}] OTP auto-fill failed — returning needs_manual`)
+        const screenshot = await page.screenshot({ type: 'jpeg', quality: 60 }).catch(() => null)
         return {
           url: jobUrl,
           company,
           role,
           ats: ADAPTER_NAME,
           status: 'needs_manual',
-          reason: 'Application submitted but requires email verification code (OTP)',
+          reason: `Application submitted but requires email verification code (OTP). Gmail polling ${otpCode ? 'found code but fill failed' : 'found no code in 30s'}. Check email and enter code manually at: ${page.url()}`,
+          screenshotBase64: screenshot?.toString('base64'),
           durationMs: Date.now() - start,
         }
       }

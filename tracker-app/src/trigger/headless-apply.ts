@@ -115,9 +115,8 @@ export const headlessApplyTask = task({
       `[headless-apply] Processing ${jobsToApply.length}/${payload.jobs.length} jobs (cap: ${MAX_APPLICATIONS_PER_RUN})`,
     )
 
-    // ── Filter Ashby jobs (CSP blocks headless — same as apply-jobs.ts) ──
-    const ashbyJobs = jobsToApply.filter((j) => /ashbyhq\.com/i.test(j.url))
-    const applicableJobs = jobsToApply.filter((j) => !/ashbyhq\.com/i.test(j.url))
+    // ── All jobs go through generic-v2 (Browserbase bypasses CSP, including Ashby) ──
+    const applicableJobs = jobsToApply
 
     // ── Initialize metadata ──
     metadata.set('progress', {
@@ -147,23 +146,6 @@ export const headlessApplyTask = task({
     let skipped = 0
     let failed = 0
     let needsManual = 0
-
-    // ── Pre-fill Ashby results ──
-    if (ashbyJobs.length > 0) {
-      console.log(`[headless-apply] ${ashbyJobs.length} Ashby jobs -> needs_manual (CSP blocks headless)`)
-      for (const aj of ashbyJobs) {
-        results.push({
-          url: aj.url,
-          company: aj.company,
-          role: aj.role,
-          ats: 'Ashby',
-          status: 'needs_manual',
-          reason: `Ashby blocks headless browsers — apply manually at: ${aj.url}`,
-          durationMs: 0,
-        })
-        needsManual++
-      }
-    }
 
     // ── Process applicable jobs ──
     let fatalError: Error | undefined

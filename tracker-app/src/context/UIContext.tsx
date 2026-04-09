@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from 'react'
 
-export type ActiveView = 'applications' | 'insights' | 'autopilot' | 'open-jobs' | 'settings' | 'pricing'
+export type ActiveView = 'applications' | 'insights' | 'autopilot' | 'open-jobs' | 'settings' | 'pricing' | 'profile'
 export type TimeRange = 'all' | 'today' | 'week' | 'month' | '3months'
 export type AreaFilter = 'all' | 'apac' | 'emea' | 'americas'
 export type WorkMode = 'all' | 'remote' | 'onsite' | 'hybrid'
@@ -39,7 +39,7 @@ export function UIProvider({ children }: { children: ReactNode }) {
       // Migrate legacy view names
       let migrated = (saved === 'table' || saved === 'pipeline') ? 'applications' : saved
       if (migrated === 'analytics') migrated = 'insights' // analytics merged into Intelligence page
-      if (migrated && ['applications', 'insights', 'autopilot', 'open-jobs', 'settings', 'pricing'].includes(migrated)) {
+      if (migrated && ['applications', 'insights', 'autopilot', 'open-jobs', 'settings', 'pricing', 'profile'].includes(migrated)) {
         return migrated as ActiveView
       }
     } catch { /* ignore */ }

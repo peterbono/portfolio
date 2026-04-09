@@ -9,6 +9,7 @@ const LazySettingsView = React.lazy(() => import('../views/SettingsView').then(m
 const LazyPricingView = React.lazy(() => import('../views/PricingView').then(m => ({ default: m.PricingViewWithResponsive })))
 const LazyAutopilotView = React.lazy(() => import('../views/AutopilotView').then(m => ({ default: m.AutopilotView })))
 const LazyOpenJobsView = React.lazy(() => import('../views/OpenJobsView').then(m => ({ default: m.OpenJobsView })))
+const LazyProfileSetupModal = React.lazy(() => import('../components/ProfileSetupModal').then(m => ({ default: m.ProfileSetupModal })))
 import { EmptyState } from '../components/EmptyState'
 import { SkeletonForView } from '../components/SkeletonView'
 import { LayoutList, FolderKanban, Bot } from 'lucide-react'
@@ -130,6 +131,17 @@ const EMPTY_STATES: Record<string, { icon: typeof LayoutList; title: string; des
   applications: { icon: FolderKanban, title: 'No applications yet', description: 'Start the auto-apply bot or add jobs manually to begin tracking your job search.', ctaLabel: 'Set up Autopilot' },
 }
 
+function ProfileViewWrapper() {
+  const { setActiveView } = useUI()
+  return (
+    <LazyProfileSetupModal
+      editMode
+      onComplete={() => setActiveView('autopilot')}
+      onDismiss={() => setActiveView('autopilot')}
+    />
+  )
+}
+
 function ActiveViewContent({ view }: { view: string }) {
   const { session } = useSupabase()
   const isAnonymous = !session
@@ -160,6 +172,7 @@ function ActiveViewContent({ view }: { view: string }) {
     case 'applications': return <Suspense fallback={fallback}><LazyApplicationsView /></Suspense>
     case 'autopilot': return <Suspense fallback={fallback}><LazyAutopilotView /></Suspense>
     case 'open-jobs': return <Suspense fallback={fallback}><LazyOpenJobsView /></Suspense>
+    case 'profile': return <Suspense fallback={fallback}><ProfileViewWrapper /></Suspense>
     case 'settings': return <Suspense fallback={fallback}><LazySettingsView /></Suspense>
     case 'pricing': return <Suspense fallback={fallback}><LazyPricingView /></Suspense>
     default: return null

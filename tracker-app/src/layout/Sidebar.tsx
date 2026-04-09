@@ -38,7 +38,7 @@ const NAV_ITEMS: NavEntry[] = [
   { kind: 'item', view: 'applications', label: 'Applications', icon: FolderKanban },
   { kind: 'separator' },
   // --- ACCOUNT ---
-  { kind: 'item', view: 'settings', label: 'Profile', icon: User },
+  { kind: 'item', view: 'profile', label: 'Profile', icon: User },
   { kind: 'item', view: 'pricing', label: 'Account', icon: CreditCard },
 ]
 

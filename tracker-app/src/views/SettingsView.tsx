@@ -26,6 +26,9 @@ import {
   CheckCircle,
   Loader2,
   FileSpreadsheet,
+  Gift,
+  Copy,
+  Users,
 } from 'lucide-react'
 import { useJobs } from '../context/JobsContext'
 import { useGmailAPI } from '../hooks/useGmailAPI'
@@ -408,6 +411,57 @@ export function SettingsView() {
 
   // ---------- Delete account ----------
   const [deleteConfirm, setDeleteConfirm] = useState(false)
+
+  // ---------- Referral ----------
+  const [referralCode, setReferralCode] = useState<string | null>(null)
+  const [referralLink, setReferralLink] = useState<string | null>(null)
+  const [referralUsedCount, setReferralUsedCount] = useState(0)
+  const [referralLoading, setReferralLoading] = useState(false)
+  const [referralError, setReferralError] = useState<string | null>(null)
+  const [referralCopied, setReferralCopied] = useState(false)
+
+  const fetchReferral = useCallback(async () => {
+    if (!user) return
+    setReferralLoading(true)
+    setReferralError(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        setReferralError('Not authenticated')
+        return
+      }
+      const res = await fetch('/api/referral', {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Unknown error' }))
+        throw new Error(err.error || `HTTP ${res.status}`)
+      }
+      const data = await res.json() as { code: string; link: string; usedCount: number }
+      setReferralCode(data.code)
+      setReferralLink(data.link)
+      setReferralUsedCount(data.usedCount)
+    } catch (err) {
+      setReferralError(err instanceof Error ? err.message : 'Failed to load referral link')
+    } finally {
+      setReferralLoading(false)
+    }
+  }, [user, supabase.auth])
+
+  // Fetch referral code on mount when authenticated
+  useEffect(() => {
+    if (user) fetchReferral()
+  }, [user, fetchReferral])
+
+  const handleCopyReferral = useCallback(() => {
+    if (!referralLink) return
+    navigator.clipboard.writeText(referralLink).then(() => {
+      setReferralCopied(true)
+      setTimeout(() => setReferralCopied(false), 2000)
+    }).catch(() => {
+      // Fallback: select input text
+    })
+  }, [referralLink])
 
   // ---------- Profile Setup Modal (edit mode) ----------
   const [showProfileEditModal, setShowProfileEditModal] = useState(false)
@@ -1070,6 +1124,103 @@ export function SettingsView() {
           </div>
         </div>
       </AccordionSection>
+
+      {/* ─────────────── 6b. Refer Friends ─────────────── */}
+      {isAuthenticated && (
+        <AccordionSection
+          id="referral"
+          icon={<Gift size={18} color="#f59e0b" />}
+          title="Refer Friends"
+          description="Invite friends and both get 1 month free"
+          openSections={openSections}
+          toggle={toggleSection}
+          badge={referralUsedCount > 0 ? (
+            <span style={s.badgeSuccess}>{referralUsedCount} referral{referralUsedCount !== 1 ? 's' : ''}</span>
+          ) : undefined}
+        >
+          {/* Headline card */}
+          <div style={rs.promoCard}>
+            <div style={rs.promoIconWrap}>
+              <Users size={24} color="#f59e0b" />
+            </div>
+            <div>
+              <div style={rs.promoTitle}>Invite friends, both get 1 month free</div>
+              <div style={rs.promoDesc}>
+                Share your unique link. When a friend signs up and subscribes, you both receive a free month.
+              </div>
+            </div>
+          </div>
+
+          {referralLoading ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 0' }}>
+              <Loader2 size={16} color="#f59e0b" style={{ animation: 'spin 1s linear infinite' }} />
+              <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>Loading your referral link...</span>
+            </div>
+          ) : referralError ? (
+            <div style={s.fieldGroup}>
+              <span style={s.errorText}>{referralError}</span>
+              <button style={{ ...s.btnSecondary, marginTop: 8 }} onClick={fetchReferral}>
+                <RefreshCw size={14} style={{ marginRight: 6 }} />
+                Retry
+              </button>
+            </div>
+          ) : referralLink ? (
+            <>
+              {/* Referral link input + copy */}
+              <div style={s.fieldGroup}>
+                <label style={s.label}>Your Referral Link</label>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
+                  <input
+                    style={{ ...s.input, flex: 1, fontSize: 12, fontFamily: 'monospace' }}
+                    value={referralLink}
+                    readOnly
+                    onClick={e => (e.target as HTMLInputElement).select()}
+                  />
+                  <button
+                    style={{
+                      ...s.btnPrimary,
+                      background: referralCopied ? '#34d399' : 'var(--accent)',
+                      minWidth: 90,
+                      justifyContent: 'center',
+                    }}
+                    onClick={handleCopyReferral}
+                  >
+                    {referralCopied ? (
+                      <><CheckCircle size={14} style={{ marginRight: 6 }} />Copied</>
+                    ) : (
+                      <><Copy size={14} style={{ marginRight: 6 }} />Copy</>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Stats */}
+              <div style={rs.statsRow}>
+                <div style={rs.statCard}>
+                  <div style={rs.statValue}>{referralUsedCount}</div>
+                  <div style={rs.statLabel}>Friends Referred</div>
+                </div>
+                <div style={rs.statCard}>
+                  <div style={rs.statValue}>{referralUsedCount}</div>
+                  <div style={rs.statLabel}>Free Months Earned</div>
+                </div>
+              </div>
+
+              {/* Referral code display */}
+              <div style={s.fieldGroup}>
+                <label style={s.label}>Referral Code</label>
+                <span style={{
+                  fontSize: 14,
+                  fontWeight: 700,
+                  fontFamily: 'monospace',
+                  color: '#f59e0b',
+                  letterSpacing: '0.1em',
+                }}>{referralCode}</span>
+              </div>
+            </>
+          ) : null}
+        </AccordionSection>
+      )}
 
       {/* ─────────────── 7. Data Management ─────────────── */}
       <AccordionSection
@@ -1797,5 +1948,68 @@ const s: Record<string, CSSProperties> = {
     background: 'rgba(244, 63, 94, 0.05)',
     border: '1px solid rgba(244, 63, 94, 0.15)',
     marginTop: 8,
+  },
+}
+
+/* ── Referral Section Styles ─── */
+const rs: Record<string, CSSProperties> = {
+  promoCard: {
+    display: 'flex',
+    gap: 16,
+    padding: 16,
+    borderRadius: 'var(--radius-md)',
+    background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.08), rgba(251, 191, 36, 0.04))',
+    border: '1px solid rgba(245, 158, 11, 0.2)',
+    marginBottom: 16,
+    alignItems: 'flex-start',
+  },
+  promoIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 'var(--radius-md)',
+    background: 'rgba(245, 158, 11, 0.12)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  promoTitle: {
+    fontSize: 15,
+    fontWeight: 700,
+    color: 'var(--text-primary)',
+    lineHeight: 1.3,
+    marginBottom: 4,
+  },
+  promoDesc: {
+    fontSize: 12,
+    color: 'var(--text-tertiary)',
+    lineHeight: 1.5,
+  },
+  statsRow: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: 12,
+    marginBottom: 16,
+  },
+  statCard: {
+    padding: 12,
+    borderRadius: 'var(--radius-md)',
+    background: 'var(--bg-elevated)',
+    border: '1px solid var(--border)',
+    textAlign: 'center' as const,
+  },
+  statValue: {
+    fontSize: 22,
+    fontWeight: 700,
+    color: '#f59e0b',
+    fontVariantNumeric: 'tabular-nums',
+  },
+  statLabel: {
+    fontSize: 11,
+    color: 'var(--text-tertiary)',
+    marginTop: 2,
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.03em',
+    fontWeight: 600,
   },
 }
