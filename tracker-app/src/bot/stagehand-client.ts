@@ -83,7 +83,7 @@ export async function createStagehand(config?: StagehandConfig): Promise<Stageha
       apiKey: browserbaseApiKey,
       projectId: browserbaseProjectId,
       model: modelConfig,
-      // @ts-expect-error enableCaching exists at runtime but missing from V3Options type
+      // @ts-ignore enableCaching exists at runtime but missing from V3Options type
       enableCaching: false,
       verbose: config?.verbose ? 1 : 0,
       browserbaseSessionCreateParams: {
@@ -133,7 +133,7 @@ export async function createStagehand(config?: StagehandConfig): Promise<Stageha
   const stagehand = new Stagehand({
     env: 'LOCAL',
     model: modelConfig,
-    // @ts-expect-error enableCaching exists at runtime but missing from V3Options type
+    // @ts-ignore enableCaching exists at runtime but missing from V3Options type
     enableCaching: false,
     verbose: config?.verbose ? 1 : 0,
     localBrowserLaunchOptions: {

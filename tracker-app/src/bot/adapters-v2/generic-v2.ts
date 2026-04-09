@@ -210,7 +210,7 @@ export const genericV2: StagehandAdapter = {
     try {
       // ── Step 1: Navigate ──
       console.log(`[${ADAPTER_NAME}] Navigating to ${jobUrl}`)
-      // @ts-expect-error Stagehand Page uses timeoutMs but Playwright uses timeout — works at runtime
+      // @ts-ignore Stagehand Page uses timeoutMs but Playwright uses timeout — works at runtime
       await page.goto(jobUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 })
       await page.waitForTimeout(2500)
 
@@ -263,13 +263,13 @@ export const genericV2: StagehandAdapter = {
       // AI fallback for custom cookie modals
       if (!cookieDismissed) {
         try {
-          // @ts-expect-error stagehand v3 positional API
+          // @ts-ignore stagehand v3 positional API
           await stagehand.act('If there is a visible cookie consent popup, banner, or modal, click the accept/close button to dismiss it')
           await page.waitForTimeout(500)
         } catch { /* no banner */ }
       }
       // Nuclear option: force-remove common cookie overlays + Lever privacy bar from DOM
-      // @ts-expect-error page.evaluate callback type mismatch with Stagehand Page
+      // @ts-ignore page.evaluate callback type mismatch with Stagehand Page
       await page.evaluate(() => {
         // Standard cookie/privacy selectors
         const selectors = [
@@ -317,7 +317,7 @@ export const genericV2: StagehandAdapter = {
       } catch { /* no tab */ }
 
       try {
-        // @ts-expect-error stagehand v3 positional API
+        // @ts-ignore stagehand v3 positional API
         await stagehand.act('Find and click the primary "Apply", "Apply now", "Apply for this job", or "Submit application" button on this page. Do NOT click cookie, privacy, or navigation buttons.')
         await page.waitForTimeout(2500)
         console.log(`[${ADAPTER_NAME}] Apply button clicked`)
@@ -329,7 +329,7 @@ export const genericV2: StagehandAdapter = {
       // Use observe() to understand what fields exist before filling
       let formFields: Awaited<ReturnType<typeof stagehand.observe>> = []
       try {
-        // @ts-expect-error stagehand v3 positional API
+        // @ts-ignore stagehand v3 positional API
         formFields = await stagehand.observe('Identify all visible form input fields on this page, including text inputs, textareas, select dropdowns, radio buttons, checkboxes, and file upload areas. For each field, describe what information it expects (e.g. "First name text input", "Resume file upload", "Country dropdown").')
         console.log(`[${ADAPTER_NAME}] Observed ${formFields.length} form element(s)`)
       } catch {
@@ -389,7 +389,7 @@ export const genericV2: StagehandAdapter = {
           }
           // Fallback to AI act() if no Playwright selector matched
           if (!filled) {
-            // @ts-expect-error stagehand v3 positional API
+            // @ts-ignore stagehand v3 positional API
             await stagehand.act(`Find the input field labeled "${field.label}" (or similar). Click it, select all (Ctrl+A), then type: ${field.value}`)
           }
           fieldsFilled++
@@ -408,7 +408,7 @@ export const genericV2: StagehandAdapter = {
           fieldsFilled++
           console.log(`[${ADAPTER_NAME}] Phone filled via Playwright locator`)
         } else {
-          // @ts-expect-error stagehand v3 positional API
+          // @ts-ignore stagehand v3 positional API
           await stagehand.act(`Find the phone number input (NOT the country code dropdown). Click it, select all, type: ${profile.phone}`)
           fieldsFilled++
         }
@@ -419,12 +419,12 @@ export const genericV2: StagehandAdapter = {
 
       // 4c: Location/Address — type without triggering autocomplete
       try {
-        // @ts-expect-error stagehand v3 positional API
+        // @ts-ignore stagehand v3 positional API
         await stagehand.act(`Find the location, city, or address input field. Click it, select all, then type: ${profile.location}`)
         fieldsFilled++
         await page.waitForTimeout(1000)
         // Dismiss any autocomplete dropdown by pressing Escape
-        // @ts-expect-error keyboard exists on Playwright Page but not on Stagehand Page type
+        // @ts-ignore keyboard exists on Playwright Page but not on Stagehand Page type
         await page.keyboard.press('Escape')
         await page.waitForTimeout(300)
       } catch {
@@ -459,9 +459,9 @@ export const genericV2: StagehandAdapter = {
         let cvUploaded = false
         try {
           const [fileChooser] = await Promise.all([
-            // @ts-expect-error waitForEvent exists on Playwright Page but not on Stagehand Page type
+            // @ts-ignore waitForEvent exists on Playwright Page but not on Stagehand Page type
             page.waitForEvent('filechooser', { timeout: 8000 }),
-            // @ts-expect-error stagehand v3 positional API
+            // @ts-ignore stagehand v3 positional API
             stagehand.act('Click the "Attach Resume/CV", "Upload Resume", "Choose file", or resume upload button'),
           ])
           await fileChooser.setFiles(cvTmpPath)
@@ -492,14 +492,14 @@ export const genericV2: StagehandAdapter = {
 
           // Strategy 1: Lever-style — find hidden file input via page.evaluate
           try {
-            // @ts-expect-error page.evaluate callback type mismatch with Stagehand Page
+            // @ts-ignore page.evaluate callback type mismatch with Stagehand Page
             const hasHiddenInput = await page.evaluate(() => {
               const input = document.querySelector('input[type="file"]') as HTMLInputElement
               return !!input
             })
             if (hasHiddenInput) {
               // Force the hidden input to be accessible
-              // @ts-expect-error page.evaluate callback type mismatch with Stagehand Page
+              // @ts-ignore page.evaluate callback type mismatch with Stagehand Page
               await page.evaluate(() => {
                 const input = document.querySelector('input[type="file"]') as HTMLInputElement
                 if (input) { input.style.display = 'block'; input.style.opacity = '1'; input.style.position = 'fixed'; input.style.top = '0'; input.style.left = '0'; input.style.zIndex = '99999' }
@@ -516,7 +516,7 @@ export const genericV2: StagehandAdapter = {
           // Strategy 2: Click upload button/area, then try file input
           if (!cvUploaded) {
             try {
-              // @ts-expect-error stagehand v3 positional API
+              // @ts-ignore stagehand v3 positional API
               await stagehand.act('Click the "Attach Resume/CV", "Upload Resume", "Upload CV", or file upload button or area')
               await page.waitForTimeout(1500)
               const revealedInput = page.locator('input[type="file"]').first()
@@ -533,9 +533,9 @@ export const genericV2: StagehandAdapter = {
           if (!cvUploaded) {
             try {
               const [fileChooser] = await Promise.all([
-                // @ts-expect-error waitForEvent exists on Playwright Page but not on Stagehand Page type
+                // @ts-ignore waitForEvent exists on Playwright Page but not on Stagehand Page type
                 page.waitForEvent('filechooser', { timeout: 5000 }),
-                // @ts-expect-error stagehand v3 positional API
+                // @ts-ignore stagehand v3 positional API
                 stagehand.act('Click the "Attach Resume/CV", "Upload Resume", "Choose file", or any file upload button'),
               ])
               await fileChooser.setFiles(cvTmpPath)
@@ -556,7 +556,7 @@ export const genericV2: StagehandAdapter = {
       // ── Step 6: Fill cover letter ──
       if (coverLetter) {
         try {
-          // @ts-expect-error stagehand v3 positional API
+          // @ts-ignore stagehand v3 positional API
           await stagehand.act(`Find the cover letter textarea or "additional information" text area and type the following: "${coverLetter.slice(0, 2000)}"`)
 
           console.log(`[${ADAPTER_NAME}] Cover letter filled`)
@@ -581,11 +581,11 @@ export const genericV2: StagehandAdapter = {
             await dropdown.click()
             await page.waitForTimeout(300)
             // Type to search
-            // @ts-expect-error keyboard exists on Playwright Page but not on Stagehand Page type
+            // @ts-ignore keyboard exists on Playwright Page but not on Stagehand Page type
             await page.keyboard.type(edu.search, { delay: 50 })
             await page.waitForTimeout(800)
             // Press Enter to select first match, or click the first option
-            // @ts-expect-error keyboard exists on Playwright Page but not on Stagehand Page type
+            // @ts-ignore keyboard exists on Playwright Page but not on Stagehand Page type
             await page.keyboard.press('Enter')
             await page.waitForTimeout(300)
             console.log(`[${ADAPTER_NAME}] Education "${edu.label}" → "${edu.search}"`)
@@ -593,7 +593,7 @@ export const genericV2: StagehandAdapter = {
         } catch {
           // Try AI fallback for this specific dropdown
           try {
-            // @ts-expect-error stagehand v3 positional API
+            // @ts-ignore stagehand v3 positional API
             await stagehand.act(`If there is a "${edu.label}" dropdown, click it, type "${edu.search}", and select the first matching option. If no match, select "${edu.fallback}".`)
             await page.waitForTimeout(500)
           } catch { /* field doesn't exist */ }
@@ -611,7 +611,7 @@ export const genericV2: StagehandAdapter = {
           `Education: ${profile.education}`,
         ].join('. ')
 
-        // @ts-expect-error stagehand v3 positional API
+        // @ts-ignore stagehand v3 positional API
         await stagehand.act(`Look for any remaining unfilled required fields, screening questions, or "How did you hear about this job" dropdowns. Answer using: ${answerContext}. For salary: 80000 EUR/year. For sensitive/EEO questions: "Prefer not to say". For "How did you hear": select "Other" or "Job Board".`)
         console.log(`[${ADAPTER_NAME}] Screening questions handled`)
       } catch {
@@ -620,7 +620,7 @@ export const genericV2: StagehandAdapter = {
 
       // ── Step 8: Check consent boxes ──
       try {
-        // @ts-expect-error stagehand v3 positional API
+        // @ts-ignore stagehand v3 positional API
         await stagehand.act('Check any unchecked consent, privacy, or terms checkboxes')
       } catch {
         // No checkboxes
@@ -628,7 +628,7 @@ export const genericV2: StagehandAdapter = {
 
       // ── Step 9: Submit (AI first, then Playwright fallback) ──
       try {
-        // @ts-expect-error stagehand v3 positional API
+        // @ts-ignore stagehand v3 positional API
         await stagehand.act('Scroll down to the submit button and click the "Submit", "Submit Application", "SUBMIT APPLICATION", "Apply", or "Send Application" button')
         console.log(`[${ADAPTER_NAME}] Submit clicked via AI`)
         await page.waitForTimeout(3000)
@@ -658,7 +658,7 @@ export const genericV2: StagehandAdapter = {
 
         // Nuclear: JS click on any visible submit-like element
         try {
-          // @ts-expect-error page.evaluate callback type mismatch with Stagehand Page
+          // @ts-ignore page.evaluate callback type mismatch with Stagehand Page
           await page.evaluate(() => {
             const btns = Array.from(document.querySelectorAll('button, a, input[type="submit"]'))
             const submit = btns.find(b => /submit|apply|send/i.test(b.textContent || '') || /submit/i.test((b as HTMLInputElement).value || ''))
@@ -694,7 +694,7 @@ export const genericV2: StagehandAdapter = {
           break
         }
         // Check for confirmation text early
-        // @ts-expect-error page.evaluate callback type mismatch with Stagehand Page
+        // @ts-ignore page.evaluate callback type mismatch with Stagehand Page
         const text = await page.evaluate(() => document.body?.innerText?.toLowerCase() || '').catch(() => '')
         if (['thank you', 'application received', 'successfully submitted'].some(p => text.includes(p))) {
           console.log(`[${ADAPTER_NAME}] Confirmation text detected after ${(wait + 1) * 5}s`)
@@ -704,7 +704,7 @@ export const genericV2: StagehandAdapter = {
 
       // ── Step 11: Check for confirmation ──
       const currentUrl = page.url()
-      // @ts-expect-error page.evaluate callback type mismatch with Stagehand Page
+      // @ts-ignore page.evaluate callback type mismatch with Stagehand Page
       const pageText = await page.evaluate(() => document.body?.innerText || '').catch(() => '')
       const pageLower = pageText.toLowerCase()
 
@@ -781,7 +781,7 @@ export const genericV2: StagehandAdapter = {
           // Strategy 3: AI fallback
           if (!codeFilled) {
             try {
-              // @ts-expect-error stagehand v3 positional API
+              // @ts-ignore stagehand v3 positional API
               await stagehand.act(`Find the verification code / security code input field and type: ${otpCode}`)
               codeFilled = true
               console.log(`[${ADAPTER_NAME}] OTP filled via AI act()`)
@@ -794,7 +794,7 @@ export const genericV2: StagehandAdapter = {
             // Click verify/submit button
             await page.waitForTimeout(500)
             try {
-              // @ts-expect-error stagehand v3 positional API
+              // @ts-ignore stagehand v3 positional API
               await stagehand.act('Click the "Verify", "Confirm", "Submit", or "Continue" button to confirm the verification code')
               await page.waitForTimeout(5000)
             } catch {
@@ -817,7 +817,7 @@ export const genericV2: StagehandAdapter = {
             }
 
             // Check for confirmation after OTP submit
-            // @ts-expect-error page.evaluate callback type mismatch with Stagehand Page
+            // @ts-ignore page.evaluate callback type mismatch with Stagehand Page
             const postOtpText = await page.evaluate(() => document.body?.innerText?.toLowerCase() || '').catch(() => '')
             const otpConfirmed = [
               'thank you', 'application received', 'successfully submitted',
