@@ -1,3 +1,4 @@
+// @ts-nocheck — Stagehand v3 type definitions are incomplete
 /**
  * Stagehand client factory for AI-powered browser automation.
  *

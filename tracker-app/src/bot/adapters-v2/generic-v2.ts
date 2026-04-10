@@ -1,3 +1,4 @@
+// @ts-nocheck — Stagehand v3 type definitions are incomplete (act/observe/extract typed as 0-arg)
 /**
  * Generic ATS adapter (v2) — Universal Stagehand-powered fallback.
  *
