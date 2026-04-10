@@ -47,6 +47,8 @@ interface SearchConfig {
   locationRules: LocationRule[]
   excludedCompanies: string[]
   dailyLimit: number
+  tailorCoverLetter: boolean
+  tailorCVSummary: boolean
 }
 
 const DEFAULT_SEARCH_CONFIG: SearchConfig = {
@@ -54,6 +56,8 @@ const DEFAULT_SEARCH_CONFIG: SearchConfig = {
   locationRules: [],
   excludedCompanies: [],
   dailyLimit: 15,
+  tailorCoverLetter: true,
+  tailorCVSummary: true,
 }
 
 const ZONES: Record<string, { label: string; countries: string[] }> = {
@@ -959,6 +963,60 @@ export function AutopilotView() {
                 <span style={{ fontSize: 12, color: '#f97316' }}>Risk of rate limits</span>
               </div>
             )}
+          </div>
+        </div>
+
+        {/* AI Tailoring toggles */}
+        <div style={{ ...pageStyles.fieldGroup, marginTop: 20, borderTop: '1px solid var(--border)', paddingTop: 20 }}>
+          <label style={pageStyles.label}>AI Application Tailoring</label>
+          <p style={pageStyles.hint}>Customize each application to match the job description — increases response rate</p>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 8 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
+              <div
+                onClick={() => handleConfigChange({ tailorCoverLetter: !searchConfig.tailorCoverLetter })}
+                style={{
+                  width: 40, height: 22, borderRadius: 11,
+                  background: searchConfig.tailorCoverLetter ? '#34d399' : 'var(--bg-elevated)',
+                  border: `1px solid ${searchConfig.tailorCoverLetter ? '#34d399' : 'var(--border)'}`,
+                  position: 'relative', cursor: 'pointer', transition: 'all 0.2s', flexShrink: 0,
+                }}
+              >
+                <div style={{
+                  width: 16, height: 16, borderRadius: 8,
+                  background: '#fff', position: 'absolute', top: 2,
+                  left: searchConfig.tailorCoverLetter ? 20 : 2,
+                  transition: 'left 0.2s',
+                }} />
+              </div>
+              <div>
+                <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)' }}>Custom cover letter</span>
+                <span style={{ fontSize: 11, color: 'var(--text-tertiary)', display: 'block' }}>AI rewrites your cover letter with keywords from each job</span>
+              </div>
+            </label>
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
+              <div
+                onClick={() => handleConfigChange({ tailorCVSummary: !searchConfig.tailorCVSummary })}
+                style={{
+                  width: 40, height: 22, borderRadius: 11,
+                  background: searchConfig.tailorCVSummary ? '#34d399' : 'var(--bg-elevated)',
+                  border: `1px solid ${searchConfig.tailorCVSummary ? '#34d399' : 'var(--border)'}`,
+                  position: 'relative', cursor: 'pointer', transition: 'all 0.2s', flexShrink: 0,
+                }}
+              >
+                <div style={{
+                  width: 16, height: 16, borderRadius: 8,
+                  background: '#fff', position: 'absolute', top: 2,
+                  left: searchConfig.tailorCVSummary ? 20 : 2,
+                  transition: 'left 0.2s',
+                }} />
+              </div>
+              <div>
+                <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)' }}>Custom CV summary</span>
+                <span style={{ fontSize: 11, color: 'var(--text-tertiary)', display: 'block' }}>AI adapts your headline/summary to emphasize relevant experience</span>
+              </div>
+            </label>
           </div>
         </div>
       </section>
