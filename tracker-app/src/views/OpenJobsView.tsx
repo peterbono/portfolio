@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
-import { Briefcase, MapPin, Clock, Search, X, ChevronDown, Check, SlidersHorizontal, Info, Plus } from 'lucide-react'
+import { Briefcase, MapPin, Clock, Search, X, ChevronDown, Check, SlidersHorizontal, Info, Plus, RefreshCw, Loader2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 
 /* ------------------------------------------------------------------ */
@@ -113,71 +113,165 @@ export function OpenJobsView() {
   const [excludeIndustryDraft, setExcludeIndustryDraft] = useState('')
 
   // Toast state
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null)
+
+  // Scout / Scan-now state
+  const [isScanning, setIsScanning] = useState(false)
+  const [hasKeywords, setHasKeywords] = useState<boolean>(() => {
+    try {
+      const raw = localStorage.getItem('tracker_v2_search_config')
+      const cfg = raw ? JSON.parse(raw) : null
+      return Array.isArray(cfg?.keywords) && cfg.keywords.length > 0
+    } catch { return false }
+  })
 
   // Refs for click-outside
   const popoverRef = useRef<HTMLDivElement>(null)
 
-  // Fetch jobs from Supabase
-  useEffect(() => {
-    async function fetchJobs() {
-      try {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user) {
-          setJobs(SAMPLE_JOBS)
-          setIsSampleData(true)
-          setLoading(false)
-          return
-        }
+  // Fetch jobs from Supabase (reusable: initial load + "Scan now" refresh)
+  const fetchJobs = useCallback(async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        setJobs(SAMPLE_JOBS)
+        setIsSampleData(true)
+        setLoading(false)
+        return
+      }
 
-        const { data, error } = await supabase
-          .from('job_listings')
-          .select('id, user_id, company, role, title, location, salary, salary_range, ats, link, work_arrangement, qualification_score, qualification_result, created_at, posted_at')
-          .eq('user_id', user.id)
-          .not('qualification_score', 'is', null)
-          .gte('qualification_score', 50)
-          .order('created_at', { ascending: false })
-          .limit(50)
+      const { data, error } = await supabase
+        .from('job_listings')
+        .select('id, user_id, company, role, title, location, salary, salary_range, ats, link, work_arrangement, qualification_score, qualification_result, created_at, posted_at')
+        .eq('user_id', user.id)
+        .not('qualification_score', 'is', null)
+        .gte('qualification_score', 50)
+        .order('created_at', { ascending: false })
+        .limit(50)
 
-        if (!error && data && data.length > 0) {
-          setJobs(data.map((row: Record<string, unknown>) => {
-            const qr = row.qualification_result as Record<string, unknown> | null
-            const jdKeywords = (qr?.jdKeywords as string[] | undefined)
-              ?? (qr?.jd_keywords as string[] | undefined)
-              ?? []
-            return {
-              id: row.id as string,
-              role: (row.role as string) || (row.title as string) || 'Unknown Role',
-              company: (row.company as string) || 'Unknown',
-              location: row.location as string | null,
-              salary: (row.salary as string | null) || (row.salary_range as string | null),
-              tags: [row.location, row.ats, row.work_arrangement].filter(Boolean) as string[],
-              postedAt: (row.posted_at as string) || (row.created_at as string),
-              link: row.link as string | null,
-              jdKeywords,
-              qualificationScore: row.qualification_score as number | null,
-            }
-          }))
-          setIsSampleData(false)
-        } else {
-          setJobs(SAMPLE_JOBS)
-          setIsSampleData(true)
-        }
-      } catch {
+      if (!error && data && data.length > 0) {
+        setJobs(data.map((row: Record<string, unknown>) => {
+          const qr = row.qualification_result as Record<string, unknown> | null
+          const jdKeywords = (qr?.jdKeywords as string[] | undefined)
+            ?? (qr?.jd_keywords as string[] | undefined)
+            ?? []
+          return {
+            id: row.id as string,
+            role: (row.role as string) || (row.title as string) || 'Unknown Role',
+            company: (row.company as string) || 'Unknown',
+            location: row.location as string | null,
+            salary: (row.salary as string | null) || (row.salary_range as string | null),
+            tags: [row.location, row.ats, row.work_arrangement].filter(Boolean) as string[],
+            postedAt: (row.posted_at as string) || (row.created_at as string),
+            link: row.link as string | null,
+            jdKeywords,
+            qualificationScore: row.qualification_score as number | null,
+          }
+        }))
+        setIsSampleData(false)
+      } else {
         setJobs(SAMPLE_JOBS)
         setIsSampleData(true)
       }
-      setLoading(false)
+    } catch {
+      setJobs(SAMPLE_JOBS)
+      setIsSampleData(true)
     }
-    fetchJobs()
+    setLoading(false)
   }, [])
 
-  // Auto-dismiss toast
+  useEffect(() => {
+    fetchJobs()
+  }, [fetchJobs])
+
+  // Refresh when AutopilotView (or self) fires a scout-complete event
+  useEffect(() => {
+    const handler = () => { fetchJobs() }
+    window.addEventListener('tracker:jobs-refresh', handler)
+    return () => window.removeEventListener('tracker:jobs-refresh', handler)
+  }, [fetchJobs])
+
+  // "Scan now" handler — triggers Scout-only, polls bot_runs, refreshes on done
+  const handleScanNow = useCallback(async () => {
+    if (isScanning || !hasKeywords) return
+    setIsScanning(true)
+    setToast({ message: 'Scouting jobs... (~2-5 min)', type: 'info' })
+    try {
+      const { triggerScout, pollBotRunStatus } = await import('../lib/bot-api')
+      const { runId } = await triggerScout()
+
+      let attempts = 0
+      const MAX_ATTEMPTS = 36 // 3 min
+      const poll = async () => {
+        attempts += 1
+        try {
+          const { status, jobsFound, jobsQualified } = await pollBotRunStatus(runId)
+          if (status === 'completed') {
+            setToast({
+              message: `Scout complete: ${jobsQualified} qualified / ${jobsFound} found`,
+              type: 'success',
+            })
+            setIsScanning(false)
+            await fetchJobs()
+            setTimeout(() => setToast(null), 4000)
+            return
+          }
+          if (status === 'failed') {
+            setToast({ message: 'Scout failed. Check logs.', type: 'error' })
+            setIsScanning(false)
+            setTimeout(() => setToast(null), 5000)
+            return
+          }
+          if (status === 'running' && jobsFound > 0) {
+            setToast({
+              message: `Scouting jobs... ${jobsFound} found so far`,
+              type: 'info',
+            })
+          }
+          if (attempts >= MAX_ATTEMPTS) {
+            setToast({ message: 'Scout timed out (3 min). Try again later.', type: 'error' })
+            setIsScanning(false)
+            setTimeout(() => setToast(null), 6000)
+            return
+          }
+        } catch {
+          // transient error — keep polling
+        }
+        setTimeout(poll, 5000)
+      }
+      setTimeout(poll, 5000)
+    } catch (err) {
+      setToast({
+        message: err instanceof Error ? err.message : 'Failed to start scout',
+        type: 'error',
+      })
+      setIsScanning(false)
+    }
+  }, [isScanning, hasKeywords, fetchJobs])
+
+  // Auto-dismiss toast (but keep 'info' toasts visible while scan is in flight)
   useEffect(() => {
     if (!toast) return
+    if (toast.type === 'info' && isScanning) return
     const t = setTimeout(() => setToast(null), 5000)
     return () => clearTimeout(t)
-  }, [toast])
+  }, [toast, isScanning])
+
+  // Keep hasKeywords in sync with localStorage updates from AutopilotView
+  useEffect(() => {
+    const refresh = () => {
+      try {
+        const raw = localStorage.getItem('tracker_v2_search_config')
+        const cfg = raw ? JSON.parse(raw) : null
+        setHasKeywords(Array.isArray(cfg?.keywords) && cfg.keywords.length > 0)
+      } catch { /* ignore */ }
+    }
+    window.addEventListener('storage', refresh)
+    window.addEventListener('tracker:jobs-refresh', refresh)
+    return () => {
+      window.removeEventListener('storage', refresh)
+      window.removeEventListener('tracker:jobs-refresh', refresh)
+    }
+  }, [])
 
   // Click outside to close popover
   useEffect(() => {
@@ -481,17 +575,26 @@ export function OpenJobsView() {
   return (
     <div style={s.root}>
       {/* ---- Toast ---- */}
-      {toast && (
+      {toast ? (
         <div style={{
           ...s.toast,
-          background: toast.type === 'success' ? 'rgba(52, 211, 153, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-          borderColor: toast.type === 'success' ? '#34d399' : '#ef4444',
-          color: toast.type === 'success' ? '#34d399' : '#ef4444',
+          background:
+            toast.type === 'success' ? 'rgba(52, 211, 153, 0.15)' :
+            toast.type === 'error' ? 'rgba(239, 68, 68, 0.15)' :
+            'rgba(52, 211, 153, 0.12)',
+          borderColor: toast.type === 'error' ? '#ef4444' : '#34d399',
+          color: toast.type === 'error' ? '#ef4444' : '#34d399',
         }}>
-          {toast.message} {toast.type === 'success' && '\u2713'}
-          <button onClick={() => setToast(null)} style={s.toastClose}><X size={14} /></button>
+          {toast.type === 'info' ? (
+            <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+          ) : null}
+          <span>{toast.message}</span>
+          {toast.type === 'success' ? <span>{'\u2713'}</span> : null}
+          {toast.type !== 'info' ? (
+            <button onClick={() => setToast(null)} style={s.toastClose}><X size={14} /></button>
+          ) : null}
         </div>
-      )}
+      ) : null}
 
       {/* ---- Sample data banner ---- */}
       {isSampleData && (
@@ -529,7 +632,33 @@ export function OpenJobsView() {
         </div>
 
         {/* ---- Other filters ---- */}
-        <div style={s.otherFiltersLabel}>Other filters</div>
+        <div style={s.otherFiltersHeader}>
+          <div style={s.otherFiltersLabel}>Other filters</div>
+          <button
+            type="button"
+            onClick={handleScanNow}
+            disabled={isScanning || !hasKeywords}
+            title={
+              !hasKeywords
+                ? 'Set up keywords in Autopilot first'
+                : isScanning
+                  ? 'Scout is running'
+                  : 'Scan all job boards for fresh matches now'
+            }
+            style={{
+              ...s.scanBtn,
+              opacity: (isScanning || !hasKeywords) ? 0.6 : 1,
+              cursor: (isScanning || !hasKeywords) ? 'not-allowed' : 'pointer',
+            }}
+          >
+            {isScanning ? (
+              <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} />
+            ) : (
+              <RefreshCw size={13} />
+            )}
+            <span>{isScanning ? 'Scanning...' : 'Find new jobs'}</span>
+          </button>
+        </div>
         <div style={s.filterRow} ref={popoverRef}>
           {/* Date Posted */}
           <div style={s.filterBtnWrap}>
@@ -861,7 +990,9 @@ const s: Record<string, React.CSSProperties> = {
   filterBtnWrap: { position: 'relative' },
   filterBtn: { display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 22, border: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text-secondary)', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s', whiteSpace: 'nowrap' },
   filterBtnActive: { borderColor: '#34d399', color: 'var(--text-primary)', background: 'rgba(52, 211, 153, 0.08)' },
-  otherFiltersLabel: { fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.5px', marginTop: 4 },
+  otherFiltersLabel: { fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.5px' },
+  otherFiltersHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 4 },
+  scanBtn: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 20, border: '1px solid rgba(52, 211, 153, 0.4)', background: 'rgba(52, 211, 153, 0.1)', color: '#34d399', fontSize: 12, fontWeight: 600, fontFamily: 'inherit', transition: 'all 0.15s', whiteSpace: 'nowrap' },
   badge: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 18, height: 18, borderRadius: 9, background: '#34d399', color: '#000', fontSize: 10, fontWeight: 700, padding: '0 5px' },
   popover: { position: 'absolute', top: 'calc(100% + 8px)', left: 0, minWidth: 260, background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 16, boxShadow: '0 8px 32px rgba(0,0,0,0.4)', zIndex: 60 },
   popoverTitle: { fontSize: 12, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 },

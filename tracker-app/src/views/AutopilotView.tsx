@@ -123,6 +123,8 @@ function migrateFromProfiles(): SearchConfig | null {
       locationRules,
       excludedCompanies: p.excludedCompanies || [],
       dailyLimit: p.dailyLimit || 15,
+      tailorCoverLetter: p.tailorCoverLetter ?? true,
+      tailorCVSummary: p.tailorCVSummary ?? true,
     }
   } catch {
     return null
@@ -814,6 +816,13 @@ export function AutopilotView() {
   const [showSaved, setShowSaved] = useState(false)
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Scout toast + polling state
+  const [toast, setToast] = useState<
+    | { message: string; type: 'success' | 'error' | 'info'; runId?: string }
+    | null
+  >(null)
+  const [activeRunId, setActiveRunId] = useState<string | null>(null)
+
   const [autopilotEnabled, setAutopilotEnabled] = useState<boolean>(() => {
     try { return localStorage.getItem('tracker_v2_autopilot_mode') === 'true' } catch { return false }
   })
@@ -834,17 +843,92 @@ export function AutopilotView() {
     })
   }, [])
 
-  /* Manual save */
-  const handleSave = useCallback(() => {
+  /* Manual save — persists config then fires a Scout-only run */
+  const handleSave = useCallback(async () => {
     setIsSaving(true)
     saveSearchConfig(searchConfig)
-    localStorage.setItem('tracker_v2_autopilot_mode', String(autopilotEnabled))
-    setTimeout(() => {
-      setIsSaving(false)
+    try {
+      localStorage.setItem('tracker_v2_autopilot_mode', String(autopilotEnabled))
+    } catch { /* ignore */ }
+
+    try {
+      const { triggerScout } = await import('../lib/bot-api')
+      const { runId } = await triggerScout()
       setShowSaved(true)
+      setToast({ message: 'Scouting jobs... (~2-5 min)', type: 'info', runId })
+      setActiveRunId(runId)
+    } catch (err) {
+      setToast({
+        message: err instanceof Error ? err.message : 'Failed to start scout',
+        type: 'error',
+      })
+    } finally {
+      setIsSaving(false)
       setTimeout(() => setShowSaved(false), 2000)
-    }, 300)
+    }
   }, [searchConfig, autopilotEnabled])
+
+  /* Poll bot_runs.status while a scout is active. Max ~3 min. */
+  useEffect(() => {
+    if (!activeRunId) return
+    let cancelled = false
+    let attempts = 0
+    const MAX_ATTEMPTS = 36 // 36 * 5s = 3 min
+
+    const tick = async () => {
+      if (cancelled) return
+      attempts += 1
+      try {
+        const { pollBotRunStatus } = await import('../lib/bot-api')
+        const { status, jobsFound, jobsQualified } = await pollBotRunStatus(activeRunId)
+
+        if (status === 'completed') {
+          setToast({
+            message: `Scout complete: ${jobsQualified} qualified / ${jobsFound} found`,
+            type: 'success',
+          })
+          setActiveRunId(null)
+          // Signal OpenJobsView to refetch. Works cross-view via window event.
+          try {
+            window.dispatchEvent(new CustomEvent('tracker:jobs-refresh', { detail: { runId: activeRunId } }))
+          } catch { /* ignore */ }
+          setTimeout(() => setToast(null), 4000)
+          return
+        }
+        if (status === 'failed') {
+          setToast({ message: 'Scout failed. Check logs.', type: 'error' })
+          setActiveRunId(null)
+          setTimeout(() => setToast(null), 5000)
+          return
+        }
+
+        // Progressive info update
+        if (status === 'running' && jobsFound > 0) {
+          setToast({
+            message: `Scouting jobs... ${jobsFound} found so far`,
+            type: 'info',
+            runId: activeRunId,
+          })
+        }
+
+        if (attempts >= MAX_ATTEMPTS) {
+          setToast({ message: 'Scout timed out (3 min). It may still be running in the background.', type: 'error' })
+          setActiveRunId(null)
+          setTimeout(() => setToast(null), 6000)
+          return
+        }
+      } catch {
+        // Swallow transient errors, keep polling
+      }
+      if (!cancelled) setTimeout(tick, 5000)
+    }
+
+    const timer = setTimeout(tick, 5000)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [activeRunId])
 
   const toggleAutopilot = useCallback(() => {
     setAutopilotEnabled(prev => {
@@ -854,8 +938,59 @@ export function AutopilotView() {
     })
   }, [])
 
+  const toastPalette = (type: 'success' | 'error' | 'info') => {
+    if (type === 'success') return { bg: 'rgba(52, 211, 153, 0.15)', border: '#34d399', color: '#34d399' }
+    if (type === 'error') return { bg: 'rgba(239, 68, 68, 0.15)', border: '#ef4444', color: '#ef4444' }
+    return { bg: 'rgba(52, 211, 153, 0.12)', border: '#34d399', color: '#34d399' }
+  }
+
   return (
     <div style={pageStyles.container}>
+      {/* Scout toast */}
+      {toast && (() => {
+        const p = toastPalette(toast.type)
+        return (
+          <div
+            style={{
+              position: 'fixed',
+              top: 16,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              padding: '10px 20px',
+              borderRadius: 10,
+              border: `1px solid ${p.border}`,
+              background: p.bg,
+              color: p.color,
+              fontSize: 14,
+              fontWeight: 600,
+              zIndex: 200,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              maxWidth: 420,
+            }}
+          >
+            {toast.type === 'info' && (
+              <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+            )}
+            <span>{toast.message}</span>
+            {toast.type !== 'info' && (
+              <button
+                onClick={() => setToast(null)}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: 'transparent', border: 'none', color: 'inherit',
+                  cursor: 'pointer', padding: 0, marginLeft: 4,
+                }}
+                aria-label="Close"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+        )
+      })()}
+
       {/* Header */}
       <div style={pageStyles.header}>
         <div style={pageStyles.headerLeft}>

@@ -5,6 +5,9 @@
       "experimentalTriggers": [
         { "type": "queue/v2beta", "topic": "apply-jobs" }
       ]
+    },
+    "api/trigger-scout.ts": {
+      "maxDuration": 300
     }
   },
   "rewrites": [

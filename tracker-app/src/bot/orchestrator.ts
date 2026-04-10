@@ -51,6 +51,22 @@ export interface PipelineConfig {
   allLocations?: string[]
   /** All keywords from search config — used by multi-pass scout */
   allKeywords?: string[]
+  /**
+   * If true, stop after scout + qualify + persistDiscoveredJobs. Do NOT
+   * invoke the apply loop. Used by the /api/trigger-scout entry point so
+   * the frontend can populate OpenJobsView without submitting applications.
+   *
+   * Note: today the apply phase is already disabled inline (see Phase 3
+   * comment below), so this flag is functionally a no-op — but it's plumbed
+   * through so the contract is explicit when apply is re-enabled.
+   */
+  skipApply?: boolean
+  /**
+   * Pre-created bot_run id. When provided, runPipeline uses this instead of
+   * calling createBotRun again — lets the HTTP entry point return the runId
+   * to the client before the pipeline starts doing real work.
+   */
+  runId?: string
 }
 
 /** Progress data sent via onProgress callback for live UI updates */
@@ -92,6 +108,10 @@ export interface InlinePipelineConfig {
   userProfile: Record<string, unknown>
   maxApplications?: number
   dryRun?: boolean
+  /** If true, stop after scout + qualify + persist. Do NOT run apply loop. */
+  skipApply?: boolean
+  /** Pre-created bot_run id from the HTTP entry point (so client can poll). */
+  runId?: string
   /** Optional callback for live progress updates (used by Trigger.dev metadata) */
   onProgress?: (progress: PipelineProgress) => void
 }
@@ -1378,23 +1398,30 @@ export async function runPipeline(config: PipelineConfig & { onProgress?: (p: Pi
     console.warn('[pipeline] cleanupZombieRuns failed:', (e as Error).message)
   }
 
-  // Create a bot run record — non-critical, use local fallback ID if Supabase is down
+  // Create a bot run record — non-critical, use local fallback ID if Supabase is down.
+  // If the caller pre-created a runId (e.g. /api/trigger-scout returning
+  // the id to the client before the heavy work starts), reuse it instead.
   let runId: string
-  try {
-    runId = await Promise.race([
-      createBotRun(config.userId, config.searchProfile.id),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('createBotRun timeout (10s)')), 10_000)
-      ),
-    ])
-  } catch (e) {
-    // Generate local run ID as a valid UUID v4 so downstream Supabase inserts
-    // (logBotActivity, updateBotRun) don't fail with "invalid input syntax for type uuid".
-    runId = crypto.randomUUID()
-    console.warn(`[pipeline] createBotRun failed: ${(e as Error).message} — using local runId: ${runId}`)
+  if (config.runId) {
+    runId = config.runId
+    console.log(`[pipeline] Reusing pre-created runId: ${runId}`)
+  } else {
+    try {
+      runId = await Promise.race([
+        createBotRun(config.userId, config.searchProfile.id),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('createBotRun timeout (10s)')), 10_000)
+        ),
+      ])
+    } catch (e) {
+      // Generate local run ID as a valid UUID v4 so downstream Supabase inserts
+      // (logBotActivity, updateBotRun) don't fail with "invalid input syntax for type uuid".
+      runId = crypto.randomUUID()
+      console.warn(`[pipeline] createBotRun failed: ${(e as Error).message} — using local runId: ${runId}`)
+    }
   }
 
-  console.log(`[pipeline] Starting run ${runId} (dryRun: ${config.dryRun})`)
+  console.log(`[pipeline] Starting run ${runId} (dryRun: ${config.dryRun}, skipApply: ${config.skipApply ?? false})`)
 
   const startEntry: ActivityLogEntry = {
     user_id: config.userId,
@@ -1793,6 +1820,8 @@ export async function runPipelineFromInline(cfg: InlinePipelineConfig): Promise<
     maxApplications: cfg.maxApplications ?? 20,
     dryRun: cfg.dryRun ?? false,
     minScore: 50,
+    skipApply: cfg.skipApply,
+    runId: cfg.runId,
     // Pass ALL locations and keywords for multi-pass scout
     allLocations,
     allKeywords: cfg.searchConfig.keywords,

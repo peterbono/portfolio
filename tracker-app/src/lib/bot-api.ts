@@ -1073,4 +1073,78 @@ export async function triggerHeadlessFallback(
   return { runId: data.id }
 }
 
+// ---------------------------------------------------------------------------
+// Scout-only trigger + bot_runs polling (for AutopilotView save + OpenJobsView
+// "Scan now" button). POSTs to /api/trigger-scout (owned by Backend Engineer).
+// ---------------------------------------------------------------------------
+
+const SCOUT_ENDPOINT = '/api/trigger-scout'
+
+export interface TriggerScoutResponse {
+  runId: string
+  status: string
+}
+
+/**
+ * Trigger a Scout-only run (no qualify, no apply). The backend endpoint
+ * inserts a row in bot_runs and returns the runId; the client then polls
+ * `pollBotRunStatus` to know when new jobs have landed in job_listings.
+ */
+export async function triggerScout(): Promise<TriggerScoutResponse> {
+  const userId = await getCurrentUserId()
+  const searchConfig = getSearchConfig()
+  const userProfile = getUserProfile()
+
+  if (
+    !searchConfig ||
+    !Array.isArray((searchConfig as { keywords?: unknown }).keywords) ||
+    ((searchConfig as { keywords: string[] }).keywords.length === 0)
+  ) {
+    throw new Error('No search criteria configured. Set up your keywords first.')
+  }
+
+  const response = await fetch(SCOUT_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId, searchConfig, userProfile }),
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error')
+    throw new Error(`Failed to start scout: ${response.status} ${errorText}`)
+  }
+
+  const data = await response.json()
+  return {
+    runId: (data.runId as string) || (data.id as string),
+    status: (data.status as string) || 'running',
+  }
+}
+
+export interface BotRunStatus {
+  status: string
+  jobsFound: number
+  jobsQualified: number
+}
+
+/**
+ * Read the current status of a bot_runs row. Returns 'unknown' if the row
+ * isn't visible yet (RLS lag, replication, etc.) — the caller should keep
+ * polling rather than treating it as failure.
+ */
+export async function pollBotRunStatus(runId: string): Promise<BotRunStatus> {
+  const { supabase } = await import('./supabase')
+  const { data } = await supabase
+    .from('bot_runs')
+    .select('status, jobs_found, jobs_qualified')
+    .eq('id', runId)
+    .maybeSingle()
+  const row = data as Record<string, unknown> | null
+  return {
+    status: (row?.status as string) || 'unknown',
+    jobsFound: (row?.jobs_found as number) || 0,
+    jobsQualified: (row?.jobs_qualified as number) || 0,
+  }
+}
+
 // Build: 1775322286
