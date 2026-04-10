@@ -56,10 +56,18 @@ export async function createStagehand(config?: StagehandConfig): Promise<Stageha
   // the canonical pino signal for "non-interactive environment, skip pretty".
   if (!process.env.CI) process.env.CI = 'true'
 
+  // DEFENSIVE TRIM: Vercel's env vars have been observed with trailing \n
+  // characters (literal escape sequences baked into the stored value when
+  // pasted through the dashboard). These \n break HTTP headers sent to
+  // api.stagehand.browserbase.com and cause a 400. Trim defensively so the
+  // worker survives dirty env values until the dashboard is cleaned up.
+  const cleanEnv = (v: string | undefined): string | undefined =>
+    v?.trim().replace(/[\r\n]+$/g, '') || undefined
+
   // Auto-detect: use Browserbase when API key is available (unless explicitly disabled)
-  const bbKey = process.env.BROWSERBASE_API_KEY
-  const bbProject = process.env.BROWSERBASE_PROJECT_ID
-  console.log(`[stagehand] ENV check: BROWSERBASE_API_KEY=${bbKey ? bbKey.slice(0, 10) + '...' : 'NOT SET'}, PROJECT_ID=${bbProject ? bbProject.slice(0, 8) + '...' : 'NOT SET'}`)
+  const bbKey = cleanEnv(process.env.BROWSERBASE_API_KEY)
+  const bbProject = cleanEnv(process.env.BROWSERBASE_PROJECT_ID)
+  console.log(`[stagehand] ENV check: BROWSERBASE_API_KEY=${bbKey ? bbKey.slice(0, 10) + '...' + bbKey.length : 'NOT SET'}, PROJECT_ID=${bbProject ? bbProject.slice(0, 8) + '...' : 'NOT SET'}`)
   const useBrowserbase = config?.useBrowserbase !== false && !!bbKey
 
   const modelName = config?.model
@@ -67,7 +75,7 @@ export async function createStagehand(config?: StagehandConfig): Promise<Stageha
     : DEFAULT_MODEL_NAME
   const timeout = config?.timeout ?? DEFAULT_TIMEOUT
 
-  const anthropicApiKey = process.env.ANTHROPIC_API_KEY
+  const anthropicApiKey = cleanEnv(process.env.ANTHROPIC_API_KEY)
   if (!anthropicApiKey) {
     throw new Error(
       '[stagehand] ANTHROPIC_API_KEY is required for Stagehand AI operations (act/observe/extract)',
@@ -80,8 +88,9 @@ export async function createStagehand(config?: StagehandConfig): Promise<Stageha
 
   if (useBrowserbase) {
     // ── Browserbase cloud mode ──
-    const browserbaseApiKey = process.env.BROWSERBASE_API_KEY!
-    const browserbaseProjectId = process.env.BROWSERBASE_PROJECT_ID
+    // Re-read via cleanEnv to guarantee no whitespace/newlines land in headers
+    const browserbaseApiKey = cleanEnv(process.env.BROWSERBASE_API_KEY)!
+    const browserbaseProjectId = cleanEnv(process.env.BROWSERBASE_PROJECT_ID)
 
     console.log('[stagehand] Initializing in BROWSERBASE mode')
 
