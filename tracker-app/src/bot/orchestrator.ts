@@ -3,6 +3,7 @@ import type { SearchProfile } from '../types/database.js'
 import { APPLICANT } from './types.js'
 import { scoutJobsMultiPass, normalizeForDedup, type DiscoveredJob, type MultiPassConfig, type ScoutProgressUpdate } from './scout.js'
 import { scoutRemoteOK, scoutWellfound, scoutHimalayas, scoutRemotive, scoutWWR, scoutDribbble, scoutJobicy } from './scout-boards.js'
+import { detectAts, isAggregatorUrl, atsDistribution } from './ats-resolver.js'
 import {
   qualifyJob,
   clearQualificationCache,
@@ -869,6 +870,49 @@ async function phaseScout(
   const jobicyJobs = extractResult(jobicyResult, 'Jobicy', COST_JOBICY_PER_PAGE, jobicyTerms.length)
   const wellfoundJobs = extractResult(wellfoundResult, 'Wellfound', COST_WELLFOUND_PER_PAGE, wellfoundKeywords.length)
   const dribbbleJobs = extractResult(dribbbleResult, 'Dribbble', COST_DRIBBBLE_PER_PAGE, dribbbleKeywords.length)
+
+  // ─── ATS tagging (defense in depth) ───────────────────────────────────
+  // Per-source scouts already classify ats via classifyAtsFromUrl → detectAts,
+  // but we defensively re-tag here so any job that reached this point with a
+  // null/undefined/empty ats still gets a detection from its final URL.
+  // This handles: (a) legacy scout code paths missed in refactor, (b) jobs
+  // where the scout-time classifier returned null, and (c) future sources
+  // added without remembering to tag.
+  const allBoardsJobs: DiscoveredJob[] = [
+    ...remoteokJobs, ...himalayasJobs, ...remotiveJobs, ...wwrJobs,
+    ...jobicyJobs, ...wellfoundJobs, ...dribbbleJobs,
+  ]
+  let reclassified = 0
+  let leakedAggregators = 0
+  for (const job of allBoardsJobs) {
+    if (!job.ats || job.ats === 'unknown') {
+      const detected = detectAts(job.url)
+      if (detected !== 'unknown') {
+        job.ats = detected
+        reclassified++
+      } else if (isAggregatorUrl(job.url)) {
+        // URL is still on a known aggregator host → the scout's resolution
+        // step fell back. Tag 'unknown' explicitly so downstream filters
+        // can spot it.
+        job.ats = 'unknown'
+        leakedAggregators++
+      }
+    }
+  }
+
+  // ─── Telemetry: ATS distribution across ALL board-sourced jobs ────────
+  const distribution = atsDistribution(allBoardsJobs)
+  const distStr = distribution.map(([ats, n]) => `${n} ${ats}`).join(', ')
+  console.log(`[scout-boards] ATS resolution: ${distStr || '(empty)'}`)
+  console.log(`[scout-boards] Reclassified ${reclassified} jobs via detectAts, ${leakedAggregators} aggregator URLs leaked through (ats=unknown)`)
+
+  const atsDistEntry: ActivityLogEntry = {
+    user_id: config.userId, run_id: runId,
+    action: 'scout_ats_distribution',
+    reason: `ATS distribution (boards, pre-merge): ${distStr || 'empty'}; reclassified=${reclassified}, leaked_aggregators=${leakedAggregators}`,
+  }
+  fireLog(atsDistEntry)
+  activities.push(atsDistEntry)
 
   // --- Merge & cross-source dedup ---
   //

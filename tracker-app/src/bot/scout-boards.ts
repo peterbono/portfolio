@@ -1,5 +1,6 @@
 import type { Page } from 'playwright'
 import type { DiscoveredJob } from './scout.js'
+import { detectAts, detectAtsLower, isAggregatorUrl } from './ats-resolver.js'
 
 // ---------------------------------------------------------------------------
 // Constants (shared with scout.ts logic)
@@ -451,18 +452,33 @@ function extractAtsUrlFromHtml(html: string): string | null {
 /**
  * Classify the ATS type from a job URL by pattern matching on known domains.
  * Returns null if the URL doesn't match any known ATS pattern.
+ *
+ * Delegates to `detectAtsLower` in ats-resolver.ts so all callers get the full
+ * 18+ ATS pattern catalog (Greenhouse, Lever, Workable, Ashby, Breezy,
+ * Manatal, Teamtailor, Recruitee, Personio, BambooHR, Workday, OracleHCM,
+ * iCIMS, Jobvite, SmartRecruiters, JazzHR, Pinpoint, WTTJ, Gupy).
+ *
+ * Returns LOWERCASE names ('greenhouse', 'lever', …) because downstream
+ * consumers (`ATS_PRIORITY` in apply-job.ts, `BLOCKED_ATS` in orchestrator.ts)
+ * key on lowercase ATS names.
+ *
+ * LinkedIn is intentionally handled here (not in detectAts) because it's an
+ * aggregator, not an ATS — but scout-boards callers expect "linkedin" as a
+ * return value when the URL is a LinkedIn job posting. We also short-circuit
+ * aggregator URLs (himalayas.app, weworkremotely.com, etc.) to null so that
+ * self-referential "applicationLink" fields from aggregator APIs don't get
+ * misclassified as valid ATS URLs.
  */
 export function classifyAtsFromUrl(url: string): string | null {
   if (!url) return null
   const lower = url.toLowerCase()
-  if (lower.includes('lever.co') || lower.includes('jobs.lever')) return 'lever'
-  if (lower.includes('greenhouse.io') || lower.includes('boards.greenhouse')) return 'greenhouse'
-  if (lower.includes('ashbyhq.com')) return 'ashby'
-  if (lower.includes('workable.com')) return 'workable'
-  if (lower.includes('teamtailor.com')) return 'teamtailor'
-  if (lower.includes('breezy.hr')) return 'breezy'
   if (lower.includes('linkedin.com/jobs')) return 'linkedin'
-  return null
+  // Aggregator URL that leaked through — NOT an ATS. Return null so the
+  // caller can fall back to tagging it 'unknown' and the apply phase can
+  // route it appropriately (or skip it).
+  if (isAggregatorUrl(url)) return null
+  const ats = detectAtsLower(url)
+  return ats === 'unknown' ? null : ats
 }
 
 // ---------------------------------------------------------------------------
@@ -562,17 +578,27 @@ export async function scoutRemoteOK(
         const titleLower = title.toLowerCase()
         if (titleLower.includes('poker') || titleLower.includes('gambling')) continue
 
-        // Build URL — extract direct ATS link from description HTML if available.
-        // If not found, try to resolve the real ATS URL from RemoteOK's /l/{id}
-        // redirect chain (which goes through sign-up wall with redirect_url param).
-        // Only fall back to the listing page URL as a last resort.
+        // Build URL — prefer the API's `apply_url` field (direct ATS link,
+        // returned as of RemoteOK API April 2026). If absent, fall back to
+        // extracting from description HTML, then to the /l/{id} redirect
+        // chain, and finally to the listing page URL.
         const descHtml = job.description ?? ''
-        const atsUrlFromDesc = extractAtsUrlFromHtml(descHtml)
+        let jobUrl = ''
 
-        let jobUrl = atsUrlFromDesc ?? ''
+        // Step 1: prefer apply_url from the JSON API (direct ATS link)
+        if (job.apply_url && !job.apply_url.includes('remoteok.com')) {
+          jobUrl = job.apply_url
+          console.log(`[scout:remoteok] "${company}" — using API apply_url: ${jobUrl}`)
+        }
 
-        // If description didn't contain a direct ATS link, try resolving via /l/{id}
-        // redirect chain (RemoteOK /l/ → sign-up?redirect_url=<ATS_URL>)
+        // Step 2: scan description HTML for a known ATS link
+        if (!jobUrl) {
+          const atsUrlFromDesc = extractAtsUrlFromHtml(descHtml)
+          if (atsUrlFromDesc) jobUrl = atsUrlFromDesc
+        }
+
+        // Step 3: follow the /l/{id} redirect chain through RemoteOK's
+        // sign-up wall (which exposes the real ATS URL in redirect_url param)
         if (!jobUrl) {
           const slugOrId = job.slug || job.id || ''
           if (slugOrId) {
@@ -585,13 +611,13 @@ export async function scoutRemoteOK(
               // Small delay between resolve calls to avoid rate-limiting
               await randomDelay(200, 600)
             } catch (resolveErr) {
-              console.log(`[scout:remoteok] "${company}" — resolve failed: ${(resolveErr as Error).message}`)
+              console.warn(`[scout:remoteok] "${company}" — resolve failed: ${(resolveErr as Error).message}`)
             }
           }
         }
 
-        // Final fallback: use the RemoteOK listing page URL
-        // (the job-board-redirect adapter will try to resolve at apply time)
+        // Final fallback: use the RemoteOK listing page URL — warn loudly
+        // because generic-v2 will fail to find an apply form on this.
         if (!jobUrl) {
           jobUrl = job.url
             ? job.url
@@ -600,6 +626,9 @@ export async function scoutRemoteOK(
               : job.id
                 ? `https://remoteok.com/remote-jobs/${job.id}`
                 : ''
+          if (jobUrl) {
+            console.warn(`[scout:remoteok] "${company}" — FALLBACK to aggregator URL (no apply_url, no /l/ redirect, no desc ATS): ${jobUrl}`)
+          }
         }
 
         if (!jobUrl) continue
@@ -1227,12 +1256,23 @@ export async function scoutHimalayas(
             companyLower.includes('poker') || companyLower.includes('gambling')
           ) continue
 
-          // Build URL — prefer applicationLink (real ATS URL), then try
-          // extracting an ATS URL from the description HTML, then fallback
-          // to guid (himalayas.app listing page) tagged as 'unknown'.
-          let jobUrl = job.applicationLink || ''
+          // Build URL — prefer applicationLink, but ONLY if it's a real ATS
+          // URL. As of April 2026 Himalayas started returning self-referential
+          // himalayas.app/* URLs in the `applicationLink` field (previously it
+          // pointed to the employer's ATS). We now verify it's not on a known
+          // aggregator host before trusting it. If it's self-ref, we fall back
+          // to extracting an ATS URL from the description HTML, then finally
+          // to the guid listing page tagged as 'unknown'.
+          let jobUrl = ''
+          const rawApplicationLink = job.applicationLink || ''
+          if (rawApplicationLink && !isAggregatorUrl(rawApplicationLink)) {
+            jobUrl = rawApplicationLink
+            console.log(`[scout:himalayas] "${company}" — using applicationLink (ATS): ${rawApplicationLink}`)
+          } else if (rawApplicationLink) {
+            console.log(`[scout:himalayas] "${company}" — applicationLink is self-referential aggregator URL, scanning description instead: ${rawApplicationLink}`)
+          }
 
-          // If no applicationLink, try to extract ATS URL from description
+          // If no real ATS applicationLink, try to extract from description
           if (!jobUrl && job.description) {
             const descAts = extractAtsUrlFromHtml(job.description)
             if (descAts) {
@@ -1280,7 +1320,7 @@ export async function scoutHimalayas(
             : (classifyAtsFromUrl(jobUrl) ?? undefined)
 
           if (usedFallback) {
-            console.log(`[scout:himalayas] "${company}" — no applicationLink, falling back to listing URL (ats: unknown)`)
+            console.warn(`[scout:himalayas] "${company}" — FALLBACK to aggregator URL (no applicationLink, no desc ATS): ${jobUrl}`)
           }
 
           allJobs.push({
@@ -1455,7 +1495,7 @@ export async function scoutRemotive(
         if (!jobUrl) {
           jobUrl = listingUrl
           usedFallback = true
-          console.log(`[scout:remotive] "${company}" — no ATS URL found, falling back to listing URL (ats: unknown)`)
+          console.warn(`[scout:remotive] "${company}" — FALLBACK to aggregator URL (no desc ATS, listing scrape failed): ${jobUrl}`)
         }
 
         // Dedup by URL
@@ -1671,7 +1711,7 @@ export async function scoutWWR(
       if (!jobUrl) {
         jobUrl = link
         usedFallback = true
-        console.log(`[scout:wwr] "${company}" — no ATS URL found, falling back to listing URL (ats: unknown)`)
+        console.warn(`[scout:wwr] "${company}" — FALLBACK to aggregator URL (no desc ATS, listing scrape failed): ${jobUrl}`)
       }
 
       // Dedup by URL
@@ -2336,6 +2376,7 @@ export async function scoutJobicy(
 
         // Resolve the actual employer ATS URL (signals.php → description scan → fallback)
         let jobUrl = jobicyUrl
+        let jobicyFallback = true
         const jobId = job.id
         if (jobId) {
           try {
@@ -2346,15 +2387,17 @@ export async function scoutJobicy(
             )
             if (resolvedUrl) {
               jobUrl = resolvedUrl
+              jobicyFallback = false
               console.log(`[scout:jobicy] "${company}" — resolved ATS URL: ${resolvedUrl}`)
-            } else {
-              console.log(`[scout:jobicy] "${company}" — no apply URL found, keeping Jobicy URL`)
             }
             // Small delay between resolve calls to avoid rate-limiting
             await randomDelay(200, 600)
           } catch (resolveErr) {
-            console.log(`[scout:jobicy] "${company}" — resolve failed: ${(resolveErr as Error).message}`)
+            console.warn(`[scout:jobicy] "${company}" — resolve failed: ${(resolveErr as Error).message}`)
           }
+        }
+        if (jobicyFallback) {
+          console.warn(`[scout:jobicy] "${company}" — FALLBACK to aggregator URL (signals.php + desc ATS both failed): ${jobUrl}`)
         }
 
         // Dedup by URL (after resolution, so we dedup on the real ATS URL)
