@@ -427,6 +427,51 @@ export async function createApplicationFromBot(
 }
 
 // ---------------------------------------------------------------------------
+// Apply receipt — stores what was actually sent per application
+// ---------------------------------------------------------------------------
+
+/**
+ * SQL migration for apply_receipts table:
+ *
+ * CREATE TABLE IF NOT EXISTS apply_receipts (
+ *   id bigint generated always as identity primary key,
+ *   user_id uuid references auth.users(id) not null,
+ *   company text not null,
+ *   role text not null,
+ *   job_url text not null,
+ *   cover_letter_sent text,
+ *   cv_summary_sent text,
+ *   applied_at timestamptz not null,
+ *   created_at timestamptz default now()
+ * );
+ * CREATE INDEX idx_apply_receipts_user ON apply_receipts(user_id);
+ */
+
+export async function storeApplyReceipt(data: {
+  userId: string
+  company: string
+  role: string
+  jobUrl: string
+  coverLetterSent: string
+  cvSummarySent: string
+  appliedAt: string
+}): Promise<void> {
+  const { error } = await insertRowNoReturn('apply_receipts', {
+    user_id: data.userId,
+    company: data.company,
+    role: data.role,
+    job_url: data.jobUrl,
+    cover_letter_sent: data.coverLetterSent || null,
+    cv_summary_sent: data.cvSummarySent || null,
+    applied_at: data.appliedAt,
+  })
+
+  if (error) {
+    console.error('[supabase] Failed to store apply receipt:', error.message)
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Search profile lookup
 // ---------------------------------------------------------------------------
 

@@ -37,7 +37,7 @@ const queue = new QueueClient()
 export default queue.handleNodeCallback<ApplyJobMessage>(
   async (message, metadata) => {
     const jobStart = Date.now()
-    const { jobUrl, company, role, coverLetterSnippet, matchScore, userId, runId, userProfile } =
+    const { jobUrl, company, role, coverLetterSnippet, matchScore, userId, runId, userProfile, jdKeywords } =
       message
 
     console.log(
@@ -54,6 +54,7 @@ export default queue.handleNodeCallback<ApplyJobMessage>(
       updateBotRun,
       logBotActivity,
       createApplicationFromBot,
+      storeApplyReceipt,
     } = await import('../src/bot/supabase-server')
 
     // ── Build applicant profile ──
@@ -77,6 +78,50 @@ export default queue.handleNodeCallback<ApplyJobMessage>(
       jobMeta: { company, role },
     }
 
+    // ── Tailor cover letter + CV summary for this specific job ──
+    let tailoredCoverLetter = coverLetterSnippet || ''
+    let tailoredSummary = ''
+
+    try {
+      const { tailorCVSummary, tailorCoverLetterSnippet } = await import(
+        '../src/bot/cv-tailor'
+      )
+
+      const keywords = jdKeywords || []
+
+      if (keywords.length > 0) {
+        tailoredSummary = await tailorCVSummary(
+          {
+            firstName: profile.firstName,
+            lastName: profile.lastName,
+            yearsExperience: profile.yearsExperience,
+            achievements: [
+              profile.achievements?.[0]?.metric,
+              profile.achievements?.[1]?.metric,
+              profile.achievements?.[2]?.metric,
+            ].filter(Boolean) as string[],
+            currentRole: 'Senior Product Designer',
+          },
+          { company, role, jdKeywords: keywords },
+        )
+
+        if (tailoredCoverLetter) {
+          tailoredCoverLetter = await tailorCoverLetterSnippet(
+            tailoredCoverLetter,
+            { company, role, jdKeywords: keywords },
+          )
+        }
+      }
+    } catch (err) {
+      console.warn('[apply-worker] CV tailoring failed (non-fatal):', err)
+    }
+
+    // Apply tailored content to profile for adapter consumption
+    if (tailoredSummary) {
+      ;(profile as any).headline = tailoredSummary
+    }
+    profile.coverLetterSnippet = tailoredCoverLetter || profile.coverLetterSnippet
+
     // ── Create Stagehand session ──
     let stagehand: Awaited<ReturnType<typeof createStagehand>> | null = null
 
@@ -96,7 +141,7 @@ export default queue.handleNodeCallback<ApplyJobMessage>(
       console.log(`[apply-worker]   Adapter: ${adapter.name}`)
 
       const applyResult = await Promise.race([
-        adapter.apply(stagehand, jobUrl, profile, coverLetterSnippet || ''),
+        adapter.apply(stagehand, jobUrl, profile, tailoredCoverLetter || ''),
         new Promise<never>((_, reject) =>
           setTimeout(
             () =>
@@ -181,6 +226,21 @@ export default queue.handleNodeCallback<ApplyJobMessage>(
       }).catch((err) =>
         console.warn('[apply-worker] Update run error:', err),
       )
+
+      // ── Store apply receipt (what was actually sent) ──
+      if (applyResult.status === 'applied') {
+        await storeApplyReceipt({
+          userId,
+          company: applyResult.company,
+          role: applyResult.role,
+          jobUrl,
+          coverLetterSent: tailoredCoverLetter || '',
+          cvSummarySent: tailoredSummary || '',
+          appliedAt: new Date().toISOString(),
+        }).catch((err) =>
+          console.warn('[apply-worker] Store apply receipt error:', err),
+        )
+      }
 
       // ── Send notification for successful applies ──
       if (applyResult.status === 'applied') {

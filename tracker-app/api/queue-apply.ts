@@ -31,6 +31,7 @@ interface QueueApplyJob {
   role: string
   coverLetterSnippet?: string
   matchScore?: number
+  jdKeywords?: string[]
 }
 
 interface QueueApplyRequest {
@@ -52,6 +53,7 @@ export interface ApplyJobMessage {
   userId: string
   runId: string
   userProfile?: Record<string, unknown>
+  jdKeywords?: string[]
 }
 
 // ---------------------------------------------------------------------------
@@ -186,6 +188,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       userId,
       runId,
       userProfile,
+      jdKeywords: job.jdKeywords,
     }
 
     try {

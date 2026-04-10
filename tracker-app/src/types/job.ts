@@ -48,6 +48,8 @@ export interface Job {
   area?: Area
   events?: JobEvent[]
   lastContactDate?: string
+  coverLetterSent?: string
+  cvSummarySent?: string
 }
 
 export const STATUS_CONFIG: Record<JobStatus, { label: string; color: string; bg: string; border: string; icon: string }> = {

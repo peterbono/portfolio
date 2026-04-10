@@ -345,6 +345,75 @@ export function DetailDrawer() {
             <EditableDetailRow label="Notes" value={job.notes} onSave={(v) => updateJobField(job.id, 'notes', v)} placeholder="Any notes..." />
           </div>
 
+          {/* ── What was sent ── */}
+          {(job.coverLetterSent || job.cvSummarySent) && (
+            <div style={{
+              borderTop: '1px solid var(--border)',
+              paddingTop: 16,
+              marginTop: 16,
+              marginBottom: 24,
+            }}>
+              <h3 style={{
+                fontSize: 14,
+                fontWeight: 600,
+                color: 'var(--text-primary)',
+                marginBottom: 12,
+              }}>
+                What was sent
+              </h3>
+
+              {job.cvSummarySent && (
+                <div style={{ marginBottom: 12 }}>
+                  <h4 style={{
+                    fontSize: 12,
+                    fontWeight: 500,
+                    color: 'var(--text-secondary)',
+                    marginBottom: 4,
+                  }}>
+                    Tailored Summary
+                  </h4>
+                  <p style={{
+                    fontSize: 13,
+                    lineHeight: 1.6,
+                    color: 'var(--text-primary)',
+                    whiteSpace: 'pre-wrap',
+                    background: 'var(--bg-elevated)',
+                    padding: 12,
+                    borderRadius: 8,
+                    margin: 0,
+                  }}>
+                    {job.cvSummarySent}
+                  </p>
+                </div>
+              )}
+
+              {job.coverLetterSent && (
+                <div>
+                  <h4 style={{
+                    fontSize: 12,
+                    fontWeight: 500,
+                    color: 'var(--text-secondary)',
+                    marginBottom: 4,
+                  }}>
+                    Cover Letter
+                  </h4>
+                  <p style={{
+                    fontSize: 13,
+                    lineHeight: 1.6,
+                    color: 'var(--text-primary)',
+                    whiteSpace: 'pre-wrap',
+                    background: 'var(--bg-elevated)',
+                    padding: 12,
+                    borderRadius: 8,
+                    margin: 0,
+                  }}>
+                    {job.coverLetterSent}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ── Technical Details (collapsible) ── */}
           <TechnicalDetails
             job={job}
