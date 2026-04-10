@@ -12,9 +12,9 @@
  */
 
 import type { Stagehand } from '@browserbasehq/stagehand'
-import type { ApplicantProfile, ApplyJobResult } from '../types'
-import type { StagehandAdapter } from './index'
-import { getPlaywrightPage } from '../stagehand-client'
+import type { ApplicantProfile, ApplyJobResult } from '../types.js'
+import type { StagehandAdapter } from './index.js'
+import { getPlaywrightPage } from '../stagehand-client.js'
 
 // Stagehand v3 type defs are incomplete — cast to any for runtime-verified calls
 const ai = (s: Stagehand) => s as any
