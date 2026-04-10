@@ -50,6 +50,12 @@ const DEFAULT_TIMEOUT = 30_000
  * The caller MUST call closeStagehand() when done to release resources.
  */
 export async function createStagehand(config?: StagehandConfig): Promise<Stagehand> {
+  // Disable pino-pretty transport inside Stagehand's logger. Without this,
+  // Vercel's Node 22 lambda crashes with "unable to determine transport target
+  // for 'pino-pretty'" because the module isn't bundled. Setting CI=true is
+  // the canonical pino signal for "non-interactive environment, skip pretty".
+  if (!process.env.CI) process.env.CI = 'true'
+
   // Auto-detect: use Browserbase when API key is available (unless explicitly disabled)
   const bbKey = process.env.BROWSERBASE_API_KEY
   const bbProject = process.env.BROWSERBASE_PROJECT_ID

@@ -1,3 +1,12 @@
+// CRITICAL: must run BEFORE any import that transitively loads pino.
+// Stagehand (and some of its deps) use pino for logging and default to a
+// pino-pretty worker-thread transport. In Vercel's Node.js lambdas the
+// transport fails with "unable to determine transport target for
+// 'pino-pretty'" because worker threads can't find the module path.
+// Setting CI=true is the canonical pino signal for "non-interactive
+// environment, skip pretty transport".
+process.env.CI = process.env.CI || 'true'
+
 import { QueueClient } from '@vercel/queue'
 import type { ApplyJobMessage } from './queue-apply'
 import { detectAdapterV2 } from '../src/bot/adapters-v2/index.js'
