@@ -232,6 +232,17 @@ export function OpenJobsView() {
     }
   }, [scout.stage, fetchJobs])
 
+  // While a scout is running, poll the grid every 5s so streamed writes
+  // from the orchestrator (each qualified job is upserted immediately)
+  // appear progressively. Complements the one-shot refetch on 'done'.
+  useEffect(() => {
+    if (!scout.isRunning) return
+    const interval = setInterval(() => {
+      fetchJobs()
+    }, 5000)
+    return () => clearInterval(interval)
+  }, [scout.isRunning, fetchJobs])
+
   // Keep hasKeywords in sync with localStorage updates from AutopilotView
   useEffect(() => {
     const refresh = () => {
@@ -774,11 +785,42 @@ export function OpenJobsView() {
           )
         })}
 
-        {filtered.length === 0 && (
+        {filtered.length === 0 && !scout.isRunning && (
           <div style={s.empty}>
             <Briefcase size={32} style={{ color: 'var(--text-tertiary)' }} />
-            <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>No jobs match your filters</p>
+            {scout.stage === 'done' && scout.jobsQualified === 0 ? (
+              <>
+                <p style={{ color: 'var(--text-primary)', fontSize: 15, fontWeight: 600, margin: 0 }}>
+                  No matches this run
+                </p>
+                <p style={{ color: 'var(--text-secondary)', fontSize: 13, textAlign: 'center', maxWidth: 360, margin: 0 }}>
+                  {scout.jobsFound > 0
+                    ? `Scouted ${scout.jobsFound} job${scout.jobsFound === 1 ? '' : 's'} but none cleared the AI qualification. Try broadening your keywords or locations in Autopilot.`
+                    : 'No jobs matched your search criteria on this run. Try broader keywords or more locations in Autopilot.'}
+                </p>
+              </>
+            ) : jobs.length === 0 ? (
+              <>
+                <p style={{ color: 'var(--text-primary)', fontSize: 15, fontWeight: 600, margin: 0 }}>
+                  No jobs tracked yet
+                </p>
+                <p style={{ color: 'var(--text-secondary)', fontSize: 13, textAlign: 'center', maxWidth: 360, margin: 0 }}>
+                  Set your criteria in Autopilot and run a scout. Qualified matches appear here.
+                </p>
+              </>
+            ) : (
+              <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>No jobs match your filters</p>
+            )}
           </div>
+        )}
+
+        {/* While scouting with empty grid, show shimmer placeholders */}
+        {filtered.length === 0 && scout.isRunning && (
+          <>
+            {[0, 1, 2, 3, 4, 5].map(i => (
+              <div key={`sk-${i}`} style={s.skeletonCard} />
+            ))}
+          </>
         )}
       </div>
 
@@ -1006,6 +1048,15 @@ const s: Record<string, React.CSSProperties> = {
   tagSample: { display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20, background: 'rgba(255,255,255,0.06)', color: 'var(--text-tertiary)', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', border: '1px dashed var(--border)', cursor: 'help' },
   time: { display: 'flex', alignItems: 'center', gap: 4, marginTop: 8, fontSize: 11, color: 'var(--text-tertiary)' },
   empty: { gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: '60px 0' },
+  skeletonCard: {
+    height: 140,
+    borderRadius: 12,
+    border: '1px dashed var(--border)',
+    background: 'linear-gradient(90deg, rgba(255,255,255,0.02) 0%, rgba(52,211,153,0.05) 50%, rgba(255,255,255,0.02) 100%)',
+    backgroundSize: '800px 100%',
+    animation: 'shimmer 1.8s linear infinite',
+    opacity: 0.6,
+  },
   selectionBar: { position: 'absolute', bottom: 24, left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: 16, padding: '14px 20px 14px 24px', background: '#1c1c1e', borderRadius: 16, boxShadow: '0 8px 40px rgba(0,0,0,0.5)', zIndex: 50 },
   selectionText: { color: '#fff', fontSize: 14, fontWeight: 500, whiteSpace: 'nowrap' },
   selectionCta: { padding: '10px 24px', borderRadius: 12, border: 'none', background: '#34d399', color: '#000', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },

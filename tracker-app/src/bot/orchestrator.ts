@@ -1267,6 +1267,26 @@ async function phaseQualify(
 
       if (result.score >= config.minScore) {
         qualified.push({ job, qualification: result })
+
+        // Stream-write this qualified job to job_listings IMMEDIATELY so the
+        // frontend's 5s polling can display it while the scout is still
+        // running (progressive reveal). Best-effort — failures are logged
+        // and ignored. Duplicate writes are idempotent via the
+        // (user_id, link) unique index from migration 004.
+        upsertDiscoveredJobListing(config.userId, {
+          company: job.company,
+          role: job.title,
+          location: job.location || undefined,
+          link: job.url,
+          ats: job.ats,
+          qualificationScore: result.score,
+          qualificationResult: result as unknown as Record<string, unknown>,
+          workArrangement: /remote/i.test(job.location || '') ? 'remote' : undefined,
+        }).catch((err) =>
+          console.warn(
+            `[pipeline] stream-write failed for ${job.company}/${job.title}: ${(err as Error).message}`,
+          ),
+        )
       }
     }
   }
