@@ -1,4 +1,4 @@
-import type { Area } from './job'
+import type { Area } from './job.js'
 
 // --- Ghost Detection ---
 

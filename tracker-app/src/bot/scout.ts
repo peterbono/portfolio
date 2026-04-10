@@ -1,6 +1,6 @@
 import type { Page, BrowserContext } from 'playwright'
-import type { SearchProfile } from '../types/database'
-import { blockUnnecessaryResources } from './helpers'
+import type { SearchProfile } from '../types/database.js'
+import { blockUnnecessaryResources } from './helpers.js'
 import * as cheerio from 'cheerio'
 
 // ---------------------------------------------------------------------------

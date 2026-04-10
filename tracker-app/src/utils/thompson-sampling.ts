@@ -1,4 +1,4 @@
-import type { ATSStats, ArmStats, BetaDistribution } from '../types/intelligence'
+import type { ATSStats, ArmStats, BetaDistribution } from '../types/intelligence.js'
 
 /**
  * Initialize Thompson Sampling arms from ATS performance stats.

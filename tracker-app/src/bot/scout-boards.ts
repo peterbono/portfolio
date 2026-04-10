@@ -1,5 +1,5 @@
 import type { Page } from 'playwright'
-import type { DiscoveredJob } from './scout'
+import type { DiscoveredJob } from './scout.js'
 
 // ---------------------------------------------------------------------------
 // Constants (shared with scout.ts logic)

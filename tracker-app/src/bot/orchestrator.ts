@@ -1,16 +1,16 @@
 import type { Page, Browser, BrowserContext } from 'playwright'
-import type { SearchProfile } from '../types/database'
-import { APPLICANT } from './types'
-import { scoutJobsMultiPass, normalizeForDedup, type DiscoveredJob, type MultiPassConfig, type ScoutProgressUpdate } from './scout'
-import { scoutRemoteOK, scoutWellfound, scoutHimalayas, scoutRemotive, scoutWWR, scoutDribbble, scoutJobicy } from './scout-boards'
+import type { SearchProfile } from '../types/database.js'
+import { APPLICANT } from './types.js'
+import { scoutJobsMultiPass, normalizeForDedup, type DiscoveredJob, type MultiPassConfig, type ScoutProgressUpdate } from './scout.js'
+import { scoutRemoteOK, scoutWellfound, scoutHimalayas, scoutRemotive, scoutWWR, scoutDribbble, scoutJobicy } from './scout-boards.js'
 import {
   qualifyJob,
   clearQualificationCache,
   preQualifyBatch,
   formatPreQualifyStats,
   type QualificationResult,
-} from './qualifier'
-import { blockUnnecessaryResources } from './helpers'
+} from './qualifier.js'
+import { blockUnnecessaryResources } from './helpers.js'
 import {
   createBotRun,
   updateBotRun,
@@ -21,7 +21,7 @@ import {
   cleanupZombieRuns,
   upsertDiscoveredJobListing,
   type ActivityLogEntry,
-} from './supabase-server'
+} from './supabase-server.js'
 
 // ---------------------------------------------------------------------------
 // Supabase resilience wrappers (module-level — used by all pipeline functions)

@@ -13,9 +13,9 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk'
-import type { ApplicantProfile } from './types'
-import type { CoverLetterVariant } from '../types/intelligence'
-import { VARIANT_PROMPTS } from '../types/intelligence'
+import type { ApplicantProfile } from './types.js'
+import type { CoverLetterVariant } from '../types/intelligence.js'
+import { VARIANT_PROMPTS } from '../types/intelligence.js'
 
 // ---------------------------------------------------------------------------
 // Types — multi-dimensional scoring + shared output shape

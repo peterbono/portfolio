@@ -10,11 +10,11 @@
  * The shared logic (prompt, API call, parsing) lives in qualifier-core.ts.
  */
 
-import type { SearchProfile } from '../types/database'
-import type { ApplicantProfile } from './types'
-import type { ArmStats, CoverLetterVariant } from '../types/intelligence'
-import { COVER_LETTER_VARIANTS } from '../types/intelligence'
-import { thompsonSample, initializeArms } from '../utils/thompson-sampling'
+import type { SearchProfile } from '../types/database.js'
+import type { ApplicantProfile } from './types.js'
+import type { ArmStats, CoverLetterVariant } from '../types/intelligence.js'
+import { COVER_LETTER_VARIANTS } from '../types/intelligence.js'
+import { thompsonSample, initializeArms } from '../utils/thompson-sampling.js'
 import {
   buildSystemPrompt,
   buildUserMessage,
@@ -25,11 +25,11 @@ import {
   type QualifierConfig,
   type BatchQualifyRequest,
   type BatchQualifierConfig,
-} from './qualifier-core'
+} from './qualifier-core.js'
 
 // Re-export shared types so existing imports from './qualifier' still work
-export type { QualificationResult, QualifierConfig, BatchQualifyRequest, BatchQualifierConfig } from './qualifier-core'
-export { buildSystemPrompt, buildUserMessage, callHaikuQualifier, callHaikuQualifierBatch, buildErrorFallback } from './qualifier-core'
+export type { QualificationResult, QualifierConfig, BatchQualifyRequest, BatchQualifierConfig } from './qualifier-core.js'
+export { buildSystemPrompt, buildUserMessage, callHaikuQualifier, callHaikuQualifierBatch, buildErrorFallback } from './qualifier-core.js'
 
 // ---------------------------------------------------------------------------
 // Types — orchestrator-specific

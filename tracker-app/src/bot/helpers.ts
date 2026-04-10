@@ -1,6 +1,6 @@
 import type { Page, BrowserContext } from 'playwright'
-import type { ApplicantProfile } from './types'
-import { supabaseServer } from './supabase-server'
+import type { ApplicantProfile } from './types.js'
+import { supabaseServer } from './supabase-server.js'
 
 // ---------------------------------------------------------------------------
 // Resource blocking — reduces bandwidth usage

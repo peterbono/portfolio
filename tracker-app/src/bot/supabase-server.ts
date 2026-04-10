@@ -1,6 +1,6 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import type { Database, SearchProfile } from '../types/database'
-import type { ApplyResult } from './types'
+import type { Database, SearchProfile } from '../types/database.js'
+import type { ApplyResult } from './types.js'
 
 // ---------------------------------------------------------------------------
 // Server-side Supabase client (service_role — full access, never expose to browser)
