@@ -2,6 +2,7 @@ import React, { useState, useCallback, Suspense, Component, type ReactNode } fro
 import { SupabaseProvider, useSupabase } from './context/SupabaseContext'
 import { JobsProvider } from './context/JobsContext'
 import { UIProvider } from './context/UIContext'
+import { ScoutProvider } from './context/ScoutContext'
 // CoachProvider removed — Coach section deleted from dashboard
 import { AuthWallProvider } from './context/AuthWallContext'
 import { AppShell } from './layout/AppShell'
@@ -189,21 +190,23 @@ function AppContent() {
   return (
     <UIProvider>
       <JobsProvider>
-        <AuthWallProvider>
-          <GmailSyncBridge />
-          <BotRealtimeBridge />
-          {showOnboarding && (
-            <Suspense fallback={null}>
-              <OnboardingWizard
-                onComplete={handleOnboardingComplete}
-                defaultEmail={user?.email ?? undefined}
-                defaultName={user?.user_metadata?.full_name ?? undefined}
-              />
-            </Suspense>
-          )}
-          <AppShell onBackToLanding={!session ? handleBackToLanding : undefined} />
-          <Suspense fallback={null}><AuthWall /></Suspense>
-        </AuthWallProvider>
+        <ScoutProvider>
+          <AuthWallProvider>
+            <GmailSyncBridge />
+            <BotRealtimeBridge />
+            {showOnboarding && (
+              <Suspense fallback={null}>
+                <OnboardingWizard
+                  onComplete={handleOnboardingComplete}
+                  defaultEmail={user?.email ?? undefined}
+                  defaultName={user?.user_metadata?.full_name ?? undefined}
+                />
+              </Suspense>
+            )}
+            <AppShell onBackToLanding={!session ? handleBackToLanding : undefined} />
+            <Suspense fallback={null}><AuthWall /></Suspense>
+          </AuthWallProvider>
+        </ScoutProvider>
       </JobsProvider>
     </UIProvider>
   )

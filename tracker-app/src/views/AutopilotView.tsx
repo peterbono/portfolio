@@ -12,6 +12,7 @@ import {
   Zap,
 } from 'lucide-react'
 import CompanyChipInput from '../components/CompanyChipInput'
+import { useScout } from '../context/ScoutContext'
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -811,17 +812,18 @@ const chipStyles: Record<string, React.CSSProperties> = {
 /*  Main component                                                     */
 /* ------------------------------------------------------------------ */
 export function AutopilotView() {
+  const scout = useScout()
   const [searchConfig, setSearchConfig] = useState<SearchConfig>(loadSearchConfig)
   const [isSaving, setIsSaving] = useState(false)
   const [showSaved, setShowSaved] = useState(false)
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Scout toast + polling state
+  // Lightweight ephemeral toast for the Save action only — full scout
+  // progress lives in the global ScoutContext + OpenJobs banner.
   const [toast, setToast] = useState<
     | { message: string; type: 'success' | 'error' | 'info'; runId?: string }
     | null
   >(null)
-  const [activeRunId, setActiveRunId] = useState<string | null>(null)
 
   const [autopilotEnabled, setAutopilotEnabled] = useState<boolean>(() => {
     try { return localStorage.getItem('tracker_v2_autopilot_mode') === 'true' } catch { return false }
@@ -843,7 +845,10 @@ export function AutopilotView() {
     })
   }, [])
 
-  /* Manual save — persists config then fires a Scout-only run */
+  /* Manual save — persists config + kicks off a scout via global ScoutContext.
+   * The Save button itself only shows ephemeral "Saving... → Saved" feedback
+   * (auto-revert in 2s). All scout progress is reported on the OpenJobs page
+   * via the ScoutProgressBanner reading from the same context. */
   const handleSave = useCallback(async () => {
     setIsSaving(true)
     saveSearchConfig(searchConfig)
@@ -851,84 +856,34 @@ export function AutopilotView() {
       localStorage.setItem('tracker_v2_autopilot_mode', String(autopilotEnabled))
     } catch { /* ignore */ }
 
+    // Kick off scout in background. The global ScoutContext tracks progress
+    // and the OpenJobs banner displays it. We never block the UI here.
     try {
       const { triggerScout } = await import('../lib/bot-api')
       const { runId } = await triggerScout()
+      // Notify the global context — banner on OpenJobs picks it up
+      scout.startScout(runId)
+      // Brief "Saved" toast with a "View jobs" CTA
+      setToast({
+        message: 'Saved. Scout is running in the background.',
+        type: 'success',
+        runId,
+      })
       setShowSaved(true)
-      setToast({ message: 'Scouting jobs... (~2-5 min)', type: 'info', runId })
-      setActiveRunId(runId)
+      setTimeout(() => {
+        setToast(null)
+        setShowSaved(false)
+      }, 4000)
     } catch (err) {
       setToast({
         message: err instanceof Error ? err.message : 'Failed to start scout',
         type: 'error',
       })
+      setTimeout(() => setToast(null), 5000)
     } finally {
       setIsSaving(false)
-      setTimeout(() => setShowSaved(false), 2000)
     }
-  }, [searchConfig, autopilotEnabled])
-
-  /* Poll bot_runs.status while a scout is active. Max ~3 min. */
-  useEffect(() => {
-    if (!activeRunId) return
-    let cancelled = false
-    let attempts = 0
-    const MAX_ATTEMPTS = 36 // 36 * 5s = 3 min
-
-    const tick = async () => {
-      if (cancelled) return
-      attempts += 1
-      try {
-        const { pollBotRunStatus } = await import('../lib/bot-api')
-        const { status, jobsFound, jobsQualified } = await pollBotRunStatus(activeRunId)
-
-        if (status === 'completed') {
-          setToast({
-            message: `Scout complete: ${jobsQualified} qualified / ${jobsFound} found`,
-            type: 'success',
-          })
-          setActiveRunId(null)
-          // Signal OpenJobsView to refetch. Works cross-view via window event.
-          try {
-            window.dispatchEvent(new CustomEvent('tracker:jobs-refresh', { detail: { runId: activeRunId } }))
-          } catch { /* ignore */ }
-          setTimeout(() => setToast(null), 4000)
-          return
-        }
-        if (status === 'failed') {
-          setToast({ message: 'Scout failed. Check logs.', type: 'error' })
-          setActiveRunId(null)
-          setTimeout(() => setToast(null), 5000)
-          return
-        }
-
-        // Progressive info update
-        if (status === 'running' && jobsFound > 0) {
-          setToast({
-            message: `Scouting jobs... ${jobsFound} found so far`,
-            type: 'info',
-            runId: activeRunId,
-          })
-        }
-
-        if (attempts >= MAX_ATTEMPTS) {
-          setToast({ message: 'Scout timed out (3 min). It may still be running in the background.', type: 'error' })
-          setActiveRunId(null)
-          setTimeout(() => setToast(null), 6000)
-          return
-        }
-      } catch {
-        // Swallow transient errors, keep polling
-      }
-      if (!cancelled) setTimeout(tick, 5000)
-    }
-
-    const timer = setTimeout(tick, 5000)
-    return () => {
-      cancelled = true
-      clearTimeout(timer)
-    }
-  }, [activeRunId])
+  }, [searchConfig, autopilotEnabled, scout])
 
   const toggleAutopilot = useCallback(() => {
     setAutopilotEnabled(prev => {

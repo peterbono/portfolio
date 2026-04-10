@@ -1,6 +1,8 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { Briefcase, MapPin, Clock, Search, X, ChevronDown, Check, SlidersHorizontal, Info, Plus, RefreshCw, Loader2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { useScout } from '../context/ScoutContext'
+import { ScoutProgressBanner } from '../components/ScoutProgressBanner'
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -112,11 +114,13 @@ export function OpenJobsView() {
   const [includeIndustryDraft, setIncludeIndustryDraft] = useState('')
   const [excludeIndustryDraft, setExcludeIndustryDraft] = useState('')
 
-  // Toast state
+  // Toast state — kept for filter validation errors only. Scout state lives
+  // in the global ScoutContext + ScoutProgressBanner above the grid.
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null)
 
-  // Scout / Scan-now state
-  const [isScanning, setIsScanning] = useState(false)
+  // Global scout state — drives the banner + the "Find new jobs" button label
+  const scout = useScout()
+
   const [hasKeywords, setHasKeywords] = useState<boolean>(() => {
     try {
       const raw = localStorage.getItem('tracker_v2_search_config')
@@ -191,70 +195,42 @@ export function OpenJobsView() {
   }, [fetchJobs])
 
   // "Scan now" handler — triggers Scout-only, polls bot_runs, refreshes on done
+  /**
+   * Find new jobs handler — fires a scout and lets the global ScoutContext
+   * track progress. The ScoutProgressBanner above the grid renders the
+   * stage label, percent, counters, and counter updates as the run advances.
+   * When scout.stage transitions to 'done', the useEffect below auto-refreshes
+   * the grid via fetchJobs().
+   */
   const handleScanNow = useCallback(async () => {
-    if (isScanning || !hasKeywords) return
-    setIsScanning(true)
-    setToast({ message: 'Scouting jobs... (~2-5 min)', type: 'info' })
+    if (scout.isRunning || !hasKeywords) return
     try {
-      const { triggerScout, pollBotRunStatus } = await import('../lib/bot-api')
+      const { triggerScout } = await import('../lib/bot-api')
       const { runId } = await triggerScout()
-
-      let attempts = 0
-      const MAX_ATTEMPTS = 36 // 3 min
-      const poll = async () => {
-        attempts += 1
-        try {
-          const { status, jobsFound, jobsQualified } = await pollBotRunStatus(runId)
-          if (status === 'completed') {
-            setToast({
-              message: `Scout complete: ${jobsQualified} qualified / ${jobsFound} found`,
-              type: 'success',
-            })
-            setIsScanning(false)
-            await fetchJobs()
-            setTimeout(() => setToast(null), 4000)
-            return
-          }
-          if (status === 'failed') {
-            setToast({ message: 'Scout failed. Check logs.', type: 'error' })
-            setIsScanning(false)
-            setTimeout(() => setToast(null), 5000)
-            return
-          }
-          if (status === 'running' && jobsFound > 0) {
-            setToast({
-              message: `Scouting jobs... ${jobsFound} found so far`,
-              type: 'info',
-            })
-          }
-          if (attempts >= MAX_ATTEMPTS) {
-            setToast({ message: 'Scout timed out (3 min). Try again later.', type: 'error' })
-            setIsScanning(false)
-            setTimeout(() => setToast(null), 6000)
-            return
-          }
-        } catch {
-          // transient error — keep polling
-        }
-        setTimeout(poll, 5000)
-      }
-      setTimeout(poll, 5000)
+      scout.startScout(runId)
     } catch (err) {
       setToast({
         message: err instanceof Error ? err.message : 'Failed to start scout',
         type: 'error',
       })
-      setIsScanning(false)
+      setTimeout(() => setToast(null), 5000)
     }
-  }, [isScanning, hasKeywords, fetchJobs])
+  }, [scout, hasKeywords])
 
-  // Auto-dismiss toast (but keep 'info' toasts visible while scan is in flight)
+  // Auto-dismiss toast after 5s. (Scout progress is in the banner, not the toast.)
   useEffect(() => {
     if (!toast) return
-    if (toast.type === 'info' && isScanning) return
     const t = setTimeout(() => setToast(null), 5000)
     return () => clearTimeout(t)
-  }, [toast, isScanning])
+  }, [toast])
+
+  // When the global scout transitions to 'done', re-fetch the grid so the
+  // user immediately sees the new qualified jobs without a manual refresh.
+  useEffect(() => {
+    if (scout.stage === 'done') {
+      fetchJobs()
+    }
+  }, [scout.stage, fetchJobs])
 
   // Keep hasKeywords in sync with localStorage updates from AutopilotView
   useEffect(() => {
@@ -631,32 +607,41 @@ export function OpenJobsView() {
           )}
         </div>
 
+        {/* ---- Scout progress banner (visible only when a scout is in flight or just completed) ---- */}
+        <ScoutProgressBanner />
+
         {/* ---- Other filters ---- */}
         <div style={s.otherFiltersHeader}>
           <div style={s.otherFiltersLabel}>Other filters</div>
           <button
             type="button"
             onClick={handleScanNow}
-            disabled={isScanning || !hasKeywords}
+            disabled={scout.isRunning || !hasKeywords}
             title={
               !hasKeywords
                 ? 'Set up keywords in Autopilot first'
-                : isScanning
-                  ? 'Scout is running'
+                : scout.isRunning
+                  ? `Scout is running · ${scout.percent}%`
                   : 'Scan all job boards for fresh matches now'
             }
             style={{
               ...s.scanBtn,
-              opacity: (isScanning || !hasKeywords) ? 0.6 : 1,
-              cursor: (isScanning || !hasKeywords) ? 'not-allowed' : 'pointer',
+              opacity: (scout.isRunning || !hasKeywords) ? 0.6 : 1,
+              cursor: (scout.isRunning || !hasKeywords) ? 'not-allowed' : 'pointer',
             }}
           >
-            {isScanning ? (
+            {scout.isRunning ? (
               <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} />
             ) : (
               <RefreshCw size={13} />
             )}
-            <span>{isScanning ? 'Scanning...' : 'Find new jobs'}</span>
+            <span>
+              {scout.isRunning
+                ? scout.jobsFound > 0
+                  ? `Scouting · ${scout.jobsFound} found`
+                  : 'Scouting...'
+                : 'Find new jobs'}
+            </span>
           </button>
         </div>
         <div style={s.filterRow} ref={popoverRef}>
