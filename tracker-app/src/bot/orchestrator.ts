@@ -1839,7 +1839,10 @@ export async function runPipelineFromInline(cfg: InlinePipelineConfig): Promise<
     browserContext: cfg.browserContext, // pass pre-authenticated context
     maxApplications: cfg.maxApplications ?? 20,
     dryRun: cfg.dryRun ?? false,
-    minScore: 50,
+    // Lowered from 50 → 40 so borderline jobs (e.g. Fuse Energy score 42)
+    // still reach the grid. The OpenJobsView filter also queries >= 40 for
+    // consistency. Raise back if the grid gets noisy with low-quality matches.
+    minScore: 40,
     skipApply: cfg.skipApply,
     runId: cfg.runId,
     // Pass ALL locations and keywords for multi-pass scout

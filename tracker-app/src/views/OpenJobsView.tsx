@@ -148,7 +148,7 @@ export function OpenJobsView() {
         .select('id, user_id, company, role, title, location, salary, salary_range, ats, link, work_arrangement, qualification_score, qualification_result, created_at, posted_at')
         .eq('user_id', user.id)
         .not('qualification_score', 'is', null)
-        .gte('qualification_score', 50)
+        .gte('qualification_score', 40)
         .order('created_at', { ascending: false })
         .limit(50)
 
