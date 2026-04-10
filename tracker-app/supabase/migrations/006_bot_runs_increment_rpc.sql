@@ -27,9 +27,11 @@ BEGIN
     RETURN;
   END IF;
 
-  -- Dynamic SQL is safe here because p_field is validated against the whitelist
+  -- Dynamic SQL is safe here because p_field is validated against the whitelist.
+  -- NOTE: bot_runs does NOT have an updated_at column (only started_at /
+  -- completed_at), so we intentionally do not touch a timestamp here.
   EXECUTE format(
-    'UPDATE public.bot_runs SET %I = COALESCE(%I, 0) + $1, updated_at = NOW() WHERE id = $2',
+    'UPDATE public.bot_runs SET %I = COALESCE(%I, 0) + $1 WHERE id = $2',
     p_field, p_field
   ) USING p_delta, p_run_id;
 END;
