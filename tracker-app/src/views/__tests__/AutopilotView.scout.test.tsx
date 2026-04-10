@@ -240,14 +240,16 @@ describe('AutopilotView — handleSave / scout flow', () => {
     })
   })
 
-  it('shows a "Scouting jobs..." info toast after successful triggerScout', async () => {
+  it('shows a "Saved" toast after successful triggerScout (scout progress lives in OpenJobs banner)', async () => {
     mockTriggerScout.mockResolvedValue({ runId: 'run-toast-1', status: 'running' })
 
     const el = await mount(<AutopilotView />)
     const saveBtn = findButtonByText(el, (t) => /Save Preferences/i.test(t))
     await clickEl(saveBtn!)
 
-    const toast = findByText(el, (t) => /Scouting jobs/i.test(t))
+    // Save button toast is now intentionally lightweight — full scout progress
+    // (stage, %, counters) is on the OpenJobs page via ScoutProgressBanner.
+    const toast = findByText(el, (t) => /Saved\. Scout is running in the background/i.test(t))
     expect(toast).not.toBeNull()
   })
 

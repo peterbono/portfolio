@@ -226,10 +226,25 @@ export function ScoutProvider({ children }: { children: ReactNode }) {
   )
 }
 
+/**
+ * Resilient scout hook. Returns a no-op default when no provider is mounted
+ * (e.g., in unit tests that render a single view in isolation). In a real
+ * app, the provider is always mounted at the top of App.tsx.
+ */
+const NOOP_SCOUT_VALUE: ScoutContextValue = {
+  ...INITIAL_STATE,
+  isRunning: false,
+  startScout: () => {
+    if (typeof console !== 'undefined') {
+      console.warn('[scout] startScout called outside ScoutProvider — no-op')
+    }
+  },
+  dismiss: () => {},
+}
+
 export function useScout(): ScoutContextValue {
   const ctx = useContext(ScoutContext)
-  if (!ctx) throw new Error('useScout must be used within ScoutProvider')
-  return ctx
+  return ctx ?? NOOP_SCOUT_VALUE
 }
 
 // Expose the expected duration for any component that wants to show a
