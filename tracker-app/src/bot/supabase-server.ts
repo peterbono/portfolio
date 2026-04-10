@@ -678,21 +678,64 @@ export async function upsertDiscoveredJobListing(
     posted_at: job.postedAt ?? null,
   }
 
-  // Upsert on the (user_id, link) unique index from migration 004.
-  const { data, error } = await db
+  // NOTE: the unique index from migration 004 is PARTIAL
+  // (WHERE link IS NOT NULL), which PostgreSQL CANNOT target with
+  // ON CONFLICT. Supabase's .upsert({ onConflict: 'user_id,link' })
+  // fails with "there is no unique or exclusion constraint matching"
+  // (error 42P10). So we do a manual SELECT → INSERT or UPDATE.
+
+  // 1) Look up existing row by (user_id, link)
+  const { data: existing, error: lookupErr } = await db
     .from('job_listings')
-    .upsert(row, { onConflict: 'user_id,link' })
     .select('id')
+    .eq('user_id', userId)
+    .eq('link', job.link)
     .limit(1)
     .maybeSingle()
 
-  if (error) {
+  if (lookupErr) {
     console.warn(
-      `[supabase] upsertDiscoveredJobListing(${job.company}/${job.role}) failed: ${error.message}`,
+      `[supabase] upsertDiscoveredJobListing lookup failed for ${job.company}/${job.role}: ${lookupErr.message}`,
     )
     return null
   }
-  return (data?.id as string) ?? null
+
+  if (existing?.id) {
+    // Row exists — UPDATE with fresh qualification data
+    const { error: updErr } = await db
+      .from('job_listings')
+      .update({
+        qualification_score: row.qualification_score,
+        qualification_result: row.qualification_result,
+        work_arrangement: row.work_arrangement,
+        title: row.title,
+        salary_range: row.salary_range,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', existing.id)
+    if (updErr) {
+      console.warn(
+        `[supabase] upsertDiscoveredJobListing UPDATE failed for ${job.company}/${job.role}: ${updErr.message}`,
+      )
+      return null
+    }
+    return existing.id as string
+  }
+
+  // Row doesn't exist — INSERT
+  const { data: inserted, error: insErr } = await db
+    .from('job_listings')
+    .insert(row)
+    .select('id')
+    .single()
+
+  if (insErr) {
+    console.warn(
+      `[supabase] upsertDiscoveredJobListing INSERT failed for ${job.company}/${job.role}: ${insErr.message}`,
+    )
+    return null
+  }
+  return (inserted?.id as string) ?? null
 }
 
 // ---------------------------------------------------------------------------
