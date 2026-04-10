@@ -1,5 +1,10 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { send } from '@vercel/queue'
+import {
+  createBotRun,
+  logBotActivity,
+  createApplicationFromBot,
+} from '../src/bot/supabase-server.js'
 
 /**
  * API route: POST /api/queue-apply
@@ -150,9 +155,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { jobs, userId, profileId, userProfile } = data
 
   // ── Create bot_run in Supabase ──
-  // Dynamic import to keep cold start fast when validation fails
-  const { createBotRun } = await import('../src/bot/supabase-server')
-
+  // Using static top-level imports (not dynamic) so @vercel/nft reliably
+  // bundles supabase-server into the lambda. Previously dynamic imports
+  // were tried for cold-start optimization but caused ERR_MODULE_NOT_FOUND
+  // in strict ESM mode even with `.js` extensions.
   let runId: string
   try {
     runId = await createBotRun(userId, profileId || `queue-${Date.now()}`)
@@ -213,10 +219,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // ── Log Ashby needs_manual results to Supabase ──
   if (ashbyJobs.length > 0) {
-    const { logBotActivity, createApplicationFromBot } = await import(
-      '../src/bot/supabase-server'
-    )
-
     for (const aj of ashbyJobs) {
       await logBotActivity({
         user_id: userId,

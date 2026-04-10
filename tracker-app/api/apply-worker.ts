@@ -1,5 +1,19 @@
 import { QueueClient } from '@vercel/queue'
 import type { ApplyJobMessage } from './queue-apply'
+import { detectAdapterV2 } from '../src/bot/adapters-v2/index.js'
+import { APPLICANT } from '../src/bot/types.js'
+import {
+  updateBotRun,
+  logBotActivity,
+  createApplicationFromBot,
+  storeApplyReceipt,
+  getUserProfile,
+  getJobListingByUrl,
+} from '../src/bot/supabase-server.js'
+import { tailorCVSummary, tailorCoverLetterSnippet } from '../src/bot/cv-tailor.js'
+// Keep stagehand-client as dynamic import — it pulls in Playwright + Browserbase
+// SDKs which are ~50MB compiled. Dynamic load avoids paying that cost on cold
+// start when the worker isn't actually processing a message.
 
 /**
  * Vercel Queue consumer: processes ONE job application per invocation.
@@ -44,20 +58,10 @@ export default queue.handleNodeCallback<ApplyJobMessage>(
       `[apply-worker] Processing: ${company} — ${role} (msgId: ${metadata.messageId}, delivery: ${metadata.deliveryCount})`,
     )
 
-    // ── Dynamic imports (heavy deps loaded only when actually processing) ──
+    // ── Stagehand loaded lazily (heavy Playwright + Browserbase deps) ──
     const { createStagehand, closeStagehand, getPlaywrightPage } = await import(
-      '../src/bot/stagehand-client'
+      '../src/bot/stagehand-client.js'
     )
-    const { detectAdapterV2 } = await import('../src/bot/adapters-v2')
-    const { APPLICANT } = await import('../src/bot/types')
-    const {
-      updateBotRun,
-      logBotActivity,
-      createApplicationFromBot,
-      storeApplyReceipt,
-      getUserProfile,
-      getJobListingByUrl,
-    } = await import('../src/bot/supabase-server')
 
     // ── Resolve applicant profile ──
     // Priority: passed-in userProfile > profiles table row > hardcoded APPLICANT.
@@ -134,10 +138,6 @@ export default queue.handleNodeCallback<ApplyJobMessage>(
     let tailoredSummary = ''
 
     try {
-      const { tailorCVSummary, tailorCoverLetterSnippet } = await import(
-        '../src/bot/cv-tailor'
-      )
-
       const keywords = resolvedJdKeywords || []
 
       if (keywords.length > 0) {
