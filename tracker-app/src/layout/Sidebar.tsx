@@ -34,9 +34,9 @@ const NAV_ITEMS: NavEntry[] = [
   // --- SET UP (first, like Jack) ---
   { kind: 'item', view: 'profile', label: 'Profile', icon: User },
   { kind: 'separator' },
-  // --- APPLY ---
-  { kind: 'item', view: 'open-jobs', label: 'Open Jobs', icon: Search },
+  // --- CONFIGURE (Autopilot before Open Jobs — scout criteria comes first) ---
   { kind: 'item', view: 'autopilot', label: 'Autopilot', icon: Bot },
+  { kind: 'item', view: 'open-jobs', label: 'Open Jobs', icon: Search },
   // --- TRACK ---
   { kind: 'item', view: 'applications', label: 'Applications', icon: FolderKanban },
   { kind: 'separator' },
