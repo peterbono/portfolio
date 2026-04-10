@@ -237,8 +237,10 @@ export default async function handler(
   //
   // Errors during the background pipeline are recorded via updateBotRun
   // (status='failed') so the client polling sees them.
-  res.status(200).json({ runId, status: 'running' })
-
+  // IMPORTANT: waitUntil MUST be called BEFORE res.send/res.json, otherwise
+  // Vercel considers the handler complete and the background promise is
+  // killed. Registering the promise first guarantees the runtime keeps it
+  // alive until completion (up to maxDuration=300s).
   waitUntil((async () => {
     let browserInfo: Awaited<ReturnType<typeof launchScoutBrowser>> | null = null
     try {
@@ -296,4 +298,9 @@ export default async function handler(
       }
     }
   })())
+
+  // Send response AFTER waitUntil has registered the background promise.
+  // The handler is now considered "done" by Vercel, but the registered
+  // promise continues running until it resolves (up to maxDuration=300s).
+  return res.status(200).json({ runId, status: 'running' })
 }
