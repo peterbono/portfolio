@@ -60,12 +60,22 @@ CREATE TABLE public.job_listings (
   notes TEXT,
   area TEXT,
   source TEXT,
+  -- Qualification + display columns (see migration 005)
+  qualification_score INTEGER DEFAULT NULL,
+  qualification_result JSONB DEFAULT NULL,
+  work_arrangement TEXT DEFAULT NULL,
+  salary_range TEXT DEFAULT NULL,
+  title TEXT DEFAULT NULL,
+  posted_at TIMESTAMPTZ DEFAULT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX idx_job_listings_user_id ON public.job_listings(user_id);
 CREATE INDEX idx_job_listings_company ON public.job_listings(company);
+CREATE INDEX idx_job_listings_qualification_score
+  ON public.job_listings(qualification_score)
+  WHERE qualification_score IS NOT NULL;
 
 -- ============================================================================
 -- 3. APPLICATIONS

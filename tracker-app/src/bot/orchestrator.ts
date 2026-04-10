@@ -19,6 +19,7 @@ import {
   getExistingApplicationsWithUrls,
   getActiveSearchProfile,
   cleanupZombieRuns,
+  upsertDiscoveredJobListing,
   type ActivityLogEntry,
 } from './supabase-server'
 
@@ -1255,6 +1256,60 @@ async function phaseQualify(
 }
 
 // ---------------------------------------------------------------------------
+// Persist discovered/qualified jobs to `job_listings`
+//
+// WHY: OpenJobsView filters job_listings by qualification_score >= 50, but
+// before this helper the scout never wrote a row — createApplicationFromBot
+// only inserted reactively AFTER an apply. So the dashboard had no source of
+// "discovered but not yet applied" jobs and fell back to SAMPLE_JOBS.
+//
+// This helper iterates each qualified job and upserts it into job_listings
+// keyed on (user_id, link) via the unique constraint from migration 004.
+// Failures are logged but never thrown — persistence is best-effort.
+// ---------------------------------------------------------------------------
+async function persistDiscoveredJobs(
+  userId: string,
+  qualifiedJobs: Array<{
+    job: { title: string; company: string; location: string; url: string; ats?: string; isEasyApply?: boolean }
+    qualification: QualificationResult
+  }>,
+): Promise<{ upserted: number; failed: number }> {
+  if (!qualifiedJobs.length) return { upserted: 0, failed: 0 }
+
+  let upserted = 0
+  let failed = 0
+
+  await Promise.all(
+    qualifiedJobs.map(async ({ job, qualification }) => {
+      try {
+        const id = await upsertDiscoveredJobListing(userId, {
+          company: job.company,
+          role: job.title,
+          location: job.location || undefined,
+          link: job.url,
+          ats: job.ats,
+          qualificationScore: qualification.score,
+          qualificationResult: qualification as unknown as Record<string, unknown>,
+          workArrangement: /remote/i.test(job.location || '') ? 'remote' : undefined,
+        })
+        if (id) upserted++
+        else failed++
+      } catch (err) {
+        failed++
+        console.warn(
+          `[pipeline] persistDiscoveredJobs: upsert failed for ${job.company}/${job.title}: ${(err as Error).message}`,
+        )
+      }
+    }),
+  )
+
+  console.log(
+    `[pipeline] persistDiscoveredJobs: ${upserted}/${qualifiedJobs.length} upserted (${failed} failed)`,
+  )
+  return { upserted, failed }
+}
+
+// ---------------------------------------------------------------------------
 // Phase 3: Apply — handled by separate apply-jobs.ts trigger task
 // ---------------------------------------------------------------------------
 
@@ -1562,6 +1617,25 @@ export async function runPipeline(config: PipelineConfig & { onProgress?: (p: Pi
       coverLetterSnippet: qj.qualification.coverLetterSnippet,
       ats: qj.job.ats,
     }))
+
+    // -------------------------------------------------------------------------
+    // Persist qualified jobs to `job_listings` so OpenJobsView has a data
+    // source BEFORE the user clicks "apply". Before this, job_listings was
+    // only written reactively by createApplicationFromBot (post-apply), so
+    // the dashboard had zero rows and fell back to SAMPLE_JOBS.
+    //
+    // Best-effort, non-blocking, in parallel. Failures are logged in
+    // upsertDiscoveredJobListing and swallowed here — a DB hiccup must not
+    // kill the pipeline run.
+    // -------------------------------------------------------------------------
+    try {
+      await persistDiscoveredJobs(config.userId, qualifiedJobs)
+    } catch (persistErr) {
+      console.warn(
+        '[pipeline] persistDiscoveredJobs failed (non-fatal):',
+        (persistErr as Error).message,
+      )
+    }
 
     // Phase 3 (Apply) disabled — will be a separate user-triggered action
     console.log(`[pipeline] Scout+Qualify complete: ${discoveredJobs.length} found, ${qualifiedJobs.length} qualified. Skipping apply phase.`)

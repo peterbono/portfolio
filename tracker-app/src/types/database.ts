@@ -24,6 +24,19 @@ export interface NotificationPrefs {
   botErrors: boolean
 }
 
+/**
+ * JSONB shape stored in job_listings.qualification_result.
+ * Produced by the Haiku qualification step; consumed by cv-tailor.ts
+ * (which reads qualification_result.jdKeywords).
+ */
+export interface QualificationResultJson {
+  jdKeywords: string[]
+  archetype?: string | null
+  dimensions?: Record<string, number> | null
+  reasoning?: string | null
+  [key: string]: Json | undefined
+}
+
 export interface Database {
   public: {
     Tables: {
@@ -90,6 +103,12 @@ export interface Database {
           notes: string | null
           area: string | null
           source: string | null
+          qualification_score: number | null
+          qualification_result: QualificationResultJson | null
+          work_arrangement: string | null
+          salary_range: string | null
+          title: string | null
+          posted_at: string | null
           created_at: string
           updated_at: string
         }
@@ -105,6 +124,12 @@ export interface Database {
           notes?: string | null
           area?: string | null
           source?: string | null
+          qualification_score?: number | null
+          qualification_result?: QualificationResultJson | null
+          work_arrangement?: string | null
+          salary_range?: string | null
+          title?: string | null
+          posted_at?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -120,6 +145,12 @@ export interface Database {
           notes?: string | null
           area?: string | null
           source?: string | null
+          qualification_score?: number | null
+          qualification_result?: QualificationResultJson | null
+          work_arrangement?: string | null
+          salary_range?: string | null
+          title?: string | null
+          posted_at?: string | null
           created_at?: string
           updated_at?: string
         }

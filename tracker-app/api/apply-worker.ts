@@ -55,10 +55,42 @@ export default queue.handleNodeCallback<ApplyJobMessage>(
       logBotActivity,
       createApplicationFromBot,
       storeApplyReceipt,
+      getUserProfile,
+      getJobListingByUrl,
     } = await import('../src/bot/supabase-server')
 
-    // ── Build applicant profile ──
-    const up = userProfile ?? {}
+    // ── Resolve applicant profile ──
+    // Priority: passed-in userProfile > profiles table row > hardcoded APPLICANT.
+    // The queue producer SHOULD pass userProfile, but if it doesn't (or passes
+    // an empty object), hydrate from Supabase so multi-user SaaS doesn't leak
+    // Florian's details to every tenant.
+    let resolvedProfile: Record<string, unknown> = {}
+    const passedIn = (userProfile && typeof userProfile === 'object' ? userProfile : {}) as Record<string, unknown>
+    const passedInHasKeys = Object.keys(passedIn).some((k) => passedIn[k] !== undefined && passedIn[k] !== '')
+
+    if (passedInHasKeys) {
+      resolvedProfile = { ...passedIn }
+    } else {
+      try {
+        const dbProfile = await getUserProfile(userId)
+        if (dbProfile) {
+          resolvedProfile = { ...dbProfile }
+          console.log(
+            `[apply-worker] Hydrated profile from Supabase for user ${userId} (${dbProfile.email ?? 'no email'})`,
+          )
+        } else {
+          console.warn(
+            `[apply-worker] No profile in queue message AND no row in profiles table for user ${userId} — falling back to hardcoded APPLICANT. This is fine for single-tenant dev but BROKEN for multi-user prod.`,
+          )
+        }
+      } catch (err) {
+        console.warn(
+          `[apply-worker] getUserProfile threw for user ${userId}: ${err instanceof Error ? err.message : String(err)} — falling back to hardcoded APPLICANT`,
+        )
+      }
+    }
+
+    const up = resolvedProfile
     const overrides: Record<string, string> = {}
     if (up.firstName) overrides.firstName = String(up.firstName)
     if (up.lastName) overrides.lastName = String(up.lastName)
@@ -78,6 +110,25 @@ export default queue.handleNodeCallback<ApplyJobMessage>(
       jobMeta: { company, role },
     }
 
+    // ── Resolve jdKeywords (from queue message or from job_listings row) ──
+    let resolvedJdKeywords: string[] = Array.isArray(jdKeywords) ? jdKeywords : []
+    if (resolvedJdKeywords.length === 0) {
+      try {
+        const listing = await getJobListingByUrl(userId, jobUrl)
+        const fromDb = (listing?.qualification_result as { jdKeywords?: unknown } | null)?.jdKeywords
+        if (Array.isArray(fromDb) && fromDb.every((k) => typeof k === 'string')) {
+          resolvedJdKeywords = fromDb as string[]
+          console.log(
+            `[apply-worker] Hydrated ${resolvedJdKeywords.length} jdKeywords from job_listings for ${jobUrl}`,
+          )
+        }
+      } catch (err) {
+        console.warn(
+          `[apply-worker] getJobListingByUrl failed for ${jobUrl}: ${err instanceof Error ? err.message : String(err)}`,
+        )
+      }
+    }
+
     // ── Tailor cover letter + CV summary for this specific job ──
     let tailoredCoverLetter = coverLetterSnippet || ''
     let tailoredSummary = ''
@@ -87,7 +138,7 @@ export default queue.handleNodeCallback<ApplyJobMessage>(
         '../src/bot/cv-tailor'
       )
 
-      const keywords = jdKeywords || []
+      const keywords = resolvedJdKeywords || []
 
       if (keywords.length > 0) {
         tailoredSummary = await tailorCVSummary(
@@ -116,11 +167,13 @@ export default queue.handleNodeCallback<ApplyJobMessage>(
       console.warn('[apply-worker] CV tailoring failed (non-fatal):', err)
     }
 
-    // Apply tailored content to profile for adapter consumption
+    // Apply tailored headline to profile — consumed by generic-v2 adapter
+    // for the "headline or current title" field (profileFields[6] in generic-v2.ts).
+    // The tailored cover letter is passed directly as the 4th argument to
+    // adapter.apply() below, so we do NOT mutate profile.coverLetterSnippet.
     if (tailoredSummary) {
-      ;(profile as any).headline = tailoredSummary
+      profile.headline = tailoredSummary
     }
-    profile.coverLetterSnippet = tailoredCoverLetter || profile.coverLetterSnippet
 
     // ── Create Stagehand session ──
     let stagehand: Awaited<ReturnType<typeof createStagehand>> | null = null

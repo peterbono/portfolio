@@ -6,8 +6,7 @@
  */
 
 import type { Stagehand } from '@browserbasehq/stagehand'
-import type { ApplicantProfile } from '../types'
-import type { ApplyJobResult } from '../../trigger/apply-jobs'
+import type { ApplicantProfile, ApplyJobResult } from '../types'
 import { genericV2 } from './generic-v2'
 
 export interface StagehandAdapter {

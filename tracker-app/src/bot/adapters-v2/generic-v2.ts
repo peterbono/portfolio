@@ -12,8 +12,7 @@
  */
 
 import type { Stagehand } from '@browserbasehq/stagehand'
-import type { ApplicantProfile } from '../types'
-import type { ApplyJobResult } from '../../trigger/apply-jobs'
+import type { ApplicantProfile, ApplyJobResult } from '../types'
 import type { StagehandAdapter } from './index'
 import { getPlaywrightPage } from '../stagehand-client'
 
@@ -363,7 +362,7 @@ export const genericV2: StagehandAdapter = {
         { label: 'email', value: profile.email, priority: 1 },
         { label: 'LinkedIn', value: profile.linkedin, priority: 2 },
         { label: 'website or portfolio', value: profile.portfolio, priority: 2 },
-        { label: 'headline or current title', value: `Senior Product Designer — ${profile.yearsExperience}+ years`, priority: 3 },
+        { label: 'headline or current title', value: (profile as any).headline || `Senior Product Designer — ${profile.yearsExperience}+ years`, priority: 3 },
       ]
 
       for (const field of profileFields) {

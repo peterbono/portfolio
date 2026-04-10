@@ -101,15 +101,63 @@ export async function createBotRun(
   return (data as any).id
 }
 
-/** Partially update an existing bot_run row */
+/**
+ * Partially update an existing bot_run row.
+ *
+ * Supports two styles of values:
+ *   - Plain values: `{ status: 'completed', finished_at: '...' }` → direct SET
+ *   - Increment sentinel: `{ jobs_applied: { __increment: 1 } }` → atomic increment via RPC
+ *
+ * Atomic increments are required because multiple apply-worker invocations run
+ * in parallel from Vercel Queues; a read-then-write pattern would race and lose
+ * counts. The RPC `increment_bot_run_counter(run_id, field, delta)` must exist
+ * in Supabase — see migration 006_bot_runs_increment_rpc.sql.
+ */
 export async function updateBotRun(
   runId: string,
   stats: Record<string, unknown>,
 ): Promise<void> {
-  const { error } = await updateRowById('bot_runs', runId, stats)
+  // Split stats into plain updates and increment sentinels
+  const plainUpdates: Record<string, unknown> = {}
+  const increments: Array<{ field: string; delta: number }> = []
 
-  if (error) {
-    console.error(`[supabase] Failed to update bot run ${runId}:`, error.message)
+  for (const [key, value] of Object.entries(stats)) {
+    if (
+      value &&
+      typeof value === 'object' &&
+      '__increment' in (value as Record<string, unknown>) &&
+      typeof (value as { __increment: unknown }).__increment === 'number'
+    ) {
+      increments.push({
+        field: key,
+        delta: (value as { __increment: number }).__increment,
+      })
+    } else {
+      plainUpdates[key] = value
+    }
+  }
+
+  // Run increments atomically via RPC
+  for (const { field, delta } of increments) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error: rpcErr } = await (supabaseServer as any).rpc(
+      'increment_bot_run_counter',
+      { p_run_id: runId, p_field: field, p_delta: delta },
+    )
+    if (rpcErr) {
+      console.error(
+        `[supabase] RPC increment failed for bot_run ${runId}.${field}:`,
+        rpcErr.message,
+      )
+    }
+  }
+
+  // Run plain updates
+  if (Object.keys(plainUpdates).length > 0) {
+    const { error } = await updateRowById('bot_runs', runId, plainUpdates)
+    if (error) {
+      console.error(`[supabase] Failed to update bot run ${runId}:`, error.message)
+    }
   }
 }
 
@@ -489,4 +537,213 @@ export async function getActiveSearchProfile(
 
   if (error || !data) return null
   return data
+}
+
+// ---------------------------------------------------------------------------
+// User profile fetch (for apply-worker fallback when queue message lacks it)
+// ---------------------------------------------------------------------------
+
+export interface UserProfileRow {
+  firstName?: string
+  lastName?: string
+  email?: string
+  phone?: string
+  location?: string
+  linkedin?: string
+  portfolio?: string
+  cvUrl?: string
+  yearsExperience?: number
+}
+
+/**
+ * Fetch an applicant profile from the `profiles` table by user id.
+ *
+ * Reads whatever applicant-facing columns exist on `profiles`. The base schema
+ * only guarantees `email` and `full_name`; richer columns (phone, linkedin,
+ * portfolio, cv_url, years_experience, location) are optional and will be
+ * undefined until added by a future migration.
+ *
+ * Returns null if the profile row does not exist (brand new user).
+ * The caller is responsible for merging this with any passed-in override
+ * and falling back to the hardcoded APPLICANT profile if both are empty.
+ */
+export async function getUserProfile(
+  userId: string,
+): Promise<UserProfileRow | null> {
+  try {
+    const { data, error } = await db
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .limit(1)
+      .maybeSingle()
+
+    if (error) {
+      console.warn(
+        `[supabase] getUserProfile(${userId}) failed: ${error.message}`,
+      )
+      return null
+    }
+    if (!data) return null
+
+    // Split full_name into first/last — naive but good enough as a default.
+    const fullName: string = (data.full_name as string) ?? ''
+    const [firstFromFull, ...restFromFull] = fullName.trim().split(/\s+/)
+    const lastFromFull = restFromFull.join(' ')
+
+    const row: UserProfileRow = {
+      firstName: (data.first_name as string) || firstFromFull || undefined,
+      lastName: (data.last_name as string) || lastFromFull || undefined,
+      email: (data.email as string) || undefined,
+      phone: (data.phone as string) || undefined,
+      location: (data.location as string) || undefined,
+      linkedin: (data.linkedin as string) || undefined,
+      portfolio: (data.portfolio as string) || undefined,
+      cvUrl:
+        (data.cv_url as string) ||
+        (data.cvUrl as string) ||
+        undefined,
+      yearsExperience:
+        typeof data.years_experience === 'number'
+          ? (data.years_experience as number)
+          : undefined,
+    }
+
+    // Drop empty record → return null so callers can fall back cleanly.
+    const hasAny = Object.values(row).some((v) => v !== undefined && v !== '')
+    return hasAny ? row : null
+  } catch (err) {
+    console.warn(
+      `[supabase] getUserProfile(${userId}) threw: ${err instanceof Error ? err.message : String(err)}`,
+    )
+    return null
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Discovered job listings — proactive scout persistence (OpenJobsView source)
+// ---------------------------------------------------------------------------
+
+export interface DiscoveredJobUpsert {
+  company: string
+  role: string
+  location?: string
+  salary?: string
+  link: string
+  ats?: string
+  qualificationScore?: number
+  qualificationResult?: Record<string, unknown>
+  workArrangement?: string
+  postedAt?: string
+}
+
+/**
+ * Upsert a discovered job listing for a user, keyed on (user_id, link).
+ *
+ * Relies on the unique constraint added in migration 004 so repeated scout
+ * runs re-use the same row instead of creating duplicates. Updates the
+ * qualification score/result + posted_at/work_arrangement on every call so
+ * the latest Haiku output always wins.
+ *
+ * Returns the row id on success, or null on failure (never throws — the
+ * scout pipeline treats persistence as best-effort so DB hiccups don't
+ * abort the run).
+ */
+export async function upsertDiscoveredJobListing(
+  userId: string,
+  job: DiscoveredJobUpsert,
+): Promise<string | null> {
+  if (!job.link) {
+    console.warn('[supabase] upsertDiscoveredJobListing: missing link, skipping')
+    return null
+  }
+
+  const row: Record<string, unknown> = {
+    user_id: userId,
+    company: job.company,
+    role: job.role,
+    title: job.role,
+    location: job.location ?? null,
+    salary: job.salary ?? null,
+    salary_range: job.salary ?? null,
+    link: job.link,
+    ats: job.ats ?? null,
+    source: 'scout',
+    qualification_score:
+      typeof job.qualificationScore === 'number'
+        ? Math.round(job.qualificationScore)
+        : null,
+    qualification_result: job.qualificationResult ?? null,
+    work_arrangement: job.workArrangement ?? null,
+    posted_at: job.postedAt ?? null,
+  }
+
+  // Upsert on the (user_id, link) unique index from migration 004.
+  const { data, error } = await db
+    .from('job_listings')
+    .upsert(row, { onConflict: 'user_id,link' })
+    .select('id')
+    .limit(1)
+    .maybeSingle()
+
+  if (error) {
+    console.warn(
+      `[supabase] upsertDiscoveredJobListing(${job.company}/${job.role}) failed: ${error.message}`,
+    )
+    return null
+  }
+  return (data?.id as string) ?? null
+}
+
+// ---------------------------------------------------------------------------
+// Job listing lookup by URL (for apply-worker to hydrate jdKeywords)
+// ---------------------------------------------------------------------------
+
+export interface JobListingRow {
+  id: string
+  company: string
+  role: string
+  link: string
+  ats: string | null
+  qualification_score: number | null
+  qualification_result: Record<string, unknown> | null
+}
+
+/**
+ * Fetch a job_listings row by (user_id, link).
+ *
+ * Used by apply-worker to retrieve the stored qualification_result JSONB
+ * when the queue message didn't carry jdKeywords (e.g. the job was
+ * discovered by the scout and applied to later by the user from the
+ * OpenJobsView instead of immediately after qualification).
+ *
+ * Returns null if no row matches or on DB error (logged + swallowed).
+ */
+export async function getJobListingByUrl(
+  userId: string,
+  url: string,
+): Promise<JobListingRow | null> {
+  if (!url) return null
+  try {
+    const { data, error } = await db
+      .from('job_listings')
+      .select('id, company, role, link, ats, qualification_score, qualification_result')
+      .eq('user_id', userId)
+      .eq('link', url)
+      .limit(1)
+      .maybeSingle()
+
+    if (error) {
+      console.warn(
+        `[supabase] getJobListingByUrl failed: ${error.message}`,
+      )
+      return null
+    }
+    return (data as JobListingRow) ?? null
+  } catch (err) {
+    console.warn(
+      `[supabase] getJobListingByUrl threw: ${err instanceof Error ? err.message : String(err)}`,
+    )
+    return null
+  }
 }

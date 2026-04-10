@@ -26,6 +26,8 @@ export interface ApplicantProfile {
   education: string
   /** Per-job AI-generated cover letter snippet (set dynamically before each application) */
   coverLetterSnippet?: string
+  /** Per-job AI-tailored professional summary / headline (set dynamically before each application by cv-tailor) */
+  headline?: string
   /** Current company name (for "current employer" fields) */
   currentCompany?: string
   /** Pre-populated job metadata from the pipeline payload (company name, role title).
@@ -69,6 +71,30 @@ export interface ApplyResult {
   reason?: string
   screenshotUrl?: string
   duration: number // ms
+}
+
+/**
+ * Shape returned by Stagehand-based adapters in src/bot/adapters-v2/*.
+ *
+ * Distinct from ApplyResult (which is what createApplicationFromBot expects):
+ *   - `screenshotBase64` is a raw b64 string — upload to Storage before persisting
+ *   - `durationMs` is the adapter's wall-clock time
+ *   - Includes `url` for idempotency tracking
+ *
+ * Callers that write to Supabase should map ApplyJobResult → ApplyResult
+ * (see api/apply-worker.ts). Originally lived in src/trigger/apply-jobs.ts
+ * (legacy Trigger.dev path); moved here so the Vercel Queues flow doesn't
+ * depend on the deprecated trigger file.
+ */
+export interface ApplyJobResult {
+  url: string
+  company: string
+  role: string
+  ats: string
+  status: 'applied' | 'skipped' | 'failed' | 'needs_manual'
+  reason?: string
+  screenshotBase64?: string
+  durationMs: number
 }
 
 export interface ATSAdapter {

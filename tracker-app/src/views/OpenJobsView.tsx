@@ -14,6 +14,8 @@ interface OpenJob {
   tags: string[]
   postedAt: string // ISO date
   link: string | null
+  jdKeywords?: string[]
+  qualificationScore?: number | null
 }
 
 /* ------------------------------------------------------------------ */
@@ -128,25 +130,34 @@ export function OpenJobsView() {
           return
         }
 
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from('job_listings')
-          .select('*')
+          .select('id, user_id, company, role, title, location, salary, salary_range, ats, link, work_arrangement, qualification_score, qualification_result, created_at, posted_at')
           .eq('user_id', user.id)
+          .not('qualification_score', 'is', null)
           .gte('qualification_score', 50)
           .order('created_at', { ascending: false })
           .limit(50)
 
-        if (data && data.length > 0) {
-          setJobs(data.map((row: Record<string, unknown>) => ({
-            id: row.id as string,
-            role: (row.title as string) || 'Unknown Role',
-            company: (row.company as string) || 'Unknown',
-            location: row.location as string | null,
-            salary: row.salary_range as string | null,
-            tags: [row.location, row.ats, row.work_arrangement].filter(Boolean) as string[],
-            postedAt: row.created_at as string,
-            link: row.link as string | null,
-          })))
+        if (!error && data && data.length > 0) {
+          setJobs(data.map((row: Record<string, unknown>) => {
+            const qr = row.qualification_result as Record<string, unknown> | null
+            const jdKeywords = (qr?.jdKeywords as string[] | undefined)
+              ?? (qr?.jd_keywords as string[] | undefined)
+              ?? []
+            return {
+              id: row.id as string,
+              role: (row.role as string) || (row.title as string) || 'Unknown Role',
+              company: (row.company as string) || 'Unknown',
+              location: row.location as string | null,
+              salary: (row.salary as string | null) || (row.salary_range as string | null),
+              tags: [row.location, row.ats, row.work_arrangement].filter(Boolean) as string[],
+              postedAt: (row.posted_at as string) || (row.created_at as string),
+              link: row.link as string | null,
+              jdKeywords,
+              qualificationScore: row.qualification_score as number | null,
+            }
+          }))
           setIsSampleData(false)
         } else {
           setJobs(SAMPLE_JOBS)
@@ -239,29 +250,82 @@ export function OpenJobsView() {
         return
       }
 
-      const selectedJobs = jobs
-        .filter(j => jobIds.has(j.id))
-        .map(j => ({
-          url: j.link,
-          company: j.company,
-          role: j.role,
-          coverLetterSnippet: '',
-          matchScore: 75,
-        }))
+      // Fetch user profile
+      const { data: profileData, error: profileErr } = await supabase
+        .from('profiles' as never)
+        .select('*')
+        .eq('id', user.id)
+        .maybeSingle()
+
+      const profileRow = profileData as Record<string, unknown> | null
+      if (profileErr || !profileRow) {
+        setToast({ message: 'Set up your profile before applying', type: 'error' })
+        return
+      }
+
+      // Filter out jobs without real URLs
+      const candidates = jobs.filter(j => jobIds.has(j.id))
+      const applyable = candidates.filter(j => j.link && j.link.trim().length > 0)
+
+      if (applyable.length === 0) {
+        setToast({
+          message: "These sample jobs don't have real URLs — run Autopilot to discover real jobs",
+          type: 'error',
+        })
+        return
+      }
+
+      const selectedJobs = applyable.map(j => ({
+        url: j.link as string,
+        company: j.company,
+        role: j.role,
+        coverLetterSnippet: '',
+        matchScore: j.qualificationScore ?? 75,
+        jdKeywords: j.jdKeywords ?? [],
+      }))
+
+      const userProfile = {
+        name: (profileRow.name as string | undefined)
+          ?? (profileRow.full_name as string | undefined)
+          ?? '',
+        email: (profileRow.email as string | undefined) ?? user.email ?? '',
+        phone: (profileRow.phone as string | undefined) ?? '',
+        linkedin: (profileRow.linkedin as string | undefined) ?? '',
+        portfolio: (profileRow.portfolio as string | undefined) ?? '',
+        cvUrl: (profileRow.cvUrl as string | undefined)
+          ?? (profileRow.cv_url as string | undefined)
+          ?? '',
+      }
 
       const res = await fetch('/api/queue-apply', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jobs: selectedJobs, userId: user.id }),
+        body: JSON.stringify({
+          jobs: selectedJobs,
+          userId: user.id,
+          userProfile,
+        }),
       })
 
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      if (!res.ok) {
+        let errMsg = `HTTP ${res.status}`
+        try {
+          const body = await res.json()
+          if (body?.error) errMsg = String(body.error)
+        } catch { /* ignore JSON parse */ }
+        setToast({ message: errMsg, type: 'error' })
+        return
+      }
 
-      setToast({ message: `${selectedJobs.length} job${selectedJobs.length > 1 ? 's' : ''} queued for cloud apply`, type: 'success' })
+      const skipped = candidates.length - applyable.length
+      const baseMsg = `${selectedJobs.length} job${selectedJobs.length > 1 ? 's' : ''} queued for cloud apply`
+      const msg = skipped > 0 ? `${baseMsg} (${skipped} sample skipped)` : baseMsg
+      setToast({ message: msg, type: 'success' })
       setSelected(new Set())
       setDetailJob(null)
-    } catch {
-      setToast({ message: 'Failed to queue jobs. Try again.', type: 'error' })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to queue jobs. Try again.'
+      setToast({ message: msg, type: 'error' })
     }
   }, [jobs])
 
@@ -588,6 +652,7 @@ export function OpenJobsView() {
                     <span key={t} style={s.tag}>{t}</span>
                   ))}
                   {job.salary && <span style={s.tagSalary}>{job.salary}</span>}
+                  {!job.link && <span style={s.tagSample} title="Sample job — run Autopilot to discover real jobs">Sample</span>}
                 </div>
                 <div style={s.time}><Clock size={11} /><span>Posted {timeAgo(job.postedAt)}</span></div>
               </div>
@@ -604,17 +669,27 @@ export function OpenJobsView() {
       </div>
 
       {/* ---- Selection bottom bar ---- */}
-      {selected.size > 0 && !detailJob && (
-        <div style={s.selectionBar} data-open-jobs-bar>
-          <span style={s.selectionText}>{selected.size} job{selected.size > 1 ? 's' : ''} selected</span>
-          <button style={s.selectionCta} onClick={() => handleApply(selected)}>
-            Apply to All Selected
-          </button>
-          <button style={s.selectionClose} onClick={() => setSelected(new Set())}>
-            <X size={16} />
-          </button>
-        </div>
-      )}
+      {selected.size > 0 && !detailJob && (() => {
+        const selectedJobs = jobs.filter(j => selected.has(j.id))
+        const applyableCount = selectedJobs.filter(j => !!j.link).length
+        const allSample = applyableCount === 0
+        return (
+          <div style={s.selectionBar} data-open-jobs-bar>
+            <span style={s.selectionText}>{selected.size} job{selected.size > 1 ? 's' : ''} selected</span>
+            <button
+              style={{ ...s.selectionCta, ...(allSample ? s.selectionCtaDisabled : {}) }}
+              onClick={() => handleApply(selected)}
+              disabled={allSample}
+              title={allSample ? 'Sample job — run Autopilot to discover real jobs' : undefined}
+            >
+              Apply to All Selected
+            </button>
+            <button style={s.selectionClose} onClick={() => setSelected(new Set())}>
+              <X size={16} />
+            </button>
+          </div>
+        )
+      })()}
 
       {/* ---- Job Detail Panel ---- */}
       {detailJob && (
@@ -654,11 +729,13 @@ export function OpenJobsView() {
             </div>
             <div style={s.panelCta}>
               <button
-                style={s.ctaButton}
+                style={{ ...s.ctaButton, ...(!detailJob.link ? s.ctaButtonDisabled : {}) }}
                 data-open-jobs-cta
                 onClick={() => handleApply(new Set([detailJob.id]))}
+                disabled={!detailJob.link}
+                title={!detailJob.link ? 'Sample job — run Autopilot to discover real jobs' : undefined}
               >
-                Apply for me
+                {detailJob.link ? 'Apply for me' : 'Sample job — Apply disabled'}
               </button>
             </div>
           </div>
@@ -810,11 +887,13 @@ const s: Record<string, React.CSSProperties> = {
   tags: { display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 },
   tag: { display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, background: 'var(--bg-elevated)', color: 'var(--text-secondary)', fontSize: 11, fontWeight: 500, whiteSpace: 'nowrap' },
   tagSalary: { display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20, background: 'rgba(52, 211, 153, 0.1)', color: '#34d399', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' },
+  tagSample: { display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20, background: 'rgba(255,255,255,0.06)', color: 'var(--text-tertiary)', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', border: '1px dashed var(--border)', cursor: 'help' },
   time: { display: 'flex', alignItems: 'center', gap: 4, marginTop: 8, fontSize: 11, color: 'var(--text-tertiary)' },
   empty: { gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: '60px 0' },
   selectionBar: { position: 'absolute', bottom: 24, left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: 16, padding: '14px 20px 14px 24px', background: '#1c1c1e', borderRadius: 16, boxShadow: '0 8px 40px rgba(0,0,0,0.5)', zIndex: 50 },
   selectionText: { color: '#fff', fontSize: 14, fontWeight: 500, whiteSpace: 'nowrap' },
   selectionCta: { padding: '10px 24px', borderRadius: 12, border: 'none', background: '#34d399', color: '#000', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
+  selectionCtaDisabled: { background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.4)', cursor: 'not-allowed' },
   selectionClose: { display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: 14, border: 'none', background: 'rgba(255,255,255,0.1)', color: '#999', cursor: 'pointer', flexShrink: 0 },
   panelOverlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 100, display: 'flex', justifyContent: 'center', overflowY: 'auto', padding: '40px 20px' },
   panel: { position: 'relative', width: '100%', maxWidth: 800, background: 'var(--bg-surface)', borderRadius: 16, padding: '32px 40px 100px', alignSelf: 'flex-start', minHeight: 400 },
@@ -826,6 +905,7 @@ const s: Record<string, React.CSSProperties> = {
   panelList: { margin: '0 0 8px', paddingLeft: 20 },
   panelCta: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: '20px 40px', display: 'flex', justifyContent: 'flex-end', background: 'var(--bg-surface)', borderTop: '1px solid var(--border)', borderRadius: '0 0 16px 16px' },
   ctaButton: { padding: '14px 32px', borderRadius: 14, border: 'none', background: '#34d399', color: '#000', fontSize: 15, fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 24px rgba(52, 211, 153, 0.3)', transition: 'transform 0.1s, box-shadow 0.15s', fontFamily: 'inherit' },
+  ctaButtonDisabled: { background: 'rgba(255,255,255,0.08)', color: 'var(--text-tertiary)', boxShadow: 'none', cursor: 'not-allowed' },
   modalOverlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 150, display: 'flex', justifyContent: 'center', alignItems: 'flex-start', overflowY: 'auto', padding: '40px 20px' },
   modal: { position: 'relative', width: '100%', maxWidth: 720, background: 'var(--bg-surface)', borderRadius: 18, padding: '28px 32px 100px', border: '1px solid var(--border)', boxShadow: '0 20px 60px rgba(0,0,0,0.6)' },
   modalHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
