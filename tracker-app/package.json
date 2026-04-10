@@ -17,6 +17,7 @@
     "@supabase/supabase-js": "^2.78.0",
     "@tanstack/react-table": "^8.20.0",
     "@trigger.dev/sdk": "^4.4.3",
+    "@vercel/functions": "^3.4.3",
     "@vercel/queue": "^0.1.6",
     "canvas-confetti": "^1.9.4",
     "clsx": "^2.1.0",

@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { waitUntil } from '@vercel/functions'
 import {
   createBotRun,
   updateBotRun,
@@ -222,19 +223,23 @@ export default async function handler(
     console.warn('[trigger-scout] logBotActivity start failed:', (e as Error).message),
   )
 
-  // ── Return runId IMMEDIATELY, run pipeline in background ──
+  // ── Return runId IMMEDIATELY, run pipeline in background via waitUntil ──
   // The frontend needs the runId to start polling. The actual pipeline
-  // takes 60-180s; awaiting it here would block the Save button. On Vercel
-  // Node runtime, an unawaited promise after res.send() continues running
-  // until the function naturally completes (up to maxDuration=300s).
+  // takes 60-180s; awaiting it here would block the Save button.
+  //
+  // waitUntil() from @vercel/functions is the canonical API for background
+  // work on Vercel — it registers the promise with the runtime so the
+  // function is NOT killed after res.send() returns. The pipeline runs
+  // until completion (up to maxDuration=300s).
+  //
+  // Without waitUntil, unawaited promises are silently terminated on
+  // Vercel Node.js runtime as soon as the response is sent.
   //
   // Errors during the background pipeline are recorded via updateBotRun
   // (status='failed') so the client polling sees them.
   res.status(200).json({ runId, status: 'running' })
 
-  // Background work — fire-and-forget. Wrapped in IIFE to use async/await
-  // and centralize error handling. Note: we MUST NOT touch `res` after this.
-  void (async () => {
+  waitUntil((async () => {
     let browserInfo: Awaited<ReturnType<typeof launchScoutBrowser>> | null = null
     try {
       browserInfo = await launchScoutBrowser()
@@ -290,5 +295,5 @@ export default async function handler(
         }
       }
     }
-  })()
+  })())
 }
