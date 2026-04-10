@@ -222,72 +222,73 @@ export default async function handler(
     console.warn('[trigger-scout] logBotActivity start failed:', (e as Error).message),
   )
 
-  // ── Launch browser + run pipeline ──
-  // Dynamic import so @vercel/nft bundles orchestrator into this lambda but
-  // doesn't eager-load it on cold start for validation-only traffic.
-  let browserInfo: Awaited<ReturnType<typeof launchScoutBrowser>> | null = null
-  try {
-    browserInfo = await launchScoutBrowser()
+  // ── Return runId IMMEDIATELY, run pipeline in background ──
+  // The frontend needs the runId to start polling. The actual pipeline
+  // takes 60-180s; awaiting it here would block the Save button. On Vercel
+  // Node runtime, an unawaited promise after res.send() continues running
+  // until the function naturally completes (up to maxDuration=300s).
+  //
+  // Errors during the background pipeline are recorded via updateBotRun
+  // (status='failed') so the client polling sees them.
+  res.status(200).json({ runId, status: 'running' })
 
-    const { runPipelineFromInline } = await import(
-      '../src/bot/orchestrator.js'
-    )
+  // Background work — fire-and-forget. Wrapped in IIFE to use async/await
+  // and centralize error handling. Note: we MUST NOT touch `res` after this.
+  void (async () => {
+    let browserInfo: Awaited<ReturnType<typeof launchScoutBrowser>> | null = null
+    try {
+      browserInfo = await launchScoutBrowser()
 
-    console.log(`[trigger-scout] Starting pipeline (runId=${runId})`)
-    const result = await runPipelineFromInline({
-      userId,
-      browser: browserInfo.browser,
-      searchConfig: {
-        keywords: searchConfig.keywords,
-        locationRules: searchConfig.locationRules,
-        excludedCompanies: searchConfig.excludedCompanies ?? [],
-        dailyLimit: searchConfig.dailyLimit ?? 20,
-      },
-      userProfile: userProfile ?? {},
-      dryRun: true,
-      skipApply: true,
-      runId,
-    })
+      const { runPipelineFromInline } = await import(
+        '../src/bot/orchestrator.js'
+      )
 
-    console.log(
-      `[trigger-scout] Pipeline done: found=${result.jobsFound} qualified=${result.jobsQualified} duration=${Math.round(result.duration / 1000)}s`,
-    )
+      console.log(`[trigger-scout] Starting pipeline (runId=${runId}) [background]`)
+      const result = await runPipelineFromInline({
+        userId,
+        browser: browserInfo.browser,
+        searchConfig: {
+          keywords: searchConfig.keywords,
+          locationRules: searchConfig.locationRules,
+          excludedCompanies: searchConfig.excludedCompanies ?? [],
+          dailyLimit: searchConfig.dailyLimit ?? 20,
+        },
+        userProfile: userProfile ?? {},
+        dryRun: true,
+        skipApply: true,
+        runId,
+      })
 
-    return res.status(200).json({
-      runId,
-      status: 'completed',
-      jobsFound: result.jobsFound,
-      jobsQualified: result.jobsQualified,
-      duration: result.duration,
-    })
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    console.error(`[trigger-scout] Pipeline error (runId=${runId}): ${msg}`)
+      console.log(
+        `[trigger-scout] Pipeline done: found=${result.jobsFound} qualified=${result.jobsQualified} duration=${Math.round(result.duration / 1000)}s`,
+      )
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error(`[trigger-scout] Pipeline error (runId=${runId}): ${msg}`)
 
-    // Mark the run as failed so the client sees an accurate status on poll.
-    updateBotRun(runId, {
-      status: 'failed',
-      completed_at: new Date().toISOString(),
-      error_message: msg,
-    }).catch((e) =>
-      console.warn(
-        '[trigger-scout] updateBotRun(failed) failed:',
-        (e as Error).message,
-      ),
-    )
-
-    return res.status(500).json({ error: msg, runId })
-  } finally {
-    if (browserInfo) {
-      try {
-        await browserInfo.browser.close()
-        console.log(`[trigger-scout] Browser closed (source=${browserInfo.source})`)
-      } catch (e) {
+      // Mark the run as failed so the client sees an accurate status on poll.
+      await updateBotRun(runId, {
+        status: 'failed',
+        completed_at: new Date().toISOString(),
+        error_message: msg,
+      }).catch((e) =>
         console.warn(
-          '[trigger-scout] browser.close failed:',
+          '[trigger-scout] updateBotRun(failed) failed:',
           (e as Error).message,
-        )
+        ),
+      )
+    } finally {
+      if (browserInfo) {
+        try {
+          await browserInfo.browser.close()
+          console.log(`[trigger-scout] Browser closed (source=${browserInfo.source})`)
+        } catch (e) {
+          console.warn(
+            '[trigger-scout] browser.close failed:',
+            (e as Error).message,
+          )
+        }
       }
     }
-  }
+  })()
 }
