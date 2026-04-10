@@ -293,39 +293,42 @@ function hasUSStateAbbrev(location: string): boolean {
   return false
 }
 
-/** Check if a location string is timezone-compatible with GMT+7 */
+/**
+ * Africa-only hard reject list. With the April 2026 Tulum/Americas-first
+ * pivot the old INCOMPATIBLE_TZ_KEYWORDS blacklist is no longer applied —
+ * we now ACCEPT US/Canada/Americas/Europe/APAC and only reject Africa
+ * (too far for all target markets) plus obvious timezone mismatches if
+ * the user profile later tightens scope.
+ */
+const HARD_REJECT_LOCATION_KEYWORDS = [
+  'lagos', 'nairobi', 'cape town', 'johannesburg', 'accra', 'cairo', 'africa',
+]
+
+/**
+ * Check if a location string is acceptable for the current search criteria.
+ *
+ * POST-PIVOT (2026-04-10): accept everything remote/unknown, only hard-reject
+ * Africa. The user's search profile (keywords + locations) now drives the
+ * real targeting — this function is just a safety net for obvious mismatches.
+ *
+ * Rationale: previously this was a strict APAC allowlist (GMT+7 ± 4h) that
+ * dropped 100% of LinkedIn results once the user pivoted to US/Canada/Americas
+ * targets. Keeping the old blacklist would be a silent regression.
+ */
 export function isTimezoneCompatible(location: string): boolean {
-  const lower = location.toLowerCase()
+  if (!location) return true // missing location is fine — let preQualify/Haiku decide
 
-  // Reject if explicitly mentions incompatible timezone keyword
-  if (INCOMPATIBLE_TZ_KEYWORDS.some(kw => lower.includes(kw))) {
+  const lower = location.toLowerCase().trim()
+
+  // Hard reject: Africa only (too far for any of our target markets)
+  if (HARD_REJECT_LOCATION_KEYWORDS.some(kw => lower.includes(kw))) {
     return false
   }
 
-  // Reject if contains US state abbreviation pattern (e.g. "Palo Alto, CA")
-  if (hasUSStateAbbrev(location)) {
-    return false
-  }
-
-  // Reject short "US" patterns — "Remote, US", "US", "Remote (US)"
-  // Use word-boundary regex to avoid matching "campus", "focus", etc.
-  if (/\bUS\b/.test(location) || /\bU\.S\.?\b/i.test(location)) {
-    return false
-  }
-
-  // Accept if matches any compatible keyword
-  if (COMPATIBLE_TZ_KEYWORDS.some(kw => lower.includes(kw))) {
-    return true
-  }
-
-  // "Remote" alone without APAC signal — REJECT (too many false positives from LATAM/US)
-  // Only accept if combined with APAC-compatible location (e.g. "Remote - Thailand")
-  if (lower === 'remote' || lower === 'worldwide' || lower === 'anywhere') {
-    return false
-  }
-
-  // Unknown location — skip to be safe
-  return false
+  // Everything else — US, Canada, Americas, EU, APAC, Remote, Worldwide,
+  // Anywhere, unknown — is allowed through. Haiku and the user's search
+  // profile handle the fine-grained filtering.
+  return true
 }
 
 /** Normalize company name for dedup */

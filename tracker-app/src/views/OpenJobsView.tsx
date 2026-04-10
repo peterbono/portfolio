@@ -147,8 +147,10 @@ export function OpenJobsView() {
         .from('job_listings')
         .select('id, user_id, company, role, title, location, salary, salary_range, ats, link, work_arrangement, qualification_score, qualification_result, created_at, posted_at')
         .eq('user_id', user.id)
+        // 2026-04-11 Product decision: show ALL scored jobs (even borderline)
+        // so first-time users never see an empty grid. Score badge on each
+        // card tells the user which are strong (≥60) vs borderline (<40).
         .not('qualification_score', 'is', null)
-        .gte('qualification_score', 40)
         .order('created_at', { ascending: false })
         .limit(50)
 
@@ -772,6 +774,27 @@ export function OpenJobsView() {
                 <h3 style={s.role}>{job.role}</h3>
                 <p style={s.company}>{job.company}</p>
                 <div style={s.tags}>
+                  {typeof job.qualificationScore === 'number' && (
+                    <span
+                      style={{
+                        ...s.tag,
+                        ...(job.qualificationScore >= 60
+                          ? { background: 'rgba(52,211,153,0.15)', color: '#34d399', fontWeight: 600 }
+                          : job.qualificationScore >= 40
+                            ? { background: 'rgba(251,191,36,0.12)', color: '#fbbf24', fontWeight: 600 }
+                            : { background: 'rgba(148,163,184,0.12)', color: 'var(--text-tertiary)', fontWeight: 600 }),
+                      }}
+                      title={
+                        job.qualificationScore >= 60
+                          ? 'Strong match — apply'
+                          : job.qualificationScore >= 40
+                            ? 'Borderline — worth reviewing'
+                            : 'Below threshold — review to tune criteria'
+                      }
+                    >
+                      Score {job.qualificationScore}
+                    </span>
+                  )}
                   {job.location && <span style={s.tag}><MapPin size={10} /> {job.location}</span>}
                   {job.tags.filter(t => t !== job.location).slice(0, 2).map(t => (
                     <span key={t} style={s.tag}>{t}</span>

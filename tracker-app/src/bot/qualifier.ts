@@ -29,7 +29,7 @@ import {
 
 // Re-export shared types so existing imports from './qualifier' still work
 export type { QualificationResult, QualifierConfig, BatchQualifyRequest, BatchQualifierConfig } from './qualifier-core.js'
-export { buildSystemPrompt, buildUserMessage, callHaikuQualifier, callHaikuQualifierBatch, buildErrorFallback } from './qualifier-core.js'
+export { buildSystemPrompt, buildUserMessage, callHaikuQualifier, callHaikuQualifierBatch, buildErrorFallback, detectCorruptJd } from './qualifier-core.js'
 
 // ---------------------------------------------------------------------------
 // Types — orchestrator-specific
@@ -100,42 +100,12 @@ const US_STATE_ABBREVS = [
 ]
 
 /**
- * Location keywords that indicate an incompatible timezone (outside UTC+3..UTC+11).
- * Matched case-insensitively against the job location field.
+ * Location keywords that indicate an incompatible market.
+ *
+ * 2026-04-10 Americas-first pivot: we no longer reject US/Canada/Americas/EU.
+ * Africa-only hard reject — Haiku + user profile handle fine-grained targeting.
  */
 const LOCATION_REJECT_PATTERNS = [
-  // US country-level
-  'united states', 'united states of america', 'usa',
-  // US timezone abbreviations
-  'est', 'cst', 'pst', 'mst', 'eastern time', 'pacific time', 'central time', 'mountain time',
-  // Major US cities
-  'new york', 'san francisco', 'los angeles', 'chicago', 'seattle',
-  'austin', 'denver', 'boston', 'atlanta', 'miami', 'dallas',
-  'houston', 'portland', 'san diego', 'san jose', 'palo alto',
-  'menlo park', 'mountain view', 'cupertino', 'sunnyvale', 'redwood city',
-  'santa clara', 'irvine', 'scottsdale', 'salt lake city', 'raleigh',
-  'durham', 'charlotte', 'nashville', 'phoenix', 'pittsburgh',
-  'philadelphia', 'washington dc', 'minneapolis', 'columbus',
-  'indianapolis', 'detroit', 'milwaukee', 'kansas city', 'st louis',
-  'tampa', 'orlando', 'sacramento', 'las vegas', 'baltimore',
-  'richmond', 'oakland', 'boulder', 'provo', 'lehi',
-  // Canada
-  'canada', 'toronto', 'vancouver', 'montreal', 'ottawa', 'calgary',
-  'edmonton', 'winnipeg', 'quebec', 'québec', 'ontario', 'british columbia',
-  // EU countries & cities
-  'europe', 'emea', 'united kingdom', 'london', 'berlin', 'paris',
-  'amsterdam', 'dublin', 'madrid', 'barcelona', 'lisbon', 'munich',
-  'hamburg', 'vienna', 'zurich', 'zürich', 'geneva', 'stockholm',
-  'copenhagen', 'oslo', 'helsinki', 'warsaw', 'prague', 'bucharest',
-  'brussels', 'milan', 'rome',
-  // EU timezone abbreviations
-  'cet', 'gmt+0', 'gmt+1', 'gmt+2', 'utc+0', 'utc+1', 'utc+2',
-  // LATAM
-  'latam', 'latin america', 'south america', 'americas', 'north america',
-  'buenos aires', 'sao paulo', 'são paulo', 'mexico city', 'bogota', 'bogotá',
-  'santiago', 'lima', 'brazil', 'brasil', 'argentina', 'colombia', 'chile',
-  'peru', 'mexico', 'costa rica', 'panama', 'caribbean',
-  // Africa
   'lagos', 'nairobi', 'cape town', 'johannesburg', 'accra', 'cairo',
   'africa',
 ]
@@ -181,46 +151,16 @@ function getLocationRejectionReason(location: string): string | null {
 
   const lower = location.toLowerCase().trim()
 
-  // Never reject empty or clearly APAC-compatible locations
+  // Never reject empty/remote/anywhere/worldwide locations
   if (!lower || lower === 'remote' || lower === 'anywhere' || lower === 'worldwide') {
-    // Bare "Remote" is already handled by the scout layer for LinkedIn.
-    // If it reaches preQualify, it means it passed the scout filter (e.g. from RemoteOK).
     return null
   }
 
-  // Check for US state abbreviation patterns (e.g. "Palo Alto, CA")
-  if (hasUSStateAbbrev(location)) {
-    return `US location detected: "${location}"`
-  }
-
-  // Check for short "US" patterns — "Remote, US", "US", ", US", "Remote (US)"
-  // Can't use simple .includes('us') because it matches "campus", "focus", etc.
-  // Use word-boundary regex instead.
-  if (/\bUS\b/.test(location) || /\bU\.S\.?\b/i.test(location)) {
-    // Double-check: not a false positive from an APAC location
-    const apacCheck = ['india', 'singapore', 'australia', 'japan', 'korea',
-      'apac', 'asia', 'thailand', 'philippines', 'indonesia', 'vietnam',
-      'malaysia', 'dubai', 'uae', 'hong kong', 'china', 'taiwan'].some(
-      kw => lower.includes(kw))
-    if (!apacCheck) {
-      return `US location detected: "${location}"`
-    }
-  }
-
-  // Check against explicit reject patterns
+  // 2026-04-10 Americas-first pivot: US/Canada/EU are all ACCEPTED.
+  // Only hard reject Africa — Haiku + search profile handle the rest.
   for (const pattern of LOCATION_REJECT_PATTERNS) {
     if (lower.includes(pattern)) {
-      // Safety: check if location ALSO contains an APAC keyword (e.g. "Remote - India, Americas")
-      // In that case, don't reject — the APAC signal takes priority
-      const apacKeywords = [
-        'bangkok', 'thailand', 'singapore', 'malaysia', 'indonesia', 'philippines',
-        'vietnam', 'japan', 'korea', 'taiwan', 'hong kong', 'china', 'india',
-        'australia', 'dubai', 'uae', 'apac', 'asia', 'southeast asia',
-      ]
-      const hasApacSignal = apacKeywords.some(kw => lower.includes(kw))
-      if (!hasApacSignal) {
-        return `Incompatible timezone location "${pattern}" in: "${location}"`
-      }
+      return `Hard-rejected location "${pattern}" in: "${location}"`
     }
   }
 

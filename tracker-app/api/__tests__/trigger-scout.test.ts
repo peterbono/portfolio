@@ -57,6 +57,29 @@ vi.mock('playwright', () => ({
   },
 }))
 
+// Mock @vercel/functions — the real waitUntil hands the promise off to the
+// Vercel runtime (fire-and-forget from the handler's perspective). For tests,
+// we want to AWAIT the promise so our assertions on runPipelineFromInline fire
+// AFTER the background work completes. Store the latest registered promise
+// and expose it for test helpers if needed.
+let __waitUntilPending: Promise<unknown> | null = null
+vi.mock('@vercel/functions', () => ({
+  waitUntil: (promise: Promise<unknown>) => {
+    __waitUntilPending = promise
+    // Swallow rejections so the test runner doesn't flag unhandled rejections
+    // from the background IIFE's .catch path.
+    promise.catch(() => {})
+  },
+}))
+
+/** Await the last waitUntil-registered promise so assertions can run after. */
+async function flushWaitUntil() {
+  if (__waitUntilPending) {
+    try { await __waitUntilPending } catch { /* ignore — tests assert on DB state */ }
+    __waitUntilPending = null
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Import handler after mocks
 // ---------------------------------------------------------------------------
@@ -258,6 +281,9 @@ describe('api/trigger-scout', () => {
     const res = createMockRes()
 
     await handler(req, res)
+    // Pipeline now runs in a waitUntil-registered background IIFE — await it
+    // so assertions fire after the orchestrator mock has been called.
+    await flushWaitUntil()
 
     expect(mockRunPipelineFromInline).toHaveBeenCalledTimes(1)
     const pipelineArg = mockRunPipelineFromInline.mock.calls[0]?.[0] as
@@ -275,7 +301,10 @@ describe('api/trigger-scout', () => {
     expect(forwardedConfig.keywords).toEqual(VALID_SEARCH_CONFIG.keywords)
   })
 
-  it('returns 500 and preserves runId when orchestrator throws', async () => {
+  it('returns 200 running and records failure via updateBotRun when orchestrator throws', async () => {
+    // Under the waitUntil refactor, the handler returns 200/running
+    // immediately; orchestrator errors are persisted via updateBotRun
+    // so client polling on bot_runs.status sees 'failed'.
     mockRunPipelineFromInline.mockRejectedValue(
       new Error('scout: linkedin blocked'),
     )
@@ -287,11 +316,23 @@ describe('api/trigger-scout', () => {
     const res = createMockRes()
 
     await handler(req, res)
+    // Let the background IIFE complete so updateBotRun(failed) fires
+    await flushWaitUntil()
 
-    expect(res._status).toBe(500)
-    const body = res._json as { error: string; runId?: string }
-    expect(body.error).toMatch(/scout|linkedin blocked/i)
+    expect(res._status).toBe(200)
+    const body = res._json as { runId?: string; status?: string }
     expect(body.runId).toBe('run-fake-uuid-0001')
+    expect(body.status).toBe('running')
+
+    // The failure must have been recorded on the bot_run row so the
+    // client polling bot_runs.status sees 'failed'
+    const failedCalls = mockUpdateBotRun.mock.calls.filter(
+      (args: unknown[]) => {
+        const patch = args[1] as Record<string, unknown> | undefined
+        return patch?.status === 'failed'
+      },
+    )
+    expect(failedCalls.length).toBeGreaterThanOrEqual(1)
   })
 
   it('returns 400 when body is null', async () => {
@@ -314,6 +355,7 @@ describe('api/trigger-scout', () => {
     const res = createMockRes()
 
     await handler(req, res)
+    await flushWaitUntil()
 
     expect(res._status).toBe(200)
     expect(mockRunPipelineFromInline).toHaveBeenCalledTimes(1)

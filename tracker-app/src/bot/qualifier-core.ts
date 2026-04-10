@@ -73,6 +73,51 @@ const DEFAULT_CONFIG: Required<QualifierConfig> = {
 }
 
 // ---------------------------------------------------------------------------
+// Corrupted JD detection — catches login walls, SPA shells, error pages
+// BEFORE we waste a Haiku call on garbage input. Without this, LinkedIn
+// auth-wall HTML (thousands of chars, passes length gate) lands in Haiku
+// and returns score 0 with "unparseable JD", wasting ~$0.003/call and
+// polluting the activity log with misleading disqualifications.
+// ---------------------------------------------------------------------------
+
+const CORRUPT_JD_MARKERS = [
+  // LinkedIn auth wall
+  'sign in to linkedin', 'join linkedin', 'linkedin login',
+  'new to linkedin? join now', 'authwall',
+  // Generic auth walls
+  'please sign in to continue', 'login required', 'please log in',
+  'you must be logged in', 'access denied',
+  // Empty SPA shells
+  'you need to enable javascript', 'please enable javascript',
+  // Common error pages
+  '404 not found', 'page not found', 'this job is no longer',
+  'job not found', 'posting has been removed',
+  // Bot detection
+  'cloudflare', 'checking your browser', 'captcha',
+  'are you a human', 'access to this page has been denied',
+]
+
+/**
+ * Returns a rejection reason if the JD content looks corrupted/unusable,
+ * or null if it looks like a real job description.
+ *
+ * Cheap pre-check — run BEFORE spending Haiku tokens on garbage.
+ */
+export function detectCorruptJd(jobDescription: string): string | null {
+  const trimmed = (jobDescription ?? '').trim()
+  if (trimmed.length < 300) {
+    return `JD too short (${trimmed.length} chars) — likely fetch failure`
+  }
+  const lower = trimmed.toLowerCase()
+  for (const marker of CORRUPT_JD_MARKERS) {
+    if (lower.includes(marker)) {
+      return `JD corrupted — detected marker: "${marker}"`
+    }
+  }
+  return null
+}
+
+// ---------------------------------------------------------------------------
 // Anthropic client singleton
 // ---------------------------------------------------------------------------
 

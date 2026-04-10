@@ -744,6 +744,20 @@ async function phaseScout(
   // Both groups run concurrently — total time = max(API group, browser group).
   console.log('[pipeline] Phase 1b: SCOUT all secondary sources in parallel')
 
+  // ATS allowlist for the focus filter below. Keep in sync with the working
+  // auto-apply adapters in src/bot/adapters*. As of April 2026 Greenhouse and
+  // LinkedIn Easy Apply are confirmed e2e, and Lever/Workable/Breezy have
+  // partial support — we keep them in the funnel so the user can still review
+  // and manually apply from the grid. Ashby/Workday/Gupy stay blocked.
+  // `undefined`/`null` (= unknown ATS) are allowed through so we don't lose
+  // RemoteOK/WWR/Jobicy listings that never resolve to a specific ATS.
+  const ALLOWED_ATS = new Set([
+    'greenhouse', 'lever', 'workable', 'breezy', 'breezyhr', 'breezy hr',
+    'recruitee', 'teamtailor', 'manatal', 'linkedin', 'remoteok', 'wwr',
+    'himalayas', 'remotive', 'jobicy', 'wellfound', 'dribbble', 'unknown',
+  ])
+  const BLOCKED_ATS = new Set(['ashby', 'workday', 'gupy'])
+
   // --- Helper: wrap a source in timeout + error handling ---
   const withTimeout = <T>(promise: Promise<T>, ms: number, label: string): Promise<T | null> =>
     Promise.race([
@@ -892,13 +906,19 @@ async function phaseScout(
     seenCompanyTitle.add(key)
   }
 
-  // Merge helper: focus filter + dedup against seen set, return count of duplicates
-  const mergeWithDedup = (jobs: DiscoveredJob[]): number => {
+  // Merge helper: focus filter + dedup against seen set, return drop counts
+  // Returns { dupes, blockedAts } so we can surface per-source funnel telemetry.
+  const mergeWithDedup = (jobs: DiscoveredJob[]): { dupes: number; blockedAts: number } => {
     let dupes = 0
+    let blockedAts = 0
     for (const job of jobs) {
-      // Focus filter: only keep jobs whose ATS is tagged as Greenhouse.
-      // Untagged jobs and jobs tagged with a non-supported ATS are dropped.
-      if (job.ats?.toLowerCase() !== 'greenhouse') {
+      // Focus filter: drop ONLY the hard-blocked ATSes (Ashby/Workday/Gupy).
+      // Everything else — including unknown/null ATS — is allowed through so
+      // the user still gets RemoteOK/WWR/Jobicy/Remotive/Himalayas listings
+      // in the grid even when the ATS couldn't be resolved at scout time.
+      const atsKey = (job.ats ?? 'unknown').toLowerCase()
+      if (BLOCKED_ATS.has(atsKey)) {
+        blockedAts++
         continue
       }
       const key = `${normalizeForDedup(job.company)}|${normalizeForDedup(job.title)}`
@@ -906,17 +926,45 @@ async function phaseScout(
       seenCompanyTitle.add(key)
       mergedJobs.push(job)
     }
-    return dupes
+    return { dupes, blockedAts }
   }
 
+  const remoteokMerge = mergeWithDedup(remoteokJobs)
+  const wellfoundMerge = mergeWithDedup(wellfoundJobs)
+  const himalayasMerge = mergeWithDedup(himalayasJobs)
+  const remotiveMerge = mergeWithDedup(remotiveJobs)
+  const wwrMerge = mergeWithDedup(wwrJobs)
+  const jobicyMerge = mergeWithDedup(jobicyJobs)
+  const dribbbleMerge = mergeWithDedup(dribbbleJobs)
+
   const dedupCounts = {
-    remoteok: mergeWithDedup(remoteokJobs),
-    wellfound: mergeWithDedup(wellfoundJobs),
-    himalayas: mergeWithDedup(himalayasJobs),
-    remotive: mergeWithDedup(remotiveJobs),
-    wwr: mergeWithDedup(wwrJobs),
-    jobicy: mergeWithDedup(jobicyJobs),
-    dribbble: mergeWithDedup(dribbbleJobs),
+    remoteok: remoteokMerge.dupes,
+    wellfound: wellfoundMerge.dupes,
+    himalayas: himalayasMerge.dupes,
+    remotive: remotiveMerge.dupes,
+    wwr: wwrMerge.dupes,
+    jobicy: jobicyMerge.dupes,
+    dribbble: dribbbleMerge.dupes,
+  }
+
+  const blockedAtsCounts = {
+    remoteok: remoteokMerge.blockedAts,
+    wellfound: wellfoundMerge.blockedAts,
+    himalayas: himalayasMerge.blockedAts,
+    remotive: remotiveMerge.blockedAts,
+    wwr: wwrMerge.blockedAts,
+    jobicy: jobicyMerge.blockedAts,
+    dribbble: dribbbleMerge.blockedAts,
+  }
+  const totalBlockedAts = Object.values(blockedAtsCounts).reduce((a, b) => a + b, 0)
+  if (totalBlockedAts > 0) {
+    const blockedAtsEntry: ActivityLogEntry = {
+      user_id: config.userId, run_id: runId,
+      action: 'scout_ats_blocked',
+      reason: `Focus filter dropped ${totalBlockedAts} blocked-ATS jobs (Ashby/Workday/Gupy): ${Object.entries(blockedAtsCounts).filter(([, v]) => v > 0).map(([k, v]) => `${k}: ${v}`).join(', ')}`,
+    }
+    fireLog(blockedAtsEntry)
+    activities.push(blockedAtsEntry)
   }
 
   const totalDedup = Object.values(dedupCounts).reduce((a, b) => a + b, 0)
@@ -1194,17 +1242,54 @@ async function phaseQualify(
   console.log(`[pipeline] JD extraction complete: ${jobsWithJD.length} jobs (${preFetchedJobs.length} pre-fetched, ${needExtractionJobs.length} extracted)`)
 
   // -------------------------------------------------------------------------
+  // Step 2a.5: Filter out corrupted JDs BEFORE spending Haiku tokens.
+  // LinkedIn login walls and SPA shells pass the length gate (they are long
+  // blobs of HTML) but contain zero real job description content. Haiku
+  // correctly returns score 0, but that wastes ~$0.003/call and pollutes the
+  // activity log with misleading disqualifications. Detect them cheaply via
+  // string markers, log loudly, and skip the Haiku call entirely.
+  // -------------------------------------------------------------------------
+  const { detectCorruptJd } = await import('./qualifier-core.js')
+  const cleanJobsWithJD: typeof jobsWithJD = []
+  let corruptCount = 0
+  for (const entry of jobsWithJD) {
+    const corruptReason = detectCorruptJd(entry.jd)
+    if (corruptReason) {
+      corruptCount++
+      console.warn(
+        `[pipeline] Corrupted JD for ${entry.job.company}/${entry.job.title}: ${corruptReason}`,
+      )
+      const corruptEntry: ActivityLogEntry = {
+        user_id: config.userId,
+        run_id: runId,
+        action: 'qualify_skipped_corrupt_jd',
+        company: entry.job.company,
+        role: entry.job.title,
+        reason: `Manual review needed — ${corruptReason}. URL: ${entry.job.url}`,
+      }
+      fireLog(corruptEntry)
+      activities.push(corruptEntry)
+    } else {
+      cleanJobsWithJD.push(entry)
+    }
+  }
+  if (corruptCount > 0) {
+    console.log(
+      `[pipeline] Skipped ${corruptCount}/${jobsWithJD.length} jobs with corrupted JDs (login walls, SPA shells, etc.)`,
+    )
+  }
+
   // Step 2b: Qualify via Haiku in parallel batches of QUALIFY_BATCH_SIZE
   // -------------------------------------------------------------------------
   const QUALIFY_BATCH_SIZE = 15 // Increased from 10 — Haiku handles higher concurrency well
   let processedCount = 0
 
-  console.log(`[pipeline] Qualifying ${jobsWithJD.length} jobs in parallel batches of ${QUALIFY_BATCH_SIZE}`)
+  console.log(`[pipeline] Qualifying ${cleanJobsWithJD.length} jobs in parallel batches of ${QUALIFY_BATCH_SIZE}`)
 
-  for (let batchStart = 0; batchStart < jobsWithJD.length; batchStart += QUALIFY_BATCH_SIZE) {
-    const batch = jobsWithJD.slice(batchStart, batchStart + QUALIFY_BATCH_SIZE)
+  for (let batchStart = 0; batchStart < cleanJobsWithJD.length; batchStart += QUALIFY_BATCH_SIZE) {
+    const batch = cleanJobsWithJD.slice(batchStart, batchStart + QUALIFY_BATCH_SIZE)
     const batchNum = Math.floor(batchStart / QUALIFY_BATCH_SIZE) + 1
-    const totalBatches = Math.ceil(jobsWithJD.length / QUALIFY_BATCH_SIZE)
+    const totalBatches = Math.ceil(cleanJobsWithJD.length / QUALIFY_BATCH_SIZE)
     console.log(`[pipeline] Haiku batch ${batchNum}/${totalBatches} (${batch.length} jobs)`)
 
     const batchResults = await Promise.all(

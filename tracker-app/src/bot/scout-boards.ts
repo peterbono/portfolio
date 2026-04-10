@@ -36,37 +36,14 @@ const COMPATIBLE_TZ_KEYWORDS = [
 ]
 
 /** Keywords that signal an incompatible timezone requirement */
+/**
+ * 2026-04-10 Americas-first pivot: the old blacklist rejected US/Canada/EU,
+ * which killed 100% of qualifying jobs. We now only hard-reject Africa —
+ * the user's search profile drives real targeting via preQualify + Haiku.
+ * Keeping the exported constant so existing `hasIncompatibleSignal` call
+ * sites throughout this file continue to compile.
+ */
 const INCOMPATIBLE_TZ_KEYWORDS = [
-  // US country-level
-  'united states', 'united states of america',
-  // US timezones
-  'est', 'cst', 'pst', 'mst', 'eastern time', 'pacific time', 'central time', 'mountain time',
-  // Major US cities — top tech hubs and metros
-  'new york', 'san francisco', 'los angeles', 'chicago', 'seattle',
-  'austin', 'denver', 'boston', 'atlanta', 'miami', 'dallas',
-  'houston', 'portland', 'san diego', 'san jose', 'palo alto',
-  'menlo park', 'mountain view', 'cupertino', 'sunnyvale', 'redwood city',
-  'santa clara', 'irvine', 'scottsdale', 'salt lake city', 'raleigh',
-  'durham', 'charlotte', 'nashville', 'phoenix', 'pittsburgh',
-  'philadelphia', 'washington dc', 'minneapolis', 'columbus',
-  'indianapolis', 'detroit', 'milwaukee', 'kansas city', 'st louis',
-  'tampa', 'orlando', 'sacramento', 'las vegas', 'baltimore',
-  'richmond', 'oakland', 'boulder', 'provo', 'lehi',
-  // EU timezones
-  'cet', 'gmt+0', 'gmt+1', 'gmt+2', 'utc+0', 'utc+1', 'utc+2',
-  // LATAM / Americas (country + city names)
-  'latam', 'latin america', 'south america', 'americas', 'north america',
-  'buenos aires', 'sao paulo', 'são paulo', 'mexico city', 'bogota', 'bogotá',
-  'santiago', 'lima', 'medellin', 'medellín', 'montevideo',
-  'brazil', 'brasil', 'argentina', 'colombia', 'chile', 'peru', 'mexico',
-  'costa rica', 'panama', 'caribbean', 'canada', 'toronto', 'vancouver', 'montreal',
-  'ottawa', 'calgary', 'edmonton', 'winnipeg', 'quebec', 'québec', 'ontario', 'british columbia',
-  // EU countries / cities
-  'europe', 'emea', 'united kingdom', 'london', 'berlin', 'paris', 'amsterdam',
-  'dublin', 'madrid', 'barcelona', 'lisbon', 'munich', 'hamburg', 'vienna',
-  'zurich', 'zürich', 'geneva', 'stockholm', 'copenhagen', 'oslo', 'helsinki',
-  'warsaw', 'prague', 'bucharest', 'brussels', 'milan', 'rome',
-  // Africa (too far)
   'lagos', 'nairobi', 'cape town', 'johannesburg', 'accra', 'cairo', 'africa',
 ]
 
@@ -101,34 +78,27 @@ function hasUSStateAbbrev(location: string): boolean {
 // Shared helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Post-pivot (2026-04-10) location filter: accept US/Canada/Americas/EU/APAC
+ * and only hard-reject Africa. The strict APAC-only allowlist was dropping
+ * 100% of RemoteOK/WWR/Jobicy Americas-remote results.
+ */
+const HARD_REJECT_LOCATION_KEYWORDS = [
+  'lagos', 'nairobi', 'cape town', 'johannesburg', 'accra', 'cairo', 'africa',
+]
+
 function isTimezoneCompatible(location: string): boolean {
-  const lower = location.toLowerCase()
+  if (!location) return true
 
-  if (INCOMPATIBLE_TZ_KEYWORDS.some(kw => lower.includes(kw))) {
+  const lower = location.toLowerCase().trim()
+
+  if (HARD_REJECT_LOCATION_KEYWORDS.some(kw => lower.includes(kw))) {
     return false
   }
 
-  // Reject if contains US state abbreviation pattern (e.g. "Palo Alto, CA")
-  if (hasUSStateAbbrev(location)) {
-    return false
-  }
-
-  // Reject short "US" patterns — "Remote, US", "US", "Remote (US)"
-  if (/\bUS\b/.test(location) || /\bU\.S\.?\b/i.test(location)) {
-    return false
-  }
-
-  if (COMPATIBLE_TZ_KEYWORDS.some(kw => lower.includes(kw))) {
-    return true
-  }
-
-  // "Remote" alone without APAC signal — REJECT
-  if (lower === 'remote' || lower === 'worldwide' || lower === 'anywhere') {
-    return false
-  }
-
-  // Unknown location — skip to be safe
-  return false
+  // Accept everything else — the user's search profile + Haiku handle
+  // fine-grained targeting. Unknown/Remote/Worldwide/Anywhere all pass.
+  return true
 }
 
 function normalizeForDedup(str: string): string {
